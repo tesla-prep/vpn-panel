@@ -120,7 +120,7 @@ check("…and the operator's stored params are not rewritten", nodes["a"]["mesh_
 
 print("[mesh S4] the default AWG 3.1 profile")
 nodes = {nid: {"name": nid} for nid in ("a", "b", "c")}
-default_deps = dict(deps(1280), fleet={}, panel_settings={})
+default_deps = dict(deps(1280), fleet={}, panel_settings={"mesh_awg": {f"H{i}": str(i) for i in range(1, 5)}})
 ready = {"datapath": {"awg": {"gen": {"module": "3.1", "tools": "3.1"}, "exact": 1}}}
 snaps = {"a": ready, "b": ready, "c": {}}
 P.reconcile_mesh(nodes, {"a": ready}, default_deps)
@@ -136,6 +136,10 @@ check("the default uses one S length, fixed H values and conservative padding", 
       and all(profile[f"H{i}"] == str(i) for i in range(1, 5)) and profile["ContentPaddingAddition"] == "2-10"
       and profile["RandomTrailers"] == "1" and "DisableCookies" not in profile and not any(k.startswith("I") for k in profile))
 check("a reported legacy node falls back to 2.0", P.mesh_link_gen(nodes["a"], nodes["a"]["links"]["c"]) == "2.0")
+link20 = nodes["a"]["links"]["c"]["iface"]
+ac, ca = (nodes[n]["ifaces"][link20]["awg_params"] for n in ("a", "c"))
+check("the 2.0 fallback uses matching legacy headers even with a 3.1 template", ac == ca
+      and all("-" in str(ac.get(f"H{i}", "")) for i in range(1, 5)) and "HeaderProtectionKey" not in ac)
 P.reconcile_mesh(nodes, dict(snaps, c=ready), default_deps)
 check("a legacy link keeps its version when both ends later support 3.1", P.mesh_link_gen(nodes["a"], nodes["a"]["links"]["c"]) == "2.0")
 

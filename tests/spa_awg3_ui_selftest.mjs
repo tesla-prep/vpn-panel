@@ -66,7 +66,14 @@ try { M = await load("model.js"); U = await load("ui.js"); C = await load("turn-
 finally { made.forEach(p => { try { fs.unlinkSync(p); } catch (_) { /* already gone */ } }); }   // a plant never outlives this run
 const { Store } = await import(pathToFileURL(path.join(ROOT, "js", "store.js")).href);
 
-const generated = IF.genAwg();
+const originalRandom = Math.random;
+let generated;
+try {
+  Math.random = () => { throw new Error("AWG 3.1 generation needs a secure random source"); };
+  generated = IF.genAwg();
+} finally {
+  Math.random = originalRandom;
+}
 check("the generator defaults to 3.1 with equal S values and fixed H values", generated.S1 >= 12 && generated.S1 <= 20
       && [1, 2, 3, 4].every(i => generated[`S${i}`] === generated.S1 && generated[`H${i}`] === i)
       && generated.Jc >= 4 && generated.Jc <= 6 && !Object.keys(generated).some(k => k.startsWith("I")));

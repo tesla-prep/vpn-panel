@@ -3,6 +3,13 @@
 All notable user-facing changes to **swgPanel**. This file starts at `1.3.11-beta`;
 earlier releases predate the changelog — see the git history. · Русский: [CHANGELOG.ru.md](CHANGELOG.ru.md)
 
+## [1.10.1-beta]
+
+### Security
+
+- The panel, installers and browser use system cryptographic randomness for the generated `Jc` and shared `S1–S4` values in new AmneziaWG 3.1 profiles.
+- Downgrading an interface to 2.0 and creating a mesh link that falls back to 2.0 replace the protected 3.1 preset's standard header IDs with disjoint 2.0 ranges. Reinstall the client configs after switching an interface's version.
+
 ## [1.10.0-beta]
 
 ### Changed

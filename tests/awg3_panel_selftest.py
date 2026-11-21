@@ -190,6 +190,13 @@ def ov(nid, iface="awg0"):
 def s_ok(d):
     return all(str(d.get(k, "")).isdigit() and int(d[k]) >= 12 for k in ("S1", "S2", "S3", "S4"))
 
+def legacy_headers(d):
+    spans = [str(d.get(f"H{i}", "")).split("-", 1) for i in range(1, 5)]
+    if not all(len(span) == 2 and all(n.isdecimal() for n in span) for span in spans):
+        return False
+    ranges = [(int(lo), int(hi)) for lo, hi in spans]
+    return all(4 < lo <= hi for lo, hi in ranges) and all(a[1] < b[0] for a, b in zip(ranges, ranges[1:]))
+
 try:
     SECTION[0] = "[1]"
     print("[1] an older node (no `gen`) is never sent a 3.x key")
@@ -315,6 +322,24 @@ try:
 
     SECTION[0] = "[8]"
     print("\n[8] synced means the whole generation matches")
+    sync("n31", dict(cr), "awg7c")
+    code, r = update("n31", "awg7c", awg_gen="2.0")
+    fallback = ov("n31", "awg7c").get("awg_params") or {}
+    check("switching a built-in 3.1 profile to 2.0 draws legacy headers", code == 200 and legacy_headers(fallback)
+          and "HeaderProtectionKey" not in fallback and not any(k.startswith("I") for k in fallback))
+    d = sync("n31", dict(cr), "awg7c")
+    check("the new 2.0 set is sent whole to the node", d.get("awg_params") == fallback and d.get("awg_params_exact") is True)
+    code, r = update("n31", "awg7c", awg_gen="2.0", awg_params=dict(cr))
+    check("repeating the downgrade keeps the generated 2.0 headers", code == 200 and ov("n31", "awg7c").get("awg_params") == fallback)
+
+    put_record("n31", "awg7lost", {"awg_params": dict(cr), "awg_exact": True})
+    code, r = req("/api/iface/create", {"node": "n31", "iface": "awg7lost", "subnet": "10.62.42.0/24", "awg_gen": "2.0"})
+    queued = (nodes()["n31"].get("create") or {}).get("awg7lost") or {}
+    next_params = queued.get("awg_params") or {}
+    check("recreating on 2.0 uses matching legacy headers in the request and the record", code == 200
+          and legacy_headers(next_params) and "HeaderProtectionKey" not in next_params
+          and next_params == ov("n31", "awg7lost").get("awg_params") and queued.get("awg_params_exact") is True)
+
     put_record("n31", "awg8", {"awg_params": dict(FULL31)})
     sync("n31", dict(FULL31), "awg8")
     code, r = update("n31", "awg8", awg_gen="2.0")

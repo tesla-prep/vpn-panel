@@ -1,10 +1,10 @@
 <p align="center"><b>English</b> · <a href="README.ru.md">Русский</a> · <a href="README.technical.md">Technical (EN)</a> · <a href="README.technical.ru.md">Техническое (RU)</a></p>
 
-<p align="center"><code>1.10.0-beta</code></p>
+<p align="center"><code>1.10.1-beta</code></p>
 
 <!-- WHATS-NEW:START -->
-> **What's new in 1.10.0-beta** — [full changelog](CHANGELOG.md)
-> - **AmneziaWG 3.1 by default.** New tunnels use 3.1 on compatible nodes. Updated defaults include header protection, random trailers and an MTU of 1280.
+> **What's new in 1.10.1-beta** — [full changelog](CHANGELOG.md)
+> - **AmneziaWG profile generation.** New 3.1 profiles use system cryptographic randomness. Switching to 2.0 restores 2.0 header ranges for the built-in profile.
 <!-- WHATS-NEW:END -->
 
 ---

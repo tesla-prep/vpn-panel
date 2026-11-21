@@ -13789,6 +13789,7 @@ def _wdtt_alloc_raw_subnet(deps, nodes, nid, iface):
 DEFAULT_AWG_GEN = "3.1"
 AWG31_MIN_S = 12
 AWG31_MAX_S = 20
+AWG31_HEADERS = {"H1": 1, "H2": 2, "H3": 3, "H4": 4}
 
 
 def gen_awg_params(gen=DEFAULT_AWG_GEN, s_max=AWG31_MAX_S):
@@ -13796,9 +13797,9 @@ def gen_awg_params(gen=DEFAULT_AWG_GEN, s_max=AWG31_MAX_S):
     pushes the SAME dict to both ends, because AmneziaWG only handshakes when both peers share identical
     obfuscation — the node's own random per-iface params (swg-agent _awg_obfuscation) would differ."""
     if gen == "3.1":
-        s = random.randint(AWG31_MIN_S, min(AWG31_MAX_S, s_max))
-        return {"Jc": random.randint(4, 6), "Jmin": 40, "Jmax": 70,
-                **{f"S{i}": s for i in range(1, 5)}, **{f"H{i}": i for i in range(1, 5)}}
+        s = AWG31_MIN_S + secrets.randbelow(min(AWG31_MAX_S, s_max) - AWG31_MIN_S + 1)
+        return {"Jc": 4 + secrets.randbelow(3), "Jmin": 40, "Jmax": 70,
+                "S1": s, "S2": s, "S3": s, "S4": s, **AWG31_HEADERS}
     s1 = 15 + random.randint(0, 135); s2 = 15 + random.randint(0, 135)
     while s2 == s1 or s2 == s1 + 56:
         s2 = 15 + random.randint(0, 135)
@@ -13818,6 +13819,21 @@ AWG_FIELDS = ("Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H
               "HeaderProtectionKey", "RandomTrailers", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout",
               "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "DisableCookies")
 AWG3_FIELDS = AWG_FIELDS[AWG_FIELDS.index("HeaderProtectionKey"):]
+
+
+def awg2_profile(params, replace_standard_headers, previous=None):
+    """Remove 3.x fields and replace standard IDs when they came from a protected profile."""
+    out = {k: v for k, v in params.items() if k not in AWG3_FIELDS}
+    if replace_standard_headers and out:
+        standard = {k: (str(i), f"{i}-{i}") for k, i in AWG31_HEADERS.items()}
+        if all(str(out.get(k, ids[0])).replace(" ", "") in ids for k, ids in standard.items()):
+            # A repeated save can still carry the old 3.1 fields while the node applies the downgrade.
+            previous = previous or {}
+            assigned = not previous.get("HeaderProtectionKey") and all(
+                k in previous and str(previous[k]).replace(" ", "") not in ids for k, ids in standard.items())
+            legacy = previous if assigned else gen_awg_params("2.0")
+            out.update({k: legacy[k] for k in AWG31_HEADERS})
+    return out
 
 
 def sanitize_awg_params(raw, gen3=False):
@@ -15039,6 +15055,8 @@ def _mesh_make_link(nodes, snaps, deps, a, b, mc, alloc=None, log=True):
             awg = {k: str(v) for k, v in {**gen_awg_params("2.0"), **_tv}.items() if not (_exact and k in _tom)}
         else:
             awg = gen_awg_params("2.0")
+        if gen == "3.1" and AWG31_HEADERS.keys() <= awg.keys():
+            awg = awg2_profile(awg, replace_standard_headers=True)
         if not mesh_s4_fits(awg.get("S4"), mc["mtu"]):
             awg["S4"] = mesh_s4_draw(mc["mtu"])
     for nid, peer in ((a, b), (b, a)):
@@ -30677,7 +30695,10 @@ def api(method, path, qs, body, deps):
                     if _bad:
                         return 400, {"ok": False, **_bad, "code": "bad_request"}
             else:
-                _a2 = {k: v for k, v in (ov.get("awg_params") or {}).items() if k not in AWG3_FIELDS}
+                _reported_awg = sanitize_awg_params(_rmeta.get("awg_params"), gen3=True)
+                _was_protected = bool(_rec0.get("HeaderProtectionKey") or _reported_awg.get("HeaderProtectionKey"))
+                _awgb = ov.get("awg_params") or (_reported_awg if _was_protected and "awg_params" not in body else {})
+                _a2 = awg2_profile(_awgb, _was_protected, previous=_rec0)
                 if not _a2 and ov.get("awg_exact"):      # every 2.0 field set to none: 2.0 would be plain WireGuard (R1)
                     return 400, {"ok": False, **awg_rules({}, iface), "code": "bad_request"}
                 if _a2:
@@ -30960,7 +30981,7 @@ def api(method, path, qs, body, deps):
             if _bl:
                 return 409, {"ok": False, **turn_awg3_refusal(_bl, iface), "code": "turn_awg3", "turn_proxies": _bl}
         elif _gen == "2.0":
-            _awgput = {k: v for k, v in _awgput.items() if k not in AWG3_FIELDS}
+            _awgput = awg2_profile(_awgput, bool((_awgprev or {}).get("HeaderProtectionKey")))
         if any(k in _awgput for k in AWG3_FIELDS) and not awg_gen_reported(_snap):
             return 400, {"ok": False, **perr("{v1}: this node does not report its AmneziaWG version — update it",
                                              v1=nodes[nid].get("name") or nid), "code": "bad_request"}

@@ -26,6 +26,7 @@ import json
 import os
 import random
 import re
+import secrets
 import shlex
 import shutil
 import subprocess
@@ -938,9 +939,9 @@ def _ensure_tool(tool):
 def _awg_obfuscation(gen="3.1"):
     """Initial interface parameters, matching the panel's generators for each version."""
     if gen == "3.1":
-        s = random.randint(12, 20)
+        s = 12 + secrets.randbelow(9)
         key = base64.b64encode(os.urandom(32)).decode()
-        return (f"Jc = {random.randint(4, 6)}\nJmin = 40\nJmax = 70\n"
+        return (f"Jc = {4 + secrets.randbelow(3)}\nJmin = 40\nJmax = 70\n"
                 f"S1 = {s}\nS2 = {s}\nS3 = {s}\nS4 = {s}\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n"
                 f"HeaderProtectionKey = {key}\nRandomTrailers = 1\nContentPaddingAddition = 2-10\n"
                 "RekeyAfterTime = 100-120\nRekeyTimeout = 3-7\nRejectAfterTime = 150-180\n"

@@ -1577,15 +1577,24 @@ export function openIfaceEditor(node, iface) {
 }
 export const DEFAULT_AWG_GEN = "3.1";
 const AWG31_MIN_S = 12, AWG31_MAX_S = 20;
+const AWG31_BASE = { Jmin: 40, Jmax: 70, H1: 1, H2: 2, H3: 3, H4: 4 };
 // The base fields shared by both versions. The server fills the 3.1 fields and creates a key per interface.
 export const AWG_KEYS = AWG_ORDER.slice(0, AWG_ORDER.indexOf("HeaderProtectionKey"));
+
+function awgRandomBelow(count) {
+  const byte = new Uint8Array(1), limit = 256 - 256 % count;
+  do { crypto.getRandomValues(byte); } while (byte[0] >= limit);
+  return byte[0] % count;
+}
+
 // client-side AmneziaWG obfuscation generator — mirrors the panel's gen_awg_params (for the "Generate" button)
 export function genAwg(gen = DEFAULT_AWG_GEN, sMax = AWG31_MAX_S) {
-  const r = n => Math.floor(Math.random() * n), w = 15;
   if (gen === "3.1") {
-    const s = AWG31_MIN_S + r(Math.min(AWG31_MAX_S, sMax) - AWG31_MIN_S + 1);
-    return { Jc: 4 + r(3), Jmin: 40, Jmax: 70, S1: s, S2: s, S3: s, S4: s, H1: 1, H2: 2, H3: 3, H4: 4 };
+    const cap = Math.max(AWG31_MIN_S, Math.min(AWG31_MAX_S, sMax));
+    const s = AWG31_MIN_S + awgRandomBelow(cap - AWG31_MIN_S + 1);
+    return { ...AWG31_BASE, Jc: 4 + awgRandomBelow(3), S1: s, S2: s, S3: s, S4: s };
   }
+  const r = n => Math.floor(Math.random() * n), w = 15;
   let s1 = 15 + r(136), s2 = 15 + r(136);
   while (s2 === s1 || s2 === s1 + 56) s2 = 15 + r(136);
   const b = [5, 1e9, 2e9, 3e9].map(base => base + r(9e8));
@@ -1596,11 +1605,12 @@ export function genAwg(gen = DEFAULT_AWG_GEN, sMax = AWG31_MAX_S) {
 }
 // Values shown for blank cells, matching the selected generator.
 export function awgBlankHints(gen = DEFAULT_AWG_GEN) {
-  const g = genAwg(gen);
   if (gen === "3.1") {
-    return { ...Object.fromEntries(Object.entries(g).map(([k, v]) => [k, String(v)])),
-      Jc: "4–6", S1: "12–20", S2: "12–20", S3: "12–20", S4: "12–20" };
+    const s = `${AWG31_MIN_S}–${AWG31_MAX_S}`;
+    return { ...Object.fromEntries(Object.entries(AWG31_BASE).map(([k, v]) => [k, String(v)])),
+      Jc: "4–6", S1: s, S2: s, S3: s, S4: s };
   }
+  const g = genAwg(gen);
   const out = {};
   for (const k of AWG_KEYS) out[k] = /^[SH][1-4]$/.test(k) ? T("blank = random") : String(g[k]);
   return out;
