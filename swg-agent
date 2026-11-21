@@ -17,6 +17,7 @@ v1 targets native host interfaces (awg/wg on the host). The per-interface "cmd"
 prefix is configurable for future container support.
 """
 
+import base64
 import contextlib
 import errno
 import fcntl
@@ -934,8 +935,16 @@ def _ensure_tool(tool):
                      "itself on the next sync.")
 
 
-def _awg_obfuscation():
-    """Mirror install-host.sh's awg_obfuscation: random S1–S4, four disjoint H1–H4 bands, fixed I1–I5."""
+def _awg_obfuscation(gen="3.1"):
+    """Initial interface parameters, matching the panel's generators for each version."""
+    if gen == "3.1":
+        s = random.randint(12, 20)
+        key = base64.b64encode(os.urandom(32)).decode()
+        return (f"Jc = {random.randint(4, 6)}\nJmin = 40\nJmax = 70\n"
+                f"S1 = {s}\nS2 = {s}\nS3 = {s}\nS4 = {s}\nH1 = 1\nH2 = 2\nH3 = 3\nH4 = 4\n"
+                f"HeaderProtectionKey = {key}\nRandomTrailers = 1\nContentPaddingAddition = 2-10\n"
+                "RekeyAfterTime = 100-120\nRekeyTimeout = 3-7\nRejectAfterTime = 150-180\n"
+                "KeepaliveTimeout = 5-15\nMaxHandshakeAttempts = 15-20\n")
     s1 = 15 + random.randint(0, 135); s2 = 15 + random.randint(0, 135)
     while s2 == s1 or s2 == s1 + 56:
         s2 = 15 + random.randint(0, 135)
@@ -1461,10 +1470,11 @@ def op_create_iface(cfg, req):
         if req.get("awg_params_exact") and not supp:
             raise AgentError("awg_empty_exact", "an AmneziaWG interface needs at least one AmneziaWG parameter — create a "
                                                 "WireGuard interface instead")
-        if supp and req.get("awg_params_exact"):
+        if supp and (req.get("awg_params_exact") or "HeaderProtectionKey" in supp):
+            # The panel supplies complete 3.x profiles, including any omissions and the shared header key.
             body += "".join(f"{k} = {supp[k]}\n" for k in AWG_KEYS if k in supp)
         elif supp:
-            _gen = _awg_obfuscation()
+            _gen = _awg_obfuscation("2.0")
             _out = []
             for _ln in _gen.splitlines():
                 _k = _ln.split("=")[0].strip()
@@ -1473,7 +1483,7 @@ def op_create_iface(cfg, req):
             _out += [f"{k} = {supp[k]}" for k in AWG_KEYS if k in supp and k not in _seen]
             body += "\n".join(_out) + "\n"
         else:
-            body += _awg_obfuscation()
+            body += _awg_obfuscation("2.0")  # legacy panel request with no profile attached
     write_conf_atomic(conf, body)
     # `wg-quick up <name>` resolves the name against /etc/wireguard and NOWHERE else, so moving the file to the
     # mount would break the bring-up it is supposed to enable. Link the name back into that directory: every
@@ -2026,6 +2036,9 @@ WRITE_OPS = {"add-peer": op_add_peer, "remove-peer": op_remove_peer, "set-iface"
 
 
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--awg-params" and sys.argv[2] in ("2.0", "3.1"):
+        sys.stdout.write(_awg_obfuscation(sys.argv[2]))
+        return
     try:
         req = json.load(sys.stdin)
     except Exception as e:

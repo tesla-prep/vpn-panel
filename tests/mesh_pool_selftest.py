@@ -115,7 +115,7 @@ ipaddress.IPv4Network.subnets = _counting_subnets
 
 def deps(panel_pool=None, fleet=None):
     return {"fleet": dict(fleet or {}), "roster_path": ROSTER,
-            "panel_settings": ({"reserved": {"mesh_subnet": panel_pool}} if panel_pool else {})}
+            "panel_settings": {"mesh_awg_gen": "2.0", **({"reserved": {"mesh_subnet": panel_pool}} if panel_pool else {})}}
 
 def fleet(n, **per_node_pool):
     return {"n%d" % i: {"id": "n%d" % i, "name": "node%d" % i,

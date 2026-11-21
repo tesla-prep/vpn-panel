@@ -3,6 +3,13 @@
 All notable user-facing changes to **swgPanel**. This file starts at `1.3.11-beta`;
 earlier releases predate the changelog — see the git history. · Русский: [CHANGELOG.ru.md](CHANGELOG.ru.md)
 
+## [1.10.0-beta]
+
+### Changed
+
+- New VPN interfaces, mesh links, dial-in exits and installer-generated interfaces default to AmneziaWG 3.1 on compatible nodes. Protocol choices and the obfuscation settings of existing interfaces are preserved.
+- Generated 3.1 profiles use a fresh 32-byte header key, equal `S1–S4` values, `H1–H4` set to `1–4`, random trailers, and `ContentPaddingAddition = 2-10`. Generated profiles leave `I1–I5` blank and keep cookie protection enabled. The default mesh MTU is now 1280. `mesh_mtu` in `fleet.json` overrides it.
+
 ## [1.9.0-beta]
 
 ### Added

@@ -337,17 +337,6 @@ ensure_smart_tools(){ # nftables (smart-routing marking) + dnsmasq (domain-tier 
   run systemctl mask dnsmasq 2>/dev/null || true
   run systemctl reset-failed dnsmasq 2>/dev/null || true
 }
-awg_obfuscation(){ # AmneziaWG v2 obfuscation — H1–H4 ranges, S1–S4, conservative QUIC-Initial I1
-  local s1 s2 s3 s4 b1 b2 b3 b4 w=15
-  s1=$(( 15 + RANDOM % 136 )); s2=$(( 15 + RANDOM % 136 ))
-  while [ "$s1" -eq "$s2" ] || [ $((s1+56)) -eq "$s2" ]; do s2=$(( 15 + RANDOM % 136 )); done
-  s3=$(( 15 + RANDOM % 86 )); s4=$(( 15 + RANDOM % 86 ))
-  b1=$(( 5 + (RANDOM*RANDOM) % 900000000 ));          b2=$(( 1000000000 + (RANDOM*RANDOM) % 900000000 ))
-  b3=$(( 2000000000 + (RANDOM*RANDOM) % 900000000 )); b4=$(( 3000000000 + (RANDOM*RANDOM) % 900000000 ))
-  printf 'Jc = 4\nJmin = 40\nJmax = 70\nS1 = %s\nS2 = %s\nS3 = %s\nS4 = %s\nH1 = %s-%s\nH2 = %s-%s\nH3 = %s-%s\nH4 = %s-%s\n' \
-    "$s1" "$s2" "$s3" "$s4" "$b1" $((b1+w)) "$b2" $((b2+w)) "$b3" $((b3+w)) "$b4" $((b4+w))
-  printf 'I1 = <b 0xc000000001><r 64><t>\nI2 = <r 24><t>\nI3 = <r 32>\nI4 = <b 0xc000000001><r 32><t>\nI5 = <t><r 48>\n'   # I1-I5: QUIC-Initial-shaped junk (0xc0 long header, QUIC v1) + random bytes + timestamp
-}
 server_addr(){ have python3 || die "python3 required for the tunnel address (also needed by the daemon)"
   python3 - "$1" <<'PY'
 import ipaddress, sys
@@ -385,7 +374,7 @@ v_subnet_free(){ v_subnet "$1" || return 1; subnet_used "$1" && return 1; return
 # once, at the end. Queued names show in 'mine' (via CREATED) and block name collisions immediately.
 apply_specs(){ # install tools + write confs + bring up every queued interface, then prune failures
   [ "${#SPEC_ORDER[@]}" -gt 0 ] || return 0
-  local name proto port subnet addr conf cmd priv dir wan up down upok ep failed=""
+  local name proto port subnet addr conf cmd priv dir wan up down upok ep obf failed=""
   echo; info "Setting up ${#SPEC_ORDER[@]} interface(s)…"
   for name in "${SPEC_ORDER[@]}"; do
     cmd="${SPEC_CMD[$name]}"; proto="${SPEC_PROTO[$name]}"; port="${SPEC_PORT[$name]}"; subnet="${SPEC_SUBNET[$name]}"
@@ -398,9 +387,13 @@ apply_specs(){ # install tools + write confs + bring up every queued interface, 
     run sysctl -q -w net.ipv4.conf.all.route_localnet=1   # lets Force-DNS DNAT client :53 to loopback dnsmasq (else silent DNS blackhole)
     if $DRYRUN; then priv="<generated-on-real-run>"
     elif ! priv="$("$cmd" genkey 2>/dev/null)" || [ -z "$priv" ]; then warn "'$cmd genkey' failed — skipping interface '$name'"; failed="$failed $name"; continue; fi
+    obf=""
+    if [ "$cmd" = awg ] && ! obf="$(awg_initial_obfuscation "$SRC")"; then
+      warn "couldn't generate AmneziaWG parameters — skipping interface '$name'"; failed="$failed $name"; continue
+    fi
     { printf '[Interface]\nPrivateKey = %s\nAddress = %s\nListenPort = %s\nMTU = %s\n' "$priv" "$addr" "$port" "$WG_MTU"
       printf 'PostUp = %s\nPostDown = %s\n' "$up" "$down"
-      if [ "$cmd" = awg ]; then awg_obfuscation; fi; } | writef "$conf" 600
+      if [ -n "$obf" ]; then printf '%s\n' "$obf"; fi; } | writef "$conf" 600
     # drop a STALE live interface of the same name first — a removed docker node that ran on the host netns
     # leaves its awg/wg interfaces on the host ('docker rm' can't take them down), which would block this
     # fresh bring-up with "already exists". We hold a brand-new conf, so replacing it is safe.

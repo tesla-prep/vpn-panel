@@ -1,10 +1,10 @@
 <p align="center"><b>English</b> · <a href="README.ru.md">Русский</a> · <a href="README.technical.md">Technical (EN)</a> · <a href="README.technical.ru.md">Техническое (RU)</a></p>
 
-<p align="center"><code>1.9.0-beta</code></p>
+<p align="center"><code>1.10.0-beta</code></p>
 
 <!-- WHATS-NEW:START -->
-> **What's new in 1.9.0-beta** — [full changelog](CHANGELOG.md)
-> - **Static SOCKS5 exit per user.** Select a proxy in the user's edit form. It carries IPv4 traffic from the user's devices that other nodes forward to the selected exit server.
+> **What's new in 1.10.0-beta** — [full changelog](CHANGELOG.md)
+> - **AmneziaWG 3.1 by default.** New tunnels use 3.1 on compatible nodes. Updated defaults include header protection, random trailers and an MTU of 1280.
 <!-- WHATS-NEW:END -->
 
 ---
@@ -63,18 +63,17 @@ subscription and no one else sitting in the middle of your traffic.
 - **Panel here or apart.** Run the panel on the same server as a VPN node, or on a separate box that only manages your nodes — either works.
 - **Hard to block.** Uses **AmneziaWG** (a stealthier WireGuard) and can route traffic cleverly by
   destination, so it keeps working where plain VPNs get blocked.
-- **AmneziaWG 3.1 when you want it.** Each AmneziaWG interface runs 2.0, which every AmneziaWG app
-  understands, or 3.1, which adds header protection and random trailers. Pick it when you create the
-  interface and switch either way later: the panel first shows who the switch cuts off until they
+- **AmneziaWG 3.1 by default.** New interfaces use 3.1 on compatible nodes. You can choose 2.0 or plain
+  WireGuard when creating one. When you switch the AmneziaWG version, the panel first shows who will need to
   re-import, network gateways first, and refuses while a WINGS-N turn proxy points there. A 3.1 interface
   wears a blue badge. [Which apps connect ↓](#a-few-things-worth-knowing)
 - **Leave an AmneziaWG field out, and pick the mesh's protocol.** Type `-` in any AmneziaWG cell — an interface's
   or the defaults' — and that line is not written at all (a blank cell stays automatic); the servers need this
-  update to hold one. Links between your servers are AmneziaWG 2.0 by default, or 3.1 or plain WireGuard, for the
+  update to hold one. Links between your servers are AmneziaWG 3.1 by default, with 2.0 and plain WireGuard available for the
   whole fleet or for one link; a pair where one server cannot run 3.1 is linked at 2.0, and its server says why.
 - **Disguise the handshake.** On an AmneziaWG interface, *Edit interface* → *Advanced settings* has **Disguise as**:
   Off, a QUIC (HTTP/3) packet or a DNS query, drawn fresh each time you pick one, sent before every handshake in
-  place of the built-in set every install uses by default (one pick brings it back). Devices keep working when you
+  place of the current set. The built-in signatures are available as a preset. Devices keep working when you
   change it — each side sends its own — and pick up the new disguise when they next re-import. The panel shows the
   size and monthly cost of what it sends, and refuses a line some app could not read.
 - **Filter out the junk.** Block ads, trackers, malware, adult content, gambling and more — per server, from

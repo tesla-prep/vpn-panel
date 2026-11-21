@@ -895,8 +895,8 @@ export const STR = {
   "AmneziaWG obfuscation": "Обфускация AmneziaWG",
   "settings|customised": "изменено",
   "settings|built-in": "встроенная",
-  "Given to every new AmneziaWG interface. Leave a cell blank to keep what the node does today — S and H are rolled fresh for each interface, so two interfaces never look alike. WireGuard interfaces ignore all of it.":
-    "Выдаётся каждому новому интерфейсу AmneziaWG. Оставьте поле пустым, чтобы всё осталось как сейчас: S и H нода заново разыгрывает для каждого интерфейса, поэтому два интерфейса никогда не выглядят одинаково. Интерфейсы WireGuard всё это игнорируют.",
+  "Defaults for new AmneziaWG interfaces. Leave a cell blank to use the selected version's generated value.":
+    "Значения для новых интерфейсов AmneziaWG. Пустое поле заполняется генератором выбранной версии.",
   "{i} in {c} serves {s}, which overlaps {o} already on this node. In its own container that is fine — each has its own network namespace — but taking it over moves it here, where one subnet cannot be served twice. Take over only one of them, or renumber the other first. Nothing was changed.":
     "{i} в {c} обслуживает {s}, а эта подсеть пересекается с {o}, которая уже есть на этой ноде. В своём контейнере это нормально — у каждого своё сетевое пространство имён, — но перенос переносит интерфейс сюда, где одну подсеть нельзя обслуживать дважды. Перенесите только один из них или сначала смените адресацию у другого. Ничего не изменено.",
   "{i} in {c} is {p}, and this node does not have the {p} tools ({t} and {t}-quick) to stand it up. Install them, then take it over again — {c} was not touched and is still serving.":
@@ -7261,7 +7261,7 @@ export const STR = {
     "Каким создаются новые линки. У отдельного линка могут быть свои тип и параметры AWG — на его карточке в «Связях ноды» на странице ноды. Чтобы перевести существующие линки ноды на этот тип, пересоздайте их.",
   "Default mesh AWG params": "Параметры AWG меша по умолчанию",
   "The AmneziaWG 3.1 values set here are kept for AWG 3.1 links — select AWG 3.1 to see them.": "Заданные здесь значения AmneziaWG 3.1 сохраняются для линков AWG 3.1 — выберите AWG 3.1, чтобы их увидеть.",
-  "S and H are drawn fresh; the 3.1 fields take what they inherit (the values shown in them), whose ranges the protocol randomises on its own.": "S и H выбираются заново; поля 3.1 получают то, что наследуют (значения, показанные в них), — их диапазоны протокол и так перебирает случайно.",
+  "S1–S4 share one random value, H1–H4 are 1–4, and the 3.1 fields use their inherited defaults.": "Для S1–S4 генерируется одно общее значение, H1–H4 равны 1–4, а остальные поля 3.1 используют унаследованные значения.",
   "Obfuscation for new AmneziaWG mesh links, unless a link sets its own on its card. Blank = auto (a fresh set per link).":
     "Маскировка для новых меш-линков AmneziaWG, если линк не задаёт свою на своей карточке. Пусто — авто (свой набор на каждый линк).",
   "val|per link": "свой у каждого",
@@ -7425,7 +7425,7 @@ export const STR = {
   "Each interface gets a key of its own — one key shared by every interface would protect nothing.": "У каждого интерфейса свой ключ — один ключ на все интерфейсы ничего бы не защищал.",
   "On for every AmneziaWG 3.1 interface the panel sets up.": "Включено у каждого интерфейса AmneziaWG 3.1, который настраивает панель.",
   "Changes only through the version switch — every device has to re-import after it.": "Меняется только переключением версии — после него каждому устройству нужно заново импортировать конфиг.",
-  "Given to an interface when it is created on 3.1 or switched to it; one already on 3.1 keeps its own. A blank cell is Amnezia's default.": "Их получает интерфейс, который создают на 3.1 или переводят на 3.1; интерфейс, уже работающий на 3.1, сохраняет свои. Пустая ячейка — значение Amnezia по умолчанию.",
+  "Used when an interface is created on 3.1 or switched to it. Blank cells use the built-in values shown here.": "Используются при создании интерфейса на 3.1 или при переключении на эту версию. Пустые поля берут показанные значения по умолчанию.",
   // Per-person rules (ROUTING-PEERS-MESH-PLAN §7.1–7.2, §7.4): a rule for chosen people, groups and devices
   "Rule settings": "Настройки правила",
   "Leaves by": "Выход через",

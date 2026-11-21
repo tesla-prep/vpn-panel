@@ -1,10 +1,10 @@
 <p align="center"><a href="README.md">English</a> · <a href="README.ru.md">Русский</a> · <b>Technical (EN)</b> · <a href="README.technical.ru.md">Техническое (RU)</a></p>
 
-<p align="center"><code>1.9.0-beta</code></p>
+<p align="center"><code>1.10.0-beta</code></p>
 
 <!-- WHATS-NEW:START -->
-> **What's new in 1.9.0-beta** — [full changelog](CHANGELOG.md)
-> - **Static SOCKS5 exit per user.** Select a proxy in the user's edit form. It carries IPv4 traffic from the user's devices that other nodes forward to the selected exit server.
+> **What's new in 1.10.0-beta** — [full changelog](CHANGELOG.md)
+> - **AmneziaWG 3.1 by default.** New tunnels use 3.1 on compatible nodes, with header protection, random trailers and an MTU of 1280.
 <!-- WHATS-NEW:END -->
 
 ---
@@ -344,7 +344,7 @@ Configure via `.env`:
 
 **Networking** — the installer puts the node on **`network_mode: host`** by default (`NODE_NET=host`), so every interface UDP port — **including interfaces you later create from the panel** — is reachable with no per-port mapping, and throughput is better (no `docker-proxy`). On a `master` the node reaches the co-located panel over loopback. Choose **`bridge`** to isolate the node's network namespace instead; then each interface's `ListenPort` must be **published** in `docker-compose.yml` (the panel flags this and prints the exact line when you create an interface on a bridge node). The node reports its mode to the panel so the guidance only shows where it's needed.
 
-**Two images** (pulled prebuilt from GHCR by default; `--build` builds them locally). `swg-panel` is pure Python + the bundled `acme.sh`. `swg-node` carries the userspace **`amneziawg-go`** datapath + `awg` tools (a container can't load the host kernel module) and needs `NET_ADMIN` + `/dev/net/tun`. It comes up with **no interface by default** — you add them from the panel (Interfaces → Load new interface). Set `NODE_IFACE` for one bootstrap interface (AmneziaWG 2.0; `NODE_PLAIN_WG=yes` for plain WG), `NODE_IFACES` for several (`name:port:addr[:proto[:endpoint]],…`), or mount your own confs under `/etc/swg-node/*.conf`. Panel-created interfaces persist across `up -d` (the conf dir is a volume). Masquerade is automatic. For best throughput, prefer a **bare-metal** node with the kernel module. With turn-proxy management enabled, `swg-noded` runs each proxy as a sibling `swg-turn-*` container (host network, `--restart unless-stopped`) over the mounted Docker socket — editing one just recreates the container, no host systemd.
+**Two images** (pulled prebuilt from GHCR by default; `--build` builds them locally). `swg-panel` is pure Python + the bundled `acme.sh`. `swg-node` carries the userspace **`amneziawg-go`** datapath + `awg` tools (a container can't load the host kernel module) and needs `NET_ADMIN` + `/dev/net/tun`. It comes up with **no interface by default** — you add them from the panel (Interfaces → Load new interface). Set `NODE_IFACE` for one bootstrap interface (AmneziaWG 3.1 on compatible hosts, or 2.0 on older hosts. Set `NODE_PLAIN_WG=yes` for plain WG), `NODE_IFACES` for several (`name:port:addr[:proto[:endpoint]],…`), or mount your own confs under `/etc/swg-node/*.conf`. Panel-created interfaces persist across `up -d` (the conf dir is a volume). Masquerade is automatic. For best throughput, prefer a **bare-metal** node with the kernel module. With turn-proxy management enabled, `swg-noded` runs each proxy as a sibling `swg-turn-*` container (host network, `--restart unless-stopped`) over the mounted Docker socket — editing one just recreates the container, no host systemd.
 
 Prebuilt images: `ghcr.io/sanityprotocol/swg-panel` and `ghcr.io/sanityprotocol/swg-node`.
 

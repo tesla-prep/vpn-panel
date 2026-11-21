@@ -36,8 +36,8 @@ PLANTS = {
                 '                        "awg31_no": None,\n', ["[1]", "[3]", "[4]"]),
     "us": ('                        **({"awg31_no_us": {i: awg_gen_refusal(snap, c.get("name", nid), i) for i in _awg_datapath(snap)["userspace"]}}\n',
            '                        **({"awg31_no_us": {}}\n', ["[4]"]),
-    "store20": ('            if _ag == "3.1":\n                cur["interface_defaults"]["awg_gen"] = "3.1"\n',
-                '            if _ag:\n                cur["interface_defaults"]["awg_gen"] = _ag\n', ["[2]"]),
+    "store20": ('            if _ag in ("2.0", "3.1"):\n                cur["interface_defaults"]["awg_gen"] = _ag\n',
+                '            if _ag == "3.1":\n                cur["interface_defaults"]["awg_gen"] = _ag\n', ["[2]"]),
     "keep": ('            _ag = idf.get("awg_gen") if idf.get("awg_gen") in ("2.0", "3.1") else (cur.get("interface_defaults") or {}).get("awg_gen")\n',
              '            _ag = idf.get("awg_gen")\n', ["[2]"]),
     "fragile": ('    return isinstance(_awg_datapath(snap).get("gen"), dict)\n',
@@ -120,12 +120,20 @@ try:
         check("%s: the create refuses with the same sentence (%d)" % (n, c), c == 400 and isinstance(v, dict)
               and r.get("error_key") == v.get("error_key") and r.get("error_vars") == v.get("error_vars"), r)
 
-    SECTION[0] = "[2]"; print("[2] interface_defaults.awg_gen — the create form's preset, stored only as 3.1")
+    SECTION[0] = "[2]"; print("[2] interface and mesh defaults to 3.1 with an explicit 2.0 option")
     PS = os.path.join(state, "panel-settings.json")
     idf = lambda: (json.load(open(PS)) if os.path.exists(PS) else {}).get("interface_defaults") or {}
     base = {"dns": ["1.1.1.1"], "mtu": 1280, "keepalive": 25, "awg_params": {}, "reach": "user"}
+    initial = ((req("/api/state")[1].get("data") or {}).get("panel_settings") or {})
+    check("the state reports 3.1 for new interfaces and mesh links by default",
+          initial.get("mesh_awg_gen") == "3.1" and initial.get("interface_defaults", {}).get("awg_gen") == "3.1")
+    c, r = req("/api/iface/create", {"node": "m31", "iface": "awg31def", "subnet": "10.99.31.0/24", "listen_port": 51891})
+    created = json.load(open(NODES))["m31"].get("create", {}).get("awg31def", {}).get("awg_params", {})
+    check("creating via the API without a protocol version uses 3.1", c == 200
+          and len(created.get("HeaderProtectionKey", "")) == 44 and created.get("ContentPaddingAddition") == "2-10",
+          r if c != 200 else None)
     req("/api/panel/settings", {"interface_defaults": {**base, "awg_gen": "2.0"}})
-    check("a 2.0 save stores no key (2.0 is its absence)", os.path.exists(PS) and "awg_gen" not in idf(), idf())
+    check("a 2.0 save stores the explicit version", idf().get("awg_gen") == "2.0", idf())
     req("/api/panel/settings", {"interface_defaults": {**base, "awg_gen": "3.1"}})
     check("a 3.1 save stores it", idf().get("awg_gen") == "3.1", idf())
     req("/api/panel/settings", {"interface_defaults": dict(base)})
@@ -136,7 +144,7 @@ try:
     req("/api/panel/settings", {"interface_defaults": {**base, "awg_gen": "4.0"}})
     check("an unknown value is no value — the stored one stays", idf().get("awg_gen") == "3.1", idf())
     req("/api/panel/settings", {"interface_defaults": {**base, "awg_gen": "2.0"}})
-    check("back to 2.0 removes it", "awg_gen" not in idf(), idf())
+    check("switching back to 2.0 persists it", idf().get("awg_gen") == "2.0", idf())
 
     SECTION[0] = "[3]"; print("[3] a malformed report never fails the poll")
     for n, dp in (("bad", "not-a-dict"), ("bad2", {"awg": {"gen": {"module": ["3.1"], "tools": 31}}})):
@@ -202,7 +210,7 @@ try:
     c, r = req("/api/panel/settings", {"interface_defaults": {**base, "awg3_params": {"KeepaliveTimeout": "9-x"}}})
     check("a value that is not a number or a range is refused (%d)" % c, c == 400 and "number or a range" in str(r.get("error_key")), r)
     b31 = (((req("/api/state")[1].get("data") or {}).get("panel_settings") or {}).get("awg31_builtin")) or {}
-    check("/api/state serves the built-in set the blank cells stand for", b31.get("ContentPaddingAddition") == "10-100"
+    check("/api/state serves the built-in set the blank cells stand for", b31.get("ContentPaddingAddition") == "2-10"
           and b31.get("MaxHandshakeAttempts") == "15-20", b31)
     rec = lambda i: ((json.load(open(NODES)).get("m31") or {}).get("ifaces") or {}).get(i, {}).get("awg_params") or {}
     c, r = req("/api/iface/create", {"node": "m31", "iface": "awg9", "protocol": "awg", "subnet": "10.99.9.0/24", "listen_port": 51899, "awg_gen": "3.1"})

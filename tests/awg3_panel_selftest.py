@@ -48,20 +48,20 @@ PLANTS = {   # name: (section it must redden, anchor, replacement)
                     "    on_fallback = False\n"),
     "old-node": ("[10]", "            if not awg_gen_reported((deps.get(\"node_snaps\") or {}).get(nid)):\n                return 400,",
                  "            if False:\n                return 400,"),
-    "old-node-create": ("[10]", "        if any(k in _awgput for k in AWG3_FIELDS) and not awg_gen_reported((deps.get(\"node_snaps\") or {}).get(nid)):\n",
+    "old-node-create": ("[10]", "        if any(k in _awgput for k in AWG3_FIELDS) and not awg_gen_reported(_snap):\n",
                         "        if False:\n"),
     "old-node-recreate": ("[10]", "        if any(k in (req.get(\"awg_params\") or {}) for k in AWG3_FIELDS) and not awg_gen_reported(snap):\n",
                           "        if False:\n"),
     "cookies": ("[11]", "if k in AWG_FIELDS and k != \"DisableCookies\" and k not in omit and v is not None",
                 "if k in AWG_FIELDS and k not in omit and v is not None"),   # `omit`: 94ba204
     "zero": ("[12]", "            if out[k] == \"0\":\n                out.pop(k)", "            if False:\n                out.pop(k)"),
-    "redraw": ("[3]", "    if any(not d.get(k, \"\").isdigit() or int(d[k]) < 12 for k in _ss):\n",
+    "redraw": ("[3]", "    if any(not d.get(k, \"\").isdigit() or int(d[k]) < AWG31_MIN_S for k in _ss):\n",
                "    if False:\n"),
     "s12": ("[4]", "        if low:\n            return None, perr(\"{v1} must be 12 or more while header protection is on\", v1=\", \".join(low))\n",
             ""),
     "timing": ("[5]", "        if tot > lo:\n", "        if False:\n"),
-    "hpk-once": ("[6]", "    d.setdefault(\"HeaderProtectionKey\", base64.b64encode(os.urandom(32)).decode())\n",
-                 "    d[\"HeaderProtectionKey\"] = base64.b64encode(os.urandom(32)).decode()\n"),
+    "hpk-once": ("[6]", "    if \"HeaderProtectionKey\" not in omit and \"HeaderProtectionKey\" not in d:\n",
+                 "    if \"HeaderProtectionKey\" not in omit:\n"),
     "full": ("[7]", "    for k, v in {**AWG31_SET, **{k: v for k, v in (defaults or {}).items() if k in _AWG3_RANGED}}.items():\n        if k not in omit:\n            d.setdefault(k, v)\n",
              "    d = {k: v for k, v in d.items() if k in AWG3_FIELDS}\n    for k, v in AWG31_SET.items():\n        d.setdefault(k, v)\n"),
     "presence": ("[8]", "                elif not extra and all(str(ra.get(k)) == str(want[k]) for k in want):\n",
@@ -285,8 +285,8 @@ try:
     code, r = update("n31", "awg7", awg_gen="3.1")
     a = ov("n31", "awg7").get("awg_params") or {}
     check("switch accepted", code == 200, (code, r))
-    check("the record holds every 2.0 key and the 3.1 set", all(k in a for k in list(BASE20) + list(SET31)),
-          sorted(set(BASE20) | set(SET31) - set(a)))
+    required = {k for k in BASE20 if not k.startswith("I")} | set(SET31)
+    check("the record holds the base parameters and the 3.1 set", required <= set(a), sorted(required - set(a)))
     check("…the operator's Jc is kept", a.get("Jc") == "6", a.get("Jc"))
     rr = P.iface_restore_req({**ov("n31", "awg7"), "_lastcfg": {"subnet": "10.60.7.0/24"}}) or {}
     ra = rr.get("awg_params") or {}
@@ -299,10 +299,19 @@ try:
     cr = ((nodes()["n31"].get("create") or {}).get("awg7c") or {}).get("awg_params") or {}
     rec = ov("n31", "awg7c").get("awg_params") or {}
     check("3.1 create accepted", code == 200, (code, r))
-    check("…the create request carries the full dict, and the record is the same dict",
-          all(k in cr for k in list(BASE20) + list(SET31)) and cr == rec, sorted(set(BASE20) | set(SET31) - set(cr)))
+    check("…the create request carries the full dict with no default signatures, and the record is the same dict",
+          required <= set(cr) and not any(k.startswith("I") for k in cr) and cr == rec, sorted(required - set(cr)))
     check("…the operator's partial default (Jc 7) is in it", cr.get("Jc") == "7", cr.get("Jc"))
     check("…S1–S4 ≥ 12 and HPK a 32-byte key", s_ok(cr) and len(__import__("base64").b64decode(cr.get("HeaderProtectionKey", ""))) == 32, cr)
+    agent = os.path.join(ROOT, "swg-agent")
+    raw = subprocess.check_output([sys.executable, agent, "--awg-params", "3.1"], text=True)
+    boot = dict(line.split(" = ", 1) for line in raw.splitlines())
+    check("the installer generator uses the panel's 3.1 fields and values", set(boot) == set(cr)
+          and all(boot.get(k) == v for k, v in P.AWG31_SET.items())
+          and all(boot[f"S{i}"] == boot["S1"] and boot[f"H{i}"] == str(i) for i in range(1, 5))
+          and 12 <= int(boot["S1"]) <= 20 and 4 <= int(boot["Jc"]) <= 6
+          and len(__import__("base64").b64decode(boot["HeaderProtectionKey"])) == 32
+          and boot["HeaderProtectionKey"] != cr.get("HeaderProtectionKey"))
 
     SECTION[0] = "[8]"
     print("\n[8] synced means the whole generation matches")

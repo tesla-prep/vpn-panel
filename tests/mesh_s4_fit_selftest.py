@@ -42,7 +42,7 @@ if "--perturb" in sys.argv:          # the tree before the fix: no room rule at 
 
 TMP = tempfile.mkdtemp(prefix="s4fit.")
 def deps(mtu, panel_mesh_awg=None):
-    return {"fleet": {"mesh_mtu": mtu}, "panel_settings": {"mesh_awg": panel_mesh_awg or {}},
+    return {"fleet": {"mesh_mtu": mtu}, "panel_settings": {"mesh_awg_gen": "2.0", "mesh_awg": panel_mesh_awg or {}},
             "roster_path": os.path.join(TMP, "users.json")}
 
 def s4s(nodes):
@@ -84,11 +84,11 @@ def events():
 
 print("[mesh S4] the room")
 check("MTU 1420 leaves 20", P.mesh_s4_room(1420) == 20, P.mesh_s4_room(1420))
-check("MTU 1320 (the default mesh_mtu) leaves 120", P.mesh_s4_room(1320) == 120, P.mesh_s4_room(1320))
+check("the default MTU 1280 leaves 160", P.mesh_cfg({})["mtu"] == 1280 and P.mesh_s4_room(1280) == 160)
 check("MTU 1440 and above leave 0", P.mesh_s4_room(1440) == 0 and P.mesh_s4_room(1500) == 0)
 check("S4 47 does not fit MTU 1420 (swgt's swg_0900e8bd)", not P.mesh_s4_fits(47, 1420))
 check("S4 '20' fits MTU 1420 (strings too — records hold both)", P.mesh_s4_fits("20", 1420))
-check("S4 100 fits the default MTU 1320", P.mesh_s4_fits(100, 1320))
+check("S4 100 fits MTU 1320", P.mesh_s4_fits(100, 1320))
 check("nothing to judge ⇒ fits (never refit on a guess)",
       P.mesh_s4_fits(None, 1420) and P.mesh_s4_fits("x", 1420) and P.mesh_s4_fits(47, "x"))
 d = [P.mesh_s4_draw(1420) for _ in range(2000)]
@@ -118,6 +118,27 @@ check("a link's own params with S4 50 still yield a fitting LINK at MTU 1420", i
 check("…and the operator's stored params are not rewritten", nodes["a"]["mesh_link"] == {"b": {"awg": {"S4": "50", "S1": "60"}}},
       nodes["a"].get("mesh_link"))
 
+print("[mesh S4] the default AWG 3.1 profile")
+nodes = {nid: {"name": nid} for nid in ("a", "b", "c")}
+default_deps = dict(deps(1280), fleet={}, panel_settings={})
+ready = {"datapath": {"awg": {"gen": {"module": "3.1", "tools": "3.1"}, "exact": 1}}}
+snaps = {"a": ready, "b": ready, "c": {}}
+P.reconcile_mesh(nodes, {"a": ready}, default_deps)
+check("the default waits for both reports", not any(n.get("links") for n in nodes.values()))
+P.reconcile_mesh(nodes, snaps, default_deps)
+link31 = nodes["a"]["links"]["b"]["iface"]
+ab, ba = (nodes[n]["ifaces"][link31] for n in ("a", "b"))
+profile = ab["awg_params"]
+sizes = {int(profile[f"S{i}"]) for i in range(1, 5)}
+check("compatible ends use the same whole 3.1 set and MTU 1280", ab["awg_exact"] and ba["awg_exact"]
+      and ba["awg_params"] == profile and ab["mtu"] == ba["mtu"] == 1280)
+check("the default uses one S length, fixed H values and conservative padding", len(sizes) == 1 and 12 <= min(sizes) <= 20
+      and all(profile[f"H{i}"] == str(i) for i in range(1, 5)) and profile["ContentPaddingAddition"] == "2-10"
+      and profile["RandomTrailers"] == "1" and "DisableCookies" not in profile and not any(k.startswith("I") for k in profile))
+check("a reported legacy node falls back to 2.0", P.mesh_link_gen(nodes["a"], nodes["a"]["links"]["c"]) == "2.0")
+P.reconcile_mesh(nodes, dict(snaps, c=ready), default_deps)
+check("a legacy link keeps its version when both ends later support 3.1", P.mesh_link_gen(nodes["a"], nodes["a"]["links"]["c"]) == "2.0")
+
 print("[mesh S4] existing links are refitted — the swgt fleet (mesh_mtu 1420)")
 swgt = {("msk", "nixos"): 93, ("msk", "svo"): 47, ("hel", "msk"): 31, ("nixos", "svo"): 44, ("hel", "nixos"): 55,
         ("hel", "svo"): 67}
@@ -135,7 +156,7 @@ again = P.reconcile_mesh(nodes, snaps_of(nodes), deps(1420))
 check("a second pass changes nothing (runs on every sync)", again is False and s4s(nodes) == after, (again, s4s(nodes)))
 ctl = fleet(swgt, mtu=1320)
 before = s4s(ctl)
-check("control: the same fleet at the default MTU 1320 is left alone",
+check("control: the same fleet at MTU 1320 is left alone",
       P.reconcile_mesh(ctl, snaps_of(ctl), deps(1320)) is False and s4s(ctl) == before, s4s(ctl))
 half = fleet({("a", "b"): 93})
 half["b"]["ifaces"][half["b"]["links"]["a"]["iface"]]["awg_params"] = {}

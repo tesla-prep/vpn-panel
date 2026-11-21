@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-test: the mesh link type — AmneziaWG 2.0 (default), AmneziaWG 3.1, plain WireGuard (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md
+"""Self-test: the mesh link type — AmneziaWG 3.1 (default), AmneziaWG 2.0, plain WireGuard (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md
 Part B).
 
 What is pinned here, and why each matters:
@@ -58,9 +58,9 @@ TMP = tempfile.mkdtemp(prefix="meshgen.")
 _SRV = SERVER
 if "--perturb-partial" in sys.argv:   # the tree before the partial-template fix: the elif never runs
     _src = open(SERVER).read()
-    _anchor = "    elif _tv and any(k not in _tv for k in AWG_FIELDS if k not in AWG3_FIELDS):\n"
+    _anchor = '{**gen_awg_params("2.0"), **_tv}.items() if not (_exact and k in _tom)'
     assert _src.count(_anchor) == 1, "plant anchor missing — this run would measure nothing"
-    _SRV = os.path.join(TMP, "swg-panel-server.perturbed"); open(_SRV, "w").write(_src.replace(_anchor, "    elif False:\n"))
+    _SRV = os.path.join(TMP, "swg-panel-server.perturbed"); open(_SRV, "w").write(_src.replace(_anchor, "_tv.items() if not (_exact and k in _tom)"))
     print("(perturbed: a partial mesh template is not filled — [8] must FAIL)")
 P = load(_SRV, "swgpanel_new")
 _base_src = os.path.join(TMP, "swg-panel-server.base")
@@ -116,7 +116,8 @@ for M in (P, B):
 
 
 def deps(mtu=1320, panel=None):
-    return {"fleet": {"mesh_mtu": mtu}, "panel_settings": dict(panel or {}), "roster_path": os.path.join(TMP, "users.json")}
+    return {"fleet": {"mesh_mtu": mtu}, "panel_settings": {"mesh_awg_gen": "2.0", **(panel or {})},
+            "roster_path": os.path.join(TMP, "users.json")}
 
 
 def gen_snap(module="3.1", tools="3.1"):
@@ -152,10 +153,10 @@ def run(M, nodes, d, snaps=None, seed=1):
     return nodes
 
 
-# ── [0] byte-identical with no type set ─────────────────────────────────────────────────────────────────────────────────
-print("[0] no type set ⇒ the same nodes as the tree before (%s)" % BASE)
+# ── [0] byte-identical when 2.0 is selected ────────────────────────────────────────────────────────────────────────────
+print("[0] explicit 2.0 ⇒ the same nodes as the tree before (%s)" % BASE)
 same, tried = True, 0
-FULLT = {k: str(v) for k, v in P.gen_awg_params().items()}                          # a full template ("Generate a set")
+FULLT = {k: str(v) for k, v in P.gen_awg_params("2.0").items()}                     # a full 2.0 template
 for n in (2, 3, 4, 6):
     for mtu in (1320, 1420):
         for mawg in (None, dict(FULLT, S4="90")):
@@ -181,15 +182,15 @@ check("plant: a PARTIAL node template is the one deliberate difference (the fix 
       json.dumps(_pl[0], sort_keys=True) != json.dumps(_pl[1], sort_keys=True))
 _r = run(P, fleet(4), deps())
 check("…and no node has a reasons list", all(P.mesh_gen_reasons(deps(), _r, {}, nid) == [] for nid in _r))
-check("…and the reasons are not even computed for it (mesh_types_in_play is false)", not P.mesh_types_in_play(deps(), _r))
+check("…and a saved type is considered by the reason checks", P.mesh_types_in_play(deps(), _r))
 check("…but are once anything is set: a panel type, a link's own type, a \"-\" in either template",
       P.mesh_types_in_play(deps(1320, {"mesh_awg_gen": "wg"}), _r)
       and P.mesh_types_in_play(deps(1320, {"mesh_awg": {"I1": "-"}}), _r)
       and P.mesh_types_in_play(deps(), {**_r, "zz": {"mesh_link": {"zy": {"type": "3.1"}}}})
       and P.mesh_types_in_play(deps(), {**_r, "zz": {"mesh_link": {"zy": {"awg": {"S3": "-"}}}}}))
 check("…and a malformed panel mesh_awg (a list) is no setting, never an exception in the poll",
-      P.mesh_types_in_play(deps(1320, {"mesh_awg": ["-"]}), _r) is False)
-check("…and the 2.0 default is 2.0 (control: a 2.0 link reads as one)",
+      P.mesh_types_in_play(dict(deps(), panel_settings={"mesh_awg": ["-"]}), _r) is False)
+check("…and a 2.0 link reads as one",
       all(P.mesh_link_gen(_r[a], la) == "2.0" for a, b, la, *_ in links(_r)))
 
 # ── [1] wg ───────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -310,8 +311,8 @@ check("n00↔n02 is WG (its own choice); n00↔n01 and n01↔n02 take the fleet'
 check("mesh_link_override reads the pair from either end; mesh_gen_for falls back to the fleet's default",
       (P.mesh_link_override(t, "n02", "n00"), P.mesh_link_override(t, "n00", "n02"), P.mesh_gen_for(d, t, "n01", "n02"),
        P.mesh_gen_for(deps(), t, "n01", "n02")) == ("wg", "wg", "3.1", "2.0"))
-check("mesh_gen_of is the fleet's default only", (P.mesh_gen_of(d), P.mesh_gen_of(deps()),
-      P.mesh_gen_of(deps(1320, {"mesh_awg_gen": "bogus"}))) == ("3.1", "2.0", "2.0"))
+check("mesh_gen_of prefers a saved type and otherwise defaults to 3.1", (P.mesh_gen_of(d), P.mesh_gen_of(deps()),
+      P.mesh_gen_of({}), P.mesh_gen_of(deps(1320, {"mesh_awg_gen": "bogus"}))) == ("3.1", "2.0", "3.1", "3.1"))
 check("no reason on any card: every link is what it was asked to be", all(P.mesh_gen_reasons(d, t, sn, x) == [] for x in t),
       {x: P.mesh_gen_reasons(d, t, sn, x) for x in t})
 P.mesh_relink_pair(t, "n02", "n00")

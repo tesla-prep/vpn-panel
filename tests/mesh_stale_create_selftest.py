@@ -38,7 +38,7 @@ try:
     loader.exec_module(P)
 except SystemExit:
     pass
-deps = {"fleet": {"mesh_mtu": 1320}, "panel_settings": {}, "roster_path": os.path.join(TMPD, "users.json")}
+deps = {"fleet": {"mesh_mtu": 1320}, "panel_settings": {"mesh_awg_gen": "2.0"}, "roster_path": os.path.join(TMPD, "users.json")}
 params = {"Jc": "4", "Jmin": "40", "Jmax": "70", "S1": "97", "S2": "70", "S3": "72", "S4": "31",
           "H1": "1-16", "H2": "100-115", "H3": "200-215", "H4": "300-315"}
 def link(nodes, a, b, name, i):

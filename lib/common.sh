@@ -2228,6 +2228,11 @@ awg_dkms_register_dir(){ # <module src dir> — register upstream's module with 
     && run dkms build -m amneziawg -v "$ver" -k "$(uname -r)" && run dkms install -m amneziawg -v "$ver" -k "$(uname -r)" || return 1
   awg_dkms_build_all_kernels
 }
+awg_initial_obfuscation(){ # <source-dir> — render the initial profile after the tools and datapath have been installed
+  local gen=3.1
+  if ! $DRYRUN; then gen="$(python3 "$1/swg-noded" --initial-awg-generation)" || return 1; fi
+  python3 "$1/swg-agent" --awg-params "$gen"
+}
 awg_tools_drive_3x(){ # 0 = the `awg` on PATH can configure an AmneziaWG 3.x kernel module — the only kind we build from source
   # Every module below is upstream master: AmneziaWG 3.x since 2026-07-31. Tools older than 3.0 cannot configure one AT ALL
   # (H1–H4 and a peer's keepalive changed type), so `awg setconf` answers "Invalid argument" and every awg interface fails to

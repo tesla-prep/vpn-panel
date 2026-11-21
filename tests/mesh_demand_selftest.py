@@ -109,7 +109,7 @@ ROSTER = os.path.join(TMP, "users.json")
 EVP = P.events_path(ROSTER)
 
 def deps(mode=None):
-    return {"fleet": {}, "roster_path": ROSTER, "panel_settings": ({"mesh_mode": mode} if mode else {})}
+    return {"fleet": {}, "roster_path": ROSTER, "panel_settings": {"mesh_awg_gen": "2.0", "mesh_mode": mode or "auto"}}
 
 def fleet(n):
     return {"n%02d" % i: {"id": "n%02d" % i, "name": "node%02d" % i, "ifaces": {}} for i in range(n)}

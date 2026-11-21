@@ -13557,7 +13557,7 @@ def panel_next_ip(snaps, roster, nodes, iface, node_store=None):
 def mesh_cfg(deps):
     f = deps.get("fleet") or {}
     r = (deps.get("panel_settings") or {}).get("reserved") or {}   # Panel settings override the fleet/defaults
-    return {"subnet": r.get("mesh_subnet") or f.get("mesh_subnet", "10.255.0.0/16"), "mtu": int(f.get("mesh_mtu", 1320)),
+    return {"subnet": r.get("mesh_subnet") or f.get("mesh_subnet", "10.255.0.0/16"), "mtu": int(f.get("mesh_mtu", 1280)),
             "keepalive": int(f.get("mesh_keepalive", 25)),
             "port_base": int(r.get("mesh_port_base") or f.get("mesh_port_base", 9999)),
             "port_span": int(r.get("port_span") or 100),
@@ -13786,10 +13786,19 @@ def _wdtt_alloc_raw_subnet(deps, nodes, nid, iface):
     return ""
 
 
-def gen_awg_params():
+DEFAULT_AWG_GEN = "3.1"
+AWG31_MIN_S = 12
+AWG31_MAX_S = 20
+
+
+def gen_awg_params(gen=DEFAULT_AWG_GEN, s_max=AWG31_MAX_S):
     """Panel-generated AmneziaWG obfuscation params (dict form). The panel owns each LINK's params and
     pushes the SAME dict to both ends, because AmneziaWG only handshakes when both peers share identical
     obfuscation — the node's own random per-iface params (swg-agent _awg_obfuscation) would differ."""
+    if gen == "3.1":
+        s = random.randint(AWG31_MIN_S, min(AWG31_MAX_S, s_max))
+        return {"Jc": random.randint(4, 6), "Jmin": 40, "Jmax": 70,
+                **{f"S{i}": s for i in range(1, 5)}, **{f"H{i}": i for i in range(1, 5)}}
     s1 = 15 + random.randint(0, 135); s2 = 15 + random.randint(0, 135)
     while s2 == s1 or s2 == s1 + 56:
         s2 = 15 + random.randint(0, 135)
@@ -13815,8 +13824,7 @@ def sanitize_awg_params(raw, gen3=False):
     """Keep only recognised AmneziaWG obfuscation fields with non-empty values, as strings. Empty → {}.
     The 3.x keys only with `gen3` — an interface's own record, and a pasted exit profile that carries a HeaderProtectionKey
     (parse_wg_profile: that profile is 3.1, and its server ignores a handshake without them). What else passes through here
-    stays 2.0: the panel-wide interface defaults (one HeaderProtectionKey on every interface would be no key at all) and
-    mesh_awg (mesh links stay 2.0, D-mesh)."""
+    uses its own template parser: the panel-wide interface and mesh defaults never store a shared HeaderProtectionKey."""
     if not isinstance(raw, dict):
         return {}
     out = {}
@@ -13985,10 +13993,9 @@ def awg_value_refusal(key, v):
     return None
 
 
-# The AmneziaWG 3.1 set an interface switched — or created — at 3.1 gets (D-scope, docs/AWG3-PLAN.md §6, §7.1): Amnezia's
-# own 3.1 server defaults minus DisableCookies, which removes the handshake-flood defence (§1.4). ContentPaddingAddition is
-# not optional: RandomTrailers without it pads every small packet ~5× (§2.4). The HeaderProtectionKey is born per interface.
-AWG31_SET = {"RandomTrailers": "1", "ContentPaddingAddition": "10-100", "RekeyAfterTime": "100-120", "RekeyTimeout": "3-7",
+# Built-in 3.1 defaults use Amnezia's timer ranges with small transport padding. With RandomTrailers alone, small
+# packets can grow to the largest size already seen on that peer. Cookie protection stays enabled by default.
+AWG31_SET = {"RandomTrailers": "1", "ContentPaddingAddition": "2-10", "RekeyAfterTime": "100-120", "RekeyTimeout": "3-7",
              "RejectAfterTime": "150-180", "KeepaliveTimeout": "5-15", "MaxHandshakeAttempts": "15-20"}
 _AWG3_RANGED = ("ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout",
                 "MaxHandshakeAttempts")
@@ -14095,7 +14102,7 @@ def mesh_awg3_refusal(deps, node):
 
 def mesh_awg3(deps, node):
     """(values, omitted) — the six AmneziaWG 3.1 fields an AmneziaWG 3.1 link anchored on `node` takes, FIELD BY FIELD: the node's
-    mesh template, else the panel's, else the interface 3.1 defaults (Settings → Interfaces), else Amnezia's set (awg3_full
+    mesh template, else the panel's, else the interface 3.1 defaults (Settings → Interfaces), else the built-in set (awg3_full
     fills that). The first layer that names a field decides it — a value, or "-" for no such line."""
     vals, om = {}, set()
     layers = [(node or {}).get("mesh_awg"), (deps.get("panel_settings") or {}).get("mesh_awg")]
@@ -14114,7 +14121,7 @@ def mesh_awg3(deps, node):
     return vals, frozenset(om)
 
 
-def awg3_full(base, reported=None, defaults=None, omit=()):
+def awg3_full(base, reported=None, defaults=None, omit=(), s_max=AWG31_MAX_S):
     """The FULL 3.1 dict for a switch or a 3.1 create (§7.1): what the interface has — the record over the node's report,
     over a fresh generator set for whatever neither holds (a create, or a switch while the node is away) — plus the 3.1
     set wherever it has none (the operator's `defaults`, awg3_defaults, over AWG31_SET), so switching twice changes nothing
@@ -14126,17 +14133,17 @@ def awg3_full(base, reported=None, defaults=None, omit=()):
     `omit` — keys set to none (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md A5): taken out of the merge and never filled from the set,
     the generator or the report. ⚠️ Round 9: without it the 3.1 switch of an interface with an omitted field put every
     omitted key back from the generator. An omitted S is not re-drawn either (R4 then refuses it beside a key)."""
-    d = {k: str(v).strip() for k, v in {**gen_awg_params(), **(reported or {}), **(base or {})}.items()
+    fresh = gen_awg_params("3.1", s_max)
+    d = {k: str(v).strip() for k, v in {**fresh, **(reported or {}), **(base or {})}.items()
          if k in AWG_FIELDS and k != "DisableCookies" and k not in omit and v is not None and str(v).strip() != ""}   # D-cookies: never by us
     for k, v in {**AWG31_SET, **{k: v for k, v in (defaults or {}).items() if k in _AWG3_RANGED}}.items():
         if k not in omit:
             d.setdefault(k, v)
-    if "HeaderProtectionKey" not in omit:
-        d.setdefault("HeaderProtectionKey", base64.b64encode(os.urandom(32)).decode())
+    if "HeaderProtectionKey" not in omit and "HeaderProtectionKey" not in d:
+        d["HeaderProtectionKey"] = base64.b64encode(os.urandom(32)).decode()
     _ss = [k for k in ("S1", "S2", "S3", "S4") if k not in omit]
-    if any(not d.get(k, "").isdigit() or int(d[k]) < 12 for k in _ss):
-        g = gen_awg_params()
-        d.update({k: str(g[k]) for k in _ss})
+    if any(not d.get(k, "").isdigit() or int(d[k]) < AWG31_MIN_S for k in _ss):
+        d.update({k: str(fresh[k]) for k in _ss})
     return d
 
 
@@ -14401,14 +14408,8 @@ def turn_awg3_target(deps, nodes, nid, fork, connect):
     return None
 
 
-def link_awg_params(deps):
-    """AWG params for a NEW mesh link: the panel-settings default if the operator set one, else a fresh set."""
-    pa = sanitize_awg_params(((deps.get("panel_settings") or {}).get("mesh_awg")))
-    return pa or gen_awg_params()
-
-
 # ── A mesh link's type: AmneziaWG 2.0 (the default), AmneziaWG 3.1, or plain WireGuard (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md
-# Part B) — and its AWG params. The fleet's defaults (`panel_settings.mesh_awg_gen`, stored only when not 2.0, and
+# Part B) — and its AWG params. The fleet's defaults (`panel_settings.mesh_awg_gen` and
 # `panel_settings.mesh_awg`; new links take them) and, for one pair, the PAIR's own choice: `nodes[x].mesh_link[y] =
 # {type, awg}`, x the pair's smaller id — its anchor. Kept outside the link records, which every rebuild replaces. Both are
 # properties of the pair: both ends of a link must speak one protocol with one set of values, so a per-node choice could
@@ -14422,9 +14423,9 @@ MESH_LINK_KEEP = ("relay", "dial_endpoint", "dial_src")
 
 
 def mesh_gen_of(deps):
-    """The fleet's default type for new links: the panel's choice, else "2.0" (mesh_gen_for decides one pair)."""
+    """The fleet's default type for new links, before the two nodes' capabilities are checked."""
     g = str((deps.get("panel_settings") or {}).get("mesh_awg_gen") or "")
-    return g if g in MESH_AWG_GENS else "2.0"
+    return g if g in MESH_AWG_GENS else DEFAULT_AWG_GEN
 
 
 def mesh_link_cfg(nodes, a, b):
@@ -14689,8 +14690,8 @@ def mesh_gen_reasons(deps, nodes, snaps, nid):
 # S4 is padding in front of EVERY data packet, so a full-size packet leaves as `mtu + 60 + S4` bytes (IPv4 20 + UDP 8 +
 # WireGuard data header 16 + auth tag 16, plus S4), and over a 1500-byte path anything larger goes out as two fragments.
 # Measured kernel ↔ kernel (.campaign/rigs/awg3-mesh-s4.sh, 2026-09-18): at MTU 1420, S4 = 47 and S4 = 100 fragmented every
-# full-size packet — 3.9 M fragments per 2.5 GB — and roughly halved throughput, while S4 ≤ 20 made none; at MTU 1320 (the
-# default mesh_mtu) no S4 up to 100 did. H, I, Jc and S1–S3 cost nothing measurable. Mesh links ONLY: a user interface's
+# full-size packet — 3.9 M fragments per 2.5 GB — and roughly halved throughput, while S4 ≤ 20 made none; at MTU 1320
+# no S4 up to 100 did. H, I, Jc and S1–S3 cost nothing measurable. Mesh links ONLY: a user interface's
 # S4 is baked into every client config already handed out, and user interfaces default to MTU 1280, where every S4 our
 # generators draw fits. IPv4 is assumed — a link dials node_public_ip unless an operator set an endpoint host.
 MESH_WIRE_OVERHEAD = 60
@@ -14720,6 +14721,15 @@ def mesh_s4_draw(mtu, floor=0):
     room = mesh_s4_room(mtu) or 0
     lo = max(floor, min(15, room))
     return random.randint(lo, max(lo, room))
+
+
+def awg_set_s4(awg, s4):
+    """Keep the padding lengths equal when fitting S4 of a profile that uses one shared length."""
+    fields = ("S1", "S2", "S3", "S4")
+    if awg.get("HeaderProtectionKey") and len({str(awg.get(k)) for k in fields}) == 1:
+        awg.update(dict.fromkeys(fields, s4))
+    else:
+        awg["S4"] = s4
 
 
 def _link_iface_name(node, link_id, prefix="swg_"):
@@ -14991,7 +15001,7 @@ def mesh_link_waits(deps, nodes, snaps, a, b):
     made at 2.0 (mesh_31_refusal refuses an end with no report) — and nothing rebuilds a link that works. Waiting costs
     nothing: an end that has never reported cannot bring a link up anyway, and its first sync stores its report before the
     reconcile that then makes the pair at the type in force. A pair that needs nothing from the ends (2.0 or WireGuard with
-    no "-" in its template, the default) is made at once, as before; an existing link is never touched."""
+    no "-" in its template) is made at once; an existing link is never touched."""
     if a in (snaps or {}) and b in (snaps or {}):
         return False
     return mesh_gen_for(deps, nodes, a, b) == "3.1" or bool(mesh_template(deps, mesh_link_layer(nodes, a, b))[1])
@@ -15008,44 +15018,29 @@ def _mesh_make_link(nodes, snaps, deps, a, b, mc, alloc=None, log=True):
     if sub is None:
         return False
     hosts = list(sub)                            # /31 → [.0, .1]
-    # the link's obfuscation = its own params if set on its sheet, else the panel default / a fresh set. Both ends share it
-    # (the handshake requires matching params); changing a link's params rebuilds that link.
-    _ly = mesh_link_layer(nodes, a, b)           # this link's own params, set on its sheet (plan §8 round 13)
-    psk = gen_psk(); awg = dict(sanitize_awg_params(_ly["mesh_awg"]) or link_awg_params(deps))
-    # A template with a field set to none (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md A4): the link's set is the generator under the
-    # template's values, without the omitted keys — WHOLE, `awg_exact` on both ends — where both ends can hold an omission.
-    # Otherwise the omitted keys keep the generator's values for this link (a mesh link never refuses), and the node card
-    # says so (mesh_gen_reasons). With no "-" in the template, today's line above is the whole story.
-    # …and its TYPE, the X end's choice like its obfuscation (mesh_gen_of). Plain WireGuard is a real `wg` device with no
-    # params — never an AmneziaWG one without them, which the agent would obfuscate on its own. AmneziaWG 3.1 only where
-    # both ends can run it and the MTU leaves header protection its S4 ≥ 12; otherwise this link is made at 2.0, and the
-    # node's mesh card says why (mesh_gen_reasons) — the operator decided a mixed pair falls back rather than refuses.
-    # A 3.1 link's six 3.1 fields come field by field from the mesh templates, then the interface 3.1 defaults (mesh_awg3).
+    # Both ends share one draw with the link and fleet templates layered on top. Older or mixed pairs fall back to 2.0.
+    psk = gen_psk()
     gen = mesh_gen_for(deps, nodes, a, b)
     _is31 = gen == "3.1" and mesh_31_refusal(deps, nodes, snaps, a, b, mc["mtu"]) is None
+    _ly = mesh_link_layer(nodes, a, b)
     _tv, _tom = mesh_template(deps, _ly)
     _v3, _om3 = mesh_awg3(deps, _ly) if _is31 else ({}, frozenset())
-    if _ly["mesh_awg"] and _tv and not _tom:
-        awg = dict(_tv)                          # the link's own fields over the fleet's, field by field (mesh_template)
-    _exact = bool(_tom or _om3) and all(awg_exact_reported((snaps or {}).get(x)) for x in (a, b))
-    if _tom:
-        awg = {k: str(v) for k, v in {**gen_awg_params(), **_tv}.items() if not (_exact and k in _tom)}
-    elif _tv and any(k not in _tv for k in AWG_FIELDS if k not in AWG3_FIELDS):
-        # A template that sets SOME fields (Jc alone, say) is not the link's whole set: the create carries no params, so each
-        # end's agent rolled its own S/H, and the sync pushed only the template's fields — the two ends never matched, and the
-        # push then rewrote both confs to just those fields, so after a restart the link came up with no S, H or I at all
-        # (repro .campaign/rigs/mesh-partial-template-repro.py, 2026-10-06). The rest comes from the generator, once, for both
-        # ends — what "Blank = auto" under the grid always promised. A full or an empty template never reaches this line.
-        awg = {k: str(v) for k, v in {**gen_awg_params(), **_tv}.items()}
-    if _is31:
-        awg = awg3_full(awg, None, _v3, omit=(_tom | _om3) if _exact else ())
-        _s4 = str(awg.get("S4") or "")
-        if not mesh_s4_fits(_s4, mc["mtu"]) or not _s4.isdigit() or int(_s4) < 12:
-            awg["S4"] = str(mesh_s4_draw(mc["mtu"], 12))
-    elif gen == "wg":
+    _exact = bool(_is31 or _tom) and all(awg_exact_reported((snaps or {}).get(x)) for x in (a, b))
+    if gen == "wg":
         awg = None
-    elif not mesh_s4_fits(awg.get("S4"), mc["mtu"]):   # the LINK is fitted; the operator's stored mesh_awg is never rewritten
-        awg["S4"] = mesh_s4_draw(mc["mtu"])
+    elif _is31:
+        awg = awg3_full(_tv, defaults=_v3, omit=(_tom | _om3) if _exact else (), s_max=mesh_s4_room(mc["mtu"]))
+        if not mesh_s4_fits(awg["S4"], mc["mtu"]):
+            awg_set_s4(awg, str(mesh_s4_draw(mc["mtu"], AWG31_MIN_S)))
+    else:
+        if all(k in _tv for k in AWG_FIELDS if k not in AWG3_FIELDS):
+            awg = dict(_tv)
+        elif _tv or _tom:
+            awg = {k: str(v) for k, v in {**gen_awg_params("2.0"), **_tv}.items() if not (_exact and k in _tom)}
+        else:
+            awg = gen_awg_params("2.0")
+        if not mesh_s4_fits(awg.get("S4"), mc["mtu"]):
+            awg["S4"] = mesh_s4_draw(mc["mtu"])
     for nid, peer in ((a, b), (b, a)):
         n = nodes[nid]
         nmc = node_mesh_cfg(deps, n)             # per-node prefix / port base
@@ -15299,7 +15294,7 @@ def reconcile_mesh(nodes, snaps, deps):
             old = "/".join(sorted({str(p.get("S4")) for p in ends}))
             s4 = mesh_s4_draw(mc["mtu"], _floor)
             for p in ends:
-                p["S4"] = s4
+                awg_set_s4(p, s4)
             ev_append(deps["roster_path"], "node", a, "Fitted mesh link padding to its MTU (live)",
                       n.get("name", a) + " ↔ " + nodes[b].get("name", b), f"S4 {old} → {s4} · MTU {mc['mtu']}")
             changed = True
@@ -18970,7 +18965,9 @@ def tz_zones(browser=""):
 # Panel settings (persisted to panel-settings.json; surfaced + edited via the Panel settings screen).
 # store_configs=None means "use the fleet.json default"; geo_epoch is bumped by the Refresh-geo button.
 PANEL_SETTINGS_DEFAULTS = {
-    "interface_defaults": {"dns": ["1.1.1.1"], "mtu": 1280, "keepalive": 25, "awg_params": {}, "reach": "user"},
+    "interface_defaults": {"dns": ["1.1.1.1"], "mtu": 1280, "keepalive": 25, "awg_params": {}, "reach": "user",
+                           "awg_gen": DEFAULT_AWG_GEN},
+    "mesh_awg_gen": DEFAULT_AWG_GEN,
     "mesh_awg": {},   # default AmneziaWG obfuscation for NEW mesh links ({} = auto-generate a fresh set per link)
     "mirrors": {"geo": "", "turn": ""},
     "store_configs": None,
@@ -20635,7 +20632,7 @@ def _dialin_generate(g, kept, eid, exits, known, ctx):
         port, node, awg, mtu = int(kept["listen_port"]), kept.get("address"), kept.get("awg") or {}, kept.get("mtu") or 1280
         router = "0.0.0.0"           # the server side's AllowedIPs is never read (trap 1): the router's own address is not needed
     else:
-        proto = str(g.get("proto") or "")
+        proto = str(g.get("proto") or ctx.get("default_proto") or "wg")
         if proto not in ("wg", "awg2", "awg3"):
             return "", "choose WireGuard, AmneziaWG 2.0 or AmneziaWG 3.1"
         others = [((known.get(str((x or {}).get("id") or "")) or {}).get("profile") or {}) for x in exits
@@ -20696,9 +20693,12 @@ def _dialin_generate(g, kept, eid, exits, known, ctx):
         # no cell that would let the operator fix it, and the exits save below would refuse the set over it
         _tv = {k: v for k, v in _tv.items() if not awg_value_refusal(k, v)}
         _tv, _tom = {**{k: v for k, v in _tv.items() if k not in _uom}, **_uv}, (_tom - set(_uv)) | _uom
-        awg = {} if proto == "wg" else \
-            {k: v for k, v in {**gen_awg_params(), **_tv}.items() if k not in _tom and k not in AWG3_FIELDS} if proto == "awg2" else \
-            awg3_full(_tv, defaults=ctx.get("awg3") or {}, omit=((frozenset(ctx.get("awg3_omit") or ()) - set(_uv)) | _tom))
+        awg = {}
+        if proto == "awg2":
+            awg = {k: v for k, v in {**gen_awg_params("2.0"), **_tv}.items() if k not in _tom and k not in AWG3_FIELDS}
+        elif proto == "awg3":
+            awg = awg3_full(_tv, defaults=ctx.get("awg3"), omit=(frozenset(ctx.get("awg3_omit") or ()) - set(_uv)) | _tom,
+                            s_max=max(AWG31_MIN_S, mesh_s4_room(mtu)))
         # A typed (or template) S1 or S2 beside a drawn partner may land on S2 = S1 + 56, which the rules below refuse — the
         # generator keeps only its own pair apart (about 1 in 130): the drawn one is drawn again. Both chosen: refused below.
         # At most 64 draws (each misses with p ≈ 0.99) — a generator that kept landing there would hold the API lock for ever.
@@ -20707,11 +20707,11 @@ def _dialin_generate(g, kept, eid, exits, known, ctx):
                 and not {"S1", "S2"} <= set(_tv):
             _rd += 1
             _k = "S2" if "S2" not in _tv else "S1"
-            awg[_k] = str(gen_awg_params()[_k])
+            awg[_k] = str(gen_awg_params("3.1" if proto == "awg3" else "2.0")[_k])
         # A drawn S4 is fitted to the MTU as a mesh link's is: the generator's 15–100 sat inside 1280's room, and a typed 1420
         # leaves 20 — a full-size packet fragmented both ways (S9e review F3). A typed S4 is the operator's.
         if "S4" in awg and "S4" not in _uv and not mesh_s4_fits(awg["S4"], mtu):
-            awg["S4"] = str(mesh_s4_draw(mtu, 12 if proto == "awg3" else 0))
+            awg["S4"] = str(mesh_s4_draw(mtu, AWG31_MIN_S if proto == "awg3" else 0))
         # …and the set it makes keeps the rules a stored one does: a template "-" beside a typed Jc broke Jc/Jmin/Jmax, and
         # every cell none made an "AmneziaWG" exit plain WireGuard (S9e review F13)
         _ref = awg_rules(awg, perr("this exit"), gen3=proto == "awg3") if proto != "wg" else None
@@ -20757,6 +20757,7 @@ def _dialin_ctx(deps, nodes, nid):
     return {"ports": ports, "nets": nets, "udp_ranges": _parse_port_ranges(snap.get("udp_ports")), "dialin_addrs": others,
             "listen": _host_listen(snap), "mesh_band": range(_mc["port_base"], _mc["port_base"] + _mc.get("port_span", 100)),
             "awg3": awg3_defaults(deps), "awg3_omit": awg3_omitted(deps),
+            "default_proto": "awg3" if not awg_gen_refusal(snap, c.get("name") or nid) else "wg",
             "awg_tpl": awg_template((((deps.get("panel_settings") or {}).get("interface_defaults")) or {}).get("awg_params"))}
 
 
@@ -26272,11 +26273,8 @@ def api(method, path, qs, body, deps):
                 # key missing here is dropped by every save. A save that does not carry it (an older tab) keeps the stored one.
                 "reach": (idf.get("reach") if idf.get("reach") in REACH_LEVELS
                           else ((cur.get("interface_defaults") or {}).get("reach") or "user"))}
-            # The AmneziaWG version the create form's switch starts on (D-default, docs/AWG3-PLAN.md §6) — a preset in the
-            # browser, never a parameter: the panel-wide awg_params above stay 2.0. Stored only as "3.1" (2.0 is its
-            # absence, so a fleet that never picks 3.1 keeps the file it has); a save that does not carry it keeps the stored one.
-            if _ag == "3.1":
-                cur["interface_defaults"]["awg_gen"] = "3.1"
+            if _ag in ("2.0", "3.1"):
+                cur["interface_defaults"]["awg_gen"] = _ag
             if _a3:
                 cur["interface_defaults"]["awg3_params"] = _a3
         if "mesh_awg" in incoming:   # default AmneziaWG obfuscation for new mesh links ({} = auto per link; "-" = no such line)
@@ -26472,20 +26470,17 @@ def api(method, path, qs, body, deps):
             if _mm not in MESH_MODES:
                 return 400, {"ok": False, "error": "mesh_mode must be auto, full or demand", "code": "bad_request"}
             cur["mesh_mode"] = _mm
-        if "mesh_awg_gen" in incoming:   # the type NEW mesh links are made as (mesh_gen_of) — stored only when it is not 2.0
-            _mg = str(incoming.get("mesh_awg_gen") or "2.0")
+        if "mesh_awg_gen" in incoming:   # the type for new mesh links (mesh_gen_of)
+            _mg = str(incoming.get("mesh_awg_gen") or DEFAULT_AWG_GEN)
             if _mg not in MESH_AWG_GENS:
                 return 400, {"ok": False, "error": "mesh_awg_gen must be 2.0, 3.1 or wg", "code": "bad_request"}
-            if _mg == "2.0":
-                cur.pop("mesh_awg_gen", None)
-            else:
-                cur["mesh_awg_gen"] = _mg
+            cur["mesh_awg_gen"] = _mg
         _ps0 = deps.get("panel_settings") or {}
         if (cur.get("mesh_awg"), cur.get("mesh_awg_gen")) != (_ps0.get("mesh_awg"), _ps0.get("mesh_awg_gen")):
             # Judged when the panel's own mesh template or type CHANGES, and on the panel's own template only — a node that
             # inherits a 3.1 type over a template that omits an S, or whose timings cross, gets its links at 2.0 with the
             # reason on its card (mesh_31_refusal), so no unrelated Settings save is ever refused over a node's state.
-            _bad = mesh_omit_s_refusal(cur.get("mesh_awg_gen") or "2.0", awg_template(cur.get("mesh_awg"))[1],
+            _bad = mesh_omit_s_refusal(mesh_gen_of(dict(deps, panel_settings=cur)), awg_template(cur.get("mesh_awg"))[1],
                                        perr("the mesh link type")) or mesh_awg3_refusal(dict(deps, panel_settings=cur), {})
             if _bad:
                 return 400, {"ok": False, **_bad, "code": "bad_request"}
@@ -30904,13 +30899,8 @@ def api(method, path, qs, body, deps):
             if not (576 <= _mtu <= 9200):
                 return 400, {"ok": False, "error": "mtu must be 576-9200", "code": "bad_request"}
             req["mtu"] = str(_mtu)
-        # Panel-wide AWG obfuscation default. Handed to the node in the create request so the conf is right the
-        # first time (swg-agent uses supplied params and only generates when none arrive), and recorded as the
-        # interface's override so it stays the declared desired state — a later recreate/Restore keeps it. Only
-        # the fields the operator actually filled in: a blank one is left to the node, which rolls S1-S4/H1-H4
-        # fresh per interface so two interfaces never share a fingerprint.
-        _awgdef, _awgom = awg_template(((deps.get("panel_settings") or {}).get("interface_defaults") or {}).get(
-            "awg_params")) if cmd == ["awg"] else ({}, frozenset())
+        _idf = (deps.get("panel_settings") or {}).get("interface_defaults") or {}
+        _awgdef, _awgom = awg_template(_idf.get("awg_params")) if cmd == ["awg"] else ({}, frozenset())
         # ⚠️ A RECREATE PUTS BACK THE BAND IT HAD; the panel-wide default is for interfaces that never had
         # one. This door is also the ghost-recreate door, and the record it is rebuilding still holds the
         # operator's own sixteen lines — overwriting them with the fleet default would silently change the
@@ -30925,29 +30915,36 @@ def api(method, path, qs, body, deps):
         # held the params kept pushing them back on every set-iface.
         _awgprev = _prev_ov.get("awg_params") if (cmd == ["awg"] and isinstance(_prev_ov.get("awg_params"), dict)) else None
         _awgput = dict(_awgprev) if _awgprev else (dict(_awgdef) if _awgdef else {})
+        _snap = (deps.get("node_snaps") or {}).get(nid)
+        _node_name = nodes[nid].get("name") or nid
+        _gen = body.get("awg_gen")
+        if _gen not in (None, "", "2.0", "3.1"):
+            return 400, {"ok": False, "error": "awg_gen must be \"2.0\" or \"3.1\"", "code": "bad_request"}
+        if not _gen and cmd == ["awg"] and not _prev_ov and iface not in ((_snap or {}).get("interfaces") or {}):
+            if ((_idf.get("awg_gen") or DEFAULT_AWG_GEN) == "3.1" and not awg_gen_refusal(_snap, _node_name)
+                    and not turn_awg3_blockers(deps, nodes, nid, {req.get("listen_port")})):
+                _gen = "3.1"
         # A field the defaults set to none (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md A5): the panel draws the set itself — the generator
         # under the defaults, minus the omitted keys — stores it WHOLE and sends it marked so (still fresh per interface). Only
         # then: with no "-" in the defaults this is today's create, byte for byte. A recreate keeps its own record (above).
         _exact = bool(_awgprev) and bool(_prev_ov.get("awg_exact"))
-        _omit = frozenset() if _awgprev else (_awgom | (awg3_omitted(deps) if body.get("awg_gen") == "3.1" and cmd == ["awg"]
-                                                        else frozenset()))
+        _omit = frozenset() if _awgprev else (_awgom | (awg3_omitted(deps) if _gen == "3.1" and cmd == ["awg"]
+                                                       else frozenset()))
         if _omit:
-            _no = awg_exact_refusal((deps.get("node_snaps") or {}).get(nid), nodes[nid].get("name") or nid)
+            _no = awg_exact_refusal(_snap, _node_name)
             if _no:
                 return 400, {"ok": False, **_no, "code": "bad_request"}
-            _awgput = {k: str(v) for k, v in {**gen_awg_params(), **_awgdef}.items() if k not in _omit}
+            if _gen != "3.1":
+                _awgput = {k: str(v) for k, v in {**gen_awg_params("2.0"), **_awgdef}.items() if k not in _omit}
             _exact = True
         # AmneziaWG 3.1 at create (docs/AWG3-PLAN.md §7.1, §7.2) — `awg_gen`, the same intent /api/iface/update takes. The
         # panel draws the WHOLE set itself (generator ∪ interface defaults ∪ the 3.1 set), so the record and the node agree
         # from the first sync and a restore sends the same S/H; "2.0" rebuilds a 3.1 interface's record without the 3.x keys.
-        _gen = body.get("awg_gen")
-        if _gen not in (None, "", "2.0", "3.1"):
-            return 400, {"ok": False, "error": "awg_gen must be \"2.0\" or \"3.1\"", "code": "bad_request"}
         if _gen == "3.1":
             if cmd != ["awg"]:
                 return 400, {"ok": False, **perr("{v1} is a plain WireGuard interface — only an AmneziaWG interface "
                                                  "can switch to AmneziaWG 3.1", v1=iface), "code": "bad_request"}
-            _no3 = awg_gen_refusal((deps.get("node_snaps") or {}).get(nid), nodes[nid].get("name") or nid)
+            _no3 = awg_gen_refusal(_snap, _node_name)
             if _no3:
                 return 400, {"ok": False, **_no3, "code": "bad_request"}
             # …and a RECREATE taken to 3.1 (its sheet's version switch) leaves out a 3.1 field the 3.1 defaults set to none, as
@@ -30958,12 +30955,13 @@ def api(method, path, qs, body, deps):
                 | (awg3_omitted(deps) - set(_awgput)) | awg3_left_out(_awgput)))
             if _e3:
                 return 400, {"ok": False, **_e3, "code": "bad_request"}
+            _exact = _exact or awg_exact_reported(_snap)
             _bl = turn_awg3_blockers(deps, nodes, nid, {req.get("listen_port")})   # a proxy left on this port by an older interface
             if _bl:
                 return 409, {"ok": False, **turn_awg3_refusal(_bl, iface), "code": "turn_awg3", "turn_proxies": _bl}
         elif _gen == "2.0":
             _awgput = {k: v for k, v in _awgput.items() if k not in AWG3_FIELDS}
-        if any(k in _awgput for k in AWG3_FIELDS) and not awg_gen_reported((deps.get("node_snaps") or {}).get(nid)):
+        if any(k in _awgput for k in AWG3_FIELDS) and not awg_gen_reported(_snap):
             return 400, {"ok": False, **perr("{v1}: this node does not report its AmneziaWG version — update it",
                                              v1=nodes[nid].get("name") or nid), "code": "bad_request"}
         if _exact and not _awgprev:   # R1–R5 on the set the defaults made (R4: a 3.1 set from defaults that omit an S)

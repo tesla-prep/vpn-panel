@@ -1197,7 +1197,7 @@ export function MimicPick({ eff, was, port, peers, restart, bad, onPick }) {
 export function LoadIfaceSheet({ node, pre, ghost, back }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const isBridge = nrec.kind === "docker" && (nrec.net_mode || "host") === "bridge";   // only bridge needs port publishing
-  const _defProto = (pre && pre.proto) || "wg";   // WireGuard is the default base for a new interface
+  const _defProto = (pre && pre.proto) || "awg";
   const [proto, setProto] = useState(_defProto);   // wg | awg | wdtt | existing
   const sugAwg = suggestIface(node, "awg"), sugWg = suggestIface(node, "wg");   // auto-suggested names (per base)
   // WDTT name + subnet suggestions (next free wdttN + a free 10.66.N.1/24, avoiding other WDTT instances).
@@ -1247,10 +1247,12 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
   // the server ignores, it is the default overwriting what the operator chose. See openRecreateRekey.
   const [dns, setDns] = useState(pre && pre.dns != null ? pre.dns : (_idf.dns || ["1.1.1.1"]).join(", ")); const [mtu, setMtu] = useState(String((pre && pre.mtu) || _idf.mtu || 1280)); const [ka, setKa] = useState(String(pre && pre.keepalive != null ? pre.keepalive : (_idf.keepalive || 25)));
   const [reach, setReach] = useState((pre && pre.reach) || _idf.reach || "user");   // device access (§10.6): a recreate keeps the level it had (§11.2 F1); a fresh create takes the panel-wide default
-  // The AmneziaWG version (docs/AWG3-PLAN.md §7.7, D-default): a recreate keeps the one it had; a fresh create starts on the panel-wide
-  // preset — 2.0 unless Settings says 3.1, and 2.0 wherever the panel would refuse 3.1 here (its reason is said under the switch).
+  // A recreate starts with the saved version; a fresh create uses the panel default when the node supports it.
   const no31 = nrec.awg31_no ? srvText(nrec.awg31_no) : "";
-  const [gen, setGen] = useState(() => (pre && pre.gen) || (_idf.awg_gen === "3.1" && !no31 ? "3.1" : "2.0"));
+  const [genPick, setGen] = useState(null);
+  const missing = (nrec.missing_ifaces || {})[iface.trim()];
+  const gen = genPick || (pre && pre.gen) || (missing ? (awgDict3(missing.awg_params) ? "3.1" : "2.0")
+    : no31 ? "2.0" : _idf.awg_gen || DEFAULT_AWG_GEN);
   const [conf, setConf] = useState("");
   const ips = ipChoices(nrec);
   // No creation seed: a new interface starts on AUTO and INHERITS the node's default exit live, exactly as
@@ -1369,9 +1371,7 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
       const hostVal = ipPickerVal(hostSel, hostCustom);
       r = await api.ifaceCreate({ node, iface: nm, protocol: proto, subnet: subnet.trim(), endpoint_host: hostVal,
         listen_port: port.trim(), dns: dns.trim(), mtu: mtu.trim(), keepalive: ka.trim(), block: blk, reach, ...egressBody(eg),
-        // the AmneziaWG version only when it is not the plain 2.0 create: 3.1 asked for, or a 3.1 interface recreated at 2.0 — by
-        // the recreate flow, or by typing the name of a missing one, whose record the panel brings back with it
-        ...(proto === "awg" && (gen === "3.1" || (pre && pre.gen === "3.1") || awgDict3(((nrec.missing_ifaces || {})[nm] || {}).awg_params)) ? { awg_gen: gen } : {}) });
+        ...(proto === "awg" ? { awg_gen: gen } : {}) });
     }
     if (!r.ok) return fail(srvText(r) || T("Request failed."));
     reportDropped(r);   // §5.4 — create carries a routing block too (the new-interface sheet has the field)
@@ -1575,27 +1575,32 @@ export function openIfaceEditor(node, iface) {
   if (k === "wdtt") return openEditWdtt(node, iface);
   return openEditIface(node, iface);
 }
-// The 2.0 set — what Settings edits: the interface defaults and mesh_awg stay AmneziaWG 2.0 (docs/AWG3-PLAN.md D-default,
-// D-mesh). Derived from AWG_ORDER, the SPA's one list, instead of a second copy of it.
+export const DEFAULT_AWG_GEN = "3.1";
+const AWG31_MIN_S = 12, AWG31_MAX_S = 20;
+// The base fields shared by both versions. The server fills the 3.1 fields and creates a key per interface.
 export const AWG_KEYS = AWG_ORDER.slice(0, AWG_ORDER.indexOf("HeaderProtectionKey"));
 // client-side AmneziaWG obfuscation generator — mirrors the panel's gen_awg_params (for the "Generate" button)
-export function genAwg() {
+export function genAwg(gen = DEFAULT_AWG_GEN, sMax = AWG31_MAX_S) {
   const r = n => Math.floor(Math.random() * n), w = 15;
-  let s1 = 15 + r(135), s2 = 15 + r(135);
-  while (s2 === s1 || s2 === s1 + 56) s2 = 15 + r(135);
+  if (gen === "3.1") {
+    const s = AWG31_MIN_S + r(Math.min(AWG31_MAX_S, sMax) - AWG31_MIN_S + 1);
+    return { Jc: 4 + r(3), Jmin: 40, Jmax: 70, S1: s, S2: s, S3: s, S4: s, H1: 1, H2: 2, H3: 3, H4: 4 };
+  }
+  let s1 = 15 + r(136), s2 = 15 + r(136);
+  while (s2 === s1 || s2 === s1 + 56) s2 = 15 + r(136);
   const b = [5, 1e9, 2e9, 3e9].map(base => base + r(9e8));
-  return { Jc: 4, Jmin: 40, Jmax: 70, S1: s1, S2: s2, S3: 15 + r(85), S4: 15 + r(85),
+  return { Jc: 4, Jmin: 40, Jmax: 70, S1: s1, S2: s2, S3: 15 + r(86), S4: 15 + r(86),
     H1: `${b[0]}-${b[0] + w}`, H2: `${b[1]}-${b[1] + w}`, H3: `${b[2]}-${b[2] + w}`, H4: `${b[3]}-${b[3] + w}`,
     I1: "<b 0xc000000001><r 64><t>", I2: "<r 24><t>", I3: "<r 32>",
     I4: "<b 0xc000000001><r 32><t>", I5: "<t><r 48>" };
 }
-/* Placeholder text for an EMPTY cell — what that field becomes when a new interface is created. Derived from
-   genAwg() so the shown constants can never drift from the ones we actually emit. S1-S4 and H1-H4 are the
-   exception: the node rolls those fresh FOR EACH interface, which is a property worth keeping — two
-   interfaces never share a fingerprint, so a censor who learns one server's headers does not thereby
-   recognise the rest. Hence "blank = random" rather than a value. */
-export function awgBlankHints() {
-  const g = genAwg();
+// Values shown for blank cells, matching the selected generator.
+export function awgBlankHints(gen = DEFAULT_AWG_GEN) {
+  const g = genAwg(gen);
+  if (gen === "3.1") {
+    return { ...Object.fromEntries(Object.entries(g).map(([k, v]) => [k, String(v)])),
+      Jc: "4–6", S1: "12–20", S2: "12–20", S3: "12–20", S4: "12–20" };
+  }
   const out = {};
   for (const k of AWG_KEYS) out[k] = /^[SH][1-4]$/.test(k) ? T("blank = random") : String(g[k]);
   return out;
@@ -1638,15 +1643,15 @@ export function MeshAwgParams({ title, eff, value, onChange, placeholders, about
         hpk=${T("val|per link")} rt=${T("val|on")} hpkTip=${T("Each link gets a key of its own.")} rtTip=${T("On for every AmneziaWG 3.1 link.")}
         hint=${T("What AmneziaWG 3.1 links add to the fields above. A blank cell takes the value shown in it — the mesh default, or the 3.1 defaults in Settings → Interfaces; - for no such line.")}/></div>` : null}
       <div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end"><button type="button" class="btn btn-mini"
-        title=${show3 ? T("S and H are drawn fresh; the 3.1 fields take what they inherit (the values shown in them), whose ranges the protocol randomises on its own.") : null}
-        onClick=${() => onChange({ ...v, ...genAwg(), ...(show3 ? Object.fromEntries(AWG3_EDIT_COLS.flat()
+        title=${show3 ? T("S1–S4 share one random value, H1–H4 are 1–4, and the 3.1 fields use their inherited defaults.") : null}
+        onClick=${() => onChange({ ...v, ...genAwg(eff), ...(show3 ? Object.fromEntries(AWG3_EDIT_COLS.flat()
           .filter(k => String(v[k] ?? "").trim() === "" && String((ph3 || {})[k] ?? "").trim())
           .map(k => [k, ph3[k] === T("val|none") ? "-" : String(ph3[k])])) : {}) })}><${Ic} i="refresh"/>${T("Generate a set")}</button>${isSet ? html`<button type="button" class="btn btn-mini" onClick=${() => onChange(Object.fromEntries(Object.entries(v)
           .filter(([k]) => !AWG_KEYS.includes(k) && !(show3 && AWG3_EDIT_COLS.flat().includes(k)))))}>${T("Clear (auto)")}</button>` : null}</div>
     </div></div>`;
 }
 /* A blank 3.1 cell of a mesh template, as background text: the next layer down, field by field — for a node, the panel's mesh
-   template; then the interface 3.1 defaults; then Amnezia's set (the panel's mesh_awg3 walks the same layers). */
+   template; then the interface 3.1 defaults; then the built-in set (the panel's mesh_awg3 walks the same layers). */
 export function mesh3Hints(fromPanel) {
   const ps = Store.panelSettings || {}, pm = fromPanel ? (ps.mesh_awg || {}) : {}, d = (ps.interface_defaults || {}).awg3_params || {};
   const one = k => [pm[k], d[k], (ps.awg31_builtin || {})[k]].map(x => String(x ?? "").trim()).find(Boolean) || "";
@@ -1654,21 +1659,22 @@ export function mesh3Hints(fromPanel) {
 }
 /* A blank cell of a link's mesh AWG grid, as background text: what it is made with — the panel's mesh template where it sets
    the field (none where it sets "-"), else what the link actually carries (`live`, its record's params), else nothing: auto. */
-export function meshAwgHints(live) {
+export function meshAwgHints(live, gen) {
   const pt = (Store.panelSettings || {}).mesh_awg || {}; live = live || {};
+  const hints = awgBlankHints(gen);
   return Object.fromEntries(AWG_KEYS.map(k => [k, awgIsNone(pt[k]) ? T("val|none")
-    : String(pt[k] ?? "").trim() || String(live[k] ?? "").trim()]));
+    : String(pt[k] ?? "").trim() || String(live[k] ?? "").trim() || hints[k]]));
 }
 /** A mesh link type switch (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md B1, §8 round 12): AmneziaWG 2.0, 3.1 or plain WireGuard — the
  *  fleet's default in Settings → Mesh, and one link's own on its connection sheet, where `inherit` (the default) adds a
  *  "Default (…)" button, "" in the draft. Each type in its protocol's own colour. The server decides what a link can be. */
 export function MeshGenField({ value, onChange, inherit, hint, label, after }) {
   const opts = [...(inherit ? [["", T("Default ({v1})", { v1: meshGenLabel(inherit) })]] : []), ...["wg", "2.0", "3.1"].map(g => [g, meshGenLabel(g)])];
-  const eff = value || inherit || "2.0";
+  const eff = value || inherit || DEFAULT_AWG_GEN;
   label = label || T("Mesh link type");
   return html`<div class="field awggen meshgen"><label>${label}</label>
     <div class="dpsw awgsw" role="radiogroup" aria-label=${label}>${opts.map(([g, l]) => html`<button type="button" role="radio" key=${g || "inherit"}
-      aria-checked=${value === g} class=${(value === g ? "on " : "") + "sw-proto"} style=${"--c:" + meshGenColor(g || inherit || "2.0")}
+      aria-checked=${value === g} class=${(value === g ? "on " : "") + "sw-proto"} style=${"--c:" + meshGenColor(g || inherit || DEFAULT_AWG_GEN)}
       onClick=${() => onChange(g)}>${l}</button>`)}</div>
     <div class="hint">${hint}${eff === "3.1" ? " " + T("A pair where either node cannot run AmneziaWG 3.1 is linked at 2.0, and its node says why.") : ""}${
       eff === "wg" ? " " + T("No obfuscation — DPI can block it across borders.") : ""}</div>${after || null}
@@ -1700,7 +1706,7 @@ export function ConnectionEditSheet({ node, iface }) {
   const typeSet0 = ((nrec.mesh_peers || []).find(p => p.peer === peer) || {}).type_set || "";
   const [typePick, setTypePick] = useState(null);
   const typeSet = typePick === null ? typeSet0 : typePick;
-  const typeDflt = (Store.panelSettings || {}).mesh_awg_gen || "2.0";
+  const typeDflt = (Store.panelSettings || {}).mesh_awg_gen || DEFAULT_AWG_GEN;
   // …and its own AWG params (plan §8 round 13): {} = the fleet's default. Same follow-until-touched rule.
   const awgSet0 = ((nrec.mesh_peers || []).find(p => p.peer === peer) || {}).awg_set || {};
   const [awgPick, setAwgPick] = useState(null);
@@ -1790,7 +1796,7 @@ export function ConnectionEditSheet({ node, iface }) {
         : T("This link only, both ends. Default follows the fleet's type in Settings → Mesh.")}
       after=${(nrec.mesh_gen_reasons || []).filter(r => r.iface === iface).map(r => html`<div class="hint warnish" key=${r.iface}>${srvText(r.msg)}</div>`)}/>
       <${MeshAwgParams} title=${T("This link's AWG params")} eff=${typeSet || typeDflt} value=${awgSet} onChange=${setAwgPick}
-        placeholders=${meshAwgHints(live)} ph3=${ph3}
+        placeholders=${meshAwgHints(live, typeSet || typeDflt)} ph3=${ph3}
         about=${T("Both ends of this link use these. A blank cell takes the fleet's default in Settings → Mesh, else a fresh value when the link is rebuilt.")}/></div>
     <div class="row2" style="margin-top:14px">
       <div class="field"><label>${T("Dial source IP")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— {node}'s IP", { node: Store.nodeName(node) })}</span></label>

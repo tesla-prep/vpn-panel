@@ -60,7 +60,7 @@ import {
 } from "./turn.js";
 import {
   IgnoredIfacesCard, openIfaceEditor, AwgGenField, Awg3Grid, AWG3_EDIT_COLS, MeshGenField,
-  AWG_KEYS, genAwg, awgBlankHints, AwgGrid, MeshAwgParams, mesh3Hints,
+  AWG_KEYS, DEFAULT_AWG_GEN, genAwg, awgBlankHints, AwgGrid, MeshAwgParams, mesh3Hints,
 } from "./iface.js";
 export { AWG_KEYS, genAwg, awgBlankHints, AwgGrid };   // their home moved to iface.js (the link sheet draws them too); kept here for importers
 import { statsUsage, trafficInvalidate } from "./traffic.js";
@@ -1972,7 +1972,7 @@ export function PanelSettingsScreen() {
   const [ka, setKa] = useState(String(idf.keepalive || 25));
   const [awgDef, setAwgDef] = useState(() => ({ ...(idf.awg_params || {}) }));   // new-interface AWG obfuscation
   const [reachDef, setReachDef] = useState(idf.reach || "user");   // device access (§10.6): the level the create sheet preselects
-  const [awgGenDef, setAwgGenDef] = useState(idf.awg_gen === "3.1" ? "3.1" : "2.0");   // the AmneziaWG version the create form starts on (D-default)
+  const [awgGenDef, setAwgGenDef] = useState(idf.awg_gen || DEFAULT_AWG_GEN);
   // only FILLED cells count: a blank one means "leave it to the node", so clearing a cell must read as
   // back-to-default rather than as a change, and must not be sent as an empty override.
   const awgTrim = o => AWG_KEYS.reduce((a, k) => { const v = String((o || {})[k] ?? "").trim(); if (v) a[k] = v; return a; }, {});
@@ -2108,7 +2108,7 @@ export function PanelSettingsScreen() {
   const [pok, setPok] = useState((ps.p2p_portok || P2P_PORTOK_DEFAULT).join(", "));   // ports the torrent filter never cuts (S11c)
   const nbRead = s => classifyAll(s).map(c => ({ ...c, ok: c.kind === "site" || (c.kind === "ip" && +String(c.value).split("/")[1] >= 8) }));
   const normBlockAllow = s => [...new Set(nbRead(s).map(c => c.ok ? c.value : c.raw.toLowerCase()))];
-  const [meshGen, setMeshGen] = useState(ps.mesh_awg_gen || "2.0");   // the type new mesh links are made as (2.0 | 3.1 | wg)
+  const [meshGen, setMeshGen] = useState(ps.mesh_awg_gen || DEFAULT_AWG_GEN);
   const [meshMode, setMeshMode] = useState(ps.mesh_mode || "auto");   // which node pairs get a mesh link (auto | full | demand)
   const [lists, setLists] = useState((ps.custom_lists || []).map(l => ({ ...l, _rid: newRid(), targets: customTargets(l) })));
   const [turnEnabledS, setTurnEnabledS] = useState(ps.turn_enabled !== false);   // master turn-proxy switch
@@ -2638,7 +2638,7 @@ export function PanelSettingsScreen() {
     if (nbDirty()) out.push(T("Never-block list updated"));
     if (pokDirty()) out.push(T("Ports the torrent filter never cuts — updated"));
     if (meshMode !== (ps.mesh_mode || "auto")) out.push(T("Mesh links — {v1}", { v1: meshModeLabel(meshMode, ps.mesh_auto_max) }));
-    if (meshGen !== (ps.mesh_awg_gen || "2.0")) out.push(T("Mesh link type → {v1}, for new links", { v1: meshGenLabel(meshGen) }));
+    if (meshGen !== (ps.mesh_awg_gen || DEFAULT_AWG_GEN)) out.push(T("Mesh link type → {v1}, for new links", { v1: meshGenLabel(meshGen) }));
     if (glDirty("links") && (rsvSubnet !== (rsv.mesh_subnet || "10.255.0.0/16") || rsvPort !== String(rsv.mesh_port_base || 9999) || rsvPrefix !== (rsv.iface_prefix || "swg_") || !eq(meshTpl(awgSet ? awg : {}), meshTpl(ps.mesh_awg)))) out.push(T("System mesh defaults"));
     for (const n of (Store.nodes || [])) {
       const e = nodeEdits[n.id] || {}, o = orig[n.id] || {}, fl = [];
@@ -2811,13 +2811,13 @@ const sectionLabel = k => ({
     sec === "turn" ? (turnEnabledS !== (ps.turn_enabled !== false) || [...turnForks].sort().join() !== (ps.enabled_turn_forks || TURN_FORKS_DEFAULT).slice().sort().join() || JSON.stringify(forkColorOverrides()) !== JSON.stringify(forkOvFrom(ps.turn_fork_colors)) || vkLinkS.trim() !== (ps.vk_link || "") || String(Math.max(0, parseInt(tuEvery) || 0)) !== String((ps.turn_update || {}).every_days == null ? 0 : (ps.turn_update || {}).every_days) || tuAt !== ((ps.turn_update || {}).at || "04:00")) :
     sec === "security" ? secChanged() :
     sec === "geo" ? geoDirty() || nbDirty() || pokDirty() :
-    sec === "defaults" ? (dns !== (idf.dns || []).join(", ") || mtu !== String(idf.mtu || 1280) || ka !== String(idf.keepalive || 25) || JSON.stringify(ifaceColorOverrides()) !== JSON.stringify(ifaceOvFrom(ps.iface_colors)) || JSON.stringify(statusCondsOut()) !== JSON.stringify({ blocked: (ps.status_conditions || {}).blocked !== false, faulty: (ps.status_conditions || {}).faulty !== false }) || JSON.stringify(awgTrim(awgDef)) !== JSON.stringify(awgTrim(idf.awg_params || {})) || JSON.stringify(awg3Trim(awg3Def)) !== JSON.stringify(awg3Trim(idf.awg3_params)) || reachDef !== (idf.reach || "user") || awgGenDef !== (idf.awg_gen === "3.1" ? "3.1" : "2.0") || (ivkEscrow !== null && ivkEscrow !== ivkEscrowInit)) :
+    sec === "defaults" ? (dns !== (idf.dns || []).join(", ") || mtu !== String(idf.mtu || 1280) || ka !== String(idf.keepalive || 25) || JSON.stringify(ifaceColorOverrides()) !== JSON.stringify(ifaceOvFrom(ps.iface_colors)) || JSON.stringify(statusCondsOut()) !== JSON.stringify({ blocked: (ps.status_conditions || {}).blocked !== false, faulty: (ps.status_conditions || {}).faulty !== false }) || JSON.stringify(awgTrim(awgDef)) !== JSON.stringify(awgTrim(idf.awg_params || {})) || JSON.stringify(awg3Trim(awg3Def)) !== JSON.stringify(awg3Trim(idf.awg3_params)) || reachDef !== (idf.reach || "user") || awgGenDef !== (idf.awg_gen || DEFAULT_AWG_GEN) || (ivkEscrow !== null && ivkEscrow !== ivkEscrowInit)) :
     sec === "configs" ? (sc !== _scMode) :
     sec === "subs" ? (subsOn !== !!subCfg.enabled || autoGen !== !!subCfg.auto_generate || warnDays !== String(ps.expiry_warn_days == null ? 3 : ps.expiry_warn_days) || JSON.stringify([...subLangs].sort()) !== JSON.stringify([...(subLangCfg.enabled || ["en"])].sort()) || subLangDef !== (subLangCfg.default || "en")) :
     sec === "display" ? (dispDirty() || tzDirty() || dataDirty()) :
     sec === "logs" ? (logDirty() || logMbPDirty()) :
     sec === "mesh" ? (showLans !== (ps.show_node_lans !== false) || normScanAllow(scanAllow).join(",") !== (ps.scan_allow || []).join(",")) :
-    sec === "links" ? (rsvSubnet !== (rsv.mesh_subnet || "10.255.0.0/16") || rsvPort !== String(rsv.mesh_port_base || 9999) || rsvPrefix !== (rsv.iface_prefix || "swg_") || !eq(meshTpl(awgSet ? awg : {}), meshTpl(ps.mesh_awg)) || meshMode !== (ps.mesh_mode || "auto") || meshGen !== (ps.mesh_awg_gen || "2.0")) : false;
+    sec === "links" ? (rsvSubnet !== (rsv.mesh_subnet || "10.255.0.0/16") || rsvPort !== String(rsv.mesh_port_base || 9999) || rsvPrefix !== (rsv.iface_prefix || "swg_") || !eq(meshTpl(awgSet ? awg : {}), meshTpl(ps.mesh_awg)) || meshMode !== (ps.mesh_mode || "auto") || meshGen !== (ps.mesh_awg_gen || DEFAULT_AWG_GEN)) : false;
   const secDirty = sec => glDirty(sec) || (SECF[sec] ? (Store.nodes || []).some(n => nodeDirty(n.id, sec)) : false);
   const badgeDirty = nid => nid === "" ? glDirty(section) : nodeDirty(nid, section);
   const anyDirty = SECTIONS.some(([s]) => secDirty(s));
@@ -3374,14 +3374,14 @@ const sectionLabel = k => ({
             <${Disclosure} title=${T("AmneziaWG obfuscation")}
               summary=${AWG_KEYS.some(k => String(awgDef[k] ?? "").trim() !== "") || Object.keys(awg3Trim(awg3Def)).length ? T("settings|customised") : T("settings|built-in")}
               open=${awgOpen} onToggle=${() => setAwgOpen(o => !o)}>
-              <p class="hint" style="margin:0 0 10px">${T("Given to every new AmneziaWG interface. Leave a cell blank to keep what the node does today — S and H are rolled fresh for each interface, so two interfaces never look alike. WireGuard interfaces ignore all of it.")}</p>
-              <${AwgGrid} value=${awgDef} onChange=${setAwgDef} placeholders=${awgBlankHints()}
+              <p class="hint" style="margin:0 0 10px">${T("Defaults for new AmneziaWG interfaces. Leave a cell blank to use the selected version's generated value.")}</p>
+              <${AwgGrid} value=${awgDef} onChange=${setAwgDef} placeholders=${awgBlankHints(awgGenDef)}
                 omit=${T("Type - in a cell for no such line on the interfaces made from these; a blank cell stays automatic.")}/>
               <${Awg3Grid} value=${awg3Def} onKey=${(k, v) => setAwg3Def(o => ({ ...o, [k]: v }))} hpk=${T("val|per interface")} rt=${T("val|on")}
                 hpkTip=${T("Each interface gets a key of its own — one key shared by every interface would protect nothing.")}
                 rtTip=${T("On for every AmneziaWG 3.1 interface the panel sets up.")}
                 placeholders=${ps.awg31_builtin || {}}
-                hint=${T("Given to an interface when it is created on 3.1 or switched to it; one already on 3.1 keeps its own. A blank cell is Amnezia's default.")}/>
+                hint=${T("Used when an interface is created on 3.1 or switched to it. Blank cells use the built-in values shown here.")}/>
             <//>
           <div class="seclabel">${T("Key escrow & recovery")}</div>
           <p class="hint" style="margin:0 0 10px">${T("Backup each server's interface key so a wiped / rebuilt node restores its interfaces with their original identities.")}</p>
@@ -3550,7 +3550,7 @@ const sectionLabel = k => ({
           ${/* the fleet's default obfuscation for AmneziaWG links, drawn for the default type (none for WG); a link sets its own
                 on its sheet (plan §8 round 13) */""}
           <${MeshAwgParams} title=${T("Default mesh AWG params")} eff=${meshGen} value=${awg} onChange=${setAwg}
-            placeholders=${awgBlankHints()} ph3=${mesh3Hints(false)} about=${T("Obfuscation for new AmneziaWG mesh links, unless a link sets its own on its card. Blank = auto (a fresh set per link).")}/>
+            placeholders=${awgBlankHints(meshGen)} ph3=${mesh3Hints(false)} about=${T("Obfuscation for new AmneziaWG mesh links, unless a link sets its own on its card. Blank = auto (a fresh set per link).")}/>
         </div>
         ${(Store.nodes || []).length ? html`<div class="setnodes" style="margin:16px 0 10px">${(Store.nodes || []).map(n => html`<button class=${"snbadge" + (selNode === n.id ? " on" : "") + (badgeDirty(n.id) ? " dirty" : "")} style=${"--c:" + Store.nodeColor(n.id)} onClick=${() => setSelNode(n.id)}><span class="ndot"></span>${n.name}</button>`)}</div>` : null}
         <div class="card">${nodeRec ? html`<${Fragment}>
@@ -4535,29 +4535,32 @@ function dialinTpl(proto) {
     return [k, !awgFieldCheck(k, t).ok || (proto === "awg3" && /^S[1-4]$/.test(k) && !(/^[0-9]+$/.test(t) && +t >= 12)) ? "" : t]; }));
 }
 function dialinHints(proto) {     // a blank 2.0 cell: the template's value as the exit takes it, or what the generator does
-  const tpl = dialinTpl(proto), b = awgBlankHints();
+  const tpl = dialinTpl(proto), b = awgBlankHints(proto === "awg3" ? "3.1" : "2.0");
   return Object.fromEntries(AWG_KEYS.map(k => [k, tpl[k] === "-" ? T("val|none") : tpl[k] || b[k]]));
 }
 // A drawn S4 fitted to the MTU as the panel fits it (mesh_s4_room / mesh_s4_draw): a full-size packet stays inside 1500
 // bytes; never under `floor` (12 on 3.1). A value that already fits, or one that is not a number, is left as it is.
 const DIN_WIRE = 60;   // twin of the panel's MESH_WIRE_OVERHEAD (tests/spa_dialin_selftest.mjs holds them equal)
+function dialinS4Room(mtu) {
+  return /^[0-9]+$/.test(String(mtu ?? "").trim()) ? Math.max(0, 1500 - DIN_WIRE - Number(mtu)) : null;
+}
 function dialinS4(s4, mtu, floor) {
   // the MTU read as the panel reads it: digits only — "1420x" is not a number there, so it is none here (review F6)
-  const m = /^[0-9]+$/.test(String(mtu ?? "").trim()) ? +String(mtu).trim() : NaN, room = Number.isFinite(m) ? Math.max(0, 1500 - DIN_WIRE - m) : null;
+  const room = dialinS4Room(mtu);
   if (room === null || !/^[0-9]+$/.test(String(s4)) || +s4 <= room) return String(s4);
   const lo = Math.max(floor, Math.min(15, room)), hi = Math.max(lo, room);
   return String(lo + Math.floor(Math.random() * (hi - lo + 1)));
 }
 // which protocol a stored set is — the server's own reading: a HeaderProtectionKey is 3.1 (awgDict3), any 2.0 key is 2.0
 const dialinProto = awg => awgDict3(awg) ? "awg3" : AWG_KEYS.some(k => String((awg || {})[k] ?? "").trim() !== "") ? "awg2" : "wg";
-// what a blank cell becomes, as the server draws it on create: the template's value as the exit takes it ("-": no such
-// line), else the 2.0 generator, an S4 not typed fitted to the MTU — and for the 3.1 cells the value they show (the 3.1
-// defaults)
+// A blank cell uses the exit template or the selected generator. Fit an automatic S4 to the MTU.
 function dialinDraw(proto, awg, fresh, mtu) {     // `fresh`: S1–S4 and H1–H4 drawn anew too (the edit sheet's Generate)
-  const g = genAwg(), h3 = mesh3Hints(false), out = { ...(awg || {}) }, tpl = dialinTpl(proto);
+  const gen = proto === "awg3" ? "3.1" : "2.0", room = dialinS4Room(mtu || 1280);
+  const g = genAwg(gen, room === null ? undefined : Math.max(12, room));
+  const h3 = mesh3Hints(false), out = { ...(awg || {}) }, tpl = dialinTpl(proto);
   const typedS4 = String(out.S4 ?? "").trim() !== "" && !fresh;
   for (const k of AWG_KEYS) {
-    if (String(out[k] ?? "").trim() === "") out[k] = tpl[k] || String(g[k]);
+    if (String(out[k] ?? "").trim() === "") out[k] = tpl[k] || String(g[k] ?? "");
     else if (fresh && /^[SH][1-4]$/.test(k) && String(out[k]).trim() !== "-") out[k] = String(g[k]);
   }
   if (!typedS4 && String(out.S4).trim() !== "-") out.S4 = dialinS4(out.S4, mtu || 1280, proto === "awg3" ? 12 : 0);
@@ -4612,7 +4615,7 @@ function confIfSet(txt, k, v) {
 function DialinGenSheet({ node, onCreate, onPaste }) {
   const [label, setLabel] = useState("");
   const no31 = node.awg31_no ? srvText(node.awg31_no) : "";
-  const [proto, setProto] = useState("wg");
+  const [proto, setProto] = useState(no31 ? "wg" : "awg3");
   const [port, setPort] = useState(""), [mtu, setMtu] = useState(""), [awg, setAwg] = useState({});
   const [busy, setBusy] = useState(false), [msg, setMsg] = useState("");
   const go = async () => {

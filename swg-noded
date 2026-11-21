@@ -26250,6 +26250,10 @@ def _pid1_signals():
 
 
 def main():
+    if sys.argv[1:] == ["--initial-awg-generation"]:
+        g = awg_gen_report()
+        print("3.1" if g["tools"] == "3.1" and (g["module"] or g["fallback"]) == "3.1" else "2.0")
+        return
     _pid1_signals()
     if NODE_KIND == "docker":                       # our own log file from the first line, startup and its errors included
         with contextlib.suppress(Exception):

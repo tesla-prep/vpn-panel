@@ -66,6 +66,14 @@ try { M = await load("model.js"); U = await load("ui.js"); C = await load("turn-
 finally { made.forEach(p => { try { fs.unlinkSync(p); } catch (_) { /* already gone */ } }); }   // a plant never outlives this run
 const { Store } = await import(pathToFileURL(path.join(ROOT, "js", "store.js")).href);
 
+const generated = IF.genAwg();
+check("the generator defaults to 3.1 with equal S values and fixed H values", generated.S1 >= 12 && generated.S1 <= 20
+      && [1, 2, 3, 4].every(i => generated[`S${i}`] === generated.S1 && generated[`H${i}`] === i)
+      && generated.Jc >= 4 && generated.Jc <= 6 && !Object.keys(generated).some(k => k.startsWith("I")));
+const hints = IF.awgBlankHints();
+check("the default hints show the 3.1 ranges and header IDs", hints.S1 === "12–20" && hints.H4 === "4" && !hints.I1);
+check("an explicit 2.0 draw keeps header ranges and signatures", IF.genAwg("2.0").H1.includes("-") && !!IF.awgBlankHints("2.0").I1);
+
 const S20 = { Jc: "4", Jmin: "40", Jmax: "70", S1: "28", S2: "94", S3: "88", S4: "33", H1: "1-2", H2: "3-4", H3: "5-6", H4: "7-8" };
 const S31 = { ...S20, HeaderProtectionKey: "ZPx7sT8PpJ3aUVTMYCWgSVhdLbq0uVpO6hZe3mO2yJ0=", RandomTrailers: "1", ContentPaddingAddition: "10-100" };
 Store.describe = { n1: { awg0: { awg_params: S20, tool: "awg" }, awg1: { awg_params: S31, tool: "awg" }, wg0: { awg_params: {}, tool: "wg" },

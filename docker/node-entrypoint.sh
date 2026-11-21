@@ -6,13 +6,12 @@
 #   1. mounted confs — every /etc/swg-node/*.conf (or CONF_SRC) is managed as-is
 #      (the way to ship full AmneziaWG obfuscation; one file per interface);
 #   2. NODE_IFACES spec — "name:port:address[:proto]" entries, comma-separated, each
-#      generated (AmneziaWG v2 by default, ":wg" for plain WireGuard);
+#      generated (AmneziaWG 3.1 on capable hosts, ":wg" for plain WireGuard);
 #   3. single fallback — NODE_IFACE / NODE_LISTEN_PORT / NODE_ADDRESS (back-compat).
 #
 # Publish each interface's UDP ListenPort in compose for the panel/clients to reach it.
 set -eu
 log(){ printf '\033[0;36m[swg-node]\033[0m %s\n' "$*"; }
-rand32(){ od -An -N4 -tu4 /dev/urandom | tr -d ' '; }   # one unsigned 32-bit int
 
 : "${PANEL_URL:?PANEL_URL required (host-node: https://swg-panel:8443)}"
 # systemd's LoadCredential= puts the enrolment token in a per-unit tmpfs and exports its directory
@@ -129,33 +128,30 @@ add_iface(){ # add_iface <name> <endpoint> [conf]  — record an interface + its
 "
 }
 
-# emit AmneziaWG v2 obfuscation params (H1–H4 ranges, S1–S4, conservative QUIC-Initial I1)
-gen_awg_params(){
-  s1=$(( 15 + $(rand32) % 136 )); s2=$(( 15 + $(rand32) % 136 ))
-  while [ "$s1" -eq "$s2" ] || [ $((s1+56)) -eq "$s2" ]; do s2=$(( 15 + $(rand32) % 136 )); done
-  s3=$(( 15 + $(rand32) % 86 )); s4=$(( 15 + $(rand32) % 86 ))
-  b1=$(( 5 + $(rand32) % 900000000 ));          b2=$(( 1000000000 + $(rand32) % 900000000 ))
-  b3=$(( 2000000000 + $(rand32) % 900000000 )); b4=$(( 3000000000 + $(rand32) % 900000000 ))
-  printf 'Jc = 4\nJmin = 40\nJmax = 70\nS1 = %s\nS2 = %s\nS3 = %s\nS4 = %s\nH1 = %s-%s\nH2 = %s-%s\nH3 = %s-%s\nH4 = %s-%s\n' \
-    "$s1" "$s2" "$s3" "$s4" "$b1" $((b1+15)) "$b2" $((b2+15)) "$b3" $((b3+15)) "$b4" $((b4+15))
-  printf 'I1 = <b 0xc000000001><r 64><t>\nI2 = <r 24><t>\nI3 = <r 32>\nI4 = <b 0xc000000001><r 32><t>\nI5 = <t><r 48>\n'   # I1-I5: QUIC-Initial-shaped junk (0xc0 long header, QUIC v1) + random bytes + timestamp
-}
+# awg-quick prefers the host's kernel module. This names the fallback when the kernel cannot create an interface.
+export WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go
 
 # gen_conf <name> <port> <address> <plain?yes|no>  — generate a server interface conf
-gen_conf(){
+gen_conf() (
   _name="$1"; _port="$2"; _addr="$3"; _plain="$4"; _dest="$AWG_DIR/$_name.conf"
+  _priv="$(awg genkey)"
+  if [ "$_plain" != yes ]; then
+    _gen="$(python3 /opt/swg-noded/swg-noded --initial-awg-generation)"
+    _obf="$(python3 /opt/swg-agent/swg-agent --awg-params "$_gen")"
+  fi
+  umask 077
   {
     echo "[Interface]"
-    echo "PrivateKey = $(awg genkey)"
+    echo "PrivateKey = $_priv"
     echo "Address = $_addr"
     echo "ListenPort = $_port"
     echo "MTU = ${NODE_MTU:-1280}"   # headroom for turn-proxy obfuscation overhead
-    [ "$_plain" = yes ] || gen_awg_params
+    [ "$_plain" = yes ] || printf '%s\n' "$_obf"
   } > "$_dest"
   chmod 600 "$_dest"
   if [ "$_plain" = yes ]; then log "generated plain-WireGuard interface $_name on :$_port ($_addr)"
-  else log "generated AmneziaWG v2 interface $_name on :$_port ($_addr)"; fi
-}
+  else log "generated AmneziaWG $_gen interface $_name on :$_port ($_addr)"; fi
+)
 
 # ───────── 1) source the interface set ─────────
 if ls /etc/swg-node/*.conf >/dev/null 2>&1 || { [ -n "${CONF_SRC:-}" ] && [ -f "${CONF_SRC:-}" ]; }; then
@@ -214,10 +210,6 @@ done
 [ -n "$MANAGED" ] || log "no interfaces yet — syncing anyway so the node still reports (add one from the panel: Interfaces → Load new interface)"   # do NOT exit: exiting makes the container restart-loop whenever the panel has removed every interface
 
 # ───────── 2) bring each up + NAT its subnet ─────────
-# Datapath is decided by the HOST, not by us: awg-quick tries the kernel first and uses it whenever the host
-# has the amneziawg module loaded (a NET_ADMIN container creates kernel devices fine — it just can't LOAD the
-# module), and falls back to amneziawg-go otherwise. WG_QUICK_USERSPACE_IMPLEMENTATION only names the fallback.
-export WG_QUICK_USERSPACE_IMPLEMENTATION=amneziawg-go
 WAN="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"; WAN="${WAN:-eth0}"
 
 # Clear our OWN leftovers: with host networking our wg/awg devices live in the HOST netns and survive a
