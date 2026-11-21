@@ -3,6 +3,12 @@
 All notable user-facing changes to **swgPanel**. This file starts at `1.3.11-beta`;
 earlier releases predate the changelog — see the git history. · Русский: [CHANGELOG.ru.md](CHANGELOG.ru.md)
 
+## [1.9.0-beta]
+
+### Added
+
+- **Static SOCKS5 exit per user.** Add and test the proxy under Settings → WARP & exits on the exit server, then select it in the user's edit form. All of the user's WireGuard and AmneziaWG devices use that proxy for IPv4 traffic forwarded to the selected server. If the proxy is unavailable, this traffic is blocked on the exit server. Update the panel and exit server to use the assignment.
+
 ## [1.8.11-beta] — 2026-11-01
 
 ### Added

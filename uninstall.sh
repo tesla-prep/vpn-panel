@@ -1315,7 +1315,7 @@ EOS
 #   • the forwarding sysctl drop-in the installer wrote
 rm_node_netobjects(){
   info "Removing swg datapath objects (iptables/nft/ipset/policy-routing tagged swg-*)"
-  local t chain l n
+  local t chain l n mark table
   if command -v iptables >/dev/null 2>&1; then
     for t in nat filter mangle; do
       for chain in $(iptables -t "$t" -S 2>/dev/null | sed -n 's/^-N \([A-Za-z0-9_-]*\).*/\1/p'; echo PREROUTING INPUT FORWARD OUTPUT POSTROUTING); do
@@ -1362,6 +1362,12 @@ rm_node_netobjects(){
     for n in $(ip rule show 2>/dev/null | sed -n 's/^\([0-9]\+\):.*/\1/p' | awk '$1>=7000 && $1<=7099'); do
       run ip rule del pref "$n"; run ip route flush table "$n"
     done
+    # Personal SOCKS5 marks use the same tables with their own priority (swg-noded's STATIC_EGRESS_PREF).
+    while read -r mark table; do
+      if [[ $table =~ ^70[0-9][0-9]$ && $mark =~ ^(0x[0-9a-fA-F]+|[0-9]+)$ ]] && (( mark == table + 100 )); then
+        run ip rule del pref 6991 fwmark "$mark" lookup "$table"
+      fi
+    done < <(ip rule show 2>/dev/null | awk '$1=="6991:" && $4=="fwmark" && $6=="lookup" {print $5, $7}')
     # ⚠️ AND THE UPSTREAM-MARK BAND BELOW IT (swg-noded's SWG_RT_UP_BASE..SWG_RT_UP_MAX = 6890..6989: `fwmark M lookup T`,
     # how the relay names a leg). It survived every uninstall — `6890: from all fwmark 0x1aea lookup 7000` was still
     # there on a fully removed master (1.8.8 qualification). A priority in it is NOT a table id (its rule looks up one in

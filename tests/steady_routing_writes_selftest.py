@@ -192,6 +192,37 @@ CALLS.clear()
 N._smart_load_cidrs({"x": ["10.98.0.0/24", "10.98.2.0/24", "10.98.4.0/24"]}, {N._smart_setname("x"): 3}, {"changed": 0, "errors": []})
 check("[2] a restart's first pass trusts a set that already covers the list", not CALLS, CALLS)
 
+print("\n[3] static SOCKS5 policy]")
+static_calls = []
+
+def static_run(args, input_text=None, **kw):
+    static_calls.append((args, input_text))
+    return subprocess.CompletedProcess(args, 0, "", "")
+
+N.run = static_run
+N._STATIC_EGRESS.update(sig=None, active=[], blocked=[])
+static_src = {"iif": "swg_ru", "source": "10.8.0.2/32", "key": "a" * 24, "dev": "s5x-cccc0003", "table": 7001}
+static_dev = {"subnet": static_src["source"], "dev": static_src["dev"], "table": 7001, "scope": "static"}
+static_entries = N._static_egress_entries([static_src, dict(static_src, source="10.8.0.0/24")], [static_dev])
+check("[3] only a peer's /32 can get a personal route", static_entries == [static_src], static_entries)
+static_res = {"changed": 0, "errors": []}
+N._ensure_static_egress(static_entries, ["10.9.0.0/24"], static_res)
+static_nft = static_calls[-1][1]
+check("[3] the ingress and source must both match the policy",
+      'iifname "swg_ru" ip saddr { 10.8.0.2/32 } meta mark set 7101' in static_nft)
+check("[3] a fallback route to another interface is dropped",
+      'iifname "swg_ru" ip saddr { 10.8.0.2/32 } oifname != "s5x-cccc0003" drop' in static_nft)
+check("[3] carried networks keep their route", static_nft.count("ip daddr { 10.9.0.0/24 } return") == 2)
+static_calls.clear()
+N._ensure_static_egress(static_entries, ["10.9.0.0/24"], static_res)
+check("[3] the next pass verifies the table without rewriting it", [a[0][1] for a in static_calls] == ["list"])
+blocked = N._static_egress_entries([static_src], [])
+N._ensure_static_egress(blocked, [], static_res)
+check("[3] a missing exit still blocks this peer's forwarded traffic",
+      'iifname "swg_ru" ip saddr { 10.8.0.2/32 } drop' in static_calls[-1][1])
+N._ensure_static_egress([], [], static_res)
+check("[3] removing the last assignment removes its guard", static_calls[-1][0][1:3] == ["delete", "table"])
+
 print("\n%s — %d failed" % ("RED" if FAILS else "GREEN", len(FAILS)))
 if PLANT:
     print("(--plant %s expects RED above)" % PLANT)

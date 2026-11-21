@@ -117,5 +117,21 @@ check("want signature with nets=() is identical to the call without it",
       N._cascade_want_sig(FWD, [], [], ()) == N._cascade_want_sig(FWD, [], [], (), nets=(), net_tables=()))
 check("the rebuild issues no network route", lowered(()) == [], lowered(()))
 
+print("\n[5] a personal SOCKS5 route and guard are installed before the node's default")
+static = {"iif": "swg_cd34", "source": "10.30.0.2/32", "key": "a" * 24, "dev": "s5x-cccc0003", "table": 7001}
+plan["static_egress"] = [static]
+plan["devexit"].append({"table": 7001, "subnet": static["source"], "dev": static["dev"], "scope": "static"})
+lowered(NETS)
+mark_rule = ["ip", "rule", "add", "fwmark", "7101", "lookup", "7001", "priority", str(N.STATIC_EGRESS_PREF)]
+check("the personal mark outranks an ordinary from-subnet rule",
+      mark_rule in CALLS and N.STATIC_EGRESS_PREF < N.SWG_RT_BASE, CALLS)
+check("the mark selects the assigned TUN",
+      ["ip", "route", "replace", "default", "dev", static["dev"], "table", "7001"] in CALLS, CALLS)
+check("the fallback guard is installed before policy rules can change",
+      mark_rule in CALLS and ["nft", "-f", "-"] in CALLS
+      and CALLS.index(["nft", "-f", "-"]) < CALLS.index(mark_rule), CALLS)
+check("the personal SOCKS5 route never gets a source-only rule",
+      not any(c[:5] == ["ip", "rule", "add", "from", static["source"]] for c in CALLS), CALLS)
+
 print("\n%s" % ("ALL PASS" if not FAILS else "%d FAIL" % len(FAILS)))
 sys.exit(1 if FAILS else 0)

@@ -1,13 +1,10 @@
 <p align="center"><b>English</b> · <a href="README.ru.md">Русский</a> · <a href="README.technical.md">Technical (EN)</a> · <a href="README.technical.ru.md">Техническое (RU)</a></p>
 
-<p align="center"><code>1.8.11-beta</code></p>
+<p align="center"><code>1.9.0-beta</code></p>
 
 <!-- WHATS-NEW:START -->
-> **What's new in 1.8.11-beta** — [full changelog](CHANGELOG.md)
-> - **A panel built for your phone.** On a phone the panel opens in its own layout — a tab bar at the bottom, lists as cards, windows that close with a swipe down — and it can be added to the home screen as an app.
-> - **New kinds of exits.** A home router behind NAT can dial in to a server and be its exit, a SOCKS5 proxy can be an exit, and exits you run yourself are health-checked like WARP.
-> - **Torrents your way.** Each interface picks Block, Allow, the server's own address or a route; WireGuard and AmneziaWG devices get their own incoming port for seeding; and a router with several devices behind it can be marked so one device's torrent no longer cuts the others.
-> - **Never block, ports on rules, App routing per person.** One list of sites no block list may block, routing rules by protocol and port, and csqtt 2.5 App routing exceptions for a device, a user or a group.
+> **What's new in 1.9.0-beta** — [full changelog](CHANGELOG.md)
+> - **Static SOCKS5 exit per user.** Select a proxy in the user's edit form. It carries IPv4 traffic from the user's devices that other nodes forward to the selected exit server.
 <!-- WHATS-NEW:END -->
 
 ---

@@ -1226,15 +1226,35 @@ function GroupSheet({ gid, seed }) {
   <//>`;
 }
 
+const userExitValue = ref => ref ? ref.node_id + "/" + ref.exit_id : "";
+
 export function UserEditCard({ user, done }) {
   useStore();          // re-render on poll, so the Block/Unblock button flips after the action without reopening
   const [name, setName] = useState(user.name || "");
   const [tag, setTag] = useState(user.tag || "");
   const [note, setNote] = useState(user.note || "");
   const [expDate, setExpDate] = useState(expiryInputVal(user.expiry || 0));   // subscription expiry (blank = never)
+  const [staticExit, setStaticExit] = useState(userExitValue(user.static_exit));
   const [busy, setBusy] = useState(false), [saveErr, setSaveErr] = useState("");
   const showVk = Store.peersOfUser(user.id).some(p => targetsWantVk(p.targets));   // a peer behind a turn-proxy, or on a WDTT server
-  const dirty = name !== (user.name || "") || tag !== (user.tag || "") || note !== (user.note || "") || expDate !== expiryInputVal(user.expiry || 0);   // VK links save on their own (VkLinkField) → not part of this
+  const staticDirty = staticExit !== userExitValue(user.static_exit);
+  const dirty = name !== (user.name || "") || tag !== (user.tag || "") || note !== (user.note || "") || expDate !== expiryInputVal(user.expiry || 0) || staticDirty;
+  const occupied = new Map(Object.values(Store.roster.users || {}).filter(u => u.id !== user.id && u.static_exit)
+    .map(u => [userExitValue(u.static_exit), u.name]));
+  const exitOptions = (Store.nodes || []).flatMap(node => (node.exits || []).filter(ex => ex.provider === "socks5").map(ex => {
+    const ref = { node_id: node.id, exit_id: ex.id };
+    const value = userExitValue(ref);
+    const owner = occupied.get(value);
+    const ip = ex.live?.trace?.ip;
+    const title = owner !== undefined ? T("Assigned to {v1}", { v1: owner })
+      : !node.static_exit_supported ? T("Update the exit server before assigning a static exit")
+      : ex.enabled === false ? T("Disabled") : "";
+    return { ref, value, disabled: !!title, title,
+      label: [node.name || node.id, ex.label || ex.id, ip, title].filter(Boolean).join(" · ") };
+  }));
+  const choice = exitOptions.find(o => o.value === staticExit);
+  const exitUser = Store.roster.users[user.id] || user;
+  const exitState = exitUser.static_exit && nodeStale(exitUser.static_exit.node_id) ? "unavailable" : exitUser.static_exit_state;
   const save = async () => {
     if (!name.trim()) { toast(T("Name can't be empty."), "err"); return; }
     const expSec = expiryFromInput(expDate);
@@ -1244,7 +1264,12 @@ export function UserEditCard({ user, done }) {
     if (expSec && maxPeer && expSec < maxPeer) { toast(T("Subscription expiry can't be earlier than a peer's expiry ({date}).", { date: fmtDate(maxPeer) }), "err"); return; }
     // Sent before the editor closes (q189 SPA-3): a refusal stays here, in the panel's words, with every edit kept — it used to
     // close first and lose them. (VK links are owned by VkLinkField — saved on their own.)
-    const r = await sheetSend(() => api.userUpdate({ id: user.id, name: name.trim(), tag: tag.trim(), note, expiry: expSec }), setSaveErr, setBusy);
+    if (staticDirty && staticExit && (!choice || choice.disabled)) {
+      setSaveErr(T("Choose an enabled SOCKS5 exit"));
+      return;
+    }
+    const r = await sheetSend(() => api.userUpdate({ id: user.id, name: name.trim(), tag: tag.trim(), note, expiry: expSec,
+      ...(staticDirty ? { static_exit: choice?.ref || null } : {}) }), setSaveErr, setBusy);
     if (!r.ok) return;
     done(); Store.poll().catch(() => {});
   };
@@ -1270,6 +1295,18 @@ export function UserEditCard({ user, done }) {
       <div class="field"><label>${T("Note")}</label><input value=${note} onInput=${e => setNote(e.target.value)} placeholder=${T("Uses iPhone and router")} maxlength="200"/></div>
     </div>
     <${UserGroupsField} user=${user}/>
+    <div class="field">
+      <label>${T("Static exit")}</label>
+      <${Dropdown} value=${staticExit} onChange=${setStaticExit} ariaLabel=${T("Static exit")} options=${[
+        { value: "", label: T("Ordinary routing") }, ...exitOptions,
+        ...(staticExit && !choice ? [{ value: staticExit, label: T("SOCKS5 exit unavailable"), disabled: true }] : []),
+      ]}/>
+      <div class="hint">${T("Applies to all this user's devices for traffic forwarded to the exit server.")}</div>
+      ${!staticDirty && staticExit ? html`<div class="hint" role="status">${exitState === "active" ? T("Static exit active")
+        : exitState === "unavailable" ? T("SOCKS5 exit unavailable")
+        : exitState === "unsupported" ? T("Update the exit server before assigning a static exit")
+        : T("Waiting for the exit server to apply the assignment")}</div>` : null}
+    </div>
     <div class="field"><label>${T("Access expires")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— the whole subscription; blank = never")}</span></label>
       <div class="daterow"><input type="date" class="datein" value=${expDate} onInput=${e => setExpDate(e.target.value)}/>${expDate ? html`<button class="btn btn-ghost btn-mini" onClick=${() => setExpDate("")}>${T("Clear")}</button>` : null}</div>
       <div class="hint">${T("On this date the subscription and all its peers stop working (they reappear if you extend it). A peer's own expiry can't be later than this.")}</div></div>

@@ -4347,6 +4347,9 @@ def user_set(roster, uid, fields, now):
     for k in ("disabled", "disabled_at", "unblock_at"):
         if u.get(k):
             roster["users"][uid][k] = u[k]
+    static_exit = static_exit_ref(fields.get("static_exit", u.get("static_exit")))
+    if static_exit:
+        roster["users"][uid]["static_exit"] = {"node_id": static_exit[0], "exit_id": static_exit[1]}
     return roster["users"][uid]
 
 
@@ -19250,7 +19253,7 @@ _SNAP_SHAPE = {
     **dict.fromkeys(("ether_ifaces", "exit_kinds", "ifaces_awaiting_key", "node_ifaces", "node_ips"), (list, str)),
     **dict.fromkeys(("iface_drops", "mesh_health"), (dict, dict)),
     "udp_listen": (list, int),                           # S9e: walked by _host_listen inside reconcile_mesh (review F4)
-    **dict.fromkeys(("iface_key_sealed", "ip_forward", "relay", "rp_filter", "wdtt_key_sealed"), (dict, None)),
+    **dict.fromkeys(("iface_key_sealed", "ip_forward", "relay", "rp_filter", "static_egress", "wdtt_key_sealed"), (dict, None)),
 }
 _SNAP_SAID = set()                                       # (node, field) already logged as dropped — once each per process
 
@@ -21933,7 +21936,46 @@ def resolve_exit(nodes, snaps, nid, xid):
             str(_x.get("gw") or "").strip())
 
 
-def cascade_plan(nodes, snaps, custom_lists=None):
+def static_exit_ref(value):
+    if isinstance(value, dict):
+        nid, xid = value.get("node_id"), value.get("exit_id")
+        if isinstance(nid, str) and nid and isinstance(xid, str) and xid:
+            return nid, xid
+    return None
+
+
+def static_exit_supported(snap):
+    report = (snap or {}).get("static_egress")
+    return isinstance(report, dict) and report.get("v") == 1
+
+
+def static_socks_exit(nodes, nid, xid):
+    return next((e for e in ((nodes.get(nid) or {}).get("exits") or [])
+                 if isinstance(e, dict) and e.get("id") == xid and e.get("provider") == "socks5"), None)
+
+
+def static_exit_key(uid, nid, xid):
+    return hashlib.sha256(json.dumps([uid, nid, xid]).encode()).hexdigest()[:24]
+
+
+def static_exit_state(uid, ref, nodes, snaps):
+    nid, xid = ref
+    exit_ = static_socks_exit(nodes, nid, xid)
+    if not exit_ or exit_.get("enabled") is False:
+        return "unavailable"
+    snap = snaps.get(nid)
+    if not static_exit_supported(snap):
+        return "unsupported"
+    key = static_exit_key(uid, nid, xid)
+    status = snap["static_egress"]
+    if isinstance(status.get("active"), list) and key in status["active"]:
+        return "active"
+    if isinstance(status.get("blocked"), list) and key in status["blocked"]:
+        return "unavailable"
+    return "pending"
+
+
+def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
     """Fleet-wide egress plan covering BOTH Phase-2 whole-interface forward (egress_mode=forward) AND
     Phase-3 per-destination smart routing (egress_mode=smart). Both route a user interface's traffic into
     the existing N↔P mesh link and exit P's WAN; smart just scopes the entry match to a destination category
@@ -21946,6 +21988,14 @@ def cascade_plan(nodes, snaps, custom_lists=None):
     Safe by construction: a pair/rule whose subnet/link isn't reported yet is skipped (pauses, never errors);
     only an explicit forward/smart toggle produces any entry — inert otherwise."""
     plans = {}
+    roster = roster or {}
+    users = roster.get("users") or {}
+    bindings = {uid: ref for uid, u in users.items() if isinstance(u, dict)
+                and (ref := static_exit_ref(u.get("static_exit")))}
+    static_exits = {}
+    for nid, xid in bindings.values():
+        static_exits.setdefault(nid, set()).add(xid)
+    static_routes = {}
 
     def _nlist(nid):
         """The node's default list (D2), or None when its default is not a list — the presence of the list IS the switch.
@@ -22445,8 +22495,15 @@ def cascade_plan(nodes, snaps, custom_lists=None):
                       and _r.get("node") in nodes and _r.get("node") != nid and all(_link_devs(nodes, nid, _r["node"]))
                       and _r["node"] not in targets):
                     targets.append(_r["node"])
-        if targets:
-            _srt = sorted(targets)
+        # Allocate personal exits after the existing targets so adding one cannot displace a normal route.
+        personal = set()
+        if static_exits.get(nid) and static_exit_supported((snaps or {}).get(nid)):
+            for xid in static_exits[nid]:
+                if static_socks_exit(nodes, nid, xid) and (route := resolve_exit(nodes, snaps, nid, xid)):
+                    static_routes[(nid, xid)] = route
+                    personal.add(route[1])
+        if targets or personal:
+            _srt = sorted(targets) + sorted(personal.difference(targets))
             slot(nid)["_targets"] = {p: SWG_RT_BASE + i for i, p in enumerate(_srt)}
             # …and WHICH ones fell off the end, because skipping them was silent. Every `continue` below
             # treats a table past SWG_RT_MAX as "no plan entry", which for a forward is a degrade the
@@ -22457,7 +22514,7 @@ def cascade_plan(nodes, snaps, custom_lists=None):
             # ⚠️ UNDERSCORED ON PURPOSE. Every PUBLIC key `slot()` builds has to reach the node
             # (tests/cascade_wire_selftest.py enforces it) and this one must never: it is a report for the
             # operator, and the node can do nothing with it.
-            _over = _srt[SWG_RT_MAX - SWG_RT_BASE + 1:]
+            _over = [key for key in _srt[SWG_RT_BAND:] if key in targets]
             if _over:
                 slot(nid)["_capped"] = _over
 
@@ -22638,6 +22695,58 @@ def cascade_plan(nodes, snaps, custom_lists=None):
                     _k = classify_target(_p)
                     if _k.get("kind") in _PATTERN_KINDS:
                         b.setdefault(_k["kind"], []).append(_k["value"])
+
+    # Join the user's device addresses to the first-hop arrival records before dropping their origin metadata.
+    if bindings:
+        whole = {(origin, dest, subnet) for origin, dest, subnet, *_ in fwd_items}
+        arrivals = {}
+        for dest in static_exits:
+            sp = plans.get(dest) or {}
+            for entry in sp.get("exit") or []:
+                subnet = entry["subnet"]
+                origin = (sp.get("_from") or {}).get(subnet)
+                if origin:
+                    with contextlib.suppress(ValueError):
+                        arrivals.setdefault((origin, dest), []).append((ipaddress.IPv4Network(subnet, strict=False),
+                                                                        entry["via_iface"], (origin, dest, subnet) not in whole))
+        nowv = int(time.time())
+        for peer in (roster.get("peers") or {}).values():
+            if not isinstance(peer, dict):
+                continue
+            uid = peer.get("user_id")
+            if not isinstance(uid, str) or uid not in bindings or access_cut(peer, users[uid], nowv):
+                continue
+            dest, xid = bindings[uid]
+            sp = plans.get(dest)
+            if sp is None or not static_exit_supported((snaps or {}).get(dest)):
+                continue
+            ex = static_routes.get((dest, xid))
+            table = sp["_targets"].get(ex[1]) if ex else None
+            usable = table is not None and table <= SWG_RT_MAX
+            for target in peer.get("targets") or ():
+                if not isinstance(target, dict) or _is_self_contained_target(target):
+                    continue
+                try:
+                    src = ipaddress.IPv4Address(str(target.get("ip") or "").split("/", 1)[0])
+                except ValueError:
+                    continue
+                origin = target.get("node")
+                leg = next(((iface, partial) for net, iface, partial in arrivals.get((origin, dest), ())
+                            if src in net), None)
+                if leg is None:
+                    continue
+                iface, partial = leg
+                source = f"{src}/32"
+                rule = {"iif": iface, "source": source, "key": static_exit_key(uid, dest, xid)}
+                if usable:
+                    rule.update(dev=ex[0], table=table)
+                    _dx_add(sp, {"subnet": source, "dev": ex[0], "table": table, "killswitch": False,
+                                 "scope": "static", "part": partial, "egress_ip": "", "gw": ""})
+                sp.setdefault("static_egress", []).append(rule)
+                slot(origin).setdefault("_static_forward", set()).add(source)
+        for sp in plans.values():
+            if sp.get("static_egress"):
+                sp["static_egress"].sort(key=lambda e: (e["iif"], e["source"], e["key"]))
 
     # B.3 — PORTS REFINE A DESTINATION. Rules with identical targets share a category (`custom_cat_id`), so "Google → A" and
     # "Google UDP 19302-19309 → B" are two entries of one category; the one with ports goes first whatever the row order, or
@@ -23023,12 +23132,20 @@ def relay_plan(nodes, plans, nid, snaps):
         return {}
     want = {}
     _legs = ((plans or {}).get(nid) or {}).get("_legs") or ()
+    forward_only = ((plans or {}).get(nid) or {}).get("_static_forward") or ()
     for iid, e in sorted(relay_eligibility(node, snaps, nid, _legs).items()):
         r = on.get(e["via"])
         if r is None:
             continue                          # routes over a link the operator left on plain `forward`
         if e["why"]:
             continue                          # the SHEET says why, from `relay_eligibility` directly
+        if forward_only:
+            net = ipaddress.ip_network(e["subnet"], strict=False)
+            sources = sorted(s for s in forward_only if ipaddress.IPv4Interface(s).ip in net)
+            if sources:
+                if not static_exit_supported(snaps.get(nid)):
+                    continue                  # old agents cannot exclude individual peers from Relay
+                e = dict(e, forward_only=sources)
         want[iid] = (e, r)
     # ⚠️ THE PANEL ALLOCATES THE PORTS (§10.5). The node prefers what we send and only hashes as a
     # fallback, and that fallback has 300 slots — ample for one instance per interface, and colliding
@@ -23052,7 +23169,8 @@ def relay_plan(nodes, plans, nid, snaps):
         legs.append({"iface": e["iface"], "peer": e["peer"], "subnet": e["subnet"],
                      "mark": e["mark"], "up_table": e.get("up_table") or 0, "port": ports[iid],
                      "cc_cli": (r.get("cc_cli") or "").strip(),
-                     "cc_up": (r.get("cc_up") or "").strip()})
+                     "cc_up": (r.get("cc_up") or "").strip(),
+                     **({"forward_only": e["forward_only"]} if e.get("forward_only") else {})})
     if not legs:
         return {"legs": [], "ifaces": {}}      # an empty plan, which is what makes the node tear down
     q = int(((node.get("relay") or {}).get("quota_pct")) or RELAY_QUOTA_DEFAULT)
@@ -25803,6 +25921,7 @@ def api(method, path, qs, body, deps):
                                   for e in (c.get("exits") or []) if isinstance(e, dict)],
                         # …and the one fact that makes every verdict above readable (see `_x_unsup`).
                         "exits_unsupported": _x_unsup,
+                        **({"static_exit_supported": True} if static_exit_supported(snap) else {}),
                         "exit_candidates": [dict(x, offerable=(w is None), why_not=(w or ""))
                                             for x, w in ((x, _exr(x.get("name")))
                                                          for x in (snap.get("exit_candidates") or []))],
@@ -26031,6 +26150,9 @@ def api(method, path, qs, body, deps):
         _mstat = _APPLY["status"] or {}
         _mgrace = int(_mstat.get("grace_until") or 0) > int(time.time())   # a just-confirmed move still gracing out (old address kept alive) → an instant undo is still possible
         _roster = roster_load(roster_path)               # load ONCE per /api/state — reused by the "roster" key AND nodes_view's ghost ref-walk (was 2 reads/poll)
+        for uid, user in _roster["users"].items():
+            if isinstance(user, dict) and (ref := static_exit_ref(user.get("static_exit"))):
+                user["static_exit_state"] = static_exit_state(uid, ref, nodes, snaps)
         return 200, {"ok": True, "data": {
             "host_proc": _proc_view(_hp, _hp_at),        # this panel host is mid re-install (UI tag); times out → "failed" → clears
             "host_proc_err": _hp_err,                    # failed-state log tail for the appbar error popup
@@ -28968,6 +29090,23 @@ def api(method, path, qs, body, deps):
                 if maxpeer and exp < maxpeer:
                     return 400, {"ok": False, **perr("Subscription expiry can't be earlier than a peer's expiry ({v1})", v1=fmt_day(maxpeer)), "code": "bad_request"}
             fields["expiry"] = exp
+        if "static_exit" in body:
+            value = body["static_exit"]
+            fields["static_exit"] = None
+            if value is not None:
+                ref = static_exit_ref(value)
+                if not ref:
+                    return 400, {"ok": False, **perr("Choose a server and a SOCKS5 exit"), "code": "bad_request"}
+                nid, xid = ref
+                exit_ = static_socks_exit(nodes, nid, xid)
+                if not exit_ or exit_.get("enabled") is False:
+                    return 400, {"ok": False, **perr("Choose an enabled SOCKS5 exit"), "code": "bad_request"}
+                if not static_exit_supported((deps.get("node_snaps") or {}).get(nid)):
+                    return 409, {"ok": False, **perr("Update the exit server before assigning a static exit"), "code": "conflict"}
+                if any(k != uid and static_exit_ref(u.get("static_exit")) == ref
+                       for k, u in roster["users"].items() if isinstance(u, dict)):
+                    return 409, {"ok": False, **perr("This SOCKS5 exit is already assigned to another user"), "code": "conflict"}
+                fields["static_exit"] = {"node_id": nid, "exit_id": xid}
         renamed = "name" in fields
         u = user_set(roster, uid, fields, now())
         roster_save(roster_path, roster)
@@ -29896,6 +30035,13 @@ def api(method, path, qs, body, deps):
             # has fixed before by dropping the reference at PLAN time rather than by refusing the edit. So
             # the removal is allowed and cascade_plan simply stops lowering it; the interface keeps its
             # selection and reads degraded, which is decision 3's behaviour for a disabled exit anyway.
+            removed = {e["id"] for e in (_c.get("exits") or []) if isinstance(e, dict) and e.get("id")}
+            removed.difference_update(e["id"] for e in _ex)
+            if removed and any(ref[0] == nid and ref[1] in removed
+                               for u in roster_load(roster_path)["users"].values()
+                               if isinstance(u, dict) and (ref := static_exit_ref(u.get("static_exit")))):
+                return 409, {"ok": False, **perr("Remove the user's static exit assignment before deleting the SOCKS5 exit"),
+                             "code": "conflict"}
             if _ex:
                 _c["exits"] = _ex
             else:
@@ -34596,7 +34742,7 @@ class Handler(BaseHTTPRequestHandler):
         roster = roster_load(Handler.deps["roster_path"])
         desired = desired_for_node(roster, nid, snap)   # the snapshot gates networks: absent net_deps ⇒ /32 only (D7)
         _clists = {cl["id"]: cl for cl in ((Handler.deps.get("panel_settings") or {}).get("custom_lists") or []) if cl.get("id")}
-        cas_plans = cascade_plan(nodes, Handler.deps.get("node_snaps") or {}, _clists)   # Phase 2/3: whole-fleet forward + smart plan (resolves custom-list rules)
+        cas_plans = cascade_plan(nodes, Handler.deps.get("node_snaps") or {}, _clists, roster=roster)
         # Targets that fell off the 7000-band, kept for the node cards. The plan is fleet-wide, so ONE node
         # syncing refreshes this for every node — /api/state must not build a plan of its own just to ask
         # (it is already this panel's dominant CPU cost on a 1-core VM). No sync yet ⇒ empty ⇒ silence,
@@ -35933,6 +36079,7 @@ class Handler(BaseHTTPRequestHandler):
                                 # each side was tested against a fixture and the SEAM against nothing.
                                 # tests/cascade_wire_selftest.py now fails on a plan key nobody carries.
                                 "cascade": {"forward": my_plan.get("forward") or [], "exit": my_plan.get("exit") or [],
+                                            **({"static_egress": my_plan["static_egress"]} if my_plan.get("static_egress") else {}),
                                             "devexit": my_plan.get("devexit") or []},   # Phase 2: policy-route forwards + exit SNAT + device exits
                                 # IMPORTED exits — the tunnels this node must CREATE (§1.1's second
                                 # producer). Only the imported ones: an `adopted` exit names a device the

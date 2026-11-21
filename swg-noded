@@ -2425,6 +2425,8 @@ def reconcile_egress(node_cfg, desired_ifaces, default_egress_ip=""):
 # ───────────────────────── Phase 2: traffic cascade ─────────────────────────
 SWG_RT_BASE = 7000          # swg-owned policy-routing table id / ip-rule priority band [BASE, MAX]
 SWG_RT_MAX = 7099           # (priority == table number; one table per egress target per node)
+STATIC_EGRESS_PREF = SWG_RT_BASE - 9
+STATIC_EGRESS_MARK_OFFSET = SWG_RT_MAX - SWG_RT_BASE + 1
 
 # ── THE UPSTREAM-MARK BAND: how something on this box asks for a LEG BY NAME ──────────────────────────
 #
@@ -4937,7 +4939,7 @@ def dev_reach_verify(res):
     res["errors"].append("device access: the table was gone or emptied and could not be rebuilt: " + detail)
 
 
-def _cascade_want_sig(fwd, exit_, smart=None, guard=(), nets=(), net_tables=(), arr=(), cut=()):
+def _cascade_want_sig(fwd, exit_, smart=None, guard=(), nets=(), net_tables=(), arr=(), cut=(), static=()):
     """Canonical signature of the policy rules+routes a plan wants — same token shape as the live
     reader below, so an exact-match means 'no drift' and we skip the (gap-inducing) flush+rebuild.
 
@@ -4975,6 +4977,7 @@ def _cascade_want_sig(fwd, exit_, smart=None, guard=(), nets=(), net_tables=(), 
         # rebuild of the whole band on every sync. Same conditional the rule-scoped guard arm above needs.
         if not e.get("_noroute"):
             sig.add(f"T|{T}|default|{e['via_iface']}|{str(e.get('gw') or '')}")
+    sig.update(f"R|static|{e['table'] + STATIC_EGRESS_MARK_OFFSET}|{e['table']}" for e in static)
     for e in exit_:
         T = str(e["table"]); sig.add(f"R|to|{e['subnet']}|{T}")
         sig.add(f"R|backstop|{e['subnet']}|{e['via_iface']}|{T}")   # the reflection backstop, AHEAD of that rule
@@ -5015,13 +5018,19 @@ def _cascade_live_sig(tables):
             # i.e. a flush and rebuild of the whole band on every single sync, which is the packet-leaking
             # gap this signature exists to avoid.
             _up = SWG_RT_UP_BASE <= pri <= SWG_RT_UP_MAX
-            if not (_up or SWG_RT_BASE <= pri <= SWG_RT_MAX):
+            if not (_up or SWG_RT_BASE <= pri <= SWG_RT_MAX or pri == STATIC_EGRESS_PREF):
                 continue
             body = mp.group(2)
             lk = re.search(r"lookup (\S+)", body); T = lk.group(1) if lk else str(pri)
             mto = re.search(r"\bto (\S+)", body); mfrom = re.search(r"\bfrom (\S+)", body)
             mfw = re.search(r"fwmark (0x[0-9a-fA-F]+|\d+)", body)
             mif = re.search(r"\biif (\S+)", body)
+            if pri == STATIC_EGRESS_PREF:
+                if mfw and T.isdecimal() and SWG_RT_BASE <= int(T) <= SWG_RT_MAX:
+                    mark = int(mfw.group(1), 0)
+                    if mark == int(T) + STATIC_EGRESS_MARK_OFFSET:
+                        sig.add(f"R|static|{mark}|{T}")
+                continue
             if mto and mif and re.search(r"\bprohibit\b", body):
                 # the reflection backstop (reconcile_cascade's exit loop). ⚠️ ITS PLACE IS PART OF IT: listed after
                 # the exit rule it guards it never matches, so that shape signs as a token no plan wants — drift,
@@ -7147,7 +7156,9 @@ def _s5x_rules(devexit, nets, res):
     inserted at the top, so a client interface's accept added later would sit above it and take the UDP first. A REJECT in
     its own base chain is final whatever order the accepts are in. One `nft -f` when the want changes, none otherwise."""
     socks = _EXITS.get("socks") or {}
-    _ifc = [e for e in devexit if e.get("dev") in socks and (e.get("scope") or "iface") != "rule" and e.get("subnet")]
+    _ifc = [e for e in devexit if e.get("dev") in socks and e.get("subnet")
+            and (e.get("scope") or "iface") != "rule"
+            and (e.get("scope") != "static" or not e.get("part"))]
     # a subnet that also arrives WHOLE never gets the bypass, whatever the device's state: its kill-switch holds it (review F4)
     _full = {str(e["subnet"]) for e in _ifc if not e.get("part")}
     # …and a partial one whose bypass could not be installed keeps mapdns, as before this existed (review F1)
@@ -12486,6 +12497,75 @@ def _cascade_local_routes(node_cfg, _proc="/proc/net/route"):
     return sorted({(s, dev) for s, dev in want if s and (dev, s) in live})
 
 
+STATIC_EGRESS_NFT = "swg_static_egress"
+_STATIC_EGRESS = {"sig": None, "active": [], "blocked": []}
+
+
+def _static_egress_entries(raw, devexit):
+    devices = {(e["subnet"], e["dev"], e["table"]) for e in devexit if e.get("scope") == "static"}
+    entries = []
+    for item in raw if isinstance(raw, list) else ():
+        if not isinstance(item, dict):
+            continue
+        iif, src, key = (str(item.get(k) or "") for k in ("iif", "source", "key"))
+        if not _SRC_DEV_RE.fullmatch(iif) or not re.fullmatch(r"[a-f0-9]{24}", key):
+            continue
+        try:
+            source = str(ipaddress.IPv4Address(src.removesuffix("/32"))) + "/32"
+        except ValueError:
+            continue
+        entry = {"iif": iif, "source": source, "key": key}
+        table, dev = item.get("table"), str(item.get("dev") or "")
+        if (isinstance(table, int) and SWG_RT_BASE <= table <= SWG_RT_MAX
+                and dev.startswith("s5x-") and _SRC_DEV_RE.fullmatch(dev) and (source, dev, table) in devices):
+            entry.update(dev=dev, table=table)
+        entries.append(entry)
+    return entries
+
+
+def _ensure_static_egress(entries, local_nets, res):
+    # The forward check blocks fallback to the WAN or another proxy while policy tables are rebuilt.
+    if not entries and _STATIC_EGRESS["sig"] == "":
+        return True
+    groups = {}
+    for e in entries:
+        groups.setdefault((e["iif"], e.get("dev", ""), e.get("table", 0)), set()).add(e["source"])
+    local = _collapse4(local_nets) if groups else []
+    lines = []
+    if groups:
+        lines = [f"table inet {STATIC_EGRESS_NFT} {{}}", f"delete table inet {STATIC_EGRESS_NFT}",
+                 f"table inet {STATIC_EGRESS_NFT} {{",
+                 "  chain classify { type filter hook prerouting priority mangle + 8; policy accept;"]
+        if local:
+            lines.append("    ip daddr { %s } return" % ", ".join(local))
+        lines.append(f"    meta mark & 0x0000fffe == {SNI_BLOCK_MARK:#x} return")
+        for (iif, dev, table), sources in sorted(groups.items()):
+            if dev:
+                lines.append('    iifname "%s" ip saddr { %s } meta mark set %d' %
+                             (iif, ", ".join(sorted(sources)), table + STATIC_EGRESS_MARK_OFFSET))
+        lines += ["  }", "  chain guard { type filter hook forward priority filter + 1; policy accept;"]
+        if local:
+            lines.append("    ip daddr { %s } return" % ", ".join(local))
+        for (iif, dev, _), sources in sorted(groups.items()):
+            out = ' oifname != "%s"' % dev if dev else ""
+            lines.append('    iifname "%s" ip saddr { %s }%s drop' %
+                         (iif, ", ".join(sorted(sources)), out))
+        lines += ["  }", "}"]
+    body = "\n".join(lines)
+    if body == _STATIC_EGRESS["sig"] and run(["nft", "list", "table", "inet", STATIC_EGRESS_NFT]).returncode == 0:
+        return True
+    if body:
+        result = run(["nft", "-f", "-"], input_text=body + "\n")
+    else:
+        result = run(["nft", "delete", "table", "inet", STATIC_EGRESS_NFT])
+    if result.returncode == 0 or (not body and (_nft_absent(result) or result.returncode == 127)):
+        _STATIC_EGRESS["sig"] = body
+        res["changed"] += int(result.returncode == 0)
+        return True
+    res["errors"].append("static SOCKS5 routing: " + ((result.stderr or "").strip() or "nft failed")[:160])
+    return False
+
+
 def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_conn=None, panel_cfg=None, nets=()):
     """Phase 2 cascade + Phase 3 smart routing. ENTRY (P2 forward): `ip rule from S lookup T`; ENTRY
     (P3 smart): nftables marks `ip saddr S ip daddr @<category> meta mark set T` then `ip rule fwmark T
@@ -12508,6 +12588,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     # What is NOT shared is the SNAT: the cascade's exit-side SNAT runs on the PEER node and there is no peer
     # here, so the device SNAT is added separately below (§5.7).
     devexit = plan.get("devexit") or []
+    static_entries = _static_egress_entries(plan.get("static_egress"), devexit)
     # §5.2 — an entry here means the PANEL says this exit should be carrying traffic (a disabled, deleted or
     # role-refused exit never reaches us). So the node answers the other half: is the device actually there.
     # `_devexit_state`, not `_dev_link_state`: an imported exit whose tunnel carries nothing reads `dead`, and
@@ -12532,6 +12613,8 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     _arr_raw = set(x for x in (((smart or {}).get("arrivals") or {}).get("subnets") or []) if isinstance(x, str))
     _dx_seen, _dx_rep = set(), []
     for e in _dxs:
+        if e.get("scope") == "static":
+            continue                                  # personal exits report through static_egress
         _ka = (str(e.get("dev") or ""), e.get("table"), e.get("scope") or "iface", bool(e.get("killswitch")),
                str(e.get("egress_ip") or "").strip(),
                "@arr" if (e.get("subnet") or "") in _arr_raw else (e.get("subnet") or ""))
@@ -12567,7 +12650,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     # already running: see `_table_default_via` — losing a gateway with the route in place is a measured
     # blackhole with zero leak, and withdrawing it is what turns that into a leak out the WAN.
     _devfwd = [{"subnet": e["subnet"], "via_iface": e["dev"], "table": e["table"], "gw": e["gw"]}
-               for e in _dxs if e["state"] == "up" and e.get("scope") != "rule"
+               for e in _dxs if e["state"] == "up" and e.get("scope") not in ("rule", "static")
                and not (e["needs_gw"] and not e["gw"])]
     fwd = fwd + _devfwd
     # ⚠️ THE SAME ANSWER FOR THE OTHER SCOPE. A RULE-scoped device exit is reached by fwmark, so it never
@@ -12635,6 +12718,8 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     arr_subs, arr_e = _arrivals_parse((smart or {}).get("arrivals"))
     arr_exit = [dict(e, gw=_dxgw.get(e["via_iface"], ""), _noroute=_withheld(e["via_iface"]))
                 for e in arr_e if e["action"] == "exit"]
+    static = [dict(e, via_iface=e["dev"], _noroute=_withheld(e["dev"])) for e in static_entries if e.get("dev")]
+    arr_exit += static
     # ⚠️ THE P2P ROUTE'S TABLE IS INSTALLED HERE, NOT BORROWED. A rule-scoped device exit adds no `from S` rule and a mesh
     # leg's table is otherwise filled only by smart/arrival exit entries — so a route whose target no routing rule also
     # used had an EMPTY table: P2P dropped instead of routed, the node reporting "route". Found in the P3 retrospective
@@ -12705,7 +12790,10 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     # A dial-in exit's private cut, in each table whose default route actually leaves by one (EXIT_PRIVATE_CUT)
     _cut = _dialin_cut(fwd + smart_exit + arr_exit, exit_, _troutes if _net_tables else (), set(_net_tables))
     want_sig = _cascade_want_sig(fwd, exit_, smart_exit, guard=_dxguard,
-                                 nets=_troutes, net_tables=_net_tables, arr=arr_exit, cut=_cut)   # only exit entries create fwmark→table policy routing
+                                 nets=_troutes, net_tables=_net_tables, arr=arr_exit, cut=_cut, static=static)
+    local_nets = ([p for p, _ in (*nets, *_cascade_local_routes(node_cfg))] +
+                  [e["subnet"] for e in exit_]) if static_entries else []
+    static_ok = _ensure_static_egress(static_entries, local_nets, res)
     # ⚠️ ONLY THE PRIORITIES THAT ARE ALSO TABLES. `band` now spans both bands, and an upstream priority
     # names no table of its own — so this asked the kernel for `route show table 6890` once per leg per
     # reconcile, for a table that cannot exist. Wasteful, and worse than wasteful: anything ELSE on the box
@@ -12730,6 +12818,10 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                     _bad.append(dev)
             _RPF["needed"] = True
             _RPF["bad"] = sorted(_bad)
+        for token in sorted(live_sig):
+            if token.startswith("R|static|"):
+                _, _, mark, table = token.split("|")
+                run(["ip", "rule", "del", "fwmark", mark, "lookup", table, "priority", str(STATIC_EGRESS_PREF)])
         for pri in band:                                       # teardown our whole band (rules + tables)
             # ⚠️ DEL-UNTIL-ABSENT MEANS ALL OF THEM. A priority carries a backstop + exit rule pair per exit subnet, and
             # a fwmark rule: 17 at 7000 on a node exiting 8 subnets. A cap of 8 left the rest in place, the deleted ones
@@ -12781,6 +12873,10 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
             # table a rule-scoped kill-switch lives in; leaving it out turns "fail closed" into "go direct".
             run(["ip", "rule", "add", "fwmark", T, "lookup", T, "priority", T])
             res["changed"] += 1
+        for table in sorted({e["table"] for e in static}):
+            run(["ip", "rule", "add", "fwmark", str(table + STATIC_EGRESS_MARK_OFFSET), "lookup", str(table),
+                 "priority", str(STATIC_EGRESS_PREF)])
+            res["changed"] += 1
         for e in exit_:                                        # EXIT: to S → table T (S via link)
             T = str(e["table"]); S = e["subnet"]; dev = e["via_iface"]
             if not e.get("_noroute"):                          # withheld: its leg is not up (see `_withheld`)
@@ -12814,6 +12910,18 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     # IPTABLES (SNAT / FORWARD accept / MSS clamp) — always reconciled by tag (cheap, no-churn).
     _ensure_fwd_iptables(fwd, exit_, _detect_wan(), res, default_egress_ip, devexit=devexit)
     _s5x_rules(devexit, nets, res)        # a SOCKS5 exit's DNS redirect, UDP refusal and rule-DNS unmark (§6.6)
+    keys = {e["key"] for e in static_entries}
+    active = set()
+    if static and static_ok:
+        live = live_sig if want_sig == live_sig else _cascade_live_sig(want_tables)
+        for e in static:
+            table = e["table"]
+            if (not e["_noroute"] and f"R|static|{table + STATIC_EGRESS_MARK_OFFSET}|{table}" in live
+                    and f"T|{table}|default|{e['dev']}|" in live):
+                active.add(e["key"])
+        active.difference_update(e["key"] for e in static_entries if not e.get("dev"))
+        active.difference_update(e["key"] for e in static if e["_noroute"])
+    _STATIC_EGRESS.update(active=sorted(active), blocked=sorted(keys - active))
     # NFTABLES smart-routing marking (saddr+daddr@category → mark T) — drift-gated, packets stay in-kernel.
     smart_cats = sorted(set((smart or {}).get("categories") or []) | {e["category"] for e in smart_e + arr_e})
     _smart_subs = {e["subnet"] for e in smart_e}                # smart interfaces (by subnet) → IPv6 fail-closed drop
@@ -14672,6 +14780,9 @@ def _relay_nft(entries, guard_ports=(), links=()):
          "table inet %s {" % RELAY_TABLE,
          "  chain pre {",
          "    type filter hook prerouting priority %d; policy accept;" % RELAY_HOOK_PRI]
+    forward_only = _collapse4(s for e in entries for s in (e.get("forward_only") or ()))
+    if forward_only:
+        L.append("    ip saddr { %s } return" % ", ".join(forward_only))
     # ⚠️ ONE `socket transparent` RULE PER SUBNET, AND IT IS NOT SCOPED BY MARK — the least obvious line in
     # this function. It exists to keep packets of an ALREADY relayed connection reaching the socket we hold.
     # A smart mark is recomputed per packet from set membership, and Hybrid SNI adds learned IPs mid-flight,
@@ -15379,7 +15490,8 @@ def reconcile_relay(plan, res, sync_ok=True, links=()):
         if ok:
             entries.append({"subnet": want[iface]["subnet"], "port": want[iface]["port"],
                             "iface": want[iface]["iface"], "peer": want[iface].get("peer", ""),
-                            "mark": want[iface]["mark"], "iid": iface})
+                            "mark": want[iface]["mark"], "iid": iface,
+                            **({"forward_only": want[iface]["forward_only"]} if want[iface].get("forward_only") else {})})
         elif reason:
             why.append(iface + ": " + reason)
 
@@ -18787,6 +18899,7 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
     snap["devexit"] = _devexit_report()               # decision 2: per-exit device state → the node's Issues tag
     snap["exits"] = list(_EXITS["list"])              # imported exits: what we registered/wrote, their health — never a private key
     snap["exit_kinds"] = list(EXIT_KINDS)             # the kinds this node can make, by name: the panel sends no other (s9a F17)
+    snap["static_egress"] = {"v": 1, "active": _STATIC_EGRESS["active"], "blocked": _STATIC_EGRESS["blocked"]}
     # Interfaces in ANOTHER container's netns (AmneziaWG's server is the case). A SEPARATE key, never
     # merged into the candidates above: those are offers to adopt, and this one cannot be adopted in
     # place — see _container_ifaces. Reported so the panel can say what is running instead of nothing.

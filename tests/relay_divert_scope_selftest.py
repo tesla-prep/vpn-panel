@@ -223,6 +223,13 @@ N.reconcile_relay(plan, res, True, ("swg_93c2fdf8",))
 div = [l for l in (loaded[-1] if loaded else "").splitlines() if 'swg-relay:wgn1"' in l]
 check("the divert it loads names the node's mesh link, and nothing else in that set",
       len(div) == 1 and 'oifname { "swg_93c2fdf8" }' in div[0], (div or loaded)[:1])
+loaded.clear()
+plan["legs"][0]["forward_only"] = ["10.141.0.2/32"]
+N.reconcile_relay(plan, res, True, ("swg_93c2fdf8",))
+static_relay = loaded[-1] if loaded else ""
+check("a static SOCKS5 peer keeps its source through a relayed link",
+      0 <= static_relay.find("ip saddr { 10.141.0.2/32 } return") < static_relay.find("socket transparent")
+      and "tproxy" in static_relay)
 loaded.clear(); N._RELAY_ARM.update(sig=None)
 res = {"changed": 0, "errors": []}
 N.reconcile_relay(plan, res, True, ())

@@ -439,6 +439,60 @@ check("…and a whole-interface cascade's is not: every packet comes to P, so th
 _d12b = [d for d in dx(P.cascade_plan(fleet(p_default=X1["id"]), {"n1": SN, "n2": dict(OLD)})) if "part" in d]
 check("…and a default that is not SOCKS is told nothing new (every other plan byte-identical)", _d12b == [], _d12b)
 
+print("\n[static SOCKS5 assignments]")
+US = fleet(p_default=X1["id"])
+S2 = dict(S1, id="dddd0004", device="s5x-dddd0004")
+US["n2"]["exits"].extend([dict(S1), S2])
+US["n2"]["links"]["n3"] = {"iface": "swg_k", "peer_address": "10.255.0.2"}
+US["n3"] = {"ifaces": {"wg0": {"egress_mode": "forward", "egress_node": "n2"}},
+            "links": {"n2": {"iface": "swg_us", "peer_address": "10.255.0.3"}}}
+SS = {"n1": SN, "n2": dict(SP, static_egress={"v": 1}),
+      "n3": {"interfaces": {"wg0": {"meta": {"subnet": "10.10.0.0/24"}}}}}
+ALICE = {"node_id": "n2", "exit_id": S1["id"]}
+BOB = {"node_id": "n2", "exit_id": S2["id"]}
+RS = {"users": {"a": {"name": "Alice"}, "b": {"name": "Bob"}},
+      "peers": {"p1": {"user_id": "a", "targets": [{"node": "n1", "iface": "wg0", "ip": "10.8.0.2/32"},
+                                                  {"node": "n3", "iface": "wg0", "ip": "10.10.0.2/32"}]},
+                "p2": {"user_id": "b", "targets": [{"node": "n1", "iface": "wg0", "ip": "10.8.0.3/32"}]},
+                "p3": {"targets": [{"node": "n1", "iface": "wg0", "ip": "10.8.0.4/32"}]}}}
+P.nodes_save(np_, US)
+json.dump(dict(RS, version=P.ROSTER_VERSION), open(rp_, "w"))
+deps["node_snaps"] = SS
+
+def assign(uid, **fields):
+    return P.api("POST", "/api/users/update", {}, {"id": uid, **fields}, deps)
+
+check("assign an existing SOCKS5 exit", assign("a", static_exit=ALICE)[0] == 200)
+check("an ordinary edit preserves the assignment", assign("a", name="Alice")[1]["data"]["static_exit"] == ALICE)
+check("an assigned exit cannot be picked by a second user", assign("b", static_exit=ALICE)[0] == 409)
+check("assign a different exit on the same VPS", assign("b", static_exit=BOB)[0] == 200)
+refused = P.api("POST", "/api/nodes/update", {}, {"id": "n2", "exits": [X1, Y1, dict(S1)]}, deps)
+check("an assigned SOCKS5 exit cannot be deleted", refused[0] == 409, refused)
+
+assigned = P.roster_load(rp_)
+static_plan = P.cascade_plan(US, SS, roster=assigned)
+personal = static_plan["n2"].get("static_egress") or []
+check("a user keeps the same exit through both mesh links, with a separate exit for the other user",
+      {(e["iif"], e["source"], e.get("dev")) for e in personal} ==
+      {("swg_n", "10.8.0.2/32", S1["device"]), ("swg_k", "10.10.0.2/32", S1["device"]),
+       ("swg_n", "10.8.0.3/32", S2["device"])}, personal)
+check("a per-user exit leaves the ordinary cascade route in place",
+      [e for e in dx(static_plan) if e.get("scope") != "static"] == dx(P.cascade_plan(US, SS)))
+socks_dns = {e["subnet"]: e["part"] for e in dx(static_plan, "static")}
+check("only a whole-interface arrival gets the proxy's DNS stand-ins",
+      socks_dns == {"10.8.0.2/32": True, "10.8.0.3/32": True, "10.10.0.2/32": False}, socks_dns)
+check("a peer arriving on a per-user route is identified by its original address through the mesh",
+      static_plan["n1"].get("_static_forward") == {"10.8.0.2/32", "10.8.0.3/32"})
+
+US["n2"]["exits"][-2]["enabled"] = False
+disabled = P.cascade_plan(US, SS, roster=assigned)["n2"]["static_egress"]
+check("a disabled proxy leaves a block entry for both of its user's devices",
+      sum(e.get("dev") is None for e in disabled) == 2 and sum(e.get("dev") == S2["device"] for e in disabled) == 1,
+      disabled)
+check("an older agent gets no personal device exits",
+      not dx(P.cascade_plan(US, dict(SS, n2=SP), roster=assigned), "static"))
+check("the user can remove the assignment", "static_exit" not in assign("a", static_exit=None)[1]["data"])
+
 if PLANT:
     want = {"a": "keeps NO `from S`", "b": "does not run arrivals is sent none", "c": "Auto interface is lowered",
             "d": "silence falls through", "e": "D5 — a SMART arrival", "f": "DERIVED from the catch-all",
