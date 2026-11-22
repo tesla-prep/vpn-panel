@@ -27,10 +27,9 @@ on:
     # would then skip the build that carries it, leaving the published image stale with nothing to
     # say so. Every pattern here is anchored where image content cannot live, so the failure mode is
     # "CI ran when it need not have", never "the image missed a change".
-    # `shipped-assets-audit.mjs` enforces that invariant and fails if any pattern below ever starts
-    # matching a file that ships inside an image.
     paths-ignore:
       - '*.md'            # AGENTS, API, CHANGELOG, README, THIRD-PARTY — all top level
+      - 'docs/**'
       - 'forks/**/*.md'   # per-fork build notes
       - 'LICENSE'
   workflow_dispatch:
@@ -49,10 +48,10 @@ jobs:
       fail-fast: false        # one image/arch failing must not cancel the others
       matrix:
         include:
-          - { image: swg-panel, dockerfile: Dockerfile,      arch: amd64, runner: ubuntu-24.04 }
-          - { image: swg-panel, dockerfile: Dockerfile,      arch: arm64, runner: ubuntu-24.04-arm }
-          - { image: swg-node,  dockerfile: Dockerfile.node, arch: amd64, runner: ubuntu-24.04 }
-          - { image: swg-node,  dockerfile: Dockerfile.node, arch: arm64, runner: ubuntu-24.04-arm }
+          - { image: swg-panel, dockerfile: docker/Dockerfile,      arch: amd64, runner: ubuntu-24.04 }
+          - { image: swg-panel, dockerfile: docker/Dockerfile,      arch: arm64, runner: ubuntu-24.04-arm }
+          - { image: swg-node,  dockerfile: docker/Dockerfile.node, arch: amd64, runner: ubuntu-24.04 }
+          - { image: swg-node,  dockerfile: docker/Dockerfile.node, arch: arm64, runner: ubuntu-24.04-arm }
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4

@@ -4,3 +4,4 @@ data
 dryrun
 __pycache__
 *.pyc
+docs

@@ -327,7 +327,7 @@ run_script(){   # run_script <script> [args…] — dispatch as a child, so the 
   local _a
   for _a in "$@"; do if [ "$_a" = --dry-run ]; then _keep_tmp=1; fi; done
   local _rc=0
-  bash "./$_s" "$@" || _rc=$?    # `|| _rc=$?` because set -e would otherwise exit before we do
+  bash "$SCRIPT_DIR/$_s" "$@" || _rc=$?    # `|| _rc=$?` because set -e would otherwise exit before we do
   exit $_rc
 }
 TMP="$(mktemp -d)"; trap '_cleanup_tmp' EXIT
@@ -410,6 +410,9 @@ if [ -z "$_fetched" ] && need curl && need tar; then
 fi
 [ -n "$_fetched" ] || die "could not fetch $REPO @ $REF — needs git, or curl+tar, and a reachable GitHub"
 cd "$TMP/swg-panel"
+SCRIPT_DIR=./scripts
+# Older commits and tags shipped the scripts at the checkout root.
+[ -d "$SCRIPT_DIR" ] || SCRIPT_DIR=.
 
 # ── update / uninstall: no method/role ──
 if [ -n "$ACTION" ]; then
@@ -549,7 +552,7 @@ if [ -n "$CONFLICT" ]; then
           [ "$_msel" = master ] && ROLE=master
         fi
         # pre-flight (port/interface check) lives in convert.sh --check: exit 0 = clear, non-0 = printed conflicts
-        if bash "./convert.sh" --check "$OTHER" "$METHOD" "$ROLE"; then
+        if bash "$SCRIPT_DIR/convert.sh" --check "$OTHER" "$METHOD" "$ROLE"; then
           echo
           _ans=no
           if [ "$ON_CONFLICT" = convert ]; then _ans=yes     # the flag IS the answer to this confirm — it named convert

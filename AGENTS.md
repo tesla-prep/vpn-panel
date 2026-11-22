@@ -52,12 +52,12 @@ sudo ROLE=host PANEL_DOMAIN=panel.example.org TLS_MODE=letsencrypt ACME_EMAIL=yo
 The variables go **after** `sudo`, inline: sudo drops an environment set in front of it, and sudo-rs (Ubuntu 26.04)
 ignores `-E` — a `VAR=… sudo -E bash -s host` run took every default there. Do not pipe the script into `sudo bash`:
 under sudo-rs the piped script runs in the terminal's background and cannot ask anything. A password given this way is
-logged by sudo (auth.log, the journal) — README.technical.md's security notes say so.
+logged by sudo (auth.log, the journal) — the security notes in docs/operations.md say so.
 
 The variables are declared in a `CONFIG` block at the top of each script; that block is the source of
 truth, and this table is the subset an agent usually needs.
 
-**`install-host.sh`** (panel; `ROLE=master` also makes this box an entry server)
+**[install-host.sh](scripts/install-host.sh)** (panel; `ROLE=master` also makes this box an entry server)
 
 | variable | meaning |
 |---|---|
@@ -71,7 +71,7 @@ truth, and this table is the subset an agent usually needs.
 | `STORE_CONFIGS` | `true` (default) keeps client configs so QR/download work later |
 | `HOST_NODE_NAME`, `HOST_ENDPOINT_IP`, `MANAGE_IFACES` | master only |
 
-**`install-node.sh`** (entry server)
+**[install-node.sh](scripts/install-node.sh)** (entry server)
 
 | variable | meaning |
 |---|---|
@@ -93,7 +93,7 @@ sudo bash -c "$(curl -fsSL …)" -- docker host -pass SECRET -domain panel.examp
 sudo bash -c "$(curl -fsSL …)" -- docker node -key KEY -host https://panel.example.org -endpoint 203.0.113.7
 ```
 
-Staged under `/opt/swg-panel-docker` with a `.env` (copy `.env.example`; `PANEL_PASSWORD` is required).
+Staged under `/opt/swg-panel-docker` with a `.env` (see `docker/.env.example`; `PANEL_PASSWORD` is required).
 Compose profiles are named after the roles: `master`, `host`, `node`. `docker host` asks the role in
 step 1 — pass `-role master|host` to skip it. `--dry-run` renders the `.env` and runs no Docker commands.
 
@@ -150,7 +150,7 @@ updated this way needs each remaining node updated in turn.
 
 | | |
 |---|---|
-| [README.md](README.md) · [Русский](README.ru.md) | what it is, for a person |
-| [README.technical.md](README.technical.md) | architecture, every flag, the unattended examples |
-| [API.md](API.md) | the HTTP API |
+| [README.md](README.md) · [Guide](docs/guide.md) | what it is, for a person |
+| [Operations](docs/operations.md) | architecture, every flag, the unattended examples |
+| [API](docs/api.md) | the HTTP API |
 | [CHANGELOG.md](CHANGELOG.md) | what changed, per release |

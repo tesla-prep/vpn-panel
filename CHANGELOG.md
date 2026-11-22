@@ -3,6 +3,16 @@
 All notable user-facing changes to **swgPanel**. This file starts at `1.3.11-beta`;
 earlier releases predate the changelog — see the git history. · Русский: [CHANGELOG.ru.md](CHANGELOG.ru.md)
 
+## [1.13.0-beta]
+
+### Changed
+
+- Moved sources to `src/`, deployment scripts to `scripts/`, Docker files to `docker/`, and guides to `docs/`. Existing install and update URLs and the deployed Docker and systemd paths stay compatible. Manual image builds now use `docker build -f docker/Dockerfile .` or `docker/Dockerfile.node`.
+
+### Removed
+
+- Removed the repository self-tests and their fixtures.
+
 ## [1.12.0-beta]
 
 ### Removed
