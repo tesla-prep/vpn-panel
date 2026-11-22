@@ -6,7 +6,7 @@ import { pickThemed, toThemed, IFACE_COLOR_DEFAULTS } from "./theme.js";
 import {
   kindOf, iTypeOf, targetType, nodeStale, ifaceNotUp, wdttOn, ghostIface, ghostPeers, turnProxiesFor,
   suggestIface, suggestSubnet, suggestPort, portHolder, portErrMsg, subnetFleetConflict, subnetServerAddr,
-  cidrNet, nextWdttName, nextCsqttName, ifaceIsAwg, candDialPort, turnIfaceNameError, awgDict3, awgGen, awg3Cls, awg3Tip, tip3, awg31No,
+  cidrNet, nextWdttName, nextCsqttName, ifaceIsAwg, turnIfaceNameError, awgDict3, awgGen, awg3Cls, awg3Tip, tip3, awg31No,
 } from "./model.js";
 import { turnFork, turnColor, turnForkList, forkSupportsAwg, forkOpts, forkLabel } from "./turn-catalog.js";
 import { Ic, ICON, Tag, Panel, Badge, StatusTag, CmdErr, Sheet, footRow, secTitle, SearchBox, Switch, Dropdown, Disclosure, autoGrow, IpPicker, NodeIpPick, useHostOnNode, Popover, Portal, toast, copy, mutate, sheetSend, openModal, pushModal, closeModal, closeAllModals, openConfirm, ConfirmSheet, opTag, procTag, inProc, statusLabel, LogBody, useReorder, GRIP_SVG, orderById, trackIfaceOps, startOrRestartWdtt, startOrRestartCsqtt, ifaceReady, ifaceWasBusy, RowError, goSettings, rowSingle, rowDouble, rowNoSelect, ifopBusy, ifopDone, ifopFail, STATUS_RANK, adoptOrphanPatch, dlul, rateCell, xferCell, typeToConfirm, LIST_PAGE, pageSlice, ListPager, awgSwitchTag, meshGenLabel, meshGenColor } from "./ui.js";
@@ -67,443 +67,6 @@ function dockerPortsStep() {
   return html`<${Fragment}>${a}<span class="mono">swg-node → ports:</span>${b}<//>`;
 }
 
-function adoptIntro(nodeName) {
-  const [a, b] = Tsplit("Start managing this interface on {node}. The panel doesn't know its type — {choose}", "node");
-  const [c, d] = [b.split("{choose}")[0], b.split("{choose}").slice(1).join("{choose}")];
-  return html`<${Fragment}>${a}<b>${nodeName}</b>${c}<b>${T("choose it below")}</b>${d}<//>`;
-}
-function adoptPreselect(type, why) {
-  const [a, b] = Tsplit(". Preselected {type} because {why}", "type", { why });
-  return html`<${Fragment}>${a}<b>${type}</b>${b}<//>`;
-}
-
-// An interface's AmneziaWG values: on a phone folded under their heading, a tap away — a dozen lines of numbers pushed the
-// rest of the page down (operator, 2026-10-29); a desktop shows them as before
-const awgFold = body => isMobile()
-  ? html`<details class="iface-amnezia m-awgfold"><summary><span class="ig-l">AmneziaWG</span></summary>${body}</details>`
-  : html`<div class="iface-amnezia"><span class="ig-l">AmneziaWG</span>${body}</div>`;
-
-export function IgnoredIfacesCard() {
-  useStore();
-  const rows = [];
-  for (const n of (Store.nodes || [])) {
-    for (const cd of (n.ignored_candidates || []))
-      if (cd && cd.name && !Store.ifaceIsSystem(n.id, cd.name) && !Store.ifaceMeta(n.id, cd.name))
-        rows.push({ n, id: cd.name, name: cd.name,
-                    info: (cd.wdtt_hint ? "WDTT" : (cd.address || "—")) + (candDialPort(cd) ? " · :" + candDialPort(cd) : ""),
-                    adopt: () => openModal(html`<${AdoptIfaceSheet} node=${n.id} iface=${cd.name} cand=${cd} nrec=${n}/>`) });
-    // A dismissed DORMANT WDTT install belongs here too — it is the same decision about the same kind of thing,
-    // and it is addressed by its config dir because a stopped server has no interface name to be listed under.
-    for (const d of (n.ignored_dormant || []))
-      if (d && d.config_dir)
-        rows.push({ n, id: d.config_dir, name: (d.config_dir.split("/").filter(Boolean).pop() || "wdtt"),
-                    info: T("WDTT · not running") + (d.listen_port ? " · :" + d.listen_port : ""),
-                    adopt: () => openModal(html`<${AdoptDormantWdttSheet} node=${n.id} d=${d} nrec=${n}/>`) });
-    for (const x of (n.ignored_containers || []))
-      if (x && x.name && x.container)
-        rows.push({ n, id: "ctr:" + x.container + ":" + x.name, name: x.name,
-                    info: (x.proto === "awg" ? "AWG" : "WG") + " · " + T("in {v1}", { v1: x.container })
-                          + (x.address ? " · " + x.address : ""),
-                    unignore: true });
-  }
-  if (!rows.length) return null;
-  return html`<div class="card">
-    <div class="seclabel" style="margin-top:0">${T("Ignored interfaces")}</div>
-    <p class="hint" style="margin:0 0 12px">${Trich("Interfaces found on your nodes that you told the panel to leave alone. They keep running exactly as they are — nothing here is managed, and nothing is shown on the node's page. *Adopt* one to start managing it.")}</p>
-    <div class="ignlist">${rows.map(r => html`<div class="ignrow" key=${r.n.id + "/" + r.id}>
-      <a class="ignrow-n" href=${"#/node/" + encodeURIComponent(r.n.id) + "/" + encodeURIComponent(r.id)} title=${r.id}>${r.name}</a>
-      <span class="ignrow-node">${T("on {v1}", { v1: r.n.name || r.n.id })}</span>
-      <span class="grow"></span>
-      <span class="ignrow-f">${r.info}</span>
-      ${r.unignore
-        ? html`<button class="iconbtn" title=${T("Stop ignoring it — show it on the node again")}
-            onClick=${() => api.ifaceUnignore({ node: r.n.id, iface: r.id })
-              .then(res => toast(res && res.ok ? T("Back on the node screen.") : (srvText(res) || T("Could not restore it.")), res && res.ok ? "ok" : "err"))}><${Ic} i="eye"/></button>`
-        : html`<button class="iconbtn" title=${T("Adopt {v1}", { v1: T("{v1} — start managing it from the panel", { v1: r.name }) })}
-            onClick=${r.adopt}><${Ic} i="plus"/></button>`}
-    </div>`)}</div>
-  </div>`;
-}
-export function CandidateIfaceDetail({ node, iface, cand, nrec, ignored, dorm, ctr }) {
-  useStore();
-  const dname = nrec.name || node;
-  const wd = !!cand.wdtt_hint;
-  const alien = !dorm && (wd || !!ctr);
-  const _adc = (nrec || {}).adopt_container;
-  const _ctrPending = !!ctr && !!_adc && typeof _adc === "object" && _adc.container === ctr.container
-                      && (!_adc.iface || _adc.iface === ctr.name);
-  // Same pre-flight the node card does: a take-over recreates the server under the SAME interface name, so it
-  // cannot run beside one this node already has. Explain it here rather than let the node refuse after a click.
-  const _ctrClash = !!ctr && !!Store.ifaceMeta(node, ctr.name);
-  const _named = (cand.peer_list || []).some(p => p && p.name);   // only widen the table when there IS a name
-  const title = (dorm || ctr) ? cand.name : iface;   // addressed by a config dir / container key; show the name
-  const ip0 = (cand.address || "").split("/")[0];
-  const panelOp = (verb, call, okMsg, leave) => {
-    const key = node + "|" + iface;
-    Store.ifaceOp[key] = { verb, phase: "busy", started: Date.now() }; Store.apply();
-    if (leave) location.hash = "#/node/" + encodeURIComponent(node);
-    (async () => {
-      let r; try { r = await call(); } catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
-      if (!r || !r.ok) {
-        Store.ifaceOp[key] = { verb, phase: "fail", until: Date.now() + 10000, err: srvText(r) || T("request failed") };
-        Store.apply(); return toast(srvText(r) || T("Failed"), "err");
-      }
-      await Store.poll();
-      delete Store.ifaceOp[key]; Store.apply();   // the card has moved on its own — no "done" flash to leave behind
-      toast(okMsg, "ok");
-    })();
-  };
-  const doIgnore   = () => panelOp("ignore",   () => api.ifaceIgnore({ node, iface }),   T("Interface ignored — listed in Settings → Interfaces."), true);
-  const doUnignore = () => panelOp("unignore", () => api.ifaceUnignore({ node, iface }), ctr ? T("Back on the node screen.") : T("Interface un-ignored — back as an adoption candidate."), false);
-  return html`<div class="screen">
-    <${NodeRail} active=${node}/>
-    <div class="crumb"><a href="#/nodes">${T("col|Nodes")}</a><span class="sep">/</span><a href=${"#/node/" + encodeURIComponent(node)}>${dname}</a><span class="sep">/</span><b>${title}</b></div>
-    <div class="detail-head">
-      <div class="title"><h1>${title}</h1><span class=${"iftype " + (wd ? "wdtt" : ctr ? (cand.type_hint === "awg" ? "awg" : "wg") : (cand.type_hint === "awg" ? "awg" : "orph"))}>${wd ? "wdtt" : ctr ? (cand.type_hint === "awg" ? "awg" : "wg") : cand.type_hint === "awg" ? "awg?" : "wg?"}</span>
-        ${dorm ? html`<${ForkTag} fork=${dorm.fork || "amurcanov"}/><span class="nstat stopped" title=${T("Installed on disk, nothing running")}><${Ic} i="stop"/> ${T("not running")}</span>` : null}
-        <span class=${"tg " + ((ignored || alien) ? "tg-ign" : "tg-cand")} title=${ignored ? T("Dismissed — the panel isn't managing it") : alien ? (ctr ? T("Another program owns this interface — it runs in its own container") : T("Another program is running this server — taking it over stops it first")) : T("On the node, not managed by the panel")}><${Ic} i="warn"/>${ignored ? T("tag|ignored") : alien ? T("tag|alien") : T("tag|orphan")}</span></div>
-      <div class="grow"></div>
-    </div>
-    <div class="notice warn"><${Ic} i="warn"/><span>${Store.ifaceGone[node + "|" + iface]
-      ? Trich("This interface is being *deleted* — the node tears it down on its next sync. It still reports the device, which is the only reason this page is showing.")
-      : ignored
-      ? Trich("This interface is *ignored* — the panel isn't managing it and it's hidden from the node's page. It's listed in *Settings → Interfaces*. *Un-ignore* to bring it back as a candidate, or *Adopt* to start managing it now.")
-      : ctr && _ctrClash
-      ? T("This node already runs an interface called {v1}, so the take-over cannot recreate this one under that name — it would collide. Free the name first: open {v1} and delete it if you don't need it, or move its peers to another interface. Nothing has been changed here.", { v1: ctr.name })
-      : ctr
-      ? Trich("This interface runs inside the container *{v1}*, from that container's own config — swgPanel can see it but cannot manage it there, and a change made here would be undone the next time that container restarts. *Take over* stops that container and runs the same server natively, keeping its key, port and peers.", { v1: ctr.container })
-      : dorm
-      ? html`${Trich("A WDTT server is *installed here but not running*. It owns its own tunnel device, so while it is stopped there is no interface, no socket and no process — this directory is its only trace. *Adopt* takes it over and starts it, keeping its server key and users, so existing clients keep working; *Ignore* leaves it alone.")}
-          ${!dorm.listen_port ? html`<div style="margin-top:8px">${Trich("*Its ports couldn't be identified*, so adoption will offer defaults — replace them with the ports this server was actually listening on. Clients dial the port written into the config they already hold, so adopting on the wrong one leaves every existing user unable to connect until you re-issue and re-distribute their links.")}</div>` : null}`
-      : wd
-      ? Trich("This is a *WDTT* interface — a userspace tunnel owned by its own server. *Adopt* takes it over keeping its identity and passwords, so existing clients keep working; *Ignore* leaves it alone.")
-      : Trich("This interface is on the node but the panel doesn't manage it, so its type isn't established yet — *you choose it while adopting*. *Adopt* to start managing it (its existing peers are kept), or *Ignore* to dismiss it.")}</span></div>
-
-    <${Panel} icon="key" title=${T("Interface details")} tone="orphan"
-          actions=${Store.ifaceGone[node + "|" + iface]
-            ? html`<${StatusTag} cls="tg-del" icon="clock" label="deleting" title=${T("The node tears it down on its next sync")}/>`
-            : Store.ifaceNew[node + "|" + iface]
-            // Adopt already submitted, node has not reported it yet. Offering the buttons again invites a
-            // SECOND onboard for the same interface; show what is happening instead.
-            ? html`<${StatusTag} cls="tg-busy" icon="clock" label="onboarding" title=${T("The node takes it over on its next sync")}/>`
-            : html`<${Fragment}>
-          ${_ctrPending
-            ? html`<${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|taking over")} title=${T("The node does this on its next sync")}/>
-                <button class="btn btn-mini" title=${T("Withdraw the request — nothing has happened on the node yet")}
-                  onClick=${async () => { delete Store.ctrAdopt[node + "|" + ctr.container + ":" + ctr.name]; Store.apply();
-                    const r = await api.containerAdopt({ node, cancel: true, container: ctr.container });
-                    toast(r && r.ok ? T("Request withdrawn.") : (srvText(r) || T("Could not withdraw it.")), r && r.ok ? "ok" : "err"); }}>${T("Withdraw")}</button>`
-            : ignored
-            ? html`<button class="btn btn-mini" onClick=${doUnignore}>${T("Un-ignore")}</button>`
-            : html`<button class="btn btn-mini" onClick=${doIgnore}>${T("Ignore")}</button>`}
-          ${_ctrPending
-            ? null
-            : _ctrClash
-            ? html`<${StatusTag} cls="tg-warn tg-click" icon="warn" label=${T("name taken")}
-                msg=${T("This node already runs an interface called {v1}, so the take-over cannot recreate this one under that name — it would collide. Free the name first: open {v1} and delete it if you don't need it, or move its peers to another interface. Nothing has been changed here.", { v1: ctr.name })}
-                title=${T("Why this can't be taken over")}/>`
-            : ctr
-            ? html`<button class="btn btn-mini btn-primary" onClick=${() => openConfirm({
-                title: T("Take over {v1}", { v1: ctr.name }), confirmLabel: T("Take it over"), warn: true,
-                body: T("swgPanel will STOP the container {v1} and run {v2} here instead — same key, same port, same obfuscation, so the configs already on your users' devices keep working, and its peers are imported. That container is only stopped, never deleted: if anything goes wrong the node starts it again, and you can start it yourself to go back. It will not come back on its own afterwards. Give it up to a minute: the container gets a grace period to shut down cleanly, and its runtime takes a moment to clear it away.", { v1: ctr.container, v2: ctr.name }),
-                onConfirm: async () => {
-                  const k = node + "|" + ctr.container + ":" + ctr.name;
-                  Store.ctrAdopt[k] = { at: Date.now() }; Store.apply();
-                  const r = await api.containerAdopt({ node, container: ctr.container, iface: ctr.name });
-                  if (!(r && r.ok)) { delete Store.ctrAdopt[k]; Store.apply(); }
-                  toast(r && r.ok ? T("Taking it over — the node does this on its next sync.") : (srvText(r) || T("Couldn't start the take-over.")), r && r.ok ? "ok" : "err");
-                  if (r && r.ok) go("#/node/" + encodeURIComponent(node)); } })}>${T("Take over")}</button>`
-            : html`<button class="btn btn-mini btn-primary"
-                title=${T("Start managing this interface from the panel")}
-                onClick=${() => openModal(dorm
-                  ? html`<${AdoptDormantWdttSheet} node=${node} d=${dorm} nrec=${nrec}/>`
-                  : html`<${AdoptIfaceSheet} node=${node} iface=${iface} cand=${cand} nrec=${nrec}/>`)}>${T("Adopt")}</button>`}
-        <//>`}>
-      <div class="iface-grid">
-        <div class="ig-item"><span class="ig-l">${T("Type")}</span><span class="ig-v">${wd
-          ? html`WDTT${(cand.wdtt && cand.wdtt.fork) ? " · " + forkLabel(cand.wdtt.fork) : ""}`
-          : cand.type_why
-          ? T("looks like {v1}", { v1: (cand.type_hint || "wg").toUpperCase() })
-          : ctr
-          ? html`${(cand.type_hint || "wg").toUpperCase()}`
-          : html`<span class="faint">${T("chosen when you adopt")}</span>`}</span></div>
-        ${dorm
-          // A stopped install has no endpoint, address or datapath to report — those are properties of a RUNNING
-          // server. What it does have is on disk, and that is what decides whether it can be taken over.
-          ? html`<${Fragment}>
-              <div class="ig-item"><span class="ig-l">${T("Found at")}</span><span class="ig-v">${dorm.config_dir}</span></div>
-              <div class="ig-item"><span class="ig-l">${T("Ports")}</span><span class="ig-v">${dorm.listen_port
-                ? html`${dorm.listen_port}${dorm.wg_port ? " · " + dorm.wg_port : ""}`
-                : html`<span class="faint">${T("set on adopt")}</span>`}</span></div>
-              <div class="ig-item"><span class="ig-l">${T("Server identity")}</span><span class="ig-v"><span class="mi-ok">${T("tag|present")}</span></span></div>
-            <//>`
-          : html`<${Fragment}>
-              <div class="ig-item"><span class="ig-l">${T("col|Endpoint")}</span><span class="ig-v">${listenAddr(ctr ? (ctr.host_port ? (nrec || {}).endpoint_host : "") : (nrec || {}).endpoint_host, (ctr && ctr.host_port) || candDialPort(cand))}</span></div>
-              <div class="ig-item"><span class="ig-l">${T("Server address")}</span><span class="ig-v">${cand.address || "—"}</span></div>
-              ${ctr ? html`<div class="ig-item"><span class="ig-l">${T("Container")}</span><span class="ig-v">${ctr.container}</span></div>` : null}
-              ${ctr ? null : html`<div class="ig-item"><span class="ig-l">${T("Found at")}</span><span class="ig-v">${cand.conf || ((cand.wdtt || {}).config_dir) || html`<span class="faint">—</span>`}</span></div>`}
-            <//>`}
-      </div>
-    <//>
-
-    ${wd && ((cand.wdtt || {}).users || []).length ? html`<${Panel} icon="users" title=${T("Users on this server")} count=${((cand.wdtt || {}).users || []).length} pad=${false}>
-      <table><thead><tr><th>${T("col|User")}</th><th>${T("col|Address")}</th><th>${T("LAST SEEN")}</th><th>${T("EXPIRES")}</th><th>VK</th><th class="num">${T("TRANSFER")}</th></tr></thead>
-        <tbody>${((cand.wdtt || {}).users || []).map((u, i) => html`<tr key=${"wu" + i}>
-          <td>${u.label || html`<span class="faint">${T("Peer {n}", { n: i + 1 })}</span>`}${u.disabled ? html` <span class="tg tg-ign">${T("tag|disabled")}</span>` : null}</td>
-          <td class="addr">${u.ip || html`<span class="faint">—</span>`}</td>
-          <td>${u.last_seen ? ago(u.last_seen) : u.bound ? html`<span class="faint">${T("connected before")}</span>` : html`<span class="faint">${T("never connected")}</span>`}</td>
-          <td>${u.expires_at ? html`<span class=${u.expires_at * 1000 < Date.now() ? "mi-bad" : ""}>${fmtDate(u.expires_at)}</span>` : html`<span class="faint">${T("never")}</span>`}</td>
-          <td>${u.vk ? html`<${Ic} i="check"/>` : html`<span class="faint">—</span>`}</td>
-          <td class="num">${(u.down_bytes || u.up_bytes) ? html`↓${fmtBytes(u.down_bytes || 0)} ↑${fmtBytes(u.up_bytes || 0)}` : html`<span class="faint">—</span>`}</td>
-        </tr>`)}</tbody></table>
-    <//>` : null}
-
-    ${wd && ((cand.wdtt || {}).users || []).length ? null : html`<${Panel} icon="users" title=${T("Peers on this interface")} count=${cand.peers || 0} pad=${false}>
-      ${(cand.peer_list || []).length
-        ? html`<table><thead><tr>${_named ? html`<th>${T("col|Peer")}</th>` : null}<th>${T("col|Address")}</th><th>${T("PUBLIC KEY")}</th><th>${T("col|Endpoint")}</th><th>${T("LAST HANDSHAKE")}</th><th class="num">${T("TRANSFER")}</th></tr></thead>
-            <tbody>${cand.peer_list.map(p => html`<tr key=${p.public_key}>
-              ${_named ? html`<td>${p.name || html`<span class="faint">${T("unnamed")}</span>`}</td>` : null}
-              <td class="addr">${p.allowed_ips || "—"}</td>
-              <td class="mono faint" title=${p.public_key}>${String(p.public_key || "").slice(0, 16)}…</td>
-              <td class="addr">${p.endpoint || html`<span class="faint">${T("never connected")}</span>`}</td>
-              ${/* the NODE's own measurement (`handshake_age`, beside the stamp), like every other handshake in the
-                    console — wg's `last_handshake` is on the node's clock, so subtracting it here read hours out on a
-                    node whose clock drifts. `ago()` on the stamp stays for a node too old to send the age. */""}
-              <td>${p.handshake_age != null ? agoAge(p.handshake_age)
-                    : p.last_handshake ? ago(p.last_handshake) : html`<span class="faint">${T("never")}</span>`}</td>
-              <td class="num">${(p.rx_bytes || p.tx_bytes) ? html`↓${fmtBytes(p.rx_bytes || 0)} ↑${fmtBytes(p.tx_bytes || 0)}` : html`<span class="faint">—</span>`}</td>
-            </tr>`)}</tbody></table>
-            ${cand.peers > cand.peer_list.length ? html`<div class="hint" style="padding:8px 14px">${T("Showing {n} of {total} — the rest come across on adopt.", { n: cand.peer_list.length, total: cand.peers })}</div>` : null}`
-        : html`<div class="empty">${cand.peers
-            ? Trich("*{v1} on this interface*The node couldn't read their details — they still come across when you adopt.", { v1: plural(cand.peers, "peer") })
-            : Trich("*{v1}*Nothing is configured on this interface yet. Adopt it to add peers from the panel.", { v1: T("No peers here") })}</div>`}
-    <//>`}
-  </div>`;
-}
-export function AdoptCsqttSheet({ node, c }) {
-  useStore();
-  const forks = enabledTurnForks().filter(f => f.kind === "csqtt");
-  const [fork, setFork] = useState((forks[0] || {}).id || "csqtt");
-  const [busy, setBusy] = useState(false);
-  const n = (c.users || []).length;
-  const storeGone = c.store_found === false;
-  // Which csqtt line it runs, so ours starts on the same one ("" = the node couldn't name it: the panel refuses the adopt).
-  const lineUnknown = c.line === "";
-  // …or names one this panel does not offer (a later csqtt): the panel refuses that adopt too, so the button says so first
-  const lineUnoffered = !!c.line && (Store.csqttLines || []).length > 0 && !(Store.csqttLines || []).includes(c.line);
-  // Either way there is no adopt to describe: the version notice stands where the sheet would say what Adopt does
-  const lineBlocked = lineUnknown || lineUnoffered;
-  const [accept, setAccept] = useState(false);
-  const doAdopt = async () => {
-    setBusy(true);
-    const r = await api.csqttAdopt({ node, iface: c.iface, fork, ...(storeGone ? { accept_no_store: true } : {}) });
-    if (!r || !r.ok) { setBusy(false); return toast(srvText(r) || T("Adopt failed"), "err"); }
-    closeAllModals(); await Store.poll();
-    toast(T("Adopting — the node takes it over on the next sync and its users keep connecting."), "ok");
-    location.hash = "#/node/" + encodeURIComponent(node);
-  };
-  return html`<${Sheet} title=${T("Adopt csqtt server · {v1}", { v1: c.iface })} width=${620}
-    foot=${html`<${Fragment}><span class="grow"></span><button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Cancel")}</button><button class=${"btn " + (storeGone ? "btn-danger" : "btn-primary")} disabled=${busy || lineBlocked || (storeGone && !accept)} onClick=${doAdopt}>${storeGone ? T("Adopt without its users") : T("Adopt")}</button></>`}>
-    ${lineBlocked ? null : storeGone
-      ? html`<div class="notice warn"><${Ic} i="warn"/><span>${Trich("The node *can't read this server's password store* at {v1}, so its users cannot come across. Adopting stops it and starts ours in its place with *no users at all* — everyone it is serving right now is dropped, and you have nothing to re-issue their access from.", { v1: c.config_dir })}</span></div>
-        <div class="hint" style="margin:-6px 0 14px">${T("This usually means the server runs inside a container of its own, where the node can't reach its files. To keep its users, stop it and re-create the server from the panel instead.")}</div>`
-      : html`<div class="notice ok"><${Ic} i="check"/><span>${Trich("Its *users are kept* — the panel takes the server over on its own address and port, keeps serving every password it already had, and imports each one as a peer you can see and manage.")}</span></div>`}
-    <div class="iface-grid" style="margin:0 0 16px">
-      <div class="ig-item"><span class="ig-l">${T("Found at")}</span><span class="ig-v">${c.config_dir}</span></div>
-      <div class="ig-item"><span class="ig-l">${T("Listen")}</span><span class="ig-v">${c.listen || "—"}</span></div>
-      <div class="ig-item"><span class="ig-l">${T("Server address")}</span><span class="ig-v">${c.tun_addr || "—"}</span></div>
-      ${c.line != null ? html`<div class="ig-item"><span class="ig-l">${T("Version")}</span><span class="ig-v">${c.line || html`<span class="faint">${T("value|unknown")}</span>`}</span></div>` : null}
-      <div class="ig-item"><span class="ig-l">${T("Users")}</span><span class="ig-v">${storeGone ? html`<span class="faint">${T("couldn't be read")}</span>` : (n || html`<span class="faint">${T("none found")}</span>`)}</span></div>
-    </div>
-    ${lineUnoffered ? html`<div class="notice warn" style="margin:0 0 14px"><${Ic} i="warn"/><span>${T("This server runs csqtt {v1}, which this panel doesn't run: taking it over would cut off its clients.", { v1: (c.version || c.line).slice(0, 16) })}</span></div>` : null}
-    ${lineUnknown ? html`<div class="notice warn" style="margin:0 0 14px"><${Ic} i="warn"/><span>${T("The node couldn't tell which csqtt version this server runs, and taking it over on a guess could cut off its clients. Refresh in a minute; if it stays unknown, stop that server and create one from the panel.")}</span></div>` : null}
-    ${n && !lineBlocked ? html`<div class="hint" style="margin:-6px 0 14px">${Trich("Adopting brings its *{count}* across — each becomes an unassigned peer you can hand to a user.", { count: plural(n, "user") })}</div>` : null}
-    <div class="field"><label>${T("Server fork")}</label><${Dropdown} value=${fork} onChange=${v => setFork(v)} options=${forkOpts(forks)} ariaLabel=${T("Server fork")}/>
-      <div class="hint">${T("Which csqtt server implements this instance")}</div></div>
-    ${lineBlocked ? null : storeGone
-      ? html`<label class="ivk-esc-row" style="margin-top:12px"><${Switch} on=${accept} onChange=${setAccept}/><span>${T("I understand its current users will be lost")}</span></label>`
-      : html`<div class="notice warn" style="margin-top:12px"><${Ic} i="warn"/><span>${T("The running server is stopped and ours starts in its place, on the same port — clients reconnect within seconds.")}</span></div>`}
-  <//>`;
-}
-
-export function AdoptDormantWdttSheet({ node, d, nrec }) {
-  useStore();
-  const forks = enabledTurnForks(d.fork).filter(f => f.kind === "wdtt");
-  const [fork, setFork] = useState(d.fork || (forks[0] || {}).id || "amurcanov");
-  const [iface, setIface] = useState(nextWdttName(node));
-  const [host, setHost] = useState("");
-  const [dtls, setDtls] = useState(String(d.listen_port || WDTT_DEFAULT_DTLS));
-  const [wgPort, setWgPort] = useState(String(d.wg_port || WDTT_DEFAULT_WG));
-  const [subnet, setSubnet] = useState(suggestSubnet(node));
-  const [busy, setBusy] = useState(false);
-  const dtlsErr = !dtls.trim() ? T("The DTLS port is required.") : portErrMsg(node, dtls, []);
-  const wgErr = !wgPort.trim() ? T("The internal WG port is required.")
-    : (Number(wgPort) === Number(dtls)) ? T("The DTLS port and internal WG port must differ.")
-    : portErrMsg(node, wgPort, [Number(dtls) || 0]);
-  const iperr = dtlsErr || wgErr;
-  const nameErr = /^[A-Za-z0-9][A-Za-z0-9_-]{0,14}$/.test(iface.trim()) ? "" : T("Letters, digits, _ and -, up to 15 characters.");
-  const doAdopt = async () => {
-    setBusy(true);
-    const r = await api.wdttAdopt({ node, iface: iface.trim(), fork, adopt_config_dir: d.config_dir,
-                                    // .0/24 is the NETWORK — the server wants .1/24, same as the create path
-                                    wg_addr: subnetServerAddr(subnet.trim()),
-                                    listen: (host.trim() || "") + ":" + dtls.trim(),
-                                    wg_port: wgPort.trim() });
-    if (!r || !r.ok) { setBusy(false); return toast(srvText(r) || T("Adopt failed"), "err"); }
-    closeAllModals(); await Store.poll();
-    toast(T("Adopting — the node starts this server with its existing key on the next sync."), "ok");
-    location.hash = "#/node/" + encodeURIComponent(node);
-  };
-  return html`<${Sheet} title=${T("Adopt WDTT install · {v1}", { v1: d.config_dir })} width=${640}
-    foot=${html`<${Fragment}><span class="grow"></span><button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Cancel")}</button><button class="btn btn-primary" disabled=${busy || !!iperr || !!nameErr || !forks.length} title=${nameErr || iperr || (forks.length ? "" : T("No WDTT forks are enabled in Settings → Turn proxies"))} onClick=${doAdopt}>${T("Adopt")}</button></>`}>
-    <div class="notice ok"><${Ic} i="check"/><span>${Trich("Its *server key and passwords are kept* — the panel installs our build over this config directory and starts it, so any client that already has a config keeps working.")}</span></div>
-    <div class="iface-grid" style="margin:0 0 16px">
-      <div class="ig-item"><span class="ig-l">${T("Found at")}</span><span class="ig-v">${d.config_dir}</span></div>
-      <div class="ig-item"><span class="ig-l">${T("Password store")}</span><span class="ig-v">${d.store || "—"}</span></div>
-      <div class="ig-item"><span class="ig-l">${T("Server identity")}</span><span class="ig-v"><span class="mi-ok">${T("tag|present")}</span></span></div>
-      <div class="ig-item"><span class="ig-l">${T("Users")}</span><span class="ig-v">${(d.users || []).length || html`<span class="faint">${T("none found")}</span>`}</span></div>
-    </div>
-    ${(d.users || []).length ? html`<div class="hint" style="margin:-6px 0 14px">${Trich("Adopting brings its *{count}* across — open the install from its card to see them.", { count: plural((d.users || []).length, "user") })}</div>` : null}
-    <div class="hint" style="margin:-6px 0 14px">${d.listen_port
-      ? Trich("Ports recovered from its password store — its clients already dial these. The *subnet* is never written to disk, so set that below.")
-      : T("Not running, so its ports and subnet can't be read from the server — set them here.")}</div>
-    <div class="row2">
-      <div class="field"><label>${T("Server fork")}</label><${Dropdown} value=${fork} onChange=${v => setFork(v)} options=${forkOpts(forks)} ariaLabel=${T("Server fork")}/><div class="hint">${d.fork ? Trich("Detected *{v1}* from its files", { v1: forkLabel(d.fork) }) : T("Pick the fork this install is")}</div></div>
-      <div class="field"><label>${T("Interface name")}</label><input class=${nameErr ? "bad" : ""} value=${iface} onInput=${e => setIface(e.target.value)} placeholder="wdtt1"/>${nameErr ? html`<div class="hint err">${nameErr}</div>` : null}</div>
-    </div>
-    <div class="row2">
-      <div class="field"><label>${T("Endpoint host / IP")}</label><${NodeIpPick} ips=${ipChoices(nrec)} value=${host} onChange=${setHost} auto=${T("Auto (node's detected address)")} customPlaceholder="IP or hostname"/><div class="hint">${T("What clients dial")}</div></div>
-      <div class="field"><label>${T("Tunnel subnet (CIDR)")}</label><input value=${subnet} onInput=${e => setSubnet(e.target.value)} placeholder="10.66.0.1/24"/></div>
-    </div>
-    <div class="row2">
-      <div class="field"><label>${T("Listen port (DTLS)")}</label><input class=${dtlsErr ? "bad" : ""} value=${dtls} onInput=${e => setDtls(e.target.value)}/>${dtlsErr ? html`<div class="hint err">${dtlsErr}</div>` : html`<div class="hint">${T("What clients dial")}</div>`}</div>
-      <div class="field"><label>${T("Internal WG port")}</label><input class=${wgErr ? "bad" : ""} value=${wgPort} onInput=${e => setWgPort(e.target.value)}/>${wgErr ? html`<div class="hint err">${wgErr}</div>` : html`<div class="hint">${T("The server's own tunnel port")}</div>`}</div>
-    </div>
-  <//>`;
-}
-export const WDTT_DEFAULT_DTLS = 56000, WDTT_DEFAULT_WG = 56001;
-export function AdoptIfaceSheet({ node, iface, cand, nrec }) {
-  useStore();
-  const w = cand.wdtt || {};
-  const wd = !!cand.wdtt_hint;                                  // the node positively identified a WDTT server here
-  const forks = enabledTurnForks(w.fork).filter(f => f.kind === "wdtt");
-  // Preselect from the node's EVIDENCE (live obfuscation params / a WDTT server process), never from which tool
-  // happened to answer a dump — that lies on a box where the amneziawg module backs plain WireGuard too.
-  const [type, setType] = useState(cand.type_hint === "wdtt" ? "wdtt" : cand.type_hint === "awg" ? "awg" : "wg");
-  const [fork, setFork] = useState(w.fork || (forks[0] || {}).id || "amurcanov");
-  const [host, setHost] = useState("");
-  // Prefilled from what the node found — the DTLS port for WDTT (what clients dial), the wg listen port otherwise.
-  const wdttDtls = String((w.listen || "").split(":").pop() || "");
-  const [port, setPort] = useState(String(cand.listen_port || ""));
-  const [dtls, setDtls] = useState(wdttDtls);
-  const [wgPort, setWgPort] = useState(String(w.wg_port || ""));
-  const iperr = portErrMsg(node, type === "wdtt" ? dtls : port, [cand.listen_port, Number(wdttDtls) || 0]);
-  // the internal WG port was never validated here — a clash was accepted and surfaced only when the node failed
-  const wgErr = type !== "wdtt" ? ""
-    : (Number(wgPort) === Number(dtls)) ? T("The DTLS port and internal WG port must differ.")
-    : portErrMsg(node, wgPort, [cand.listen_port, Number(wdttDtls) || 0, Number(dtls) || 0]);
-  const [awg, setAwg] = useState({});
-  const setAwgK = (k, v) => setAwg(a => ({ ...a, [k]: v }));
-  // Collapsed by default: adoption KEEPS the interface's existing parameters, so these 16 fields are an override
-  // nobody needs in the common case — and a wall of empty boxes reads as "fill me in" when blank is correct.
-  const [awgOpen, setAwgOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [idPath, setIdPath] = useState("");                     // operator-supplied wg-keys.dat, when we couldn't find it
-  // Two different questions: does this server need us to be TOLD where its identity is (drives the notice, which
-  // holds the input — so it must not vanish the moment they start typing), and is Adopt blocked right now.
-  const needsIdentity = !(w && w.adoptable);
-  const doAdopt = async () => {
-    setBusy(true);
-    if (type === "wdtt") {
-      const r = await api.wdttAdopt({ node, iface, fork, wg_addr: w.wg_addr || cand.address || "",
-                                      listen: (host.trim() || (w.listen || "").split(":")[0] || "") + ":" + dtls.trim(),
-                                      wg_port: wgPort.trim(), max_passwords: w.max_passwords || "",
-                                      identity_path: idPath.trim() });
-      if (!r || !r.ok) { setBusy(false); return toast(srvText(r) || T("Adopt failed"), "err"); }
-      closeAllModals(); await Store.poll();
-      toast(T("Adopting the WDTT server — the node takes it over on its next sync."), "ok");
-      location.hash = "#/node/" + encodeURIComponent(node); return;
-    }
-    const r = await api.ifaceOnboard({ node, iface, protocol: type, conf: cand.conf, endpoint_host: host.trim() });
-    if (!r || !r.ok) { setBusy(false); return toast(srvText(r) || T("Adopt failed"), "err"); }
-    const awgClean = AWG_ORDER.reduce((o, k) => { const v = String(awg[k] == null ? "" : awg[k]).trim(); if (v) o[k] = v; return o; }, {});
-    const portChanged = port.trim() && port.trim() !== String(cand.listen_port || "");
-    if (portChanged || host.trim() || (type === "awg" && Object.keys(awgClean).length)) {   // apply edits via the normal reconfigure path
-      const ub = { node, iface, endpoint_host: host.trim(), listen_port: port.trim() };
-      if (type === "awg") ub.awg_params = awgClean;
-      await api.ifaceUpdate(ub);
-    }
-    Store.ifaceNew[node + "|" + iface] = { at: Date.now() };   // flash "ready" once it appears as managed
-    closeAllModals(); await Store.poll();
-    toast(T("Adopting interface — the node will start managing it."), "ok");
-      location.hash = "#/node/" + encodeURIComponent(node);
-  };
-  const blockMsg = (type === "wdtt" && needsIdentity)
-    ? (w.has_identity === false || w.fork
-        ? T("The node found this server but not its identity (wg-keys.dat), so adopting would mint a new key and break every client. Ignore it instead, or restore its config directory first.")
-        : T("No WDTT server was found running on this interface, so there is no identity to take over. Start it and re-check, or adopt it as WireGuard/AmneziaWG."))
-    : "";
-  const adoptBlocked = type === "wdtt" && needsIdentity && !idPath.trim();
-  return html`<${Sheet} title=${T("Adopt interface · {v1}", { v1: iface })} width=${640}
-    foot=${html`<${Fragment}><span class="grow"></span><button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Cancel")}</button><button class="btn btn-primary" disabled=${busy || !!iperr || !!wgErr || adoptBlocked || (type === "wdtt" && !forks.length)} title=${(adoptBlocked ? blockMsg : "") || iperr || wgErr || ((type === "wdtt" && !forks.length) ? T("No WDTT forks are enabled in Settings → Turn proxies") : "")} onClick=${doAdopt}>${T("Adopt")}</button></>`}>
-    <div class="iface-intro"><div>${adoptIntro(nrec.name || node)}${cand.type_why ? adoptPreselect((cand.type_hint || "wg").toUpperCase(), cand.type_why) : null}.</div></div>
-    <div class="notice ok"><${Ic} i="check"/><span>${type === "wdtt"
-      ? Trich("Its *server key and passwords are kept* — a panel-managed instance is built that reuses them, then the old process is stopped. Every client that already has a config keeps working.")
-      : Trich("Its *server key and existing peers are kept* (add-only — the panel never removes peers it didn't create), so nothing needs re-distributing.")}</span></div>
-    ${cand.peers ? html`<div class="notice warn"><${Ic} i="warn"/><span>${Trich("This interface has {count} existing. Changing the *listen port* or *endpoint* will break their current configs — you'd re-distribute the QR codes.", { count: plural(cand.peers, "peer") })}</span></div>` : null}
-    <div class="field"><label>${T("Interface type")}</label>
-      <div class="typepick">${[["wg", "WireGuard", "var(--online)"], ["awg", "AmneziaWG", "var(--brand)"], ["wdtt", "WDTT", WDTT_COLOR]]
-        .filter(([id]) => id !== "wdtt" || wd).map(([id, label, col]) => html`
-        <button type="button" key=${id} class=${"tp-opt" + (type === id ? " on" : "")} style=${"--tpc:" + col} onClick=${() => setType(id)}>${label}</button>`)}</div>
-      ${(wd && type !== "wdtt") ? html`<div class="notice warn" style="margin:8px 0 0"><${Ic} i="warn"/><span>${Trich("A *WDTT server owns this interface* and manages its own peers. Adopting it as {type} leaves both the panel and that server writing the same peer list — it appears to work until they disagree. Adopt it as *WDTT* unless you know why you want this.", { type: type.toUpperCase() })}</span></div>` : null}
-      <div class="hint">${type === "wdtt" ? T("Managed as a WDTT server — the panel rebuilds it with our patched fork over its existing identity.")
-        : type === "awg" ? T("Managed as AmneziaWG (obfuscated) — set its parameters below, or leave blank to keep the interface's existing ones.")
-        : T("Managed as plain WireGuard.")}</div>
-    </div>
-    <div class="iface-grid" style="margin:0 0 16px">
-      <div class="ig-item"><span class="ig-l">${T("Datapath")}</span><span class="ig-v">${cand.datapath}${cand.up ? "" : " · " + T("val|down")}</span></div>
-      <div class="ig-item"><span class="ig-l">${T("Tunnel subnet")}</span><span class="ig-v">${cand.address || w.wg_addr || "—"}</span></div>
-      ${/* For a WDTT server the interface's peer count is the WRONG number: it counts wg peers that have
-            CONNECTED, so a server with three issued users nobody has used yet reads "0 existing peers" —
-            the opposite of what an operator needs before taking it on. Its store knows what was issued. */ null}
-      <div class="ig-item"><span class="ig-l">${T("Existing peers")}</span><span class="ig-v">${(() => {
-        const wu = ((cand.wdtt || {}).users || []).length;
-        return wu ? html`${wu}${cand.peers ? html` <span class="faint">${T("· {v1} connected", { v1: cand.peers })}</span>` : null}` : (cand.peers || 0);
-      })()}</span></div>
-      ${cand.conf ? html`<div class="ig-item"><span class="ig-l">${T("Config file")}</span><span class="ig-v">${cand.conf}</span></div>` : null}
-      ${type === "wdtt" ? html`<${Fragment}>
-        <div class="ig-item"><span class="ig-l">${T("Config directory")}</span><span class="ig-v">${w.config_dir || "—"}</span></div>
-        <div class="ig-item"><span class="ig-l">${T("Password store")}</span><span class="ig-v">${w.store || "—"}</span></div>
-        <div class="ig-item"><span class="ig-l">${T("Server identity")}</span><span class="ig-v">${w.has_identity ? html`<span class="mi-ok">${T("recoverable")}</span>` : html`<span class="mi-bad">${T("not found")}</span>`}</span></div>
-      <//>` : null}
-    </div>
-    ${blockMsg ? html`<div class="notice warn"><div style="min-width:0">${blockMsg}
-      <div class="field" style="margin:10px 0 0"><label>${T("Path to the server's key file")}</label>
-        <input value=${idPath} onInput=${e => setIdPath(e.target.value)} placeholder="/etc/wdtt/wg-keys.dat"/>
-        <div class="hint">${T("If you know where it lives, point at it — the node checks the file first and adopts only if it can read it. Nothing is stopped or overwritten until that check passes, so a wrong path costs nothing.")}</div>
-      </div></div></div>` : null}
-    <div class="row2">
-      ${type === "wdtt" ? html`<div class="field"><label>${T("Server fork")}</label>
-        <${Dropdown} value=${fork} onChange=${v => setFork(v)} options=${forkOpts(forks)} ariaLabel=${T("Server fork")}/>
-        <div class="hint">${w.fork ? Trich("Detected *{v1}*{v2} — change only if wrong", { v1: forkLabel(w.fork), v2: w.store ? " (" + w.store + ")" : "" }) : T("Pick the fork this server runs")}</div>
-      </div>` : null}
-      <div class="field"><label>${T("Endpoint host / IP")}</label><${NodeIpPick} ips=${ipChoices(nrec)} value=${host} onChange=${setHost} auto=${T("Auto (node's detected address)")} customPlaceholder="IP or hostname"/><div class="hint">${T("What clients dial")}</div></div>
-      ${type === "wdtt" ? null
-        : html`<div class="field"><label>${T("Listen port")}</label><input class=${iperr ? "bad" : ""} value=${port} onInput=${e => setPort(e.target.value)} placeholder=${String(cand.listen_port || "")}/>${iperr ? html`<div class="hint err">${iperr}</div>` : html`<div class="hint">${T("Currently {v1}", { v1: cand.listen_port || "—" })}</div>`}</div>`}
-    </div>
-    ${type === "wdtt" ? html`<div class="row2">
-      <div class="field"><label>${T("Listen port (DTLS)")}</label><input class=${iperr ? "bad" : ""} value=${dtls} onInput=${e => setDtls(e.target.value)} placeholder=${wdttDtls}/>${iperr ? html`<div class="hint err">${iperr}</div>` : html`<div class="hint">${T("What clients dial · currently {v1}", { v1: wdttDtls || "—" })}</div>`}</div>
-      <div class="field"><label>${T("Internal WG port")}</label><input class=${wgErr ? "bad" : ""} value=${wgPort} onInput=${e => setWgPort(e.target.value)} placeholder=${String(w.wg_port || "")}/>${wgErr ? html`<div class="hint err">${wgErr}</div>` : html`<div class="hint">${T("The server's own tunnel port — not dialled by clients")}</div>`}</div>
-    </div>` : null}
-    ${type === "awg" ? html`<div class="field" style="margin-top:4px">
-      <${Disclosure} title=${T("AmneziaWG parameters")} open=${awgOpen} onToggle=${() => setAwgOpen(o => !o)}
-          summary=${Object.values(awg).some(v => String(v || "").trim()) ? "overridden" : T("keeping the interface's own")}>
-        <div class="hint" style="margin:0 0 8px">${T("Rendered into configs/QRs. Leave blank to keep the interface's existing values.")}</div>
-        <div class="awg-cols">${[["Jc", "Jmin", "Jmax"], ["S1", "S2", "S3", "S4"], ["H1", "H2", "H3", "H4"], ["I1", "I2", "I3", "I4", "I5"]].map(grp => html`<div class="awg-col">${grp.map(k => html`<label class="awg-f"><span>${k}</span><input value=${awg[k] == null ? "" : awg[k]} onInput=${e => setAwgK(k, e.target.value)}/></label>`)}</div>`)}</div>
-      <//></div>` : null}
-  <//>`;
-}
-// ═════════════════════════ SCREEN: INTERFACE DETAIL ═════════════════════════
 export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   useStore();
   const [q, setQ] = useState("");
@@ -520,38 +83,8 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   const _cInst = ((Store.stats[node] || {}).csqtt || []).find(c => c && c.iface === iface);
   const _cCfg = !_cInst && ((nrec.csqtt_cfg || {})[iface] || null);
   if (_cInst || _cCfg) return html`<${WdttIfaceDetail} node=${node} iface=${iface} w=${_cInst || { iface }} nrec=${nrec} missing=${!_cInst} kind="csqtt"/>`;
-  if (iface.startsWith("/")) {
-    const _dorm = (nrec.wdtt_dormant || []).find(x => x && x.config_dir === iface)
-              || (nrec.ignored_dormant || []).find(x => x && x.config_dir === iface);
-    if (_dorm) return html`<${CandidateIfaceDetail} node=${node} iface=${iface} nrec=${nrec} dorm=${_dorm}
-      ignored=${(nrec.ignored_dormant || []).some(x => x && x.config_dir === iface)}
-      cand=${{ name: (_dorm.config_dir || "").split("/").filter(Boolean).pop() || "wdtt", wdtt_hint: true,
-               type_hint: "wdtt", datapath: "userspace", address: "", listen_port: _dorm.listen_port || 0,
-               peers: 0, peer_list: [], conf: _dorm.config_dir,
-               wdtt: { fork: _dorm.fork, config_dir: _dorm.config_dir, store: _dorm.store,
-                       has_identity: true, adoptable: true, users: _dorm.users || [] } }}/>`;
-    return html`<div class="screen"><div class="crumb"><a href="#/nodes">${T("col|Nodes")}</a><span class="sep">/</span><a href=${"#/node/" + encodeURIComponent(node)}>${nrec.name || node}</a><span class="sep">/</span><b>${iface}</b></div>
-      <div class="empty"><b>${T("Not found")}</b>${T("the node no longer reports a WDTT install at this path — it may have been started (look for it as an interface) or removed.")}</div></div>`;
-  }
-  if (iface.startsWith("ctr:")) {
-    const _cut = iface.indexOf(":", 4);
-    const _ctn = iface.slice(4, _cut < 0 ? undefined : _cut), _cif = _cut < 0 ? "" : iface.slice(_cut + 1);
-    const _hit = (l) => (l || []).find(x => x && x.container === _ctn && x.name === _cif);
-    const _x = _hit(nrec.container_ifaces) || _hit(nrec.ignored_containers);
-    if (_x) return html`<${CandidateIfaceDetail} node=${node} iface=${iface} nrec=${nrec} ctr=${_x}
-      ignored=${!!_hit(nrec.ignored_containers)}
-      cand=${{ name: _x.name, type_hint: _x.proto === "awg" ? "awg" : "wg", address: _x.address || "",
-               listen_port: _x.listen_port || 0, peers: _x.peers || 0, peer_list: _x.peer_list || [],
-               conf: "" }}/>`;
-    return html`<div class="screen"><div class="crumb"><a href="#/nodes">${T("col|Nodes")}</a><span class="sep">/</span><a href=${"#/node/" + encodeURIComponent(node)}>${nrec.name || node}</a><span class="sep">/</span><b>${_cif || iface}</b></div>
-      <div class="empty"><b>${T("Not found")}</b>${T("the node no longer reports this interface inside that container — it may have been stopped, or the container removed.")}</div></div>`;
-  }
   const dname = nrec.name || node;
   const meta = Store.ifaceMeta(node, iface);
-  // Approach-B adoption candidate: found on the node, not managed by the panel → the stripped Adopt/Ignore view.
-  // (ignored candidates land here too — the detail then offers Un-ignore instead of Ignore.)
-  const _cand = !meta && ((nrec.iface_candidates || []).find(c => c && c.name === iface) || (nrec.ignored_candidates || []).find(c => c && c.name === iface));
-  if (_cand) return html`<${CandidateIfaceDetail} node=${node} iface=${iface} cand=${_cand} nrec=${nrec} ignored=${(nrec.ignored_candidates || []).some(c => c && c.name === iface)}/>`;
   const _rawMiss = (!meta && nrec.missing_ifaces && nrec.missing_ifaces[iface]) || null;
   const missIf = (_rawMiss && _rawMiss.key_source) ? _rawMiss : null;   // RECOVERABLE (key backup/vault) → read-only, only action Restore interface
   const ghostIf = (!meta && !missIf && ghostIface(node, iface)) || null;   // lost + KEYLESS → read-only, only action Recreate and rekey interface
@@ -824,7 +357,7 @@ export function OrphanRow({ o }) {
     </td></tr>`;
 }
 
-export function openOnboardIface(node) { openModal(html`<${LoadIfaceSheet} node=${node}/>`); }
+export function openCreateIface(node) { openModal(html`<${LoadIfaceSheet} node=${node}/>`); }
 export function BridgePortSheet({ iface, port }) {   // shown after creating an iface on a bridge docker node
   const p = port || "PORT";
   const portsLine = `- "${p}:${p}/udp"`;
@@ -1041,14 +574,14 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const isBridge = nrec.kind === "docker" && (nrec.net_mode || "host") === "bridge";   // only bridge needs port publishing
   const _defProto = (pre && pre.proto) || "awg";
-  const [proto, setProto] = useState(_defProto);   // wg | awg | wdtt | existing
+  const [proto, setProto] = useState(_defProto);   // wg | awg | wdtt | csqtt
   const sugAwg = suggestIface(node, "awg"), sugWg = suggestIface(node, "wg");   // auto-suggested names (per base)
   const sugWdtt = nextWdttName(node);
   const sugWdttNet = suggestSubnet(node);   // WDTT takes the SAME subnet form as wg/awg (10.X.0.0/24, fleet-unique); the server .1 is derived on save
   const sugWdttListen = suggestPort(node, "turn");                        // external DTLS (turn-proxy family)
   const sugWdttWg = suggestPort(node, "turn", [sugWdttListen]);           // internal userspace-WG port (≠ the listen)
   const [iface, setIface] = useState((pre && pre.iface) || (_defProto === "wdtt" ? sugWdtt : _defProto === "awg" ? sugAwg : sugWg)); const [subnet, setSubnet] = useState((pre && pre.subnet) || ((pre && pre.proto) === "wdtt" ? sugWdttNet : suggestSubnet(node)));
-  const [host, setHost] = useState(""); const [port, setPort] = useState(String((pre && pre.port) || ((pre && pre.proto) === "wdtt" ? sugWdttListen : suggestPort(node, "iface"))));
+  const [port, setPort] = useState(String((pre && pre.port) || ((pre && pre.proto) === "wdtt" ? sugWdttListen : suggestPort(node, "iface"))));
   const _wdttForks = enabledTurnForks().filter(f => f.kind === "wdtt");
   const _forkBuildable = f => (f.wdtt_versions || []).length > 0;
   const [wgPort, setWgPort] = useState(String(sugWdttWg)); const [fork, setFork] = useState(((_wdttForks.find(f => (f.wdtt_versions || []).length) || _wdttForks[0] || {}).id) || "amurcanov");   // WDTT: internal userspace-WG port + which server fork (default = first enabled one that has a build)
@@ -1076,7 +609,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
   const missing = (nrec.missing_ifaces || {})[iface.trim()];
   const gen = genPick || (pre && pre.gen) || (missing ? (awgDict3(missing.awg_params) ? "3.1" : "2.0")
     : no31 ? "2.0" : _idf.awg_gen || DEFAULT_AWG_GEN);
-  const [conf, setConf] = useState("");
   const ips = ipChoices(nrec);
   const [eg, setEg] = useState(() => egressInit({}));
   const [blk, setBlk] = useState(() => defaultBlockFor(node));   // Filters & abuse — seeded from each category's default_on once the catalog loads
@@ -1094,7 +626,7 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
   const lst = useListenState(node, (isWdtt || isCsqtt) ? ipPickerVal(hostSel, hostCustom) : "", "", "", pin);
   const pickProto = p => {   // switching base re-suggests the name only if the field is still an untouched suggestion
     const untouched = iface === sugAwg || iface === sugWg || iface === sugWdtt || iface === sugCsqtt || !iface.trim();
-    if (p !== "existing" && untouched) setIface(p === "wg" ? sugWg : p === "wdtt" ? sugWdtt : p === "csqtt" ? sugCsqtt : sugAwg);
+    if (untouched) setIface(p === "wg" ? sugWg : p === "wdtt" ? sugWdtt : p === "csqtt" ? sugCsqtt : sugAwg);
     if (p === "wdtt") {   // WDTT: seed the subnet + collision-free DTLS listen + internal-WG ports
       if (!subnet.trim() || subnet === suggestSubnet(node)) setSubnet(sugWdttNet);
       if (!port.trim() || port === String(suggestPort(node, "iface"))) setPort(String(sugWdttListen));
@@ -1108,16 +640,11 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
     setProto(p);
   };
   const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false);
-  const [adoptMode, setAdoptMode] = useState(false);
-  const existing = adoptMode;
-  // Adopting BY PATH — the same choice the adopt sheet offers, because it is the same decision: what is this
-  // interface? "auto" used to be inferred from the conf, which is fine for wg/awg but says nothing about WDTT.
-  const exWdtt = existing && proto === "wdtt";
   const fail = t => { setBusy(false); setMsg({ k: "err", t }); };
   const save = async () => {
     setBusy(true); setMsg({ k: "work", t: T("requesting…") });
-    if (!existing) { const ee = egressSaveBlock(eg, nrec.routing_mode || "kernel"); if (ee) return fail(ee); }
-    if (ghost && !existing && Store.storeMode === "encrypted" && (ghost.peers || []).length && !subSKCached()) {
+    const ee = egressSaveBlock(eg, nrec.routing_mode || "kernel"); if (ee) return fail(ee);
+    if (ghost && Store.storeMode === "encrypted" && (ghost.peers || []).length && !subSKCached()) {
       const n = ghost.peers.length;
       await ensureVaultUnlocked({
         title: T("Unlock to capture the rekeyed configs"),
@@ -1127,23 +654,7 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
       setMsg({ k: "work", t: T("requesting…") });   // the prompt may have taken a while → restore the working state
     }
     let r;
-    if (existing) {
-      if (proto === "wdtt") {
-        const c = conf.trim();
-        if (!c.startsWith("/")) return fail(T("Enter the absolute path to the server's config directory (the one holding wg-keys.dat)."));
-        setBusy(false); closeModal();
-        openModal(html`<${AdoptDormantWdttSheet} node=${node} nrec=${nrec}
-          d=${{ config_dir: c.replace(/\/+$/, ""), fork: "", store: "", users: [], listen_port: 0, wg_port: 0 }}/>`);
-        return;
-      }
-      // A csqtt server is adopted from its CARD on the node page (the node finds it and reports it), not by
-      // typing a path here: it owns its raw TUN, so there is no .conf to point at.
-      if (proto === "csqtt") return fail(T("A csqtt server is adopted from its card on the node page — the node finds it and offers it there."));
-      const c = conf.trim();
-      if (!c.startsWith("/")) return fail(T("Enter the absolute path to the interface's .conf."));
-      const base = (c.split("/").pop() || "").replace(/\.conf$/i, "");   // seed the name from the filename
-      r = await api.ifaceOnboard({ node, iface: base, protocol: proto, conf: c, endpoint_host: host.trim() });
-    } else if (isWdtt) {
+    if (isWdtt) {
       // WDTT interface: ONE record — this writes the same /api/wdtt/set the Turn-proxies card edits.
       const nm = iface.trim();
       const _ne = turnIfaceNameError(node, nm, "wdtt"); if (_ne) return fail(_ne);
@@ -1176,36 +687,34 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
     reportDropped(r);   // §5.4 — create carries a routing block too (the new-interface sheet has the field)
     // optimistic: show the card — WITH the details just entered — the instant Create is clicked (use the
     // component-scoped state vars, not the else-block locals). Onboarding doesn't know subnet/port yet.
-    const _newName = existing ? (conf.trim().split("/").pop() || "").replace(/\.conf$/i, "") : iface.trim();
-    if (_newName) Store.ifaceNew[node + "|" + _newName] = existing
-      ? { type: null, at: Date.now() }
-      : { type: proto, subnet: subnet.trim(), port: port.trim(), endpoint: ipPickerVal(hostSel, hostCustom), at: Date.now(),
-          ...(proto === "awg" && gen === "3.1" ? { gen: "3.1" } : {}) };
-    if (ghost && !existing) Store.ghostRekey[node + "|" + _newName] = { peers: ghost.peers || [], at: Date.now() };   // phase 2: rekey these once the fresh iface is live
+    const _newName = iface.trim();
+    Store.ifaceNew[node + "|" + _newName] = {
+      type: proto, subnet: subnet.trim(), port: port.trim(), endpoint: ipPickerVal(hostSel, hostCustom), at: Date.now(),
+      ...(proto === "awg" && gen === "3.1" ? { gen: "3.1" } : {}),
+    };
+    if (ghost) Store.ghostRekey[node + "|" + _newName] = { peers: ghost.peers || [], at: Date.now() };   // phase 2: rekey these once the fresh iface is live
     closeModal(); Store.apply(); await Store.poll();
-    if (!existing && !isWdtt && !isCsqtt && isBridge) { openModal(html`<${BridgePortSheet} iface=${_newName} port=${port.trim()}/>`); return; }
+    if (!isWdtt && !isCsqtt && isBridge) { openModal(html`<${BridgePortSheet} iface=${_newName} port=${port.trim()}/>`); return; }
     toast(ghost ? ((ghost.peers || []).length === 1
         ? T("Recreating {v1} — keep this tab open and its 1 peer is rekeyed automatically once it's back; otherwise rekey it from its peer view. Then hand out the fresh config.", { v1: _newName })
         : T("Recreating {v1} — keep this tab open and its {v2} are rekeyed automatically once it's back; otherwise rekey each from its peer view. Then hand out the fresh configs.", { v1: _newName, v2: plural((ghost.peers || []).length, "peer") }))
-                : (existing ? T("Onboarding requested — applies on the node's next sync.") : T("Interface creation requested — applies on the node's next sync.")), "ok", ghost ? 6000 : 3600);
+                : T("Interface creation requested — applies on the node's next sync."), "ok", ghost ? 6000 : 3600);
   };
   // subnets must be UNIQUE across the fleet (the mesh routes by subnet) → warn + block Save on a duplicate. Skip
   // for onboarding (the node reports its own subnet) and for a ghost recreate (same iface, its subnet is expected).
-  const _subConflict = (!existing && !ghost && subnet.trim()) ? subnetFleetConflict(subnet.trim(), null, null) : null;
-  const _nameTaken = (!existing && !ghost && iface.trim()) ? (() => { const nm = iface.trim();
+  const _subConflict = (!ghost && subnet.trim()) ? subnetFleetConflict(subnet.trim(), null, null) : null;
+  const _nameTaken = (!ghost && iface.trim()) ? (() => { const nm = iface.trim();
     if ((Store.describe[node] || {})[nm] || (nrec.wdtt_cfg || {})[nm] || (nrec.csqtt_cfg || {})[nm]
         || ((Store.stats[node] || {}).wdtt || []).some(w => w && w.iface === nm)
         || ((Store.stats[node] || {}).csqtt || []).some(c => c && c.iface === nm)) return "managed";
-    if ((nrec.iface_candidates || []).some(c => c && c.name === nm)) return "unmanaged";
     return null; })() : null;
   const nameErr = _nameTaken === "managed" ? T("An interface named {v1} already exists on this node.", { v1: iface.trim() })
-    : _nameTaken === "unmanaged" ? T("{v1} is already on this node but isn't managed by the panel — Adopt it instead (its keys and users are kept).", { v1: iface.trim() })
     : null;
   // live port-collision checks (new interface → no own ports). WDTT also needs its DTLS ≠ internal WG port.
   const pperr = portErrMsg(node, port, []);
   const wgperr = isWdtt ? ((port.trim() && wgPort.trim() && Number(port) === Number(wgPort)) ? T("The DTLS port and internal WG port must differ.") : portErrMsg(node, wgPort, [])) : null;
   return html`<${Sheet} title=${ghost ? T("Recreate & rekey · {iface}", { iface: ghost.iface }) : T("Create new interface")} onBack=${back || null}
-    foot=${footRow({ onCancel: back || closeModal, disabled: busy || !!nameErr || !!_subConflict || !!pperr || !!wgperr || (!existing && !!egressSaveBlock(eg, nrec.routing_mode || "kernel")), title: (nameErr || pperr || wgperr || (_subConflict ? T("This subnet is already in use in the fleet") : (!existing && egressSaveBlock(eg, nrec.routing_mode || "kernel")))) || "", onAction: save, action: ghost ? T("Recreate & rekey") : (existing ? T("Adopt") : T("Create")) })}>
+    foot=${footRow({ onCancel: back || closeModal, disabled: busy || !!nameErr || !!_subConflict || !!pperr || !!wgperr || (!!egressSaveBlock(eg, nrec.routing_mode || "kernel")), title: (nameErr || pperr || wgperr || (_subConflict ? T("This subnet is already in use in the fleet") : (egressSaveBlock(eg, nrec.routing_mode || "kernel")))) || "", onAction: save, action: ghost ? T("Recreate & rekey") : T("Create") })}>
     ${/* ⚠️ THE PROVENANCE LINE HAS TO MATCH WHERE THE VALUES CAME FROM. "(inferred from the peers)" was true
          when this sheet guessed the protocol from a peer's target type and the port from a suggestion. A WARM
          ghost is now pre-filled from the interface's own saved config — port, MTU, DNS, keepalive, endpoint
@@ -1226,21 +735,9 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
         <button class=${"chip c-awg" + (proto === "awg" ? " on" : "")} onClick=${() => pickProto("awg")}>AmneziaWG</button>
         ${ghost || !wdttOk ? null : html`<button class=${"chip c-wdtt" + (proto === "wdtt" ? " on" : "")} onClick=${() => pickProto("wdtt")}>WDTT</button>`}
         ${ghost || !csqttOk ? null : html`<button class=${"chip c-csqtt" + (proto === "csqtt" ? " on" : "")} onClick=${() => pickProto("csqtt")}>CSQTT</button>`}
-        ${ghost ? null : html`<button type="button" class=${"adoptsw" + (adoptMode ? " on" : "")} aria-pressed=${adoptMode}
-          title=${adoptMode ? T("Taking over an interface already on the node") : T("Create a new interface — switch on to take over one already on the node")}
-          onClick=${() => setAdoptMode(v => !v)}>${T("Adopt existing")}</button>`}
       </div>
-      ${adoptMode ? html`<div class="hint" style="margin-top:8px">${T("Taking over an interface already on the node — its keys and peers are kept.")}</div>` : null}
     </div>
-    ${proto === "awg" && !existing ? html`<${AwgGenField} value=${gen} onChange=${setGen} no3=${no31} no2="" node=${node} nrec=${nrec}/>` : null}
-    ${existing ? html`<${Fragment}>
-      ${exWdtt ? html`<div class="notice"><${Ic} i="info"/><span>${Trich("If the node has discovered this server it is quicker to adopt it from its *orphan card* on the node screen — the node has already read its fork, ports and identity. Point at the directory here when it hasn't: an install that was moved, renamed, or is stopped.")}</span></div>` : html`
-      <div class="row2">
-        <div class="field"><label>${T("Public endpoint host / IP")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— optional")}</span></label><input value=${host} onInput=${e => setHost(e.target.value)} placeholder=${T("vpn.xyz.com or 203.0.113.7")}/><div class="hint">${T("What clients dial. Leave blank to use the node's detected address.")}</div></div>
-      </div>`}
-      <div class="field"><label>${exWdtt ? T("Config directory") : T("Config path")}</label><input autofocus value=${conf} onInput=${e => setConf(e.target.value)} placeholder=${exWdtt ? "/etc/wdtt" : (proto === "awg" ? "/etc/amnezia/amneziawg/awg0.conf" : "/etc/wireguard/wg0.conf")} autocomplete="off"/>${exWdtt ? html`<div class="hint">${T("The directory holding its")} <span class="mono">wg-keys.dat</span> ${T("— for an install the node hasn't discovered (moved, renamed, or stopped).")}</div>` : null}</div>
-      ${(!exWdtt && nrec.kind === "docker") ? html`<div class="notice"><${Ic} i="info"/><span>${Trich("This node runs in a container, so it can only read paths inside it — a config elsewhere on the host is invisible from here. *The interface must be running*: the node then adopts it from the live device (keys, peers, ports and AmneziaWG parameters, all fresher than any file). A stopped interface whose config the node can't read cannot be adopted.")}</span></div>` : null}
-    <//>` : html`<${Fragment}>
+    ${proto === "awg" ? html`<${AwgGenField} value=${gen} onChange=${setGen} no3=${no31} no2="" node=${node} nrec=${nrec}/>` : null}
       <div class="row2">
         <div class="field"><label>${T("Interface name")}</label><input autofocus=${!ghost} class=${nameErr ? "bad" : ""} value=${iface} onInput=${e => { if (!ghost) setIface(e.target.value); }} readOnly=${!!ghost} placeholder=${proto === "wg" ? "wg1" : proto === "wdtt" ? "wdtt1" : proto === "csqtt" ? "csqtt1" : "awg1"} autocomplete="off"/>${ghost ? html`<div class="hint">${T("Fixed — must match the peers that reference it.")}</div>` : nameErr ? html`<div class="hint err">${nameErr}</div>` : null}</div>
         <div class="field"><label>${T("Tunnel subnet (CIDR)")}</label><input class=${_subConflict ? "bad" : ""} value=${subnet} onInput=${e => setSubnet(e.target.value)} placeholder="10.8.0.0/24" autocomplete="off"/>${_subConflict ? html`<div class="hint err">${subnetTaken(_subConflict.iface, Store.nodeName(_subConflict.node))}</div>` : null}</div>
@@ -1307,7 +804,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
         <div class="field"><label>DNS</label><input value=${dns} onInput=${e => setDns(e.target.value)} placeholder="1.1.1.1"/><div class="hint">${T("Comma-separated")}</div></div>
         <${NatSourcePick} node=${node} value=${eg} onChange=${setEg}/>
       <//>` : null}<//>
-    <//>`}
     ${msg ? html`<div class=${"formmsg " + msg.k}>${msg.t}</div>` : null}
   <//>`;
 }

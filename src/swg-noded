@@ -4578,6 +4578,8 @@ def _ensure_fwd_iptables(fwd, exit_, default_wan, res, default_egress_ip="", dev
         res["errors"].append("cascade nat list: " + str(e)); nat = []
     want_dx = set()
     for e in _dx:
+        if e.get("scope") == "static-mesh":
+            continue
         S, dev = e["subnet"], e["dev"]
         if not _WANIF_RE.match(str(dev or "")):
             res["errors"].append("devexit snat " + S + ": refused device name " + repr(dev)[:40])
@@ -4600,6 +4602,8 @@ def _ensure_fwd_iptables(fwd, exit_, default_wan, res, default_egress_ip="", dev
             res["changed"] += 1
     want_snat = set()
     for e in exit_:
+        if e.get("personal"):
+            continue
         S = e["subnet"]; tag = "swg-fwd-snat:" + S; want_snat.add(tag)
         W = _safe_wan(e.get("wan_iface"), default_wan)     # reject shell metachars before it enters an iptables rule
         X = (e.get("egress_ip") or "").strip() or default_egress_ip
@@ -9154,9 +9158,6 @@ def _learned_reset_now(res, why):
     """The body of 'Reset learned IPs' — also what an ENGINE CHANGE runs once (_engine_change_reset)."""
     with contextlib.suppress(OSError):
         os.makedirs(GEO_DIR, exist_ok=True)
-    # kernel-SNI: flush each learned ipset (keep the set + chain — only the learned IPs go)
-    for setn in re.findall(r"^(swgk_\S+)", (run(["ipset", "list", "-name"]).stdout or ""), re.M):
-        run(["ipset", "flush", setn])
     # userspace-SNI: drop the rebuild signatures + per-list loaded markers so the nft sets rebuild from the CACHED
     # lists this pass (userspace-learned IPs go; geoip re-loads from the still-present .txt — NO re-pull)
     for fn in (".smart-sig", ".xtstring-sig", ".catcount-sig"):
@@ -9173,7 +9174,7 @@ def _learned_reset_now(res, why):
         with contextlib.suppress(Exception): p.terminate()
     _SNI_PROC["p"] = None
     res["changed"] += 1
-    log(LOG_INFO, "routing: LEARNED RESET %s — flushed learned ipsets/nft sets (lists kept); re-learning" % why)
+    log(LOG_INFO, "routing: LEARNED RESET %s — flushed learned nft sets (lists kept); re-learning" % why)
     return True
 
 
@@ -9233,14 +9234,7 @@ def _apply_full_reset(reset_val, res):
     # 2) drop the nft smart table (all sets + chains + mark rules) → rebuilt below
     run(["nft", "delete", "table", "inet", SMART_NFT_TABLE])
     _SMART_TABLE.update(n=-1, gen=None)                         # invalidate the per-loop table cache so _ensure_smart_nft re-renders (sees it gone) and RECREATES it this same pass
-    # 3) drop the kernel-SNI iptables chain + destroy the learned ipsets
-    run(["iptables", "-t", "mangle", "-D", "PREROUTING", "-p", "tcp", "--dport", "443", "-j", "SWGK"])
-    run(["iptables", "-t", "mangle", "-F", "SWGK"]); run(["iptables", "-t", "mangle", "-X", "SWGK"])
-    _xts_drop_subchains()
-    for setn in re.findall(r"^(swgk_\S+)", (run(["ipset", "list", "-name"]).stdout or ""), re.M):
-        run(["ipset", "flush", setn])      # the learned IPs go even where the destroy is refused: SWG_CATK still counts with
-        run(["ipset", "destroy", setn])    # the set (rebuilt later this pass) — destroy alone left them all in place
-    # 4) restart the userspace SNI reader so its in-memory learned set clears (relaunched by _ensure_sni_router)
+    # 3) restart the userspace SNI reader so its in-memory learned set clears (relaunched by _ensure_sni_router)
     p = _SNI_PROC.get("p")
     if p and p.poll() is None:
         with contextlib.suppress(Exception): p.terminate()
@@ -9252,84 +9246,9 @@ def _apply_full_reset(reset_val, res):
     return True
 
 
-WARP_API = "https://api.cloudflareclient.com/v0a2158"
-WARP_HDRS = {"Content-Type": "application/json; charset=UTF-8", "User-Agent": "okhttp/3.12.1",
-             "CF-Client-Version": "a-6.10-2158"}
-EXIT_DIR = os.path.join(STATE_DIR, "exits")   # ⚠️ NOT /etc/wireguard: that is container-local and an image
-#                                               update wipes it (swg-agent says the same about plain-WG
-#                                               confs). STATE_DIR is the volume that survives a recreate.
-_EXITS = {"list": []}                          # what we report back about them, rebuilt each pass
-
-
-def _warp_api(path, data, method, token=""):
-    """One call to the WARP account API. Returns (status, parsed-or-text). stdlib only — no wgcf binary:
-    registration is a single anonymous POST, not a datapath component, so §11.6's "a new supervised binary
-    class per node" argument does not apply and there is nothing to version, gate by arch or supervise."""
-    h = dict(WARP_HDRS)
-    if token:
-        h["Authorization"] = "Bearer " + token
-    req = urllib.request.Request(WARP_API + path, method=method, headers=h,
-                                 data=(json.dumps(data).encode() if data is not None else None))
-    try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            return r.status, json.loads(r.read().decode() or "{}")
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", "replace")
-        with contextlib.suppress(Exception):
-            return e.code, json.loads(body)
-        return e.code, body
-    except Exception as e:
-        return 0, str(e)
-
-
-def _warp_err(body):
-    """Cloudflare's error, as a sentence the operator can act on. A bad WARP+ key answers 400 with
-    `errors:[{code:1046, message:"Invalid license"}]` — measured — and swallowing that into a generic
-    failure is how "I pasted my key and nothing happened" becomes unanswerable."""
-    with contextlib.suppress(Exception):
-        e = (body.get("errors") or [{}])[0]
-        if e.get("message"):
-            return str(e["message"])[:120]
-    return (str(body)[:120] if body else "")
-
-
-def _warp_register():
-    """Register a fresh anonymous WARP account and return everything the profile needs. The keypair is made
-    HERE with the same `wg genkey` the agent uses, so the private half never crosses the wire."""
-    priv = run(_wgcmd(["wg"]) + ["genkey"]).stdout.strip()
-    if not priv:
-        return None, "wg genkey produced no key"
-    pub = run(_wgcmd(["wg"]) + ["pubkey"], input_text=priv + "\n").stdout.strip()
-    st, d = _warp_api("/reg", {
-        "key": pub, "install_id": "", "fcm_token": "", "warp_enabled": True,
-        "tos": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
-        "type": "Android", "model": "PC", "locale": "en_US"}, "POST")
-    if st != 200 or not isinstance(d, dict):
-        if st in (401, 403, 404, 429, 503):
-            return None, ("Cloudflare is refusing registrations from this node's address just now "
-                          "(HTTP %s). Nothing to change — it retries on its own." % st)
-        return None, "registration failed (%s) %s" % (st, _warp_err(d))
-    cfg = d.get("config") or {}
-    peer = (cfg.get("peers") or [{}])[0]
-    ep = peer.get("endpoint") or {}
-    acct = d.get("account") or {}
-    return {"priv": priv, "pub": pub,
-            # v4 ONLY (decision 6) — we drop the v6 half of a profile we write rather than carry a lane
-            # nothing in this datapath routes.
-            "address": ((cfg.get("interface") or {}).get("addresses") or {}).get("v4") or "",
-            "peer_key": peer.get("public_key") or "",
-            "endpoint": ep.get("host") or ep.get("v4") or "",
-            "account_id": d.get("id") or "", "token": d.get("token") or "",
-            "licence": acct.get("license") or "", "account_type": acct.get("account_type") or "free"}, ""
-
-
-def _warp_apply_licence(rec, key):
-    """Put a WARP+ licence on the account. Returns (account_type, error-sentence)."""
-    st, d = _warp_api("/reg/%s/account" % rec.get("account_id", ""), {"license": key}, "PUT",
-                      token=rec.get("token", ""))
-    if st != 200:
-        return rec.get("account_type") or "free", _warp_err(d) or ("licence update failed (%s)" % st)
-    return (d.get("account_type") if isinstance(d, dict) else "") or "warp_plus", ""
+EXIT_DIR = os.path.join(STATE_DIR, "exits")
+_EXITS = {"list": []}
+_DEFAULT_ROUTES = ("0.0.0.0/0", "::/0")
 
 
 def _exit_awg(rec):
@@ -10683,11 +10602,10 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
     keep secret. (Decision 8's sealed escrow copy is a separate, additive step and is NOT built yet: a
     rebuilt node re-registers rather than restoring, which for a free anonymous account costs one API call
     and a new egress IP.)"""
-    want = {str((e or {}).get("id") or ""): e for e in (desired or []) if isinstance(e, dict)}
+    want = {str((e or {}).get("id") or ""): e for e in (desired or []) if isinstance(e, dict) and e.get("provider") == "socks5"}
     out = []
     # the devices that lead into a home router's network, known BEFORE the loop: a pass that raises half-way still cuts
     # (reconcile_cascade, EXIT_PRIVATE_CUT) — the caller swallows the exception and routes the exit anyway (review F1)
-    _EXITS["dialin"] = _dialin_devices(want)
     _slots = []                                  # live devices awaiting their probe: (slot in out, xid, dev, prov, rec, err, blob_err)
     def _exit_row(xid, dev, prov, rec, err, _blob_err, _live, tr, _hl, ping):
         # ONE shape for every exit that reached its health step, judged now or after the loop (4b).
@@ -10732,7 +10650,7 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
             with contextlib.suppress(Exception):
                 with open(sp) as f:
                     rec = json.load(f)
-            prov = str(d.get("provider") or "warp")
+            prov = "socks5"
             err = ""
             # Set when a relayed escrow blob could not be opened but the exit has a key of its own and keeps
             # running. Reset per exit, or one exit's failure would be reported against the next one.
@@ -10751,204 +10669,48 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
                             "address": rec.get("address", ""), "public_key": rec.get("pub", ""),
                             "account_type": rec.get("account_type", ""), "trace": {}, "error": ""})
                 continue
-            if prov not in EXIT_KINDS:
-                res["errors"].append("exit %s: unknown kind %s" % (xid, prov[:20]))
-                _downed = False
-                for _od in sorted({dev, str(rec.get("device") or "")} - {""}):
-                    if rec.get("provider") in EXIT_KINDS and (_dev_link_state(_od) != "absent" or rec.get("started")):
-                        _exit_down(_od, dict(rec, id=xid))
-                        res["changed"] += 1
-                        _downed = True
-                if _downed and rec.get("started"):      # once: a SOCKS record left "started" was stopped every pass (F36)
-                    with contextlib.suppress(Exception):
-                        _replace_if_changed(sp, json.dumps(dict(rec, started="")), 0o600)
-                out.append({"id": xid, "device": dev, "provider": prov, "up": False,
-                            "error": "this node does not know this kind of exit — update the node"})
-                continue
-            if prov == "socks5" or rec.get("provider") == "socks5":
-                # A SOCKS5 exit (§6): hev-socks5-tunnel presents the proxy as the TUN `dev`. The panel never turns one kind
-                # into the other on an id (it refuses the edit), so a record of the other kind is a leftover: taken down.
-                if (rec.get("provider") or "socks5") != prov:
-                    _exit_down(str(rec.get("device") or dev), dict(rec, id=xid))
-                    rec = {}
-                    res["changed"] += 1
-                if prov != "socks5":
-                    with contextlib.suppress(OSError):
-                        os.unlink(sp)
-                else:
-                    _sk = _s5x_socks(d)
-                    _sig = "%s hev-%s" % (str(d.get("cfg_sig") or "-"), HEV_TAG)
-                    rec = {"provider": "socks5", "device": dev, "started": rec.get("started", ""), "setup": "",
-                           "endpoint": ("[%s]:%d" if ":" in _sk["host"] else "%s:%d") % (_sk["host"], _sk["port"]) if _sk else ""}
-                    err, _state = "", _dev_link_state(dev)
-                    if not _sk:
-                        err = "the proxy address is incomplete"
-                    else:
-                        binp, err = hev_binary()
-                        if not binp and _state == "up":
-                            err = ""                         # a pin bump being fetched: the running one carries on meanwhile
-                        elif not binp and err == "fetching the SOCKS5 tunnel program…":
-                            rec["setup"], err = err, ""      # progress, not a fault (review F13): the row reads busy
-                        if binp:
-                            _yml = os.path.join(EXIT_DIR, dev + ".yml")
-                            try:
-                                _replace_if_changed(_yml, _s5x_yml(dev, _sk), 0o600)
-                            except OSError as e:
-                                err = ("could not write the tunnel config: " + str(e))[:160]
-                            if not err:
-                                err = (_s5x_ensure_child(xid, dev, _sig, binp, _yml) if NODE_KIND == "docker"
-                                       else _s5x_ensure_unit(xid, _sig, binp, _yml, _state, rec["started"]))
-                            if not err:
-                                if rec["started"] != _sig:
-                                    _EXIT_HEALTH.pop(dev, None); _EXIT_PROBED_AT.pop(dev, None)   # a new config: judged afresh
-                                    _S5X.pop(dev, None)                          # …and its proxy checked afresh at bring-up
-                                    res["changed"] += 1
-                                rec["started"] = _sig
-                                _state = _dev_link_state(dev)
-                    with contextlib.suppress(Exception):
-                        _replace_if_changed(sp, json.dumps({k: v for k, v in rec.items() if k != "setup"}), 0o600)
-                    if err:
-                        res["errors"].append("exit %s: %s" % (xid, err))
-                    if _state == "up":
-                        rec = dict(rec, socks=_sk)                  # for the probe thread's check only — never written
-                        _slots.append((len(out), xid, dev, prov, rec, err, ""))
-                        out.append(None)
-                    else:
-                        if _EXIT_HEALTH.get(dev):
-                            _EXIT_HEALTH[dev]["ok_since"] = None
-                        _EXIT_PROBED_AT.pop(dev, None)
-                        out.append(_exit_row(xid, dev, prov, rec, err, "", False, {}, None, None))
-                    continue
-            # 1) key material. `warp` registers once and keeps the account; `profile` is handed to us whole.
-            if prov == "profile":
-                pr = d.get("profile") or {}
-                rec = {"provider": "profile", "priv": pr.get("private_key") or rec.get("priv") or "",
-                       "address": pr.get("address") or "", "peer_key": pr.get("peer_key") or "",
-                       "endpoint": pr.get("endpoint") or "", "mtu": pr.get("mtu") or 1280,
-                       # The peer's preshared key and keepalive. Without the PSK a server that has one rejects
-                       # every handshake, and the exit reads "up" while receiving nothing at all.
-                       "psk": pr.get("psk") or "", "keepalive": pr.get("keepalive") or 0,
-                       "awg": {k: v for k, v in (pr.get("awg") or {}).items() if k in AWG_KEYS and str(v).strip()}}
-                # A dial-in exit's port (LISTEN-EXIT §2.2) — kept only when set, so a dial-out state file is unchanged.
-                with contextlib.suppress(TypeError, ValueError):
-                    if 0 < int(pr.get("listen_port") or 0) <= 65535:
-                        rec["listen_port"] = int(pr["listen_port"])
-                # …and it is the port OR the endpoint: a dial-in exit has no endpoint to be missing.
-                if not (rec["priv"] and rec["address"] and rec["peer_key"] and (rec["endpoint"] or rec.get("listen_port"))):
-                    res["errors"].append("exit %s: incomplete profile" % xid)
-                    _gone = ", ".join(k for k, v in (("private key", rec["priv"]), ("address", rec["address"]),
-                                                     ("peer key", rec["peer_key"]),
-                                                     # a dial-in exit has no endpoint to miss
-                                                     ("endpoint", rec["endpoint"] or rec.get("listen_port")))
-                                      if not v)
-                    out.append({"id": xid, "device": dev, "provider": prov, "up": False,
-                                "error": "the profile is missing its " + _gone})
-                    continue
-            elif isinstance(d.get("key_blob"), dict) and d["key_blob"].get("ct"):
-                _opened = None
-                with contextlib.suppress(Exception):
-                    _opened = json.loads(ivk_unseal(transport_priv(), d["key_blob"]).decode())
-                if isinstance(_opened, dict) and _opened.get("priv"):
-                    rec = dict(_opened, provider="warp")
-                    log(LOG_INFO, "exit %s: restored from the operator vault (%s)", xid, rec.get("account_type") or "free")
-                    res["changed"] += 1
-                else:
-                    _kerr = "the escrowed key did not open — it may be sealed to a different vault"
-                    res["errors"].append("exit %s: %s" % (xid, _kerr))
-                    if not rec.get("priv"):
-                        out.append({"id": xid, "device": dev, "provider": prov, "up": False, "error": _kerr})
-                        continue
-                    _blob_err = _kerr
-            elif not rec.get("priv"):
-                _now, _fails = time.time(), int(rec.get("reg_fails") or 0)
-                _next = float(rec.get("reg_next") or 0)
-                if _fails and _now < _next:
-                    out.append({"id": xid, "device": dev, "provider": prov, "up": False,
-                                "error": str(rec.get("reg_error") or "registration failed"),
-                                "retry_in": int(_next - _now)})
-                    continue
-                reg, err = _warp_register()
-                if not reg:
-                    _fails += 1
-                    rec = dict(rec, provider="warp", reg_fails=_fails, reg_error=err,
-                               reg_next=_now + min(3600, 60 * (2 ** (_fails - 1))))
-                    with contextlib.suppress(Exception):
-                        _replace_if_changed(sp, json.dumps(rec), 0o600)
-                    out.append({"id": xid, "device": dev, "provider": prov, "up": False, "error": err,
-                                "retry_in": int(rec["reg_next"] - _now)})
-                    res["errors"].append("exit %s: %s (retry in %ds)" % (xid, err, int(rec["reg_next"] - _now)))
-                    continue
-                rec = dict(reg, provider="warp", mtu=1280)   # success clears the backoff counters with it
-                log(LOG_INFO, "exit %s: registered a WARP account (%s)", xid, rec.get("account_type"))
-                res["changed"] += 1
-            # 2) a WARP+ licence the operator supplied, applied ONCE per distinct key
-            lic = str(d.get("licence") or "").strip()
-            if prov == "warp" and lic and lic != rec.get("licence_applied"):
-                acct, lerr = _warp_apply_licence(rec, lic)
-                rec["account_type"] = acct
-                rec["licence_applied"] = lic if not lerr else rec.get("licence_applied", "")
-                err = lerr
-                if lerr:
-                    log(LOG_WARNING, "exit %s: WARP+ licence rejected — %s", xid, lerr)
-                else:
-                    log(LOG_INFO, "exit %s: WARP+ licence applied (%s)", xid, acct)
-                    res["changed"] += 1
-            rec["device"] = dev
+            _sk = _s5x_socks(d)
+            _sig = "%s hev-%s" % (str(d.get("cfg_sig") or "-"), HEV_TAG)
+            rec = {"provider": "socks5", "device": dev, "started": rec.get("started", ""), "setup": "",
+                   "endpoint": ("[%s]:%d" if ":" in _sk["host"] else "%s:%d") % (_sk["host"], _sk["port"]) if _sk else ""}
+            err, _state = "", _dev_link_state(dev)
+            if not _sk:
+                err = "the proxy address is incomplete"
+            else:
+                binp, err = hev_binary()
+                if not binp and _state == "up":
+                    err = ""                         # a pin bump being fetched: the running one carries on meanwhile
+                elif not binp and err == "fetching the SOCKS5 tunnel program…":
+                    rec["setup"], err = err, ""      # progress, not a fault (review F13): the row reads busy
+                if binp:
+                    _yml = os.path.join(EXIT_DIR, dev + ".yml")
+                    try:
+                        _replace_if_changed(_yml, _s5x_yml(dev, _sk), 0o600)
+                    except OSError as e:
+                        err = ("could not write the tunnel config: " + str(e))[:160]
+                    if not err:
+                        err = (_s5x_ensure_child(xid, dev, _sig, binp, _yml) if NODE_KIND == "docker"
+                               else _s5x_ensure_unit(xid, _sig, binp, _yml, _state, rec["started"]))
+                    if not err:
+                        if rec["started"] != _sig:
+                            _EXIT_HEALTH.pop(dev, None); _EXIT_PROBED_AT.pop(dev, None)   # a new config: judged afresh
+                            _S5X.pop(dev, None)                          # …and its proxy checked afresh at bring-up
+                            res["changed"] += 1
+                        rec["started"] = _sig
+                        _state = _dev_link_state(dev)
             with contextlib.suppress(Exception):
-                _replace_if_changed(sp, json.dumps(rec), 0o600)
-            # 3) the conf + the device. Rewritten only when the text changes, so a settled exit costs one read.
-            conf = os.path.join(EXIT_DIR, dev + ".conf")
-            text = _exit_conf_text(rec)
-            cur = ""
-            with contextlib.suppress(Exception):
-                with open(conf) as f:
-                    cur = f.read()
-            _state = _dev_link_state(dev)
-            if cur != text:
-                with contextlib.suppress(Exception):
-                    with open(conf + ".tmp", "w") as f:
-                        os.fchmod(f.fileno(), 0o600)
-                        f.write(text)
-                    os.replace(conf + ".tmp", conf)
-                if _state != "absent":                    # config changed under a live device → bounce it
-                    _exit_down(dev, rec)
-                    _state = "absent"
-                res["changed"] += 1
-            # A device whose KIND no longer matches the config is as wrong as a stale conf — and it cannot be
-            # spotted by comparing text, because the text is already correct. Ask the kernel and rebuild.
-            _want_kind = "awg" if _exit_awg(rec) else "wg"
-            if _state != "absent":
-                _have_kind = _link_kind(dev)
-                if _have_kind not in ("", _want_kind):
-                    log(LOG_WARNING, "exit %s: device is %s but the profile is %s — rebuilding", xid, _have_kind, _want_kind)
-                    _exit_down(dev, rec)
-                    _state = "absent"
-                    res["changed"] += 1
-            if _state == "absent":
-                # A tunnel built this pass is a NEW tunnel — possibly a new profile or account — and is judged from
-                # scratch rather than inheriting the verdict of the one it replaces.
-                _EXIT_HEALTH.pop(dev, None)
-                _EXIT_REDIAL_AT.pop(dev, None); _EXIT_RESOLVED.pop(dev, None)
-                _no3 = awg_gen_refusal(dev, _exit_awg(rec))
-                r = None if _no3 else _scoped_up(_exit_tool(rec), conf)
-                if _no3 or r.returncode != 0:
-                    err = err or (_no3 or r.stderr or "wg-quick up failed").strip()[:160]
-                    res["errors"].append("exit %s: %s" % (xid, err))
-                else:
-                    res["changed"] += 1
-                    _state = _dev_link_state(dev)     # re-read: the bring-up is the thing that changed it
-            # 4) health (§7.2) — for a live device, gathered after this loop (4b) together with every other one.
-            _live = _state == "up"
-            tr = {}
-            if _live:
-                # 4b, after the loop: every live device is probed AT ONCE (_exit_probe_all), then judged here in order.
-                _slots.append((len(out), xid, dev, prov, rec, err, _blob_err))
+                _replace_if_changed(sp, json.dumps({k: v for k, v in rec.items() if k != "setup"}), 0o600)
+            if err:
+                res["errors"].append("exit %s: %s" % (xid, err))
+            if _state == "up":
+                rec = dict(rec, socks=_sk)                  # for the probe thread's check only — never written
+                _slots.append((len(out), xid, dev, prov, rec, err, ""))
                 out.append(None)
-                continue
-            # …and the VERDICT the routing acts on (`_devexit_state`). Only a live device is judged: a down or absent
-            # one already fails over by its link state, and a stale "dead" left behind would outlive the device.
-            _EXIT_HEALTH.pop(dev, None)
-            out.append(_exit_row(xid, dev, prov, rec, err, _blob_err, False, tr, None, None))
+            else:
+                if _EXIT_HEALTH.get(dev):
+                    _EXIT_HEALTH[dev]["ok_since"] = None
+                _EXIT_PROBED_AT.pop(dev, None)
+                out.append(_exit_row(xid, dev, prov, rec, err, "", False, {}, None, None))
     finally:
         _mine = {str((d or {}).get("device") or "") for d in want.values() if isinstance(d, dict)}
         _ad = _exit_adopted(devexit, _mine, managed)
@@ -10957,38 +10719,29 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
         _pr = _exit_probe_all([(dev, rec if dev not in _sx else {"endpoint": rec.get("endpoint"), "mapdns": S5X_DNS})
                                for _s, _x, dev, _p, rec, _e, _b in _slots if dev not in _sx or _sx[dev]]
                               + [(d, {}) for d, due in _ad if due])
-        if any(_p != "socks5" for _s, _x, _d, _p, _r, _e, _b in _slots):   # the handshakes below come from the pass's dump (B3):
-            _pass_forget("all-dump:", keep_failed=True)   # one taken before these probes would miss a first handshake they made
         _dnsc = _s5x_dns_counts() if _sx else {}
         for _s, xid, dev, prov, rec, err, _blob_err in _slots:
-            if prov != "socks5":
-                tr, _rch, _png = _pr.get(dev) or ({}, None, None)
-                _got = _EXIT_RESOLVED.pop(dev, None)   # a lookup's answer, from this pass's probe or a late one
-                if _got and not (tr or {}).get("ip") and _rch is not True and time.time() - _got[0] < 2 * EXIT_REDIAL_EVERY_S:
-                    _exit_redial(dev, rec, _got[1])
+            _sv = _s5x_take(dev, res, sig=rec.get("started"))
+            _due = _s5x_check_due(dev)
+            if _s5x_dns_suspect(dev, _dnsc.get(dev)):
+                _due = "now"                       # its rule DNS went unanswered: ask the proxy now (F16)
+            if dev in _pr:
+                tr, _rch, _png = _pr[dev]
                 _hl = _exit_judge(dev, tr, reach=lambda _d, _r=_rch: _r)
-            else:
-                _sv = _s5x_take(dev, res, sig=rec.get("started"))
-                _due = _s5x_check_due(dev)
-                if _s5x_dns_suspect(dev, _dnsc.get(dev)):
-                    _due = "now"                       # its rule DNS went unanswered: ask the proxy now (F16)
-                if dev in _pr:
-                    tr, _rch, _png = _pr[dev]
-                    _hl = _exit_judge(dev, tr, reach=lambda _d, _r=_rch: _r)
-                    if _exit_probe_answered(tr, _rch):
-                        _EXIT_PROBED_AT[dev] = time.monotonic()
-                    _sv.update(trace=tr, ping=_png)
-                    if _due == "fail" and not (tr or {}).get("ip") and _rch is False:
-                        _due = "now"                   # the judge's first failing probe: ask the proxy why (§6.6)
-                else:                                  # not due: the last probe's word stands
-                    tr, _png, _hl = _sv.get("trace") or {}, _sv.get("ping"), _EXIT_HEALTH.get(dev)
-                if _due == "now":
-                    _s5x_dispatch(dev, rec.get("socks"), rec.get("started"))   # its own thread: the pass never waits for it
-                _c = _sv.get("check") or {}
-                # the proxy's own reason, not a bare timeout — from a check that ENDED since this failure began (it is asked on
-                # the first failing probe, and answers a pass or two later: review F14)
-                if _hl and _hl["dead"] and _c.get("why") and _c.get("at", 0) >= (_hl.get("fail_since") or 0) - EXIT_PROBE_BOUND_S:
-                    _hl["why"] = S5X_WHY.get(_c["why"], _c["why"])
+                if _exit_probe_answered(tr, _rch):
+                    _EXIT_PROBED_AT[dev] = time.monotonic()
+                _sv.update(trace=tr, ping=_png)
+                if _due == "fail" and not (tr or {}).get("ip") and _rch is False:
+                    _due = "now"                   # the judge's first failing probe: ask the proxy why (§6.6)
+            else:                                  # not due: the last probe's word stands
+                tr, _png, _hl = _sv.get("trace") or {}, _sv.get("ping"), _EXIT_HEALTH.get(dev)
+            if _due == "now":
+                _s5x_dispatch(dev, rec.get("socks"), rec.get("started"))   # its own thread: the pass never waits for it
+            _c = _sv.get("check") or {}
+            # the proxy's own reason, not a bare timeout — from a check that ENDED since this failure began (it is asked on
+            # the first failing probe, and answers a pass or two later: review F14)
+            if _hl and _hl["dead"] and _c.get("why") and _c.get("at", 0) >= (_hl.get("fail_since") or 0) - EXIT_PROBE_BOUND_S:
+                _hl["why"] = S5X_WHY.get(_c["why"], _c["why"])
             out[_s] = _exit_row(xid, dev, prov, rec, err, _blob_err, True, tr, _hl, _png)
         for dev, due in _ad:
             if due is None:
@@ -11006,14 +10759,9 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
                 + [k for k in _S5X_CHECKS if k not in _held]:  # (a check that ended after its exit went)
             _EXIT_HEALTH.pop(k, None); _EXIT_PROBED_AT.pop(k, None); _S5X_CHECKS.pop(k, None)
 
-    _lps = {xid: (d.get("profile") or {}).get("listen_port") for xid, d in want.items()
-            if isinstance(d, dict) and isinstance(d.get("profile"), dict)}
     _sigs = {xid: str((d or {}).get("cfg_sig") or "") for xid, d in want.items()}
     for _o in out:
         _o["cfg_sig"] = _sigs.get(str(_o.get("id") or ""), "")
-        if _lps.get(str(_o.get("id") or "")):
-            _o["listen_port"] = _lps[str(_o.get("id") or "")]
-
     # 5) reap. An exit the panel stopped listing takes its device and its account state with it — otherwise
     # a removed exit keeps a tunnel up and an operator has no way to see, let alone stop, it.
     with contextlib.suppress(Exception):
@@ -11090,11 +10838,13 @@ def _cascade_local_routes(node_cfg, _proc="/proc/net/route"):
 
 
 STATIC_EGRESS_NFT = "swg_static_egress"
-_STATIC_EGRESS = {"sig": None, "active": [], "blocked": []}
+STATIC_EGRESS_STATE = os.path.join(STATE_DIR, "static-egress.json")
+_STATIC_EGRESS = {"sig": None, "active": [], "blocked": [], "ready": [], "entries": [], "local": []}
+_STATIC_SCOPES = {"static", "static-mesh"}
 
 
 def _static_egress_entries(raw, devexit):
-    devices = {(e["subnet"], e["dev"], e["table"]) for e in devexit if e.get("scope") == "static"}
+    devices = {(e["subnet"], e["dev"], e["table"]): e.get("scope") for e in devexit}
     entries = []
     for item in raw if isinstance(raw, list) else ():
         if not isinstance(item, dict):
@@ -11108,9 +10858,14 @@ def _static_egress_entries(raw, devexit):
             continue
         entry = {"iif": iif, "source": source, "key": key}
         table, dev = item.get("table"), str(item.get("dev") or "")
-        if (isinstance(table, int) and SWG_RT_BASE <= table <= SWG_RT_MAX
-                and dev.startswith("s5x-") and _SRC_DEV_RE.fullmatch(dev) and (source, dev, table) in devices):
-            entry.update(dev=dev, table=table)
+        if isinstance(table, int) and SWG_RT_BASE <= table <= SWG_RT_MAX and _SRC_DEV_RE.fullmatch(dev):
+            scope = devices.get((source, dev, table))
+            if (scope == "static" and dev.startswith("s5x-")
+                    or scope == "static-mesh" and dev != iif):
+                entry.update(dev=dev, table=table)
+                route_id = item.get("ready_id")
+                if scope == "static" and isinstance(route_id, str) and re.fullmatch(r"[a-f0-9]{24}", route_id):
+                    entry["ready_id"] = route_id
         entries.append(entry)
     return entries
 
@@ -11145,17 +10900,59 @@ def _ensure_static_egress(entries, local_nets, res):
         lines += ["  }", "}"]
     body = "\n".join(lines)
     if body == _STATIC_EGRESS["sig"] and run(["nft", "list", "table", "inet", STATIC_EGRESS_NFT]).returncode == 0:
+        _STATIC_EGRESS.update(entries=entries, local=local)
         return True
     if body:
         result = run(["nft", "-f", "-"], input_text=body + "\n")
     else:
         result = run(["nft", "delete", "table", "inet", STATIC_EGRESS_NFT])
     if result.returncode == 0 or (not body and (_nft_absent(result) or result.returncode == 127)):
-        _STATIC_EGRESS["sig"] = body
+        _STATIC_EGRESS.update(sig=body, entries=entries, local=local)
         res["changed"] += int(result.returncode == 0)
         return True
     res["errors"].append("static SOCKS5 routing: " + ((result.stderr or "").strip() or "nft failed")[:160])
     return False
+
+
+def _static_guard_only(entries):
+    return [{k: e[k] for k in ("iif", "source", "key")} for e in entries]
+
+
+def _store_static_guard(entries, local):
+    guard = _static_guard_only(entries)
+    if guard or os.path.exists(STATIC_EGRESS_STATE):
+        _replace_if_changed(STATIC_EGRESS_STATE, json.dumps({"entries": guard, "local": list(local)}), 0o600)
+
+
+def _restore_static_guard():
+    try:
+        with open(STATIC_EGRESS_STATE) as f:
+            state = json.load(f)
+    except FileNotFoundError:
+        return
+    res = {"changed": 0, "errors": []}
+    if not _ensure_static_egress(_static_egress_entries(state["entries"], ()), state["local"], res):
+        raise SystemExit(res["errors"][0])
+
+
+def _prepare_static_guard(plan, node_cfg):
+    entries = _static_egress_entries((plan or {}).get("static_egress"), ())
+    current = {(e["iif"], e["source"]): e for e in _STATIC_EGRESS["entries"]}
+    added = False
+    for entry in entries:
+        match = (entry["iif"], entry["source"])
+        if current.get(match, {}).get("key") != entry["key"]:
+            current[match] = entry
+            added = True
+    if not added:
+        return
+    guard = list(current.values())
+    local = sorted(set(_STATIC_EGRESS["local"]) | {p for p, _ in _cascade_local_routes(node_cfg)})
+    res = {"changed": 0, "errors": []}
+    _store_static_guard(guard, local)
+    if not _ensure_static_egress(guard, local, res):
+        raise RuntimeError(res["errors"][0])
+    _STATIC_EGRESS.update(active=[], blocked=sorted({e["key"] for e in guard}), ready=[])
 
 
 def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_conn=None, panel_cfg=None, nets=()):
@@ -11179,7 +10976,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     _arr_raw = set(x for x in (((smart or {}).get("arrivals") or {}).get("subnets") or []) if isinstance(x, str))
     _dx_seen, _dx_rep = set(), []
     for e in _dxs:
-        if e.get("scope") == "static":
+        if e.get("scope") in _STATIC_SCOPES:
             continue                                  # personal exits report through static_egress
         _ka = (str(e.get("dev") or ""), e.get("table"), e.get("scope") or "iface", bool(e.get("killswitch")),
                str(e.get("egress_ip") or "").strip(),
@@ -11194,7 +10991,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                          "egress_ip": str(e.get("egress_ip") or "").strip(),
                          **({"arr": True} if (e.get("subnet") or "") in _arr_raw else {})} for e in _dx_rep]
     _devfwd = [{"subnet": e["subnet"], "via_iface": e["dev"], "table": e["table"], "gw": e["gw"]}
-               for e in _dxs if e["state"] == "up" and e.get("scope") not in ("rule", "static")
+               for e in _dxs if e["state"] == "up" and e.get("scope") not in _STATIC_SCOPES | {"rule"}
                and not (e["needs_gw"] and not e["gw"])]
     fwd = fwd + _devfwd
     _dxgw = {e["dev"]: e["gw"] for e in _dxs}
@@ -11268,7 +11065,10 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                                  nets=_troutes, net_tables=_net_tables, arr=arr_exit, cut=_cut, static=static)
     local_nets = ([p for p, _ in (*nets, *_cascade_local_routes(node_cfg))] +
                   [e["subnet"] for e in exit_]) if static_entries else []
-    static_ok = _ensure_static_egress(static_entries, local_nets, res)
+    if not _ensure_static_egress(static_entries, local_nets, res):
+        _STATIC_EGRESS.update(active=[], blocked=sorted({e["key"] for e in static_entries}), ready=[])
+        return res
+    _store_static_guard(static_entries, _STATIC_EGRESS["local"])
     live_sig = _cascade_live_sig({str(p) for p in _band_tables(band)} | want_tables)
     # POLICY RULES/ROUTES — only touch them when they drift (avoids per-sync rule gaps).
     if want_sig != live_sig:
@@ -11346,18 +11146,27 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     # IPTABLES (SNAT / FORWARD accept / MSS clamp) — always reconciled by tag (cheap, no-churn).
     _ensure_fwd_iptables(fwd, exit_, _detect_wan(), res, default_egress_ip, devexit=devexit)
     _s5x_rules(devexit, nets, res)        # a SOCKS5 exit's DNS redirect, UDP refusal and rule-DNS unmark (§6.6)
-    keys = {e["key"] for e in static_entries}
-    active = set()
-    if static and static_ok:
+    blocked = {e["key"] for e in static_entries if not e.get("dev")}
+    ready = set()
+    if static:
         live = live_sig if want_sig == live_sig else _cascade_live_sig(want_tables)
+        returns = {(e["via_iface"], e["subnet"]): e["table"] for e in exit_ if e.get("personal")}
         for e in static:
-            table = e["table"]
-            if (not e["_noroute"] and f"R|static|{table + STATIC_EGRESS_MARK_OFFSET}|{table}" in live
-                    and f"T|{table}|default|{e['dev']}|" in live):
-                active.add(e["key"])
-        active.difference_update(e["key"] for e in static_entries if not e.get("dev"))
-        active.difference_update(e["key"] for e in static if e["_noroute"])
-    _STATIC_EGRESS.update(active=sorted(active), blocked=sorted(keys - active))
+            table, dev = e["table"], e["dev"]
+            if (res["errors"] or e["_noroute"] or f"R|static|{table + STATIC_EGRESS_MARK_OFFSET}|{table}" not in live
+                    or f"T|{table}|default|{dev}|" not in live):
+                blocked.add(e["key"])
+                continue
+            if "ready_id" in e:
+                source = e["source"].removesuffix("/32")
+                return_table = returns.get((e["iif"], source))
+                if (f"R|to|{source}|{return_table}" in live
+                        and f"T|{return_table}|{source}|{e['iif']}|" in live):
+                    ready.add(e["ready_id"])
+                else:
+                    blocked.add(e["key"])
+    _STATIC_EGRESS.update(active=sorted({e["key"] for e in static_entries} - blocked),
+                          blocked=sorted(blocked), ready=sorted(ready))
     # NFTABLES smart-routing marking (saddr+daddr@category → mark T) — drift-gated, packets stay in-kernel.
     smart_cats = sorted(set((smart or {}).get("categories") or []) | {e["category"] for e in smart_e + arr_e})
     _smart_subs = {e["subnet"] for e in smart_e}                # smart interfaces (by subnet) → IPv6 fail-closed drop
@@ -11374,14 +11183,6 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
             if _caps.get("host") and _c not in domains and _c in smart_cats:
                 domains[_c] = []
     _host_cats = [c for c in domains if _CAT_CAPS.get(c, {}).get("host")]
-    if host_engine == "dns":                                   # Force-DNS loads full lists into the per-domain dnsmasq
-        _admit = set(_forcedns_admit(_host_cats, res))         # map → memory-gate it; over-budget cats stay off (reported)
-        for c in _host_cats:
-            if c not in _admit:
-                domains.pop(c, None)                           # not loaded → not filled: honest degrade, node stays online
-        _host_cats = [c for c in _host_cats if c in _admit]
-    else:
-        _SMART_MODE.pop("fill_gate", None)                     # gate only governs the dnsmasq fill; clear when not in it
     _fetched, _fetched_z = _smart_domain_refresh(_host_cats, res)
     _pats = _pattern_buckets(smart)
     if _fetched_z:
@@ -11395,7 +11196,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     # The Never-block list's names (A.3): only where block lists run by name — Force-DNS and Hybrid SNI. The panel sends it
     # to those nodes only; the engine test keeps every other engine's signature as it was whatever a reply carries.
     _nb_allow = (sorted({a for a in ((smart or {}).get("allow") or ()) if isinstance(a, str) and _DOM_RE.match(a)})
-                 if host_engine in ("dns", "sni_user") else [])
+                 if is_sni else [])
     dom_sig = _dom_signature(_dns_e, domains, _zones, _fetched, _dns_up, allow=_nb_allow, pats=_pats)
     _dt = _DOMTIER_CACHE.get("v")
     dom_unchanged = bool(_dt and _dt[0] == dom_sig)
@@ -11415,17 +11216,10 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                                + [p for p, _d in (nets or ())])} if arr_e else None)
     # The categories that carry NAMES for the running engine — a Block of one is decided per connection (D1/D3), not by address.
     _name_cats = {c for c, v in domains.items() if v} | {c for k, byc in _pats.items() for c, v in (byc or {}).items() if v}
-    # Kernel SNI lowers a Block by name itself (D3) — asked here, before the nft chain, which carries the one reset for it.
-    # Only where the kernel can bind a per-person row / an arrival to its device (_ksni_src_ok), as for its other rules.
-    _ks = _ksni_src_ok() if host_engine == "sni_kernel" else False
-    _kname = {c for c, v in domains.items() if v} | {c for c, v in (_pats.get("contains") or {}).items() if v}
-    _ks_blk = host_engine == "sni_kernel" and (
-        any(e.get("action") == "block" and e["category"] in _kname and (_ks or "src" not in e) and _ports_t443(e) for e in smart_e)
-        or (_ks and any(e["action"] == "block" and e["category"] in _kname for e in arr_e)))
     set_counts = _ensure_smart_nft(smart_e, smart_cats, res, pin=is_sni, v6_ifaces=smart_ifs,
                                     reset_mark=(SNI_RESET_MARK if is_sni else 0), queue=(host_engine == "sni_user"),
                                     learn_ttl=learn_ttl, srcs=(smart or {}).get("srcs"), shadows=_shw, arrivals=_arr,
-                                    name_cats=_name_cats, spare_dns=(host_engine == "dns"), blk_reject=_ks_blk,
+                                    name_cats=_name_cats,
                                     # a category with a STATIC half (a list's IP addresses, a rule's CIDRs) — its Block stays whole (D2)
                                     static_cats={c for c in smart_cats if _CAT_CAPS.get(c, {}).get("ip") or ((smart or {}).get("cidrs") or {}).get(c)})
     if smart_cats:
@@ -11442,45 +11236,9 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
         domains, _pats = _smart_shadowed(domains, _pats, _shw)   # the shadow categories beside their claimers (_smart_shadows)
         _ensure_sni_router(domains, _subs + arr_subs, res, learn_ttl, map_key=(dom_sig, (_shw or {}).get("sig", "")), patterns=_pats,
                            blocks=_SNI_BLOCKS["v"])   # handshake (client DNS untouched); arrivals feed it too (§3.6)
-        reconcile_catk_chain([])                              # not kernel-SNI → drop the per-category counting chain FIRST:
-        _ensure_smart_xtstring([], {}, 0, res, active=False)  # it names the learned sets, whose destroy is refused while it does
-        if _dnsmasq_running() or os.path.exists(DNSMASQ_CONF):
-            _ensure_smart_dnsmasq({}, [], res, unchanged=False)
-    elif host_engine == "sni_kernel":                         # in-kernel xt_string reader — no userspace daemon at all
-        _ensure_sni_router(None, [], res)                     # stop swg-sni
-        _built = _ensure_smart_xtstring([e for e in smart_e if e.get("category") != "all" and e.get("action", "exit") in ("exit", "direct", "block")
-                                         and (_ks or "src" not in e) and _ports_t443(e)], domains, SNI_RESET_MARK, res,
-                                        ttl=learn_ttl, contains=_pats.get("contains") or {},   # enriched domains + contains, one capped budget
-                                        srcs=(smart or {}).get("srcs") if _ks else None,
-                                        # arrivals get hostnames here only where a subnet can be bound to its leg (§6.3)
-                                        arrivals=({"entries": [e for e in arr_e if e["category"] != "all"],
-                                                   "pairs": [(S, lg) for S in arr_subs for lg in (_arr or {}).get("legs") or ()]}
-                                                  if _ks and arr_e else None))
-        _report_unrunnable(_pats, {"contains"})               # …and say what it could NOT run — see the helper
-        _own_cats = {e["category"] for e in smart_e if e.get("action", "exit") in ("exit", "direct")}   # a Block learns nothing
-        reconcile_catk_chain([c for c in _built if c in _own_cats])
-        if _dnsmasq_running() or os.path.exists(DNSMASQ_CONF):
-            _ensure_smart_dnsmasq({}, [], res, unchanged=False)
-    else:                                                     # forcedns (dnsmasq oracle) or kernel/IP-only (nothing)
-        _ensure_sni_router(None, [], res)                     # not SNI → stop the classifier + drop its map
-        reconcile_catk_chain([])                              # not kernel-SNI → drop the per-category counting chain FIRST:
-        _ensure_smart_xtstring([], {}, 0, res, active=False)  # it names the learned sets, whose destroy is refused while it does
-        if _SHADOW["dns"] != (_shw or {}).get("sig", ""):
-            dom_unchanged, _SHADOW["dns"] = False, (_shw or {}).get("sig", "")
-        if _SHADOW.get("spare") != _DNS_SPARE["v"]:          # …and so is a Block by name added or removed (D2): no name moves
-            dom_unchanged, _SHADOW["spare"] = False, _DNS_SPARE["v"]
-        domains = _smart_shadowed(domains, _pats, _shw)[0]
-        if host_engine == "dns" or _dns_e or domains or _dnsmasq_running() or os.path.exists(DNSMASQ_CONF):
-            _ensure_smart_dnsmasq(domains, _dns_e, res, unchanged=dom_unchanged, zones=_zones, nets=nets, upstream=_dns_up,
-                                  spare=_DNS_SPARE["v"])   # arrivals' DNS too (§3.6)
-        if host_engine == "dns":
-            _report_unrunnable(_pats, {"zone"})
-    _dnsmasq_refill(res)                                      # after every set is back: cached names must ask upstream again
-    _doh_strict = set(_doh_mech)
-    _doh_observe = set()
-    if host_engine not in ("sni_user", "sni_kernel") and (smart or {}).get("block_doh"):
-        _doh_observe |= set(_subs)
-    _ensure_doh_block(sorted(_doh_observe - _doh_strict), sorted(_doh_strict), res)
+    else:
+        _ensure_sni_router(None, [], res)
+    _ensure_doh_block([], sorted(_doh_mech), res)
     _ensure_mech_block(_mech, res, scan_allow=(smart or {}).get("scan_allow") or [])   # FREE traffic/abuse L4/rate drops (smtp/quic/portscan) + scan-sweep guard (never-flag allowlist)
     _ensure_p2p((smart or {}).get("p2p"), _mech, node_cfg, res,   # P2P policy: node-wide, every egress (P2P-POLICY-PLAN P1)
                 routers=(smart or {}).get("p2p_routers") or [],   # router peers: never flagged (S11b)
@@ -12295,16 +12053,8 @@ def smart_status():
     mode = _SMART_MODE.get("m") or "kernel"
     engine = _SMART_MODE.get("engine") or "none"                # actual running engine: none|dns|sni_user|sni_kernel
     sni_alive = bool(_SNI_PROC.get("p") and _SNI_PROC["p"].poll() is None)
-    dns_alive = bool(_dnsmasq_running())
-    if engine == "sni_user":     engine_ok = sni_alive or bool(_SMART_MODE.get("sni_idle"))   # up, or idle by design (nothing routed)
-    elif engine == "sni_kernel":                                # the hook is torn down on purpose when there is nothing to route
-        engine_ok = bool(_SMART_MODE.get("xts_idle")) or run(
-            ["iptables", "-w", "2", "-t", "mangle", "-C", "PREROUTING", "-p", "tcp", "--dport", "443", "-j", "SWGK"]).returncode == 0
-    elif engine == "dns":        engine_ok = (dns_alive or bool(_SMART_MODE.get("dns_idle"))) and _route_localnet_ok()
-    else:                        engine_ok = True               # IP-only → no host engine to be down
-    base = {"mode": mode, "engine": engine, "engine_ok": engine_ok, "sni_alive": sni_alive,
-            "dnsmasq": dns_alive, "route_localnet": _route_localnet_ok(),   # false in dns mode ⇒ client DNS blackholed (container)
-            "src": 2 if _KSNI_SRC["ok"] else 1,   # 1: per-person rows in the nft chain · 2: Kernel SNI matches their hostnames too
+    base = {"mode": mode, "engine": engine, "engine_ok": engine == "none" or sni_alive or bool(_SMART_MODE.get("sni_idle")),
+            "sni_alive": sni_alive,
             "arr": 1,                             # runs `smart.arrivals` — the default list for traffic cascaded in (ROUTING-PEERS-MESH-PLAN §4.3)
             "caps_keep": 1,                       # keeps its caps for the categories a sync names in `cat_caps_keep` (_cat_caps_take)
             "allow": 1,                           # applies `smart.allow`, the Never-block list's names (_never_block_adjust)
@@ -12319,22 +12069,12 @@ def smart_status():
         base["p2p"] = {"state": _P2P["state"], "mode": _P2P["mode"], **({"route": _r} if _r else {}),
                        **({"down": _dn} if _dn and _P2P["mode"] == "iface" else {}),
                        **({"detail": _P2P["detail"]} if _P2P["state"] == "error" else {})}
-    if engine == "sni_kernel":
-        base["op_maxlen"] = _XTS_MAXLEN
-    if _SMART_MODE.get("fill_gate"):                           # Force-DNS fill skipped over-budget categories → tell the panel
-        base["fill_gate"] = _SMART_MODE["fill_gate"]
-    if _SMART_MODE.get("xts_cap"):                             # kernel-SNI matched only the first _XTS_CAP names of a list
-        base["xts_cap"] = _SMART_MODE["xts_cap"]
     if _SMART_MODE.get("sni_cap"):                             # Hybrid SNI's Tier-2 scan was truncated → say which rules lost operands
         base["sni_cap"] = _SMART_MODE["sni_cap"]
     if _SMART_MODE.get("lowered"):                             # {kind: n} this engine actually built — the POSITIVE half of the two above
         base["lowered"] = _SMART_MODE["lowered"]
     if _SMART_MODE.get("no_lower"):                            # {kind: n} handed to this engine and NOT runnable by it
         base["no_lower"] = _SMART_MODE["no_lower"]
-    if _SMART_MODE.get("dns_redirect"):                        # NETWORKS §17 F4: carried networks whose DNS skips Force DNS
-        base["dns_redirect"] = _SMART_MODE["dns_redirect"]
-    if _SMART_MODE.get("dns_upstream"):                        # Force-DNS resolver's upstream in effect (DNS P3)
-        base["dns_upstream"] = _SMART_MODE["dns_upstream"]
     if t["rc"] != 0:
         return {**base, "active": False, "sets": {}, "rules": 0, "resets": 0,
                 **({"block": _block_activity()} if (_MECH_ON["subs"] or _P2P["on"]) else {})}
@@ -13813,21 +13553,13 @@ def node_datapath_health(interfaces=None):
                             break
                     except Exception:
                         continue
-            us = sorted(n for n, e in (interfaces or {}).items()
-                        if ((e or {}).get("meta") or {}).get("tool") == "awg" and os.path.exists("/sys/class/net/%s/tun_flags" % n))
-            us += sorted(d for d in {(x or {}).get("device") for x in _EXITS.get("list") or []}
-                         if d and os.path.exists("/sys/class/net/%s/tun_flags" % d) and os.path.exists("/var/run/amneziawg/%s.sock" % d))
             why, mok = (None, "") if loaded else _awg_unloadable_why(built)
-            ent = {"needed": True, "ok": bool(loaded or (built and not us and why != "key"))}
+            ent = {"needed": True, "ok": bool(loaded or (built and why != "key"))}
             if not ent["ok"]:
-                ent["fallback"] = bool(us) or bool(shutil.which("amneziawg-go")) or any(
-                    os.access(p, os.X_OK) for p in ("/usr/local/sbin/amneziawg-go", "/usr/local/bin/amneziawg-go", "/usr/sbin/amneziawg-go", "/usr/bin/amneziawg-go"))
                 if why:
                     ent["why"] = why
                     if mok:
                         ent["mok"] = mok
-            if us:
-                ent["userspace"] = us
             out["awg"] = ent
     except Exception:
         return {}
@@ -13932,17 +13664,12 @@ def _awg_gen_sig():
 
 
 def awg_gen_report(now=None):
-    """{"module", "fallback", "tools", "disk"} — see above. Each part that cannot be read is None, never a guess."""
+    """{"module", "tools", "disk"} — see above. Each part that cannot be read is None, never a guess."""
     now = now or time.monotonic()
     sig = _awg_gen_sig()
     if _AWG_GEN["v"] is not None and now - _AWG_GEN["at"] < _AWG_GEN_TTL and _AWG_GEN.get("sig") == sig:
         return dict(_AWG_GEN["v"])
-    g = {"module": _awg_module_gen(), "fallback": None, "tools": None, "disk": _awg_disk_gen()}
-    with contextlib.suppress(Exception):
-        go = shutil.which(os.environ.get("WG_QUICK_USERSPACE_IMPLEMENTATION") or "amneziawg-go") or next(
-            (p for p in ("/usr/local/sbin/amneziawg-go", "/usr/local/bin/amneziawg-go", "/usr/sbin/amneziawg-go",
-                         "/usr/bin/amneziawg-go") if os.access(p, os.X_OK)), "")
-        g["fallback"] = _bin_gen(go, b"random_trailers", b"header_protection")
+    g = {"module": _awg_module_gen(), "tools": None, "disk": _awg_disk_gen()}
     with contextlib.suppress(Exception):
         g["tools"] = _bin_gen(shutil.which("awg"), b"RandomTrailers", b"HeaderProtectionKey")
     _AWG_GEN.update(at=now, v=g, sig=sig)
@@ -14091,11 +13818,7 @@ def awg_gen_refusal(iface, awg):
     if not need:
         return ""
     g = awg_gen_report()
-    dev = "/sys/class/net/%s" % iface
-    if os.path.exists(dev + "/tun_flags") or (not os.path.exists(dev) and not g.get("module")):
-        dp = ("userspace AmneziaWG (amneziawg-go)", g.get("fallback"))
-    else:
-        dp = ("AmneziaWG kernel module", g.get("module"))
+    dp = ("AmneziaWG kernel module", g.get("module"))
     for part, have in (dp, ("awg tools", g.get("tools"))):
         if AWG_GEN_ORDER.get(have, -1) < AWG_GEN_ORDER[need]:
             return "not applied: AmneziaWG %s needs %s %s or newer, and this node's is %s" % (need, part, need, have or "missing")
@@ -14811,471 +14534,6 @@ def wdtt_foreign_probe(iface):
             "store": probe["store"]}
 
 _CTR_IF_TTL = 120                                  # discovery, not reconcile — see _container_ifaces
-_CTR_IF = {"at": 0.0, "rows": []}
-_CTR_ADOPT = {}          # last container take-over result, reported ONCE so the panel can import + clear
-_CTR_JOB = {"container": "", "iface": "", "req_at": 0, "done": False, "res": None}
-_CTR_JOB_LOCK = threading.Lock()
-
-
-def _ctr_job_start(container, req_iface, req_at, node_cfg, agent, sudo):
-    """Begin a container take-over unless this exact request is already running or already answered."""
-    with _CTR_JOB_LOCK:
-        j = _CTR_JOB
-        if j["container"] == container and j["req_at"] == req_at and (j["res"] is not None or not j["done"]):
-            return                                   # in flight, or its answer is still waiting to be reported
-        if not j["done"] and j["container"]:
-            return                                   # another take-over is still running — never two stops at once
-        _CTR_JOB.update(container=container, iface=req_iface, req_at=req_at, done=False, res=None)
-
-    def _run():
-        res = {}
-        try:
-            res = container_iface_takeover(container, node_cfg, agent, sudo)
-        except Exception as e:
-            res = _ctr_err("take-over failed: {e}", e=str(e)[:140])
-        with _CTR_JOB_LOCK:
-            if _CTR_JOB["container"] == container and _CTR_JOB["req_at"] == req_at:
-                _CTR_JOB.update(done=True, res=res)
-    threading.Thread(target=_run, daemon=True).start()
-
-
-def _ctr_job_collect(node_cfg):
-    """Publish a finished take-over into the snapshot channel (once), on whichever pass sees it done."""
-    with _CTR_JOB_LOCK:
-        j = _CTR_JOB
-        if not (j["done"] and j["res"] is not None):
-            return
-        container, iface, req_at, res = j["container"], j["iface"], j["req_at"], j["res"]
-        _CTR_JOB.update(container="", iface="", req_at=0, res=None)
-    _CTR_ADOPT.clear()
-    _CTR_ADOPT.update({"container": container, "req_iface": iface,
-                       "req_at": req_at,          # which REQUEST this answers — see below
-                       "at": int(time.time()), **(res or {})})
-    if (res or {}).get("ok"):
-        _persist_config(node_cfg)                  # the interface is ours now — persist before anything else
-_OUR_CTRS = ("swg-node", "swg-panel", "swg-sub", "swg-turn-")   # ours; never reported as somebody else's
-_CTR_NOTOOL = set()
-
-
-def _container_ifaces(timeout=15):
-    """wg/awg interfaces that live inside ANOTHER container's network namespace → [{name, container, proto}].
-
-    AmneziaVPN is the case this exists for. Its own run_container.sh starts the server WITHOUT --network host
-    (a published UDP port and its own netns) and its start.sh runs `awg-quick up /opt/amnezia/awg/awg0.conf`
-    INSIDE the container, so the device is a kernel interface in a namespace we are not in and its .conf is on
-    a filesystem we cannot see. Every source iface_candidates has — wg/awg show, the UAPI socket dirs, the conf
-    directories — is namespace- and filesystem-local, so the panel truthfully found nothing and said nothing.
-    An operator who has just pointed swgPanel at a working AmneziaWG server reads that as "it doesn't work".
-
-    REPORT ONLY, and deliberately not merged into iface_candidates: this is not adoptable in place. Amnezia's
-    container is --restart always, and its start.sh takes the interface DOWN and back UP from its own conf on
-    every start — so a peer we added to the live device would vanish on the next restart unless we also wrote
-    into a file inside their container, which their client rewrites whenever the operator adds a user there.
-    Two writers on one config, one of them restoring from its own copy on a schedule we do not control.
-
-    `docker exec`, not nsenter: a docker node has its OWN pid namespace, so a host pid from `docker inspect`
-    does not resolve inside it, and nsenter would work on bare metal only. exec needs no pid at all and behaves
-    identically on both. Cached, because discovery of something a human installs does not belong on a 5s loop.
-    """
-    now = time.time()
-    if now - _CTR_IF["at"] < _CTR_IF_TTL:
-        return _CTR_IF["rows"]
-    rows = []
-    with contextlib.suppress(Exception):
-        r = run([_ctr_cli(), "ps", "--format", "{{.ID}}\t{{.Names}}"], timeout=15)
-        if r.returncode == 0:
-            _live_ids = set()
-            for ln in (r.stdout or "").splitlines():
-                cid, _, name = ln.partition("\t")
-                cid, name = cid.strip(), name.strip()
-                if not cid or name.startswith(_OUR_CTRS):
-                    continue
-                with contextlib.suppress(Exception):
-                    _nm = run([_ctr_cli(), "inspect", "-f", "{{.HostConfig.NetworkMode}}", cid], timeout=15)
-                    if (_nm.stdout or "").strip().lower() == "host":
-                        continue
-                _live_ids.add(cid)
-                for tool, proto in (("awg", "awg"), ("wg", "wg")):
-                    if (cid, tool) in _CTR_NOTOOL:   # that image has no such binary — asking again cannot change it
-                        continue
-                    with contextlib.suppress(Exception):
-                        q = run([_ctr_cli(), "exec", cid, tool, "show", "interfaces"], timeout=15)
-                        if q.returncode != 0:
-                            if "executable file not found" in (q.stderr or "") + (q.stdout or ""):
-                                _CTR_NOTOOL.add((cid, tool))
-                            continue
-                        for ifn in (q.stdout or "").split():
-                            if not ifn or any(x["name"] == ifn and x["container"] == name for x in rows):
-                                continue
-                            # its subnet, so the card can say what the interface actually serves — the one
-                            # fact an operator needs to see whether it collides with anything of theirs
-                            cidr = ""
-                            with contextlib.suppress(Exception):
-                                a = run([_ctr_cli(), "exec", cid, "ip", "-4", "-o", "addr", "show", ifn], timeout=timeout)
-                                for tok in (a.stdout or "").split():
-                                    if "/" in tok and tok[0].isdigit():
-                                        cidr = tok
-                                        break
-                            port, plist = 0, []
-                            with contextlib.suppress(Exception):
-                                d = run([_ctr_cli(), "exec", cid, tool, "show", ifn, "dump"], timeout=timeout)
-                                if d.returncode == 0:
-                                    head, plist = parse_dump(d.stdout or "")
-                                    if len(head) > 2 and str(head[2]).isdigit():
-                                        port = int(head[2])
-                            # Amnezia keeps the display names in its own table, joined to the device by pubkey
-                            # (clientId == clientPubKey). Without it every peer reads as an anonymous key.
-                            if plist:
-                                with contextlib.suppress(Exception):
-                                    for pk, nm in (_ctr_peer_names(cid, timeout=timeout) or {}).items():
-                                        for pe in plist:
-                                            if pe.get("public_key") == pk:
-                                                pe["name"] = nm
-                            hport = _ctr_published(cid, port, timeout=timeout) if port else 0
-                            # the conf is the authority, not the tool that answered (see _ctr_is_awg)
-                            proto = "awg" if _ctr_is_awg(cid, ifn, timeout=timeout) else proto
-                            rows.append({"name": ifn, "container": name, "proto": proto, "address": cidr,
-                                         "listen_port": port, "host_port": hport, "peers": len(plist),
-                                         # the panel forwards this verbatim; cap it so one very large foreign
-                                         # server cannot bloat every snapshot this node posts
-                                         "peer_list": plist[:200]})
-            # forget containers that are gone; a recreate gets a new ID and is probed from scratch
-            _CTR_NOTOOL.difference_update({p for p in _CTR_NOTOOL if p[0] not in _live_ids})
-    _CTR_IF["at"] = now
-    _CTR_IF["rows"] = rows
-    return rows
-
-
-def _ctr_err(template, **vars):
-    """One operator-facing failure from the container take-over.
-
-    Carries the finished English sentence AND the template it came from, because the panel translates by
-    looking the sentence up as a catalogue key — and a sentence with the container name already interpolated
-    into it can never match one. Old panels read `error` and see English, new ones read `error_key`/`error_vars`
-    and show the operator's language. Keep the template EXACTLY in step with js/lang/*.js.
-    """
-    return {"error": template.format(**vars), "error_key": template, "error_vars": dict(vars)}
-
-
-def _ctr_running(container, timeout=20):
-    """Is this container actually running? The one question a failed `stop` cannot answer for itself."""
-    with contextlib.suppress(Exception):
-        r = run([_ctr_cli(), "inspect", "-f", "{{.State.Running}}", container], timeout=timeout)
-        if r.returncode == 0:
-            return (r.stdout or "").strip().lower().startswith("true")
-    return False        # cannot tell → treat as down: the caller only uses this to decide whether to give up
-
-
-def _ctr_published(container, port, timeout=15):
-    """The HOST udp port this container publishes for `port`, or 0 if it publishes none.
-
-    A container on its own netns is unreachable from outside the box unless docker forwards a host port to it,
-    so this is what decides whether an external address may be shown for it at all — and it is also the port
-    that would collide with one of ours. `--network host` publishes nothing but IS the host, so the container's
-    own port is the host's.
-    """
-    with contextlib.suppress(Exception):
-        r = run([_ctr_cli(), "inspect", "-f",
-                 "{{.HostConfig.NetworkMode}}\t{{json .NetworkSettings.Ports}}", container], timeout=timeout)
-        if r.returncode != 0:
-            return 0
-        mode, _, raw = (r.stdout or "").strip().partition("\t")
-        if mode.strip() == "host":
-            return int(port)
-        for spec, binds in (json.loads(raw or "{}") or {}).items():
-            if not spec.endswith("/udp") or not binds:
-                continue
-            if spec.split("/")[0] != str(port):
-                continue
-            for b in binds:
-                hp = str((b or {}).get("HostPort") or "").strip()
-                if hp.isdigit():
-                    return int(hp)
-    return 0
-
-
-def _ctr_is_awg(container, ifn, timeout=15):
-    """Authoritative wg-vs-awg for a container interface: does its conf carry obfuscation params?
-
-    Which TOOL answered is not a reliable signal. On a box whose amneziawg module backs everything, `wg`
-    enumerates AWG devices too — the exact false positive iface_candidates documents and refuses to use, and
-    the reason a card could read "WG" for an interface the take-over then correctly created with `awg`.
-    Amnezia names its AmneziaWG interface `wg0`, so the NAME says nothing either. Cheap: one exec per iface.
-    """
-    with contextlib.suppress(Exception):
-        pat = "^[[:space:]]*(Jc|Jmin|Jmax|S[1-4]|H[1-4]|I[1-5])[[:space:]]*="
-        q = run([_ctr_cli(), "exec", container, "sh", "-c",
-                 "grep -lE '%s' /opt/amnezia/awg/%s.conf /opt/amnezia/wireguard/%s.conf "
-                 "/opt/amnezia/*/%s.conf /etc/wireguard/%s.conf /etc/amnezia/amneziawg/%s.conf 2>/dev/null"
-                 % (pat, ifn, ifn, ifn, ifn, ifn)], timeout=timeout)
-        if q.returncode == 0 and (q.stdout or "").strip():
-            return True
-    return False
-
-
-def _ctr_peer_names(container, conf_dir="", timeout=25):
-    """{pubkey: display name} out of Amnezia's own client table, or {} if there isn't one we can read.
-
-    Their desktop client keeps the names beside the conf in a JSON table whose filename has moved between
-    versions, so this DISCOVERS the table rather than guessing at it, and joins on the public key — their
-    wireguardConfigurator.cpp sets `clientConfig.clientId = connData.clientPubKey`, so the id IS the pubkey.
-    Best-effort by construction: no table, or an unreadable one, just means the peers read as anonymous keys.
-    """
-    names = {}
-    for d in ([conf_dir] if conf_dir else []) + ["/opt/amnezia/awg", "/opt/amnezia/wireguard", "/opt/amnezia"]:
-        with contextlib.suppress(Exception):
-            t = run([_ctr_cli(), "exec", container, "sh", "-c",
-                     "for f in %s/*; do case \"$f\" in *.conf|*.key) ;; *) [ -f \"$f\" ] && echo \"$f\";; esac; done" % d],
-                    timeout=timeout)
-            for f in [x.strip() for x in (t.stdout or "").split() if x.strip()]:
-                with contextlib.suppress(Exception):
-                    b = run([_ctr_cli(), "exec", container, "cat", f], timeout=timeout)
-                    doc = json.loads(b.stdout or "")
-                    rows = doc if isinstance(doc, list) else (doc.get("clients") or [])
-                    for row in rows if isinstance(rows, list) else []:
-                        if not isinstance(row, dict):
-                            continue
-                        cid = str(row.get("clientId") or "").strip()
-                        nm = str(((row.get("userData") or {}) if isinstance(row.get("userData"), dict) else {})
-                                 .get("clientName") or row.get("clientName") or "").strip()
-                        if cid and nm:
-                            names[cid] = nm
-                if names:
-                    break
-        if names:
-            break
-    return names
-
-
-def container_iface_read(container, want_iface=None, timeout=25):
-    """Read a wg/awg server out of ANOTHER container: its interface config and its peers, with names.
-
-    Everything needed to recreate the server natively is in one file. Amnezia's configure_container.sh writes
-    /opt/amnezia/<proto>/<iface>.conf holding PrivateKey, ListenPort, Address and the full AWG obfuscation set
-    (Jc/Jmin/Jmax/S1..S4/H1..H4/I1), followed by a [Peer] block per client. Recreated with the same key, port
-    and params, an existing client config keeps working untouched — the phone cannot tell it changed hands.
-
-    Names are NOT in that file; the desktop client keeps them in a JSON table beside it, and its filename has
-    moved between versions. So DISCOVER it rather than hardcode a guess: any other .json/table next to the conf
-    is tried, and entries are joined to peers by public key — `clientConfig.clientId = connData.clientPubKey`
-    in their wireguardConfigurator.cpp, so the id IS the pubkey. No table, or an unreadable one, simply means
-    the peers arrive unnamed; it must never cost us the import.
-
-    Returns {"conf": <text>, "path": ..., "iface": ..., "interface": {...}, "peers": [{...}], "named": n} or
-    {"error": ...}. Reads only — nothing here stops, writes or deletes anything.
-    """
-    out = {"peers": [], "named": 0}
-    if not container:
-        return _ctr_err("no container given")
-    r = run([_ctr_cli(), "exec", container, "sh", "-c",
-             "ls -1 /opt/amnezia/*/*.conf /opt/amnezia/*.conf 2>/dev/null"], timeout=timeout)
-    paths = [p.strip() for p in (r.stdout or "").split() if p.strip().endswith(".conf")]
-    if not paths:
-        return _ctr_err("no wg/awg config found in container {c}", c=container)
-    live = {}
-    for tool in ("awg", "wg"):
-        with contextlib.suppress(Exception):
-            q = run([_ctr_cli(), "exec", container, tool, "show", "interfaces"], timeout=timeout)
-            if q.returncode == 0:
-                for n in (q.stdout or "").split():
-                    live.setdefault(n, tool)
-    want = (want_iface or "").strip()
-    path = ""
-    for cand in paths:
-        base = os.path.basename(cand)[:-5]
-        if (base == want) if want else (base in live):
-            path = cand
-            break
-    if not path:
-        if want:
-            return _ctr_err("{c} has no config for {i}", c=container, i=want)
-        return _ctr_err("{c} has {n} wg/awg config(s) but none of them is running ({names}) — nothing to take over",
-                        c=container, n=len(paths), names=", ".join(sorted(live)) or "no interface is up")
-    out["running"] = os.path.basename(path)[:-5] in live
-    out["live_tool"] = live.get(os.path.basename(path)[:-5], "")
-    c = run([_ctr_cli(), "exec", container, "cat", path], timeout=timeout)
-    if c.returncode != 0 or not (c.stdout or "").strip():
-        return _ctr_err("could not read {p} in {c}", p=path, c=container)
-    conf = c.stdout
-    out["path"], out["conf"] = path, conf
-    out["iface"] = os.path.basename(path)[:-5]
-    out["interface"] = parse_interface_section(conf)
-    out["key_match"] = False
-    with contextlib.suppress(Exception):
-        _priv = (out["interface"].get("PrivateKey") or out["interface"].get("privatekey") or "").strip()
-        _live = (run([_ctr_cli(), "exec", container, out.get("live_tool") or "wg", "show",
-                      out["iface"], "public-key"], timeout=timeout).stdout or "").strip()
-        _mine = (run(["wg", "pubkey"], input_text=_priv + "\n", timeout=timeout).stdout or "").strip()
-        out["key_match"] = bool(_live and _mine and _live == _mine)
-    # peers, in file order — pubkey is the identity, and the only thing that joins to a name
-    cur = None
-    for ln in conf.splitlines():
-        s = ln.strip()
-        if s.startswith("["):
-            if cur:
-                out["peers"].append(cur)
-            cur = {} if s.lower() == "[peer]" else None
-            continue
-        if cur is None or "=" not in s or s.startswith("#"):
-            continue
-        k, _, v = s.partition("=")
-        cur[k.strip().lower()] = v.strip()
-    if cur:
-        out["peers"].append(cur)
-    # names: any table beside the conf, joined by pubkey. Best-effort by construction.
-    with contextlib.suppress(Exception):
-        names = _ctr_peer_names(container, os.path.dirname(path), timeout=timeout)
-        for p in out["peers"]:
-            nm = names.get((p.get("publickey") or "").strip())
-            if nm:
-                p["name"] = nm
-                out["named"] += 1
-    return out
-
-
-ADOPTED_CTRS_PATH = os.path.join(STATE_DIR, "adopted-containers.json")
-
-
-def _adopted_ctr_load():
-    with contextlib.suppress(Exception):
-        with open(ADOPTED_CTRS_PATH) as f:
-            d = json.load(f)
-        if isinstance(d, dict):
-            return {k: v for k, v in d.items() if isinstance(k, str) and isinstance(v, str) and v}
-    return {}
-
-
-def _adopted_ctr_save(m):
-    with contextlib.suppress(Exception):
-        os.makedirs(STATE_DIR, exist_ok=True)
-        tmp = ADOPTED_CTRS_PATH + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(m, f, indent=1)
-        os.replace(tmp, ADOPTED_CTRS_PATH)
-
-
-def _adopted_ctr_set(iface, container):
-    m = _adopted_ctr_load()
-    if m.get(iface) != container:
-        m[iface] = container
-        _adopted_ctr_save(m)
-
-
-def _adopted_ctr_forget(iface):
-    """The interface is gone, so we no longer owe anyone their container back — drop the claim, or a later
-    uninstall would start a container for an interface this node stopped serving long ago."""
-    m = _adopted_ctr_load()
-    if m.pop(iface, None) is not None:
-        _adopted_ctr_save(m)
-
-
-def container_iface_takeover(container, node_cfg, agent, sudo):
-    """Take a wg/awg server over from ANOTHER container: stop it, and stand the SAME server up natively.
-
-    Same identity, deliberately: the private key, listen port, address and obfuscation parameters are reused,
-    so every config already on a client keeps working — nobody re-imports anything and nobody notices, which
-    is the only reason to do this rather than tell the operator to start again.
-
-    Order matters and is not negotiable. Their container is stopped FIRST, because one process can hold that
-    UDP port: bringing ours up first would simply fail to bind. And --restart=no is set with it, or the daemon
-    puts it back at the next reboot to fight ours for the port, months later, with nobody watching.
-
-    Every failure after the stop puts their container back exactly as it was — started, with its original
-    restart policy. A take-over that half-happened is worse than one that did not: their users would be down
-    with nothing serving them.
-
-    Returns {"ok": True, "iface", "peers": [...]} for the panel to import, or {"error": ...}.
-    """
-    r = container_iface_read(container)
-    if r.get("error"):
-        return r
-    iface = r.get("iface") or ""
-    info = {k.lower(): v for k, v in (r.get("interface") or {}).items()}
-    priv, port = (info.get("privatekey") or "").strip(), (info.get("listenport") or "").strip()
-    addr = (info.get("address") or "").strip()
-    if not iface or not priv or not addr:
-        return _ctr_err("{c}: its config has no interface name, key or address to reuse", c=container)
-    # Refuse on anything but a live interface whose key matches its config. This stops somebody else's
-    # container; "there was a file that looked right" is not a standard worth acting on.
-    if not r.get("running"):
-        return _ctr_err("{i} in {c} is not actually running — nothing to take over", i=iface, c=container)
-    if not r.get("key_match"):
-        return _ctr_err("{i} in {c} does not match the config we read (its live key is a different one), so "
-                        "taking it over would not keep existing clients working — refusing", i=iface, c=container)
-    if iface in (node_cfg.get("interfaces") or {}):
-        return _ctr_err("this node already runs an interface called {i}, so the same name cannot be created "
-                        "here — free it first (delete that interface if it is unused, or move its peers "
-                        "elsewhere). Nothing was changed.", i=iface)
-    _mine = (node_cfg.get("interfaces") or {})
-    with contextlib.suppress(Exception):
-        _want = ipaddress.ip_network(conf_v4_address(addr) or addr.split(",")[0].strip(), strict=False)
-        for _ifn in _mine:
-            _have = _iface_subnet(node_cfg, _ifn)
-            if not _have:
-                continue
-            with contextlib.suppress(Exception):
-                if ipaddress.ip_network(_have, strict=False).overlaps(_want):
-                    return _ctr_err(
-                        "{i} in {c} serves {s}, which overlaps {o} already on this node. In its own container "
-                        "that is fine — each has its own network namespace — but taking it over moves it here, "
-                        "where one subnet cannot be served twice. Take over only one of them, or renumber the "
-                        "other first. Nothing was changed.", i=iface, c=container, s=str(_want), o=_ifn)
-    awg = {k: v for k, v in (r.get("interface") or {}).items() if k in AWG_KEYS and not awg3_unset(k, v)}
-    cmd = ["awg"] if awg else ["wg"]          # obfuscation params present => it is AmneziaWG, not plain WireGuard
-
-    # what the daemon will restore on failure
-    pol = ""
-    with contextlib.suppress(Exception):
-        pol = (run([_ctr_cli(), "inspect", "-f", "{{.HostConfig.RestartPolicy.Name}}", container],
-                   timeout=20).stdout or "").strip()
-    _need = cmd[0]
-    if not (shutil.which(_need) and shutil.which(_need + "-quick")):
-        return _ctr_err("{i} in {c} is {p}, and this node does not have the {p} tools ({t} and {t}-quick) to "
-                        "stand it up. Install them, then take it over again — {c} was not touched and is "
-                        "still serving.", i=iface, c=container, p=("AmneziaWG" if _need == "awg" else "WireGuard"),
-                        t=_need)
-    if run([_ctr_cli(), "update", "--restart=no", container], timeout=30).returncode != 0:
-        return _ctr_err("could not clear the restart policy on {c} — nothing was changed", c=container)
-    if run([_ctr_cli(), "stop", "-t", "10", container], timeout=60).returncode != 0:
-        if _ctr_running(container):
-            with contextlib.suppress(Exception):
-                run([_ctr_cli(), "update", "--restart=" + (pol or "always"), container], timeout=30)
-            return _ctr_err("could not stop {c} — nothing was changed", c=container)
-        log(LOG_WARNING, "container-takeover: %s reported no clean stop but is down — continuing" % container)
-
-    def _undo(why):
-        with contextlib.suppress(Exception):
-            run([_ctr_cli(), "update", "--restart=" + (pol or "always"), container], timeout=30)
-        with contextlib.suppress(Exception):
-            run([_ctr_cli(), "start", container], timeout=90)
-        _CTR_IF["at"] = 0.0
-        log(LOG_ERR, "container-takeover: %s failed (%s) — put %s back", iface, why, container)
-        return _ctr_err("{why} — {c} was restarted and is serving again, nothing was taken over",
-                        why=why, c=container)
-
-    ag = run_agent(agent, sudo, {"op": "create-iface", "iface": iface, "cmd": cmd,
-                                 "subnet": addr, "address": addr,
-                                 "listen_port": int(port) if port.isdigit() else 0,
-                                 "private_key": priv, "awg_params": awg or None,
-                                 "awg_params_exact": True,
-                                 "mtu": (info.get("mtu") or "").strip() or None})
-    if not ag.get("ok"):
-        return _undo("could not create %s here: %s" % (iface, ag.get("error")))
-    conf = (ag.get("data") or {}).get("conf") or ""
-    if not conf:
-        return _undo("the agent created %s but returned no config path" % iface)
-    node_cfg.setdefault("interfaces", {})[iface] = {"cmd": cmd, "conf": conf, "adopted_from": container}
-    _adopted_ctr_set(iface, container)     # survives a docker node recreate; the uninstaller reads it
-    _CTR_IF["at"] = 0.0
-    log(LOG_INFO, "container-takeover: %s is ours now (from %s, %d peer(s) to import)", iface, container, len(r.get("peers") or []))
-    return {"ok": True, "iface": iface, "container": container, "conf": conf,
-            "listen_port": port, "address": addr, "proto": cmd[0],
-            "peers": r.get("peers") or [], "named": r.get("named") or 0}
-
-
-_DEFAULT_ROUTES = ("0.0.0.0/0", "::/0")
-
-
 def _outbound_client_tunnel(conf, addr, live_peers):
     """True when this interface is THIS BOX dialling OUT — a client tunnel, not a server anyone joins.
 
@@ -15366,147 +14624,6 @@ def _exit_cand_entry(name, proto, conf, addr, up, live_peers):
     return {"name": name, "proto": proto, "up": bool(up), "address": addr or "",
             "endpoint": ep, "peer_key": pk, "conf": conf or "",
             "boot_persist": iface_boot_persists(name, [proto or "wg"])}
-
-
-def iface_candidates(node_cfg):
-    """wg/awg interfaces present on this box that this node does NOT manage — Approach-B adoption candidates for the
-    panel to classify (WG / AWG / WDTT) or ignore. REPORT ONLY — nothing is touched (a kernel interface stays on the
-    kernel until the operator adopts it). Each: name, proto (wg|awg), datapath (kernel|userspace), listen_port,
-    address, peers, up, wdtt_hint (an unmanaged userspace wg iface is most likely a WDTT server's).
-
-    Also refills `_EXIT_CAND` as a side effect — see the block above it. Rebuilt from scratch on every call
-    and never appended to across calls: this runs each sync, so accumulating would grow without bound AND
-    keep reporting a tunnel the operator deleted ten minutes ago."""
-    _EXIT_CAND["list"] = []
-    managed = set((node_cfg.get("interfaces") or {}).keys())
-    local_wdtt = {}
-    with contextlib.suppress(Exception):
-        local_wdtt = _wdtt_load() or {}
-    managed |= set(k for k, v in local_wdtt.items() if (v or {}).get("panel_managed"))
-    with contextlib.suppress(Exception):
-        managed |= set(_csqtt_load().keys())     # csqtt is a distinct managed kind — never a wg/awg/WDTT candidate
-    names_wdtt = set(k for k in local_wdtt if k not in managed)
-    names = set(names_wdtt)                                  # unadopted local WDTT instances are candidates too
-    for tool in (["wg"], ["awg"]):                           # kernel + any userspace socket the CLI can read
-        with contextlib.suppress(Exception):
-            r = _pass_cached("ifaces:" + _wgcmd(tool)[0], lambda: run(_wgcmd(tool) + ["show", "interfaces"]))
-            if r.returncode == 0:
-                names.update((r.stdout or "").split())
-    for _d in WG_SOCK_DIRS:                                  # userspace wireguard-go the CLI can't read
-        with contextlib.suppress(Exception):
-            for f in os.listdir(_d):
-                if f.endswith(".sock"):
-                    names.add(f[:-5])
-    for _pid, _fl in _wdtt_procs():
-        with contextlib.suppress(Exception):
-            names.add(_wdtt_iface_of(_fl))
-    for _d in _awg_conf_dirs() + list(WG_CONF_DIRS):         # confs on disk (a down interface is adoptable too)
-        with contextlib.suppress(Exception):
-            for f in os.listdir(_d):
-                if f.endswith(".conf"):
-                    names.add(f[:-5])                        # ".conf" is 5 chars — [:-4] leaves a trailing dot
-    ipmap = {}
-    with contextlib.suppress(Exception):
-        for ln in (_pass_cached("ip-4-addr", lambda: run(["ip", "-4", "-o", "addr", "show"])).stdout or "").splitlines():
-            p = ln.split()
-            if len(p) >= 4 and p[2] == "inet":
-                ipmap.setdefault(p[1], p[3])
-    out = []
-    own_exits = None                                         # this node's exit devices, read once when first needed
-    for name in sorted(names):
-        if not name or name in managed or name.startswith("swg_"):
-            continue
-        userspace = any(os.path.exists(os.path.join(_d, name + ".sock")) for _d in WG_SOCK_DIRS)
-        conf = _cand_conf(name)
-        proto = "awg" if (conf and _conf_is_awg(conf)) else "wg"
-        if not conf:
-            with contextlib.suppress(Exception):
-                _links = _all_links()
-                if "amneziawg" in ((_links.get(name) or "") if _links is not None
-                                   else (run(["ip", "-d", "-o", "link", "show", name]).stdout or "")):
-                    proto = "awg"
-        port = 0; peers = 0; up = False; ent_peers = []; awg_live = False
-        for _tool in (["awg"], ["wg"]) if proto == "awg" else (["wg"], ["awg"]):
-            with contextlib.suppress(Exception):
-                r = _dump_of(_wgcmd(_tool), name)
-                if r.returncode == 0 and (r.stdout or "").strip():
-                    lines = r.stdout.strip().splitlines(); f0 = lines[0].split("\t")
-                    if len(f0) >= 3:
-                        with contextlib.suppress(ValueError):
-                            port = int(f0[2])
-                    if len(f0) > 4:
-                        for _v in f0[3:-1]:
-                            if _v and _v not in ("0", "off") and (_v[0].isdigit() or _v[0] == "-"):
-                                awg_live = True; break
-                    peers = max(0, len(lines) - 1); up = True
-                    with contextlib.suppress(Exception):
-                        _, _pl = parse_dump(r.stdout)
-                        ent_peers = [{"public_key": p["public_key"], "allowed_ips": p["allowed_ips"],
-                                      "endpoint": p["endpoint"], "last_handshake": p["last_handshake"],
-                                      "rx_bytes": p["rx_bytes"], "tx_bytes": p["tx_bytes"]} for p in _pl[:200]]
-                    if not conf:                            # no conf to trust — believe the tool that answered
-                        proto = "awg" if _wgcmd(_tool) == ["awg"] else "wg"
-                    break
-        if not up and userspace:                            # userspace socket the CLI can't read → UAPI
-            port, peers = _uapi_probe(name); up = True
-        addr = ipmap.get(name, "")
-        if name in names_wdtt:                              # fill from OUR record — a stopped WDTT has no live iface
-            _lw = local_wdtt.get(name) or {}
-            if not port:
-                with contextlib.suppress(Exception):
-                    port = int(str(_lw.get("listen") or "").rsplit(":", 1)[-1] or 0)
-            if not addr:
-                addr = _lw.get("wg_addr") or ""
-        if conf and (port == 0 or not addr):                # fill from the on-disk conf (down interface still counts)
-            with contextlib.suppress(Exception):
-                for ln in open(conf):
-                    m = re.match(r"\s*ListenPort\s*=\s*(\d+)", ln)
-                    if m and not port:
-                        port = int(m.group(1))
-                    m = re.match(r"\s*Address\s*=\s*([0-9./,]+)", ln)
-                    if m and not addr:
-                        addr = m.group(1).split(",")[0].strip()
-        if _outbound_client_tunnel(conf, addr, ent_peers):
-            _EXIT_CAND["list"].append(_exit_cand_entry(name, proto, conf, addr, up, ent_peers))
-            continue                                        # this box dialling out (WDTT-Plus exit / WARP) — never a candidate
-        if own_exits is None:
-            own_exits = set()
-            with contextlib.suppress(OSError):
-                own_exits = {f[:-5] for f in os.listdir(EXIT_DIR) if f.endswith(".conf")}
-        if name in own_exits:
-            continue
-        ent = {"name": name, "proto": proto, "datapath": "userspace" if userspace else "kernel",
-               "listen_port": port, "address": addr, "peers": peers, "up": bool(up),
-               "wdtt_hint": bool(userspace or name in names_wdtt),
-               "peer_list": ent_peers,
-               "conf": conf}
-        _why = ""
-        if awg_live:
-            _hint, _why = "awg", "obfuscation parameters are set on the interface"
-        elif conf and _conf_has_awg(conf):
-            _hint, _why = "awg", "its config carries AmneziaWG parameters"
-        elif conf and _conf_is_awg(conf):
-            _hint, _why = "awg", "its config is in an AmneziaWG directory (" + os.path.dirname(conf) + ")"
-        else:
-            _hint = "wg"
-        ent["type_hint"], ent["type_why"] = _hint, _why   # abs conf path (if any) — the panel passes it back to /api/iface/onboard to adopt
-        with contextlib.suppress(Exception):
-            fp = wdtt_foreign_probe(name)
-            if fp:
-                ent["wdtt"] = {k: fp[k] for k in ("fork", "config_dir", "listen", "wg_port", "wg_addr",
-                                                  "max_passwords", "has_identity", "adoptable", "store",
-                                                  "users", "raw_listen", "container")}
-                ent["wdtt_hint"] = True
-                ent["type_hint"] = "wdtt"
-                ent["type_why"] = "a WDTT server (" + (fp.get("fork") or "unknown fork") + ") is running on it"
-                if not ent["listen_port"]:                  # a stopped/kernel iface still knows its ports from argv
-                    with contextlib.suppress(Exception):
-                        ent["listen_port"] = int(str(fp.get("listen") or "").rsplit(":", 1)[-1] or 0)
-                if not ent["address"]:
-                    ent["address"] = fp.get("wg_addr") or ""
-        out.append(ent)
-    _add_tun_exit_cands(names)
-    return out
 
 
 def _add_tun_exit_cands(seen):
@@ -16059,7 +15176,6 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
             "turn_bind_any": True,   # a turn listener whose host is not on this box binds every address (turn_bind), not a crash loop
             # Informational, NOT failures: an adoption that succeeded but not from the source the operator named.
             # cmd_errors is the wrong channel for it (it renders as a failure and is cleared on success).
-            "onboard_notes": dict(NODE_NOTES),
             "quarantined": op_quarantined(),   # ops in repeated-failure backoff — visible, not silently churning
             "node_ips": list_node_ips(_addrs), "node_ifaces": list_node_ifaces(_addrs),
             # …and which of them need a gateway (ARPHRD_ETHER) — the panel refuses those as exit
@@ -16151,15 +15267,10 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
     _xt = exit_test_status()
     if _xt:                                           # a SOCKS5 proxy test's answer, waiting for the panel — absent otherwise
         snap["exit_test"] = _xt
-    snap["iface_candidates"] = iface_candidates(node_cfg)
-    snap["exit_candidates"] = list(_EXIT_CAND["list"])
     snap["devexit"] = _devexit_report()               # decision 2: per-exit device state → the node's Issues tag
     snap["exits"] = list(_EXITS["list"])              # imported exits: what we registered/wrote, their health — never a private key
     snap["exit_kinds"] = list(EXIT_KINDS)             # the kinds this node can make, by name: the panel sends no other (s9a F17)
-    snap["static_egress"] = {"v": 1, "active": _STATIC_EGRESS["active"], "blocked": _STATIC_EGRESS["blocked"]}
-    snap["container_ifaces"] = _container_ifaces()
-    if _CTR_ADOPT:
-        snap["container_adopt"] = dict(_CTR_ADOPT)   # take-over result → the panel imports the peers and clears   # unmanaged wg/awg interfaces on the box → panel adoption candidates (report-only, untouched)
+    snap["static_egress"] = {"v": 1, **{k: _STATIC_EGRESS[k] for k in ("active", "blocked", "ready")}}
     snap["wdtt_dormant"] = wdtt_dormant()                   # WDTT installs on disk with nothing running (no iface to be a candidate)
     snap["csqtt_candidates"] = csqtt_candidates()           # FOREIGN csqtt servers on the box → panel adoption candidates (report-only, untouched)
     if hcfg.get("enabled", True):      # additive + opt-out; mounts default to ["/"]
@@ -16635,58 +15746,6 @@ _SHOWCONF_ONLY = re.compile(r"(?i)^\s*(?:AdvancedSecurity\s*=.*|(?:ContentPaddin
                             r"\s*=\s*(?:0|off)\s*)$")
 
 
-def _strip_showconf_only(body):
-    """Drop the lines `showconf` prints that no conf needs and most datapaths refuse — see _SHOWCONF_ONLY."""
-    return "\n".join(l for l in body.splitlines() if not _SHOWCONF_ONLY.match(l))
-
-
-def _reconstruct_conf(iface, cmd, mark=True):
-    """Rebuild an interface's .conf from the LIVE device and return its path ('' if that isn't possible). `mark`: stamp the
-    rebuilt conf add-only (#swg:onboarded) — what the device's history was is not on the device (see onboard_ifaces).
-
-    A docker node mounts its own dir over /etc/amnezia/amneziawg, so a pre-existing HOST interface's .conf is
-    invisible in here and the candidate is reported with conf="" — adoption then failed for every wg/awg device on
-    the box. `wg/awg showconf` reads the running device over netlink, which works fine from the container (host
-    networking) and yields the server key plus every peer — exactly what adoption promises to keep, and fresher
-    than any file. showconf omits the interface ADDRESS (it is not kernel state the tool reports), so that comes
-    from `ip addr`.
-
-    Written into the node's own persisted conf dir, never the host's: we are adopting the interface, not editing
-    somebody else's file, and on docker that dir is the bind-mount that survives a recreate."""
-    dst_dir = _awg_conf_dirs()[0] if cmd == ["awg"] else (AWG_CONF_DIRS[0] if NODE_KIND == "docker" else WG_CONF_DIRS[0])
-    with contextlib.suppress(Exception):
-        r = run(cmd + ["showconf", iface])
-        body = (r.stdout or "").strip()
-        if not body or "[Interface]" not in body:
-            return ""
-        body = _strip_showconf_only(_strip_learned_endpoints(body))
-        addr = ""
-        with contextlib.suppress(Exception):
-            for ln in (run(["ip", "-4", "-o", "addr", "show", iface]).stdout or "").splitlines():
-                p = ln.split()
-                if len(p) >= 4 and p[2] == "inet":
-                    addr = p[3]; break
-        if addr and "Address" not in body.split("[Peer]")[0]:
-            body = body.replace("[Interface]", "[Interface]\nAddress = " + addr, 1)
-        mtu = ""
-        with contextlib.suppress(Exception):
-            _lk = (run(["ip", "-o", "link", "show", iface]).stdout or "")
-            _m = re.search(r"\bmtu (\d+)\b", _lk)
-            if _m:
-                mtu = _m.group(1)
-        if mtu and "MTU" not in body.split("[Peer]")[0]:
-            body = body.replace("[Interface]", "[Interface]\nMTU = " + mtu, 1)
-        os.makedirs(dst_dir, exist_ok=True)
-        path = os.path.join(dst_dir, iface + ".conf")
-        if os.path.exists(path):          # never clobber a conf we already manage
-            return path
-        with open(path, "w") as f:
-            f.write(("#swg:onboarded\n" if mark else "") + "#swg:cmd " + (cmd[0] if cmd else "awg") + "\n" + body + "\n")
-        os.chmod(path, 0o600)
-        return path
-    return ""
-
-
 def _live_wg_ifaces():
     """Names of wg/awg devices that exist on this box right now. The datapath is the authority — awg first,
     because an amneziawg device answers only to `awg`."""
@@ -16734,113 +15793,6 @@ def write_inventory(node_cfg):
             json.dump(inv, f, indent=2)
         os.replace(tmp, NODE_INVENTORY)
         _INV_LAST["sig"] = sig
-
-
-def _relay_leftovers(prev_kind):
-    """The previous run-model's relay instances, asked of ITS registry by name -> (units, containers).
-
-    ⚠️ NOT FROM THE INVENTORY. Relays were never recorded there, and the container arm records no units and — its
-    fork servers being its own children — often no containers either, so the handover returned before stopping
-    anything. MEASURED in the 1.8.8 qualification (nixos, podman -> native): `swg-relay-awg0.<peer>` and
-    `swg-relay-wg9.<peer>` kept running under `--restart unless-stopped` and holding their ports, every native
-    `swg-relay@` instance failed to start, and the divert stayed DISARMED ("relay not answering") — relayed
-    links silently back on plain forwarding. Asking the runtime also covers an inventory an older build wrote.
-    Each arm's own sweep cannot see the other's instances (see _relay_existing), so this is the only place
-    they are ever found."""
-    units, ctrs = [], []
-    with contextlib.suppress(Exception):
-        if prev_kind == "docker" and NODE_KIND != "docker":
-            r = run([_ctr_cli(), "ps", "-a", "--filter", "name=" + _relay_cname(""), "--format", "{{.Names}}"], timeout=30)
-            ctrs = sorted(n for n in (r.stdout or "").split() if n.startswith(_relay_cname("")))
-        elif prev_kind != "docker" and NODE_KIND == "docker":
-            r = host_sh("systemctl list-units --all --plain --no-legend 'swg-relay@*.service' 2>/dev/null", timeout=30)
-            units = sorted(ln.split()[0] for ln in (r.stdout or "").splitlines()
-                           if ln.split() and re.match(r"^swg-relay@.+\.service$", ln.split()[0]))
-    return units, ctrs
-
-
-def handover_from_previous_runmodel():
-    """Stop what a PREVIOUS run-model left running here, by the names IT recorded. Once, at startup.
-
-    Interfaces are deliberately NOT touched: they are kernel state in the host namespace, they keep
-    serving across the change, and selfheal_ifaces takes them back on the first sync. What must stop are
-    the things that OWN a device or a port — fork servers and turn proxies — because two owners of one
-    tun device is not a state either of them can resolve.
-
-    Where we cannot reach them (a container node with no runtime socket), say exactly which units are
-    still up rather than failing quietly: that is a one-line fix for an operator and an invisible outage
-    otherwise."""
-    prev = None
-    with contextlib.suppress(Exception):
-        with open(NODE_INVENTORY) as f:
-            prev = json.load(f)
-    if not isinstance(prev, dict) or not prev.get("kind"):
-        return
-    if (prev.get("kind"), prev.get("runtime") or "") == (NODE_KIND, NODE_RUNTIME or ""):
-        return                                   # same model — its components are ours, not leftovers
-    units = [u for u in (prev.get("units") or []) if isinstance(u, str) and u]
-    ctrs = [c for c in (prev.get("containers") or []) if isinstance(c, str) and c]
-    r_units, r_ctrs = _relay_leftovers(prev.get("kind"))
-    units += [u for u in r_units if u not in units]
-    ctrs += [c for c in r_ctrs if c not in ctrs]
-    if not (units or ctrs):
-        return
-    log(LOG_INFO, "run-model changed (%s/%s -> %s/%s) — handing over %d unit(s), %d container(s) from the previous one", prev.get("kind"), prev.get("runtime") or "-", NODE_KIND, NODE_RUNTIME or "-", len(units), len(ctrs))
-    stuck = []
-    for u in units:
-        w = host_sh(sc_disable_now_stop(u), timeout=60)
-        if w.returncode != 0:
-            stuck.append(u)
-    for c in ctrs:
-        with contextlib.suppress(Exception):
-            # A relay holds no state — the new arm recreates it from the panel's plan — so it is REMOVED, not just
-            # stopped: nothing on this side would ever look for a stopped one again.
-            verb = ["rm", "-f"] if c.startswith(_relay_cname("")) else ["stop", "-t", "10"]
-            if run([_ctr_cli()] + verb + [c], timeout=60).returncode != 0 and _ctr_running(c):
-                stuck.append(c)
-    _handover_fork_dirs()
-    _handover_turn()
-    if stuck:
-        NODE_ERRORS["handover"] = (
-            "This node changed run-model, and the previous one's servers are still running here: "
-            + ", ".join(sorted(stuck)[:6])
-            + ". They hold the interfaces and ports this one needs. Stop them on the box "
-              "(`systemctl disable --now <name>`), then this node takes over on its next sync.")
-        log(LOG_ERR, "handover: could not stop " + ", ".join(sorted(stuck)))
-    else:
-        NODE_ERRORS.pop("handover", None)
-        log(LOG_INFO, "handover: the previous run-model's components are stopped")
-
-
-def backfill_cmd_markers(node_cfg):
-    """Write `#swg:cmd` into the confs of interfaces we already manage, once.
-
-    The marker only lands on confs written from now on, which would leave every interface that already
-    exists exposed to the thing it prevents — a conf moving between directories and coming back as the
-    other protocol. So stamp what is here. The source is the LIVE DEVICE, not our record: the device is
-    what the interface actually IS today (a record can be a copy of an earlier wrong guess, which is
-    exactly how this failure propagates), and an interface that is not up is left alone rather than
-    guessed at. Never touches a conf that already carries a marker, and never one we do not manage."""
-    live = {}
-    for tool in ("awg", "wg"):
-        with contextlib.suppress(Exception):
-            r = run(_wgcmd([tool]) + ["show", "interfaces"])
-            if r.returncode == 0:
-                for n in (r.stdout or "").split():
-                    live.setdefault(n, tool)          # awg first: an amneziawg device answers only to awg
-    for iface, rec in (node_cfg.get("interfaces") or {}).items():
-        conf = (rec or {}).get("conf") or ""
-        tool = live.get(iface)
-        if not (conf and tool and os.path.isfile(conf)):
-            continue
-        with contextlib.suppress(Exception):
-            with open(conf) as f:
-                head = f.read()
-            if "#swg:cmd" in head.split("[Interface]")[0]:
-                continue
-            with open(conf, "w") as f:
-                f.write("#swg:cmd " + tool + "\n" + head)
-            log(LOG_INFO, "conf: stamped %s as %s (so it keeps its protocol wherever it goes)", iface, tool)
 
 
 def _handover_fork_dirs():
@@ -16939,122 +15891,6 @@ def sc_disable_now_stop(svc):
     q = shlex.quote(svc)
     return ("systemctl stop " + q + " >/dev/null 2>&1; systemctl disable " + q + " >/dev/null 2>&1; "
             "systemctl is-active --quiet " + q + " && exit 1; exit 0")
-
-
-def selfheal_ifaces(node_cfg, desired_ifaces, owned=None):
-    """Interfaces the PANEL manages that are live on this box but that we hold no config for → onboard them
-    ourselves, as {iface: {cmd, conf}} for onboard_ifaces.
-
-    The case this exists for: a container recreate wipes a conf written to container-local storage while the
-    interface itself survives in the host netns (it lives there, not in the container). The node then comes back
-    to a live device it has no record of, stops reporting it, and the panel shows the interface as MISSING until
-    somebody clicks Restore — which does exactly what this does, from the same live device. There is nothing for
-    a human to decide: the panel already says it owns the interface, and the interface is right there.
-
-    Only ever for an interface that is genuinely UP here. One the panel wants and this box does not have is a
-    different situation — it may need recreating from a key backup, which is a decision, not a repair — and it
-    must not be retried every five seconds.
-    """
-    want = set(owned) if owned else set(desired_ifaces or {})
-    have = set((node_cfg.get("interfaces") or {}).keys())
-    gap = want - have
-    if not gap:
-        return {}
-    owned = set()
-    with contextlib.suppress(Exception):
-        owned |= set(_wdtt_load() or {})          # a WDTT server owns its interface — not ours to adopt
-    with contextlib.suppress(Exception):
-        owned |= set(_csqtt_load() or {})         # nor a csqtt server's raw TUN
-    with contextlib.suppress(Exception):
-        for _pid, _fl in _wdtt_procs():           # including a FOREIGN server's, which writes no record here
-            owned.add(_wdtt_iface_of(_fl))
-    out = {}
-    for tool in (["awg"], ["wg"]):                # awg first: an amneziawg device answers only to awg
-        with contextlib.suppress(Exception):
-            r = run(_wgcmd(tool) + ["show", "interfaces"])
-            if r.returncode != 0:
-                continue
-            for n in (r.stdout or "").split():
-                if n not in gap or n in owned or n in out:
-                    continue
-                # Genuinely UP only. A device an operator took down is a decision of theirs, not damage to
-                # repair, and a wg device reports state UNKNOWN when up — so read the flags, not the state.
-                flags = ""
-                with contextlib.suppress(Exception):
-                    flags = (run(["ip", "-o", "link", "show", n]).stdout or "").split(">")[0]
-                if "UP" not in flags:
-                    continue
-                out[n] = {"cmd": list(tool), "conf": ""}
-    return out
-
-
-def onboard_ifaces(node_cfg, onboard, heal=()):
-    """Add panel-requested interfaces to this node's managed set (config.json) when they exist
-    locally — for a wg/awg interface the panel didn't auto-detect. Once added, build_snapshot
-    reports it and the panel closes the request (no separate ack needed). Only ever on a 200.
-
-    `heal` names the ones being TAKEN BACK (the self-heal: the panel owns it, this node lost its record) rather than
-    adopted. An adopted interface is add-only — the peers it came with are not the panel's to remove. One taken back
-    stays what it was: add-only only if its conf says so (#swg:onboarded, written when it was adopted). Stamping every
-    one made each interface the panel CREATED add-only after a master re-install (1.8.8 qualification, q1), and add-only
-    keeps a peer the panel merely stops sending. A conf that has to be rebuilt from the device cannot say, so that one
-    stays add-only (kept peers can be removed later; wiped ones are gone) — unless it is a mesh link (see _add_only)."""
-    res = {"added": [], "errors": []}
-    if not onboard:
-        return res
-    ifaces = node_cfg.setdefault("interfaces", {})
-    changed = False
-    for iface, want in onboard.items():
-        if iface in ifaces:                 # already managed — nothing to do (panel will clear it)
-            continue
-        cmd = want.get("cmd") or ["awg"]
-        conf = want.get("conf") or ""
-        _mark = _add_only(iface, {"onboarded": True})   # False only for a mesh link
-        try:
-            _asked = conf
-            if not conf or not os.path.exists(conf):
-                # No readable .conf (a docker node cannot see the host's) — rebuild it from the live device.
-                conf = _reconstruct_conf(iface, cmd if cmd != ["auto"] else ["awg"], _mark) or \
-                       (_reconstruct_conf(iface, ["wg"], _mark) if cmd == ["auto"] else "")
-                if not conf:
-                    res["errors"].append(f"{iface}: no config on disk and the live interface couldn't be read"); continue
-                if _asked:
-                    res.setdefault("notes", []).append(
-                        f"{iface}: couldn't read {_asked} — adopted from the live interface instead "
-                        f"(keys, peers and ports kept; any DNS/Table/PostUp lines in that file are not)")
-                    log(LOG_WARNING, f"onboard: {iface}: {_asked} unreadable — rebuilt from the live device")
-            if cmd == ["auto"]:                     # "Existing" gave no protocol — detect it from the conf
-                info = parse_interface_section(open(conf).read())
-                cmd = ["awg"] if any(k in info for k in AWG_KEYS) else ["wg"]
-                try:
-                    run(cmd + ["show", iface, "dump"])
-                except Exception:
-                    cmd = ["wg"] if cmd == ["awg"] else ["awg"]   # fall back to the other tool
-            run(cmd + ["show", iface, "dump"])      # raises if the interface isn't actually up
-        except Exception as e:
-            res["errors"].append(f"{iface}: {e}"); continue
-        try:
-            with open(conf) as _f: _t = _f.read()
-        except OSError:
-            _t = None
-        # adopted → add-only; taken back → whatever its conf says (unreadable: add-only, the side that keeps peers)
-        _onb = _mark and (iface not in heal or _t is None or bool(_ONBOARDED_RE.search(_t)))
-        ifaces[iface] = {"cmd": cmd, "conf": conf, **({"onboarded": True} if _onb else {})}   # add-only: never wipe its peers
-        if _t is not None:                              # persist the markers in the conf so a docker restart
-            _pre = "#swg:onboarded\n" if _onb and not _ONBOARDED_RE.search(_t) else ""   # (config.json rebuilt
-            if "#swg:cmd" not in _t.split("[Interface]")[0]:
-                _pre += "#swg:cmd " + (cmd[0] if cmd else "awg") + "\n"
-            if _pre:
-                with contextlib.suppress(OSError):
-                    with open(conf, "w") as _f: _f.write(_pre + _t)
-        changed = True
-        res["added"].append(iface)
-    if changed:
-        try:
-            _persist_config(node_cfg)
-        except Exception as e:
-            res["errors"].append(f"persist config.json: {e}")
-    return res
 
 
 def restart_ifaces(node_cfg, restart, agent, sudo):
@@ -17235,255 +16071,7 @@ def _panel_busy(status, reply):
     return status == 503 and (reply or {}).get("code") == "busy"
 
 
-def _verify_panel(base_url, token, panel):
-    """True iff the panel at base_url answers /api/node/whoami with our token UNDER OUR CURRENT TLS POSTURE
-    (existing pin / CA verify). This is the gate that stops a MITM from redirecting us."""
-    try:
-        st, _d, _h = _panel_get(base_url.rstrip("/") + "/api/node/whoami", token, panel, timeout=8)
-        return st == 200
-    except Exception:
-        return False
-
-def _persist_panel_url(node_cfg, new_url):
-    """Persist a re-point. config.json is authoritative for bare-metal + the running process; the STATE_DIR copy
-    survives a docker container recreate (node-entrypoint reads it ahead of the .env PANEL_URL)."""
-    node_cfg.setdefault("panel", {})["url"] = new_url
-    _persist_config(node_cfg)
-    with contextlib.suppress(Exception):
-        tmp = os.path.join(STATE_DIR, "panel-url.tmp")
-        with open(tmp, "w") as f:
-            f.write(new_url + "\n")
-        os.replace(tmp, os.path.join(STATE_DIR, "panel-url"))
-
-
-def _persist_panel_auth(panel):
-    """Mirror the CREDENTIAL and TLS posture beside the learned URL, for the same reason the URL is
-    mirrored — and it is the same three lines because it is the same failure.
-
-    ⚠️ Measured by reading `docker/node-entrypoint.sh`, which is the bootstrap on BOTH the container arm
-    and the NixOS native arm: it regenerates /etc/swg-agent/config.json from the environment on every
-    start and honours exactly ONE self-learned value, `panel-url`. An address swap only ever changes the
-    URL, so that was enough. A TRANSFER changes the token — and can change the posture — so a container
-    recreate (or a nixos-rebuild) would put the OLD panel's token back and the node would 401 against the
-    new one for ever, while the panel that sent it reported a completed transfer.
-
-    Written 0600: `panel-token` is a working credential."""
-    for name, val in (("panel-token", panel.get("token") or ""),
-                      ("panel-verify", "yes" if panel.get("verify") else "no"),
-                      ("panel-fp", (panel.get("fingerprint") or ""))):
-        with contextlib.suppress(Exception):
-            path = os.path.join(STATE_DIR, name)
-            if not val:
-                with contextlib.suppress(OSError):
-                    os.unlink(path)
-                continue
-            tmp = path + ".tmp"
-            with open(tmp, "w") as f:
-                f.write(val + "\n")
-            os.chmod(tmp, 0o600)
-            os.replace(tmp, path)
-
-
-_SWAP = {"cand": ""}
-def _persist_candidate(cand):
-    _SWAP["cand"] = cand or ""
-    try:
-        path = os.path.join(STATE_DIR, "panel-url-cand")
-        if cand:
-            with open(path + ".tmp", "w") as f:
-                f.write(cand + "\n")
-            os.replace(path + ".tmp", path)
-        else:
-            with contextlib.suppress(OSError):
-                os.unlink(path)
-    except Exception:
-        pass
-
-def _learn_candidate(panel, reply):
-    """From a valid sync, remember (don't yet switch to) the new address the panel is advertising. A co-located
-    loopback node that can STILL dial the panel on loopback follows the listen PORT (+ mount base) via
-    panel_local_port. But when the panel is direct-TLS / bound to a public IP, panel_local_port is None (loopback no
-    longer reaches it) — so even a co-located node learns the PUBLIC url (panel_url_next before confirm, panel_url
-    after), following the panel to its public hostname. External nodes always learn the public url. Cleared when the
-    panel advertises no new address."""
-    try:
-        cur = (panel.get("url") or "").rstrip("/")
-        cu = urllib.parse.urlparse(cur if "://" in cur else "https://" + cur)
-        cur_host = cu.hostname
-        _h = (cur_host or "").lower().strip("[]")
-        lp = reply.get("panel_local_port")
-        loopback_node = _host_is_internal(cur_host) and (_h == "localhost" or _h.startswith("127.") or _h == "::1")
-        cand = ""
-        if loopback_node and lp:
-            cur_port = cu.port or (443 if cu.scheme == "https" else 80)
-            cur_base = (cu.path or "").rstrip("/")
-            nxt = (reply.get("panel_url_next") or "").strip()
-            if nxt:
-                new_base = urllib.parse.urlparse(nxt if "://" in nxt else "https://" + nxt).path.rstrip("/")
-            else:
-                pb = reply.get("panel_base")
-                new_base = (pb if pb is not None else cur_base).rstrip("/")
-            if int(lp) != cur_port or new_base != cur_base:
-                cand = "%s://%s:%d%s" % (cu.scheme, cur_host, int(lp), new_base)
-        else:
-            nxt = (reply.get("panel_url_next") or "").strip().rstrip("/")
-            can = (reply.get("panel_url") or "").strip().rstrip("/")
-            if nxt and _norm_url(nxt) != _norm_url(cur):
-                cand = nxt
-            elif can and _norm_url(can) != _norm_url(cur):
-                cand = can
-        if _norm_url(cand) != _norm_url(_SWAP.get("cand") or ""):
-            _persist_candidate(cand)
-    except Exception as e:
-        log(LOG_WARNING, '_learn_candidate: %s', e)
-
-def _failover_candidate(panel, node_cfg):
-    """Our blessed panel address stopped answering while a swap is pending → settle onto the learned candidate if it
-    now answers as the same panel (operator flipped the proxy to the new address, or confirmed the swap so the old was
-    dropped). Verified with our OWN trust anchor — a wrong/hostile address can't capture us. Returns the new sync url
-    if it moved, else None. This is what makes confirm land the node on the new address, cancel keep it on the old."""
-    try:
-        cand = (_SWAP.get("cand") or "").rstrip("/")
-        cur = (panel.get("url") or "").rstrip("/")
-        if not cand or _norm_url(cand) == _norm_url(cur):
-            return None
-        if _verify_panel(cand, panel.get("token") or "", panel):
-            panel["url"] = cand
-            _persist_candidate("")
-            _persist_panel_url(node_cfg, cand)
-            log(LOG_WARNING, f"blessed panel address stopped answering — failed over to {cand} (verified same identity)")
-            return cand.rstrip("/") + "/api/node/sync"
-    except Exception as e:
-        log(LOG_WARNING, '_failover_candidate: %s', e)
-    return None
-
-
-# T-10: a TRANSFER to another panel
 _AWAIT_KEY = set()
-
-_XFER_PATH = os.path.join(STATE_DIR, "panel-transfer.json")
-_XFER = {"cand": None}
-
-
-def _load_transfer():
-    """The pending candidate, re-read at startup — a transfer must survive a restart mid-flight, the same
-    property the address-swap candidate has and for the same reason (an external node has no loopback
-    backstop to fall back on)."""
-    try:
-        with open(_XFER_PATH) as f:
-            d = json.load(f)
-        if isinstance(d, dict) and d.get("url") and d.get("token"):
-            _XFER["cand"] = d
-    except Exception:
-        pass
-
-
-def _persist_transfer(cand):
-    _XFER["cand"] = cand or None
-    try:
-        if cand:
-            tmp = _XFER_PATH + ".tmp"
-            with open(tmp, "w") as f:
-                json.dump(cand, f)
-            os.chmod(tmp, 0o600)                       # it holds a token for the far panel
-            os.replace(tmp, _XFER_PATH)
-        else:
-            with contextlib.suppress(OSError):
-                os.unlink(_XFER_PATH)
-    except Exception as e:
-        log(LOG_ERR, '_persist_transfer: %s', e)
-
-
-def _learn_transfer(panel, reply):
-    """Remember (do NOT switch to) a transfer candidate the blessed panel is advertising. Cleared the
-    moment it stops advertising one — an operator who cancels the transfer on the panel must not leave a
-    node quietly holding another fleet's credential."""
-    try:
-        t = reply.get("transfer") if isinstance(reply.get("transfer"), dict) else None
-        cand = None
-        if t and (t.get("url") or "").strip() and (t.get("token") or "").strip():
-            cand = {"url": (t.get("url") or "").strip().rstrip("/"),
-                    "token": (t.get("token") or "").strip(),
-                    "fp": (t.get("fp") or "").replace(":", "").lower().strip(),
-                    "verify": bool(t.get("verify"))}
-            if _norm_url(cand["url"]) == _norm_url((panel.get("url") or "").rstrip("/")):
-                cand = None                            # "transfer to where we already are" is a no-op
-        if (cand or {}).get("url") != (_XFER["cand"] or {}).get("url") or \
-           (cand or {}).get("token") != (_XFER["cand"] or {}).get("token"):
-            _persist_transfer(cand)
-    except Exception as e:
-        log(LOG_WARNING, '_learn_transfer: %s', e)
-
-
-def _promote_transfer(panel, node_cfg):
-    """Try to move to the transfer candidate. Returns the new sync url if we moved, else None.
-
-    VERIFIED-THEN-PINNED, in that order:
-
-      1. a CA-verified `whoami` with the far panel's token. If that answers, the address is who it says it
-         is by public trust and we need no pin at all.
-      2. otherwise a `whoami` pinned to the certificate FINGERPRINT PANEL A SAW when it pushed the bundle.
-         Self-signed is the normal case for this project, and this is strictly stronger than the trust-on-
-         first-use the installer does: the identity was fixed by a party we already trust, before we dialled.
-
-    Anything else and we stay exactly where we are. A candidate is never "tried until it works": each pass
-    is one cheap GET, and the panel that offered it is the one that reports the wait."""
-    cand = _XFER["cand"]
-    if not cand:
-        return None
-    url, token = cand["url"], cand["token"]
-    posture = None
-    if _verify_panel(url, token, {"verify": True}):
-        posture = {"verify": True, "fingerprint": ""}
-    elif cand.get("fp") and _verify_panel(url, token, {"fingerprint": cand["fp"]}):
-        posture = {"verify": False, "fingerprint": cand["fp"]}
-    if posture is None:
-        return None
-    panel["url"] = url
-    panel["token"] = token
-    panel["verify"] = posture["verify"]
-    if posture["fingerprint"]:
-        panel["fingerprint"] = posture["fingerprint"]
-    else:
-        panel.pop("fingerprint", None)
-    _persist_transfer(None)
-    _persist_candidate("")                             # an address swap from the OLD panel is meaningless now
-    _persist_panel_url(node_cfg, url)
-    _persist_panel_auth(panel)
-    how = "CA-verified" if posture["verify"] else "pinned to the certificate the previous panel saw"
-    log(LOG_INFO, "transferred to %s (%s) — syncing there from now on", url, how)
-    return url.rstrip("/") + "/api/node/sync"
-
-
-def apply_panel_hints(panel, node_cfg, reply):
-    """On a VALID sync: (1) opportunistically adopt a cert pin if we're currently UNVERIFIED (TOFU upgrade over an
-    already-unverified channel — strictly better); (2) re-point to a new panel URL, pin-gated. Returns the new
-    sync URL to dial if it changed, else None. Never throws (a hiccup must not break the sync loop)."""
-    try:
-        p_url = (reply.get("panel_url") or "").strip().rstrip("/")
-        cur_fp = (panel.get("fingerprint") or "").replace(":", "").lower().strip()
-        verified = bool(panel.get("verify", False) or cur_fp)
-        _learn_candidate(panel, reply)
-        _learn_transfer(panel, reply)
-        if p_url:
-            cur = (panel.get("url") or "").rstrip("/")
-            cur_host = urllib.parse.urlparse(cur if "://" in cur else "https://" + cur).hostname
-            if _norm_url(p_url) != _norm_url(cur) and not _host_is_internal(cur_host):
-                if not verified:
-                    log(LOG_WARNING, f"panel moved to {p_url}, but this node is unverified — re-point it manually "
-                          f"(set panel.url in {CONFIG_PATH} + restart)")
-                elif _verify_panel(p_url, panel.get("token") or "", panel):
-                    panel["url"] = p_url
-                    _persist_candidate("")   # canonical arrived → the swap is done, drop any candidate
-                    _persist_panel_url(node_cfg, p_url)
-                    log(LOG_INFO, f"panel address changed → re-pointed to {p_url} (verified same identity)")
-                    return p_url.rstrip("/") + "/api/node/sync"
-                else:
-                    log(LOG_WARNING, f"panel says it moved to {p_url}, but that address doesn't present our trusted cert yet "
-                          f"— staying on {cur}")
-    except Exception as e:
-        log(LOG_WARNING, 'apply_panel_hints: %s', e)
-    return None
 
 
 _PIN_HINT = {"at": 0.0}
@@ -17514,57 +16102,6 @@ def _pin_mismatch_hint(err, panel=None):
            "TLS_FINGERPRINT=<the new sha256>, or TLS_VERIFY=yes for a CA one.")
     log(LOG_ERR, "panel TLS: the panel's certificate no longer matches this node's pin, so every sync is refused. If the "
           "panel's certificate was renewed or replaced on purpose, %s Anything else may be an impersonator." % fix)
-
-
-_LOCAL_HEAL = {"at": 0.0}
-def _heal_local_panel(panel, node_cfg):
-    """A CO-LOCATED node (loopback panel URL, e.g. a bare-metal master's local node) can't learn a new panel port
-    via sync — its link is refused, so it never receives the panel_url hint. When a LOOPBACK sync fails, rediscover
-    the panel locally: read its bind port from the standard settings file, else probe common ports, and re-point.
-    No MITM risk on loopback. Docker masters use a stable internal link (swg-panel:8443) that never breaks, so this
-    only ever fires bare-metal. Returns the new sync URL if it moved, else None."""
-    try:
-        cur = (panel.get("url") or "").rstrip("/")
-        u = urllib.parse.urlparse(cur if "://" in cur else "https://" + cur)
-        host = (u.hostname or "").lower()
-        if not (host == "localhost" or host.startswith("127.") or host == "::1"):
-            return None                                  # not a loopback link → the sync-response repoint handles it
-        now = time.time()
-        if now - _LOCAL_HEAL["at"] < 30:                 # cooldown — don't rescan every failed 5s sync
-            return None
-        _LOCAL_HEAL["at"] = now
-        scheme = u.scheme or "https"
-        cur_port = u.port or (443 if scheme == "https" else 80)
-        cur_base = (u.path or "").rstrip("/")                # keep the reverse-proxy mount path (e.g. /swg) — a subpath panel answers there, not at root
-        token = panel.get("token") or ""
-        candidates = [443, 8443, 2053, 2083, 2087, 2096, 80, 8080, 8000, 9443]
-        bases = [cur_base]
-        for sp in ("/var/lib/swg-panel/panel-settings.json", "/etc/swg-panel/panel-settings.json"):
-            try:
-                _acc = (((json.load(open(sp)) or {}).get("access") or {}).get("panel") or {})
-                pp = int(_acc.get("port") or 0)
-                if pp and pp not in candidates:
-                    candidates.insert(0, pp)             # the exact configured port → covers a non-standard one
-                sb = urllib.parse.urlparse(str(_acc.get("url") or "")).path.rstrip("/")   # the configured mount base → covers a PATH change (/swg → /panel)
-                if sb not in bases:
-                    bases.insert(0, sb)
-                break
-            except Exception:
-                pass
-        for base in bases:                               # try the configured base first, then the one we were on
-            for port in candidates:
-                if port == cur_port and base == cur_base:
-                    continue
-                probe = "%s://%s:%d%s" % (scheme, host, port, base)
-                if _verify_panel(probe, token, panel):
-                    panel["url"] = probe
-                    _persist_candidate("")
-                    _persist_panel_url(node_cfg, probe)
-                    log(LOG_WARNING, f"panel not reachable at {cur} — rediscovered it locally at {probe}, re-pointed")
-                    return probe.rstrip("/") + "/api/node/sync"
-    except Exception as e:
-        log(LOG_WARNING, '_heal_local_panel: %s', e)
-    return None
 
 
 def create_ifaces(node_cfg, create, agent, sudo):
@@ -17602,15 +16139,6 @@ def create_ifaces(node_cfg, create, agent, sudo):
                   "restoring it with its original key" % iface)
             ifaces.pop(iface, None)
             changed = True
-        elif iface.startswith("swg_"):
-            if _live is None:
-                _live = _live_wg_ifaces()
-            _orphconf = "" if iface in _live else _cand_conf(iface)
-            if _orphconf:
-                with contextlib.suppress(OSError):
-                    os.unlink(_orphconf)
-                log(LOG_WARNING, "create: %s had a leftover conf and no device — removed it so the link can be "
-                      "created" % iface)
         cmd = want.get("cmd") or ["awg"]
         priv = (want.get("private_key") or "").strip()
         if not priv and want.get("sealed_key"):
@@ -17634,13 +16162,6 @@ def create_ifaces(node_cfg, create, agent, sudo):
                                     **({"awg_params_exact": True} if want.get("awg_params_exact") else {}),
                                     "mtu": want.get("mtu")})
         if not r.get("ok"):
-            if r.get("code") == "name_taken":
-                if _live is None:
-                    _live = _live_wg_ifaces()
-                if iface in _live:
-                    res.setdefault("heal", []).append(iface)
-                    log(LOG_INFO, "create: %s is already live here — adopting it back instead of recreating" % iface)
-                    continue
             res["errors"].append(f"{iface}: {r.get('error')}"); continue
         data = r.get("data") or {}
         conf = data.get("conf") or ""
@@ -17700,24 +16221,6 @@ def orphan_mesh_links(node_cfg, owned, staged=()):
     have = set(owned)
     ifaces = node_cfg.setdefault("interfaces", {})
     out = {n for n in ifaces if n.startswith("swg_") and n not in have}
-    _added = False
-    for _tool in (["awg"], ["wg"]):
-        with contextlib.suppress(Exception):
-            r = _pass_cached("ifaces:" + _wgcmd(_tool)[0], lambda: run(_wgcmd(_tool) + ["show", "interfaces"]))
-            if r.returncode != 0:
-                continue
-            for n in (r.stdout or "").split():
-                if not n.startswith("swg_") or n in have or n in ifaces:
-                    continue
-                _cf = _cand_conf(n)
-                if not _cf:
-                    continue        # no conf to clean up: leave it rather than guess at what it is
-                ifaces[n] = {"cmd": list(_tool), "conf": _cf}
-                out.add(n)
-                _added = True
-    if _added:
-        with contextlib.suppress(Exception):
-            _persist_config(node_cfg)
     return sorted(out - {x for x in (staged or ()) if isinstance(x, str)})
 
 
@@ -17736,7 +16239,6 @@ def delete_ifaces(node_cfg, delete, agent, sudo):
         if not r.get("ok"):
             res["errors"].append(f"{iface}: {r.get('error')}"); continue
         ifaces.pop(iface, None)
-        _adopted_ctr_forget(iface)
         if drop_iface_backup(iface):
             log(LOG_INFO, "keys: %s's key backup removed with it" % iface)
         changed = True
@@ -17833,8 +16335,6 @@ NODE_PROGRESS = {} # request key (iface name / turn service) -> transient "what'
                    # (e.g. a slow GitHub download retrying) → cmd_progress on the snapshot → yellow card note.
 NODE_ERRORS = {}   # request key (iface name / turn service / .service path) -> last apply error, reported
                    # in the snapshot ("cmd_errors") so the panel can show WHY a host->node command failed
-NODE_NOTES = {}    # iface -> one-line note about HOW it was adopted (succeeded, but not from the named source);
-                   # reported as "onboard_notes" and written to the activity log once by the panel
 
 _HOST_SH_CAP = {"ok": None, "warned": False}
 
@@ -22366,9 +20866,12 @@ def _pid1_signals():
 
 
 def main():
+    if sys.argv[1:] == ["--restore-static-egress"]:
+        _restore_static_guard()
+        return
     if sys.argv[1:] == ["--initial-awg-generation"]:
         g = awg_gen_report()
-        print("3.1" if g["tools"] == "3.1" and (g["module"] or g["fallback"]) == "3.1" else "2.0")
+        print("3.1" if g["tools"] == "3.1" and g["module"] == "3.1" else "2.0")
         return
     _pid1_signals()
     if NODE_KIND == "docker":                       # our own log file from the first line, startup and its errors included
@@ -22403,17 +20906,8 @@ def main():
     panel_ip = ""; bad_pip = ""                     # bad_pip = a panel_ip that failed to connect → don't keep re-binding it
     with contextlib.suppress(OSError):
         panel_ip = open(PANEL_IP_FILE).read().strip()
-    with contextlib.suppress(OSError):              # resume a mid-swap candidate after a restart (external nodes have no loopback _heal)
-        _SWAP["cand"] = open(os.path.join(STATE_DIR, "panel-url-cand")).read().strip()
-    _load_transfer()                                # …and a mid-flight TRANSFER candidate, same reason
     log(LOG_INFO, f"swg-noded: panel={panel['url']} interval={interval}s "
           f"ifaces={list((node_cfg.get('interfaces') or {}).keys())}")
-    # BEFORE the first sync: if a previous run-model left its servers running here, stop them by the names
-    # it recorded. No-op on an ordinary restart (same model), which is every start but the one after a switch.
-    with contextlib.suppress(Exception):
-        handover_from_previous_runmodel()
-    with contextlib.suppress(Exception):
-        backfill_cmd_markers(node_cfg)     # existing confs get the marker too — see backfill_cmd_markers
     with contextlib.suppress(Exception):
         tag_nat_hooks(node_cfg, agent, sudo)   # each interface's OWN MASQUERADE — see tag_nat_hooks
     with contextlib.suppress(Exception):
@@ -22458,28 +20952,18 @@ def main():
                             os.replace(PANEL_IP_FILE + ".tmp", PANEL_IP_FILE)
                         else:
                             os.unlink(PANEL_IP_FILE)
-            if status == 200 and snap.get("container_adopt"):
-                # The panel has it now (it imports the peers and clears the request on this same call), so drop
-                # it. Left in place it is re-sent for ever and consumes every later request as its own answer.
-                _CTR_ADOPT.clear()
             if status == 200 and isinstance(reply.get("desired"), dict):
+                _prepare_static_guard(reply.get("cascade"), node_cfg)
                 _relay_plan, _relay_sync_ok = reply.get("relay"), True
                 if NODE_KIND == "docker":
                     with contextlib.suppress(OSError):
                         with open("/run/swg-node-sync", "w"):
                             pass
-                _newurl = apply_panel_hints(panel, node_cfg, reply)   # pin-gated auto-repoint on a panel host/port change
-                _newurl = _promote_transfer(panel, node_cfg) or _newurl
-                if _newurl:
-                    url = _newurl                                     # dial the new address from the next sync on
                 with contextlib.suppress(Exception):          # Logs P2: a live viewer's readers — threads, started or stopped here
                     live_logs_take(reply.get("logs"), url, panel, node_cfg)
                 with contextlib.suppress(Exception):          # Logs P3: a range download's reads — the same
                     range_logs_take(reply.get("logrange"), url, panel, node_cfg)
                 ivk_process(reply.get("iface_vault_pub"), reply.get("iface_vault_want"))   # seal interface keys the panel wants for the operator vault (blob rides the next snapshot)
-                with contextlib.suppress(Exception):
-                    exit_vault_process(reply.get("iface_vault_pub"), reply.get("exit_vault_want"))   # …and imported-exit keys (same vault, same relay)
-                wdtt_vault_process(reply.get("iface_vault_pub"), reply.get("wdtt_vault_want"))   # seal WDTT server identities (owner pw + wg-keys.dat) to the same vault
                 cr = create_ifaces(node_cfg, reply.get("create"), agent, sudo)   # create new interfaces
                 # …plus any mesh link left behind by a panel this node used to sync with — see orphan_mesh_links.
                 _orph = orphan_mesh_links(node_cfg, reply.get("owned_ifaces"), reply.get("delete"))
@@ -22490,17 +20974,6 @@ def main():
                 apply_panel_settings(reply.get("panel"))      # Panel settings → mirrors / geo TTL / geo refetch
                 with contextlib.suppress(Exception):
                     _log_follow(node_cfg)                   # a new level reaches the children and drop-ins in THIS pass
-                _heal = selfheal_ifaces(node_cfg, reply.get("desired_ifaces"),
-                                         reply.get("owned_ifaces"))   # panel owns it, it is live here, we lost the conf
-                for _hn in (cr.get("heal") or []):      # a create that found the device already here (see create_ifaces)
-                    _heal.setdefault(_hn, {"cmd": ["auto"], "conf": ""})
-                if _heal:
-                    log(LOG_INFO, "self-heal: adopting live interface(s) the panel manages but we hold no conf for: "
-                          + ", ".join(sorted(_heal)))
-                # add panel-requested interfaces first. A name the operator asked to adopt is an adoption even when the
-                # self-heal found it too (an onboard with an endpoint already gives it a record the panel then owns).
-                _obreq = reply.get("onboard") or {}
-                ob = onboard_ifaces(node_cfg, {**_obreq, **_heal}, heal=set(_heal) - set(_obreq))
                 _n_listen = sum(len(reply.get(k) or {}) for k in ("turn", "wdtt", "csqtt")
                                 if isinstance(reply.get(k), dict))
                 if _n_listen:
@@ -22509,14 +20982,6 @@ def main():
                 tp = apply_turn(reply.get("turn"), reply.get("turn_onboard"))   # turn-proxy manage/onboard
                 with contextlib.suppress(Exception):
                     heal_turn_binds()                  # once per run per proxy: an env binding a host this box lacks
-                wd = reconcile_wdtt(reply.get("wdtt"), reply.get("wdtt_remove"))   # install/desired.json+SIGHUP; removals ONLY from the explicit list
-                _adc = reply.get("adopt_container")
-                _adc_name = (_adc.get("container") or "").strip() if isinstance(_adc, dict) else ""
-                if _adc_name:
-                    _ctr_job_start(_adc_name, (_adc.get("iface") or "").strip(), _adc.get("at") or 0,
-                                   node_cfg, agent, sudo)
-                _ctr_job_collect(node_cfg)
-                cq = reconcile_csqtt(reply.get("csqtt"), reply.get("csqtt_remove"))   # csqtt (raw-TUN): parallel to wdtt; removals ONLY from the explicit list
                 with contextlib.suppress(Exception):
                     exit_test_take(reply.get("exit_test"))
                 xr = {"changed": 0, "errors": []}
@@ -22559,8 +21024,8 @@ def main():
                                          _EXITS.get("dialin"),   # which devices are cut (review F2)
                                          log_level() >= LOG_INFO],   # the P2P table's `log` follows the level (§1)
                                         sort_keys=True, default=str)
-                _iface_churn = bool(_awg_loaded or cr["created"] or dl["deleted"] or ob["added"] or rs["restarted"]
-                                    or sp["stopped"] or sa["started"] or ri["changed"] or wd["changed"] or cq["changed"])   # a WDTT/csqtt install/remove/change must trigger the egress reconcile (its subnet MASQUERADE) this cycle, not on the safety window
+                _iface_churn = bool(_awg_loaded or cr["created"] or dl["deleted"] or rs["restarted"]
+                                    or sp["stopped"] or sa["started"] or ri["changed"])
                 _route_moved = _route_sig != last_desired_sig
                 if (_route_sig != last_route_sig or _iface_churn or _routed_devs_moved()
                         or (time.time() - last_route_t) >= ROUTING_RECONCILE_EVERY_S):
@@ -22586,7 +21051,8 @@ def main():
                     with contextlib.suppress(Exception):
                         reconcile_inet_chain(node_cfg, {e.get("dev") for e in
                                                         ((reply.get("cascade") or {}).get("devexit") or [])})
-                    last_route_sig = _route_sig; last_route_t = time.time(); last_desired_sig = _route_sig
+                    last_route_sig = _route_sig if not cas["errors"] else None
+                    last_route_t = time.time(); last_desired_sig = _route_sig
                     _ROUTED["judged"] = _ROUTED["pending"]    # …with what it judged: a pass that raised is retried next sync
                 else:
                     eg = {"changed": 0, "errors": []}; cas = {"changed": 0, "errors": []}   # unchanged routing → skip the ip/iptables/nft drift-check shell-outs
@@ -22594,7 +21060,7 @@ def main():
                 # NETWORKS P4 — a reachability test, only while the panel asks for one: judged AFTER the routing pass,
                 # against what this node carries now; the probe runs in a thread and its answer rides the next snapshot.
                 net_probe_take(node_cfg, reply.get("net_probe"), reply["desired"], online_max)
-                for blk in (cr, dl, ob, rs, sp, sa, ik, wd, cq):
+                for blk in (cr, dl, rs, sp, sa, ik):
                     for e in blk["errors"]:
                         k, _, m = e.partition(": ")
                         NODE_ERRORS[k] = m or e
@@ -22603,26 +21069,20 @@ def main():
                     _k, _, _m = e.partition(": ")
                     _k = _k.replace("set-iface ", "", 1)
                     NODE_ERRORS[_k] = _m or e; _ri_failed.add(_k)
-                for _n in ob.get("notes", []):                 # kept until the panel stops asking (pruned below)
-                    _k, _, _m = _n.partition(": ")
-                    NODE_NOTES[_k] = _m or _n
-                for k in (cr.get("created", []) + dl.get("deleted", []) + ob.get("added", [])
+                for k in (cr.get("created", []) + dl.get("deleted", [])
                           + rs.get("restarted", []) + sp.get("stopped", []) + sa.get("started", [])
                           + ik.get("done", [])):
                     NODE_ERRORS.pop(k, None)
                 # prune errors for requests the panel has since cleared (iface + turn + keypair restore)
-                active = (set(reply.get("create") or {}) | set(reply.get("onboard") or {})
+                active = (set(reply.get("create") or {})
                           | set(reply.get("delete") or []) | set(reply.get("restart") or []) | set(reply.get("turn") or {})
                           | set(reply.get("iface_stop") or []) | set(reply.get("iface_start") or [])
                           | set(reply.get("iface_key") or {})
-                          | set(reply.get("turn_onboard") or []) | set(reply.get("wdtt") or {}) | set(reply.get("csqtt") or {}))
+                          | set(reply.get("turn_onboard") or []))
                 active |= _ri_failed
                 for k in list(NODE_ERRORS):
                     if k not in active:
                         NODE_ERRORS.pop(k, None)
-                for k in list(NODE_NOTES):
-                    if k not in active:
-                        NODE_NOTES.pop(k, None)
                 for e in eg["errors"] + cas["errors"]:
                     log(LOG_ERR, "egress: " + e)
                 for e in nr["errors"]:
@@ -22634,34 +21094,26 @@ def main():
                 if (r["added"] or r["removed"] or r["errors"] or ri["changed"] or ri["errors"]
                         or eg["changed"] or eg["errors"] or cas["changed"] or cas["errors"] or nr["changed"]
                         or xr["changed"] or xr["errors"]
-                        or ob["added"] or ob["errors"] or cr["created"] or cr["errors"]
+                        or cr["created"] or cr["errors"]
                         or dl["deleted"] or dl["errors"] or tp["done"] or tp["errors"]):
-                    _errs = (r['errors'] + ri['errors'] + ob['errors'] + cr['errors'] + dl['errors'] + tp['errors']
+                    _errs = (r['errors'] + ri['errors'] + cr['errors'] + dl['errors'] + tp['errors']
                              + eg['errors'] + cas['errors'])[:3]
-                    log(LOG_ERR if _errs else LOG_INFO if (r["added"] or r["removed"] or ob["added"] or cr["created"]
+                    log(LOG_ERR if _errs else LOG_INFO if (r["added"] or r["removed"] or cr["created"]
                                                            or dl["deleted"] or tp["done"] or ri["changed"]
                                                            or (_route_moved and (eg["changed"] or cas["changed"]
                                                                                  or nr["changed"])))
                     else LOG_DEBUG,
-                        "reconcile: +%s -%s ifaces~%s cascade~%s onboard+%s create+%s delete-%s turn=%s errors=%s",
-                        r['added'], r['removed'], ri['changed'], cas['changed'], ob['added'], cr['created'],
+                        "reconcile: +%s -%s ifaces~%s cascade~%s create+%s delete-%s turn=%s errors=%s",
+                        r['added'], r['removed'], ri['changed'], cas['changed'], cr['created'],
                         dl['deleted'], tp['done'], _errs)
                 interval = reply.get("interval", interval)
             elif status == 0:
                 log(LOG_ERR, 'sync error: %s', reply.get("error"))
-                # blessed address unreachable → settle onto a pending-swap candidate if it answers, else (loopback)
-                # rediscover the panel locally. Either one re-points us so a domain/port swap never strands the node.
                 _pin_mismatch_hint(reply.get("error"), panel)
-                _nu = _failover_candidate(panel, node_cfg) or _heal_local_panel(panel, node_cfg)
-                if _nu:
-                    url = _nu
             elif _panel_busy(status, reply):
                 log(LOG_INFO, "sync skipped: the panel is busy with a long operator action — retrying next pass")
             else:
                 log(LOG_ERR, f"sync HTTP {status}: {reply.get('error')}")
-                _nu = _failover_candidate(panel, node_cfg) or _heal_local_panel(panel, node_cfg)
-                if _nu:
-                    url = _nu
         except Exception as e:
             log(LOG_ERR, 'loop error: %s', e)
         try:

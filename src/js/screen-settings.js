@@ -47,7 +47,7 @@ import {
   turnDialFallback, turnForkPlatforms, turnUpdateTarget, turnUpdating,
 } from "./turn.js";
 import {
-  IgnoredIfacesCard, openIfaceEditor, AwgGenField, Awg3Grid, AWG3_EDIT_COLS, MeshGenField,
+  openIfaceEditor, AwgGenField, Awg3Grid, AWG3_EDIT_COLS, MeshGenField,
   AWG_KEYS, DEFAULT_AWG_GEN, genAwg, awgBlankHints, AwgGrid, MeshAwgParams, mesh3Hints,
 } from "./iface.js";
 export { AWG_KEYS, genAwg, awgBlankHints, AwgGrid };   // their home moved to iface.js (the link sheet draws them too); kept here for importers
@@ -1608,7 +1608,6 @@ const sectionLabel = k => ({
           <p class="hint" style="margin:0 0 10px">${T("Backup each server's interface key so a wiped / rebuilt node restores its interfaces with their original identities.")}</p>
           <${InterfaceKeyEscrow} value=${ivkEscrow} onChange=${setIvkEscrow} vaultExists=${ivkVaultExists}/>
         </div>` : null}
-        ${section === "defaults" ? html`<${IgnoredIfacesCard}/>` : null}
         ${section === "security" ? html`<div class="card">
           <div class="seclabel" style="margin-top:0">${T("Authentication")}</div>
           <p class="hint" style="margin:0 0 14px">${Trich("Change the panel username and password — applied on *{v1}*. Changing either takes effect immediately and you'll be asked to sign in again. Changing the password also re-keys your *Encryption Vault* in place, so stored configs and subscription links keep working (no re-issue).", { v1: T("Save") })}</p>

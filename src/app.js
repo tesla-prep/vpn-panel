@@ -13,8 +13,8 @@ import {
 } from "./js/store.js";
 import {
   ConfirmSheet, Ic, Sheet, THEME_ICON, applyForkColors, applyThemeColors, clearModalStack, closeModal, cycleLang, cycleThemeMode,
-  dismissHostProc, gotoSettingsSection, inProc, openConfirm, openModal, paintLangBtn, paintThemeBtn,
-  procAborted, procFailed, procInClass, procLabel, procSuccess, setModalRenderer, setPendingSection,
+  dismissHostProc, inProc, openConfirm, openModal, paintLangBtn, paintThemeBtn,
+  procAborted, procFailed, procInClass, procLabel, procSuccess, setModalRenderer,
   setQrZoomProbe, toast, trackIfaceOps, attachTitleTaps, attachOutsideTapGuard, attachSwipePeek, attachTypingHold, attachBubbleSwipe, attachToastSwipe, attachBackCloses, attachViewportVars,
 } from "./js/ui.js";
 import { themeMode } from "./js/theme.js";
@@ -120,54 +120,6 @@ const ROUTES = [
   { re: /^\/panel\/settings$/, fn: PanelSettingsScreen, tab: "panel-settings" },
 ];
 
-// "previous panel address" ribbon
-function _effPort(scheme, port) { return String(port || (scheme === "https" ? "443" : "80")); }
-function _parseAddr(rawUrl) {
-  const raw = (rawUrl || "").trim(); if (!raw) return null;
-  let u; try { u = new URL(/^https?:\/\//i.test(raw) ? raw : "https://" + raw); } catch (_) { return null; }
-  const host = u.hostname, scheme = (u.protocol || "https:").replace(":", "");
-  if (!host || host === "0.0.0.0") return null;
-  return { host, scheme, port: _effPort(scheme, u.port), base: (u.pathname || "").replace(/\/+$/, "") };
-}
-function oldAddrCurrent() {   // → the current canonical addr {host,scheme,port,base,label} if THIS tab is on a different one, else null
-  const c = _parseAddr(Store.panelPublicUrl); if (!c) return null;
-  const scheme = location.protocol.replace(":", "");
-  const hereBase = location.pathname.replace(/\/index\.html?$/i, "/").replace(/\/+$/, "");
-  const _acc = (Store.panelSettings || {}).access || {};
-  const _cw = _acc.console_wired || null;
-  const _cport = String((_cw && _cw.port) || ((_acc.console || {}).mode === "own" ? (_acc.console || {}).port : "") || "");
-  if (_cport && _effPort(scheme, location.port) === _cport) return null;   // this IS the console door
-  if (location.hostname === c.host && _effPort(scheme, location.port) === c.port && hereBase === c.base) return null;   // on the current address (host + port + mount PATH)
-  const showPort = !((c.scheme === "https" && c.port === "443") || (c.scheme === "http" && c.port === "80"));
-  return { ...c, label: c.scheme + "://" + c.host + (showPort ? ":" + c.port : "") + c.base };
-}
-// An installed app (the manifest's start_url) keeps the address it was installed from for good: after a move it can only be
-// installed again from the new one, so the ribbon says so there (docs/MOBILE-PLAN.md hook 6).
-const standalone = () => { try { return matchMedia("(display-mode: standalone)").matches; } catch (_) { return false; } };
-function OldAddrRibbon() {
-  useStore();
-  const c = oldAddrCurrent();
-  const ref = useRef(null);
-  useEffect(() => {
-    document.body.classList.toggle("has-oldaddr", !!c);
-    if (c && ref.current) document.body.style.setProperty("--oldaddr-h", ref.current.offsetHeight + "px");
-    return () => document.body.classList.remove("has-oldaddr");
-  });
-  if (!c) return null;
-  const canRevert = Store.panelMigrateRevertable && Store.panelMigratePrev;
-  const revertMove = async () => {
-    const r = await api.post("/api/access/cancel", Store.panelMigratePrev).catch(() => null);
-    if (r && r.ok) { toast(T("Move cancelled — the panel stays on this address."), "ok"); await Store.poll(); }
-    else toast(srvText(r) || T("Couldn't cancel the move."), "err");
-  };
-  return html`<div class="addr-old-ribbon" ref=${ref} role="status">
-    <span><b>${T("You're on a previous panel address.")}</b> ${ribbonNow(c.label)}${standalone() ? " " + T("This app opens the old address for good: open the new one in the browser and install the app from there again.") : ""}</span>
-    ${canRevert ? html`<button class="btn btn-mini" onClick=${revertMove}>${T("Cancel the move — keep this address")}</button>` : null}
-    <a class="btn btn-mini" href=${c.label}>${T("Go to the current address ↗")}</a>
-  </div>`;
-}
-
-// The new address is a LINK inside the sentence — translate whole, split on the marker (see Tsplit).
 // "fix 3 issues" — a counted noun, so the count and the word travel together through plural().
 const fixLabel = n => T("fix {count}", { count: plural(n, "issue") });
 
@@ -179,11 +131,6 @@ function relinkWhy() {
   return html`<${Fragment}>${a}<b class="mono">swg-passwd</b>${b}<b>${T("untouched")}</b>${c}<//>`;
 }
 
-function ribbonNow(addr) {
-  const [before, after] = Tsplit("The panel is now reached at {addr}.", "addr");
-  return html`<${Fragment}>${before}<a href=${addr}>${addr}</a>${after}<//>`;
-}
-
 function App() {
   useStore();                                   // re-render on every poll
   const [hash, setHash] = useState(location.hash || "#/");
@@ -193,36 +140,6 @@ function App() {
   // in case the first poll already landed a critical issue before mount. Later polls re-check via Store.apply.
   useEffect(() => { setAppReady(true); maybeAlertServices(); return () => setAppReady(false); }, []);
 
-  useEffect(() => {
-    let ok = false, fail = null, console_ok = false;
-    try {
-      const _ov = sessionStorage.getItem("__apply_ok");
-      ok = _ov === "1" || _ov === "console"; console_ok = _ov === "console"; if (ok) sessionStorage.removeItem("__apply_ok");
-      fail = sessionStorage.getItem("__apply_fail"); if (fail) sessionStorage.removeItem("__apply_fail");
-    } catch (_) {}
-    if (!ok && !fail) return;
-    setPendingSection("access");
-    if (location.hash !== "#/panel/settings") location.hash = "#/panel/settings";
-    // defer past any hashchange (its handler resets the modal stack) so the outcome modal survives
-    setTimeout(() => {
-      if (console_ok) openModal(html`<${ConfirmSheet} title=${T("Console address confirmed")} confirmLabel=${T("Got it")}
-        back=${() => { gotoSettingsSection("access"); closeModal(); }}
-        body=${T("The operator console is served here now, and you're signed in. The panel's own address answers only what the nodes ask for — so close the other tab, it can't open the console any more.")}/>`);
-      else if (ok) openModal(html`<${ConfirmSheet} title=${T("New address confirmed")} confirmLabel=${T("Got it")}
-        back=${() => { gotoSettingsSection("access"); closeModal(); }}
-        body=${T("This is now the address the panel is reached at, and you're signed in here. You can close the other tab — it's on the previous address.")}/>`);
-      else openModal(html`<${ConfirmSheet} title=${T("Couldn’t confirm the new address")} warn=${true} confirmLabel=${T("OK")}
-        body=${((fail && fail !== "1" && fail) || T("The confirmation didn’t match a pending change.")) + T(" The panel kept its current address.")}/>`);
-    }, 0);
-  }, []);
-  const committedNonce = useRef("");
-  useEffect(() => {
-    const a = Store.dockerAwaiting;
-    if (a && a.nonce && committedNonce.current !== a.nonce) {
-      committedNonce.current = a.nonce;
-      api.post("/api/access/docker-commit", { nonce: a.nonce }).then(() => Store.poll && Store.poll()).catch(() => { committedNonce.current = ""; });
-    }
-  });
   useEffect(() => {
     const onHash = () => {
       const nh = location.hash || "#/";
@@ -288,7 +205,6 @@ function App() {
 
   return html`<${Fragment}>
     ${h(LogOverlay)}
-    ${h(OldAddrRibbon)}
     ${h(route.fn, params)}
     ${modalStack}
   <//>`;
@@ -421,21 +337,6 @@ function doLogout() {
 // ───────────────────────── boot ─────────────────────────
 const viewEl = $("#view");
 viewEl.innerHTML = `<div class="loading"><span class="spin"></span>${T("connecting…")}</div>`;
-async function maybeConfirmApply() {
-  const mu = /[?&]__applyurl=([A-Za-z0-9]+)/.exec(location.search);
-  const mc = /[?&]__applyconsole=([A-Za-z0-9]+)/.exec(location.search);
-  const m = mu || mc || /[?&]__apply=([A-Za-z0-9]+)/.exec(location.search);
-  if (!m) return false;
-  // strip the query so a reload can't re-fire, and land on Access & TLS — presetting the hash HERE (before the
-  // reload) means App's outcome effect doesn't have to change it, so the hashchange handler can't wipe the modal.
-  history.replaceState(null, "", location.pathname + "#/panel/settings");
-  let r = null;
-  const endpoint = mu ? "/api/access/confirm-url" : (mc ? "/api/access/console-confirm" : "/api/access/confirm");
-  try { r = await api.post(endpoint, { nonce: m[1] }); } catch (_) { r = null; }   // never throws us to login: confirm is pre-auth
-  if (r && r.ok) { try { sessionStorage.setItem("__apply_ok", mc ? "console" : "1"); } catch (_) {} location.reload(); return true; }
-  try { sessionStorage.setItem("__apply_fail", srvText(r) || "1"); } catch (_) {}   // shown by App once it mounts (if we're authed here)
-  return false;
-}
 function paintChrome() {
   const tab = { overview: T("nav|Overview"), connections: T("nav|Live"), users: T("nav|Users"),
                 nodes: T("nav|Nodes"), peers: T("nav|Peers") };
@@ -463,13 +364,11 @@ function paintChrome() {
     document.body.insertBefore(b, document.body.firstChild);
   }
   await subBootRestore();   // restore the config-encryption convenience cache from sessionStorage (post-login reload)
-  if (await maybeConfirmApply()) return;   // confirmed → reloading; stop this boot pass
   try { await Store.init(); }
   catch (e) { if (!_loginShown) viewEl.innerHTML = `<div class="empty"><b>${esc(T("Can't reach the panel"))}</b>${esc(e.message)}</div>`; return; }
   if (!location.hash) location.hash = "#/";
   // landed here right after a confirm (we reloaded to pick up the carried session) → open the settings screen
   // straight on Access & TLS, BEFORE it mounts and defaults to Display. (The outcome modal is shown by App.)
-  try { if (sessionStorage.getItem("__apply_ok")) setPendingSection("access"); } catch (_) {}
   render(h(App), viewEl);
   if (isMobile()) { attachTitleTaps(); attachOutsideTapGuard(); attachSwipePeek(); attachTypingHold(); attachBubbleSwipe(); attachToastSwipe(); attachBackCloses(); attachViewportVars(); }   // a phone: a title= on a tap (hook 5); a tap outside a list only closes it
   window.__swgBooted = true;

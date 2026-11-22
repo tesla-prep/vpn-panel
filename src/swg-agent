@@ -1282,8 +1282,10 @@ def op_create_iface(cfg, req):
         raise AgentError("bad_request", "listen_port must be a number")
     mtu = str(req.get("mtu") or "1280")
     _ensure_tool(tool)                          # install wg/awg tools if this node doesn't have them yet
-    conf_dir = "/etc/amnezia/amneziawg" if (tool == "awg" or _IN_CONTAINER) else "/etc/wireguard"
+    conf_dir = "/etc/amnezia/amneziawg" if tool == "awg" else "/etc/wireguard"
     conf = os.path.join(conf_dir, iface + ".conf")
+    if subprocess.run(["ip", "link", "show", "dev", iface], capture_output=True).returncode == 0:
+        raise AgentError("name_taken", f"an interface named {iface} already exists on this node - choose a free name")
     if os.path.exists(conf):
         raise AgentError("exists", f"{conf} already exists")
     os.makedirs(conf_dir, exist_ok=True)
@@ -1333,26 +1335,11 @@ def op_create_iface(cfg, req):
         else:
             body += _awg_obfuscation("2.0")  # legacy panel request with no profile attached
     write_conf_atomic(conf, body)
-    link = ""
-    if conf_dir != "/etc/wireguard" and tool != "awg":
-        link = os.path.join("/etc/wireguard", iface + ".conf")
-        try:
-            os.makedirs("/etc/wireguard", exist_ok=True)
-            if os.path.islink(link) or os.path.exists(link):
-                os.unlink(link)
-            os.symlink(conf, link)
-        except OSError as e:
-            with contextlib.suppress(Exception):
-                os.unlink(conf)
-            raise AgentError("link_fail", f"couldn't link {link} -> {conf}: {e}")
     try:
         _quick_up(tool, iface)
     except Exception as e:
         with contextlib.suppress(Exception):
             os.unlink(conf)
-        if link:
-            with contextlib.suppress(Exception):
-                os.unlink(link)
         msg = str(e)
         _denied = _denied_error(msg)
         if _denied:
@@ -1380,10 +1367,7 @@ def op_create_iface(cfg, req):
                              f"node:  {how}  — then the interface creates automatically on the next sync. "
                              f"(Re-running the node installer, or swg-update, does this for you.)")
         if "already exists" in msg.lower():
-            raise AgentError("name_taken",
-                             f"an interface named {iface} already exists on this node, so it can't be created. "
-                             f"It isn't managed here — adopt it instead (that keeps its current key, so its "
-                             f"peers keep working), or remove the device first if you really want a new one.")
+            raise AgentError("name_taken", f"an interface named {iface} already exists on this node - choose a free name")
         raise AgentError("up_failed", f"{tool}-quick up {iface} failed (port/subnet may be in use): {e}")
     _unit = _iface_unit("enable", tool, iface)
     return {"iface": iface, "public_key": pub, "address": addr, "conf": conf, "cmd": cmd,

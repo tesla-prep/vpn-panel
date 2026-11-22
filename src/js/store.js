@@ -81,7 +81,6 @@ export const api = {
   nodes() { return this.get("/api/nodes"); },
   nodeCreate(b) { return this.post("/api/nodes/create", b); },
   nodeUpdate(b) { return this.post("/api/nodes/update", b); },
-  nodeArrivedClear(b) { return this.post("/api/nodes/arrived/clear", b); },   // dismiss the "arrived here" note
   turnReclaim(b) { return this.post("/api/turn/reclaim", b); },   // a wdtt/csqtt server the node holds and no panel claims
   escrowVerified(b) { return this.post("/api/iface/escrow/verified", b); },   // the browser opened the blob: it is for THIS vault
   resolveHost(h) { return this.get("/api/resolve?host=" + encodeURIComponent(h)); },   // does this name land on this node?
@@ -119,17 +118,7 @@ export const api = {
   awgLoad(b) { return this.post("/api/node/awg-load", b); },   // "Load now": swap in the AmneziaWG module an update installed
   asnCount(n) { return this.get("/api/asn?n=" + encodeURIComponent(n)); },   // resolve an ASN → prefix count (live editor feedback)
   nodeRotate(b) { return this.post("/api/nodes/rotate", b); },
-  nodeRebuild(b) { return this.post("/api/nodes/rebuild", b); },
-  // T-11: the SAME analysis, read-only and before the token rotates. It writes nothing, so the confirm
-  // sheets can show what a rebuild would do while the operator can still decide not to.
-  nodeRebuildPreflight(nid) { return this.get("/api/nodes/rebuild/preflight?node=" + encodeURIComponent(nid)); },
-  nodeRebuildRollback(b) { return this.post("/api/nodes/rebuild/rollback", b); },   // {discard:true} = forget the old box instead
   nodeRemesh(b) { return this.post("/api/nodes/remesh", b); },   // rebuild THIS node's mesh links on demand
-  nodeTransferPreflight(b) { return this.post("/api/nodes/transfer/preflight", b); },
-  nodeTransfer(b) { return this.post("/api/nodes/transfer", b); },
-  // "is it Reporting on the target panel yet" — asked OF the target, not inferred from our silence.
-  nodeTransferStatus(nid) { return this.get("/api/nodes/transfer/status?node=" + encodeURIComponent(nid)); },
-  nodeTransferCancel(b) { return this.post("/api/nodes/transfer/cancel", b); },   // withdraw the candidate; the node never left
   nodeFlagRemove(b) { return this.post("/api/nodes/flag-remove", b); },
   nodeUnflagRemove(b) { return this.post("/api/nodes/unflag-remove", b); },
   nodeDelete(b) { return this.post("/api/nodes/delete", b); },
@@ -164,9 +153,6 @@ export const api = {
   peerAdopt(b) { return this.post("/api/peers/adopt", b); },
   peerCorrect(b) { return this.post("/api/peers/correct", b); },   // broken: reassign an in-subnet IP
   ifaceUpdate(b) { return this.post("/api/iface/update", b); },
-  ifaceOnboard(b) { return this.post("/api/iface/onboard", b); },
-  ifaceIgnore(b) { return this.post("/api/iface/ignore", b); },       // dismiss an adoption candidate
-  ifaceUnignore(b) { return this.post("/api/iface/unignore", b); },   // bring an ignored candidate back
   ifaceCreate(b) { return this.post("/api/iface/create", b); },
   ifaceCancel(b) { return this.post("/api/iface/cancel", b); },
   ifaceDelete(b) { return this.post("/api/iface/delete", b); },
@@ -200,7 +186,6 @@ export const api = {
   csqttVersions(q) { return this.get("/api/csqtt/versions?node=" + encodeURIComponent(q.node || "") + (q.iface ? "&iface=" + encodeURIComponent(q.iface) : "")); },   // our published csqtt builds (rollback targets) + any hold — per (node, version): the iface names the version, none = 2.1
   csqttVersion(b) { return this.post("/api/csqtt/version", b); },            // roll a node's csqtt to a build (ver) or release the hold (ver="")
   csqttSet(b) { return this.post("/api/csqtt/set", b); },                    // create/update a csqtt instance on a node (declarative)
-  containerAdopt(b) { return this.post("/api/container/adopt", b); },   // take a wg/awg server over from another container (Amnezia)
   csqttAdopt(b) { return this.post("/api/csqtt/adopt", b); },                // adopt a FOREIGN csqtt server (its users come across)
   csqttDelete(b) { return this.post("/api/csqtt/delete", b); },              // remove a csqtt instance
   csqttPeerCreate(b) { return this.post("/api/csqtt-peer/create", b); },     // keyless csqtt peer (mints the access password). UNUSED by the SPA — see wdttPeerCreate above.
@@ -230,8 +215,6 @@ export const Store = {
   rotating: {},              // peer id -> ts — key rotation in flight; grid shows "rotating" until the new key is live
   ifaceOp: {},               // "node|iface" -> { verb:start|restart, phase:busy|ok|fail, started, until, err }
   ifaceNew: {},              // "node|iface" -> { type } — optimistic "creating/onboarding" card shown the instant Create is clicked (until the server's own pending/meta picks it up)
-  ctrAdopt: {},              // "node|container:iface" -> { at } — optimistic "taking over" the instant it is
-                             // confirmed, until /api/state carries the node's adopt_container back (or it ages out)
   ifaceGone: {},             // "node|iface" -> { at } — ifaceNew's mirror image: optimistic "deleting" card shown the instant Delete is confirmed (until the node stops reporting the interface)
   ghostRekey: {},            // "node|iface" -> { peers:[id], at } — a ghost recreate staged its peers; maybeRekeyGhosts() rekeys them once the fresh interface reports its new key (phase 2)
   turnNew: {},               // "node|service" -> { listen, connect, ... } — optimistic "installing" turn card (full entered data), shown until the node reports the real proxy
@@ -274,10 +257,7 @@ export const Store = {
     this.turnHolds = d.turn_holds || this.turnHolds || {};   // {node: {fork: held_version}} → fork-row "held" flag
     this.csqttLines = d.csqtt_lines || this.csqttLines || [];   // ["2.1", "2.5"] csqtt versions on offer (docs/CSQTT-LINES-PLAN.md) — one entry = no Version control (unless a server runs another)
     this.panelPublicUrl = d.panel_public_url || this.panelPublicUrl || "";   // CONFIRMED canonical address → flag a tab on an old panel address
-    this.panelMigrateRevertable = !!d.panel_migrate_revertable;   // a still-gracing panel-controlled move → the ribbon offers an instant "cancel the move" (server auto-clears at grace end)
-    this.panelMigratePrev = d.panel_migrate_prev || null;         // the OLD address to cancel back to (only while revertable)
     this.accessCooldown = d.access_cooldown || { secs: 0, reason: "" };   // one-at-a-time: while a change verifies/graces, Access&TLS disables Save + shows the cooldown
-    this.dockerAwaiting = d.docker_awaiting || null;   // a docker restart-safe recreate awaiting a reachability confirm → a global effect auto-commits (reaching /api/state here IS the proof)
     hooks.forkColors && hooks.forkColors();   // keep every .tf-<fork> tag/badge in sync with the picker override
     hooks.themeColors && hooks.themeColors();  // keep wg/awg/blocked/faulty colours + the --brand theme in sync with the pickers
     this.smartCaps = d.smart_caps || this.smartCaps || {};   // per-category {ip,host} → [IP]/[Host] grouping + kernel-mode greying
