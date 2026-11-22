@@ -1,7 +1,6 @@
 (function () {
   "use strict";
 
-  // ── theme + language bootstrap (runs before the page fetches/renders) ──
   var _ls = function (k) { try { return localStorage.getItem(k); } catch (_) { return null; } };
   var _lsSet = function (k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (_) {} };
   (function () {
@@ -9,7 +8,6 @@
     var l = _ls("swgsub-lang"); if (l === "ru" || l === "en") document.documentElement.lang = l;
   })();
 
-  // ── i18n (English + Russian) ──
   var LANG = (function () { var s = _ls("swgsub-lang"); if (s === "en" || s === "ru") return s; return (navigator.language || "").slice(0, 2).toLowerCase() === "ru" ? "ru" : "en"; })();
   var STR = {
     en: {
@@ -42,7 +40,6 @@
       liWings1: "1. Open *WINGS V DeX*", liWings2: "2. Click *Paste from Clipboard*", liWings3: "3. Connect",
       liGen1: "1. Open *{app}*", liGen2: "2. Open the *Add profile* / import screen",
       liGen3: "3. *Paste* the copied link (or use the app's from-clipboard button)", liGen4: "4. Confirm, then connect",
-      // csq-socks (our command-line csqtt client) and La Lune on a 2.5 server: their own steps (the csqtt cell's stepList)
       csqSocksSteps: { linux:   ["1. Download *csq-socks* and open a *terminal* where it was saved", "2. Install it: tar xzf csq-socks.tar.gz && sudo ./csq-socks/install.sh", "3. Run csq-socks set, paste the copied link and press Enter", "4. Run csq-socks up for a SOCKS5 proxy on 127.0.0.1:1089, or csq-socks tun to send all traffic through the tunnel"],
                        windows: ["1. Download *csq-socks* and unpack the zip", "2. Open *PowerShell* in that folder", "3. Run .\\csq-socks set, paste the copied link and press Enter", "4. Run .\\csq-socks up for a SOCKS5 proxy on 127.0.0.1:1089, or .\\csq-socks tun from an administrator PowerShell to send all traffic through the tunnel"] },
       laluneSteps25: ["1. Open *{app}*", "2. Add a profile and choose the *CSQTTR* protocol", "3. *Paste* the copied link", "4. Save, then connect"],
@@ -126,7 +123,7 @@
       cantGen: "не удалось сгенерировать ссылку", tapCopy: "Нажмите, чтобы скопировать",
       vkAddApp: "Добавьте эту ссылку на звонок VK в {app}", vkAddFork: "Добавьте эту ссылку на звонок VK в приложении",
       backup: "Резерв",
-      vkMissingT: "Ссылка на звонок VK не указана в подписке", vkMissing: "Добавьте ссылку vk.ru/call/join/… в {app}", theApp: "приложение",   /* accusative — every {app} slot that falls back to it takes one — «в приложение», «Открыть приложение», «Установить приложение» */
+      vkMissingT: "Ссылка на звонок VK не указана в подписке", vkMissing: "Добавьте ссылку vk.ru/call/join/… в {app}", theApp: "приложение",
       p2pMark: "Торренты здесь работают — настройка для полной скорости",
       p2pPortL: "Входящий порт",
       p2pPortD: "Укажите в торрент-клиенте именно этот порт для входящих соединений и выключите случайный порт при запуске (qBittorrent: Настройки → Соединение).",
@@ -164,18 +161,15 @@
   }
 
   var AWG_ORDER = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5",
-    "HeaderProtectionKey", "RandomTrailers", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "DisableCookies"];   // + AmneziaWG 3.x; twin of js/crypto.js AWG_ORDER
+    "HeaderProtectionKey", "RandomTrailers", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "DisableCookies"];
   var FORK_ORDER_FALLBACK = ["cacggghp", "WINGS-N", "samosvalishe", "Moroka8", "anton48"];
   function turnServers() { return (_lastData && _lastData.turn_catalog && _lastData.turn_catalog.servers) || null; }
   function turnServer(f) { var s = turnServers() || []; for (var i = 0; i < s.length; i++) if (s[i].id === f) return s[i]; return null; }
-  // A fork's shown name is its catalog label, never the internal id (they differ where a fork changed hands: samosvalishe → hack-diaz).
   function forkLabel(f) { var s = turnServer(f); return (s && s.label) || f; }
-  if (window.SWGTurn && SWGTurn.setForkLabel) SWGTurn.setForkLabel(forkLabel);   // {fork} in a server name is the name (q189 HE-8)
-  if (window.SWGTurn && SWGTurn.setCliAuthors) SWGTurn.setCliAuthors(function (f) { var s = turnServer(f); return s && s.cli_authors; });   // the served CLI builds
+  if (window.SWGTurn && SWGTurn.setForkLabel) SWGTurn.setForkLabel(forkLabel);
+  if (window.SWGTurn && SWGTurn.setCliAuthors) SWGTurn.setCliAuthors(function (f) { var s = turnServer(f); return s && s.cli_authors; });
   function forkRank(f) { var s = turnServers(); if (s && s.length) { for (var i = 0; i < s.length; i++) if (s[i].id === f) return i; return s.length; } var j = FORK_ORDER_FALLBACK.indexOf(f); return j < 0 ? FORK_ORDER_FALLBACK.length : j; }
-  // WireGuard-only forks (the client can't front AmneziaWG) — from the catalog server's `protocols` (no "awg"); so
-  // such a fork isn't offered for an AWG peer. The fallback mirrors the panel's old TURN_WG_ONLY.
-  var TURN_WG_ONLY_FALLBACK = { anton48: 1 };   // samosvalishe (hack-diaz) carries AmneziaWG since free-turn-proxy v3.2.0, as the catalog says
+  var TURN_WG_ONLY_FALLBACK = { anton48: 1 };
   function turnWgOnly(f) { var s = turnServer(f); if (s && s.protocols) return s.protocols.indexOf("awg") < 0; return !!TURN_WG_ONLY_FALLBACK[f]; }
 
   function orderedTargets(targets) {
@@ -184,8 +178,6 @@
       .sort(function (a, b) { return rank(a[0]) - rank(b[0]) || a[1] - b[1]; })
       .map(function (x) { return x[0]; });
   }
-  // Rank a turn-proxy fork by the class of the client it resolves to for THIS visitor — matching the panel picker:
-  // native app · friendly app · native sidecar · friendly sidecar · plain (so the "best" connection sorts first).
   function turnCellRank(forkId, awg) {
     var ga = turnGetApp(forkId, null, awg); if (!ga) return 9;
     var srv = turnServer(forkId), compat = (srv && srv.compat) || {};
@@ -195,8 +187,6 @@
       : (cls === "friendly" || cls === "friendly_core") ? (isCli ? 4 : 2)
       : cls === "plain" ? 5 : 6;
   }
-  // Obfuscation-carrying forks (mirrors app.js _FORK_GUI_OBF / _FORK_CLI_OBF): a native/friendly GUI app rides the
-  // fork's own wire, and so does its CLI — EXCEPT WINGS, whose wrap needs the app's SessionHello, so its CLI is plain.
   var _TURN_GUI_OBF = { Moroka8: 1, samosvalishe: 1, anton48: 1, MYSOREZ: 1, "WINGS-N": 1 };
   var _TURN_CLI_OBF = { Moroka8: 1, samosvalishe: 1, anton48: 1, MYSOREZ: 1 };
   function turnCellPlain(forkId, awg) {
@@ -208,14 +198,11 @@
                          : ((cls === "native" || cls === "friendly" || cls === "friendly_core") && !!_TURN_GUI_OBF[forkId]);
     return !ridesObf;
   }
-  // A turtle (warning-orange) marks a plain/slow connection on the cell badge. Monochrome SVG so it takes the CSS
-  // `color` via fill=currentColor — an emoji couldn't be recoloured. Side profile: dome shell · head · legs · tail.
   var TURTLE_SVG = '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true">'
     + '<path d="M3.5 14.2c0-4 3.4-6.8 7.6-6.8s7.4 2.6 7.4 5.9c0 .8-.6 1.3-1.4 1.3H4.7c-.7 0-1.2-.6-1.2-1.4z"/>'
     + '<circle cx="20.4" cy="12.4" r="1.8"/>'
     + '<rect x="6" y="14.2" width="2.2" height="3.2" rx="1.1"/><rect x="14" y="14.2" width="2.2" height="3.2" rx="1.1"/>'
     + '<path d="M3.2 12.6 L.9 11.6 L2.1 13.9 Z"/></svg>';
-  // A magnet — the torrent sign — marks a deployment torrents may leave by (swg-sub's `p2p`). Body and pole tips apart.
   var MAGNET_SVG = '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true">'
     + '<path d="M4 7h5v4.5a3 3 0 0 0 6 0V7h5v4.5a8 8 0 0 1-16 0z"/><path d="M4 3h5v3H4zM15 3h5v3h-5z"/></svg>';
   function turnGetApp(forkId, ver, awg, line) {
@@ -224,44 +211,38 @@
     function has(links) { return links && (links.url || links.github || links.play || links.appstore); }
     function pinned(links) {
       var m = /^https?:\/\/github\.com\/([^\/]+\/[^\/#?]+)/.exec(links.github || "");
-      if (!ver || !m || !srv || m[1] !== srv.owner) return links;   // another author's app keeps its own versioning
-      ver = String(ver).trim();   // the panel keys pins by the trimmed version
+      if (!ver || !m || !srv || m[1] !== srv.owner) return links;
+      ver = String(ver).trim();
       var pin = ((((_lastData && _lastData.turn_catalog) || {}).pins || {})[srv.owner] || {})[ver];
       var u = pin && pin.url && pin.url[os];
-      if (!u) return links;   // no release for this version — or none of its files is this OS's installer: the latest, as before
+      if (!u) return links;
       var out = {}; for (var k in links) out[k] = links[k];
       out.url = u; out.page = pin.page || links.page; out.tag = pin.tag || ""; out.assets = pin.assets || []; out.pinned = true;
       return out;
     }
-    // Build the resolved-app record for one client id on the visitor's OS (null if it doesn't ship for this OS).
     function verLine(v) { var m = /(\d+)\.(\d+)/.exec(String(v || "")); return m ? m[1] + "." + m[2] : ""; }
     function build(cid) {
-      var cl = clients[cid], links = cl && cl.platforms && cl.platforms[os];   // this OS only — no cross-OS fallback
+      var cl = clients[cid], links = cl && cl.platforms && cl.platforms[os];
       if (!has(links) || (awg && cl.awg === false)) return null;
       var lineGate = !!line && forkId === "csqtt";
-      if (lineGate && (cl.csqtt_lines || ["2.1"]).indexOf(line) < 0) return null;   // this app speaks another csqtt line
+      if (lineGate && (cl.csqtt_lines || ["2.1"]).indexOf(line) < 0) return null;
       links = pinned(links);
-      // The server's own app follows the server through its release pin. With no release of this server's line yet, the
-      // fallback is the latest release — the OTHER line's app, which cannot connect: offer nothing rather than it.
       var own = /^https?:\/\/github\.com\/([^\/]+\/[^\/#?]+)/.exec(links.github || "");
-      // A release not resolved yet (no tag) is the latest, which is 2.1's unless proven otherwise: only a 2.1 server takes it.
       var relLine = verLine(links.tag) || "2.1";
       if (lineGate && own && srv && own[1] === srv.owner && !links.pinned && relLine !== line) return null;
-      var store = links.play || links.appstore;                      // store / TestFlight install link
-      var page = links.page || links.github || store || links.url;   // downloads PAGE (bubble header / "manually")
-      var file = links.url || store || page;                         // DIRECT installer (button); store when no file
+      var store = links.play || links.appstore;
+      var page = links.page || links.github || store || links.url;
+      var file = links.url || store || page;
       return { app: links.name || cl.name || cid, cid: cid, enc: cl.encoder || cid, author: cl.author || cl.native_fork || "", platform: os, store: store || "",
-               productName: links.name || "",   // OS-specific product name (desktop "WINGS DeX") — differs from the encoder's app name
-               autostart: !!links.autostart,    // per-app-per-OS: Start opens the app via its URL scheme (else copy-link + import steps)
-               instructions: links.instructions || "",   // optional per-app-per-OS import text (overrides the generic hint)
+               productName: links.name || "",
+               autostart: !!links.autostart,
+               instructions: links.instructions || "",
                file: file, fileName: urlFileName(file), page: page,
-               tag: links.tag || "", assets: links.assets || [],   // assets = the release's files → the bubble (LATEST, or this server's)
+               tag: links.tag || "", assets: links.assets || [],
                pinned: !!links.pinned };
     }
-    // a CLI resolves to ONE build (the author the admin picked, else the fork's native/first CLI) — carried as .cliAuthor
     var cliAuthors = (srv && srv.cli_authors) || ["samosvalishe"];
     function withCli(rec, author) { if (rec && rec.cid === "sidecar") rec.cliAuthor = author || cliAuthors[0]; return rec; }
-    // compat map for this fork (modern catalog); a legacy serve.json had none → hasCompat gates the fallbacks below.
     var compat = (srv && srv.compat) || {};
     var hasCompat = false; for (var _c in compat) { hasCompat = true; break; }
     if (forkId === "csqtt" && line === "2.5") {
@@ -272,34 +253,25 @@
     var def = (((_lastData && _lastData.turn_client_default) || {})[forkId] || {})[os];
     if (def === "none") return null;
     if (def) {
-      // a CLI build is honoured only while this fork still offers its author (a hidden fork's build is withdrawn)
       if (def.indexOf("sidecar@") === 0) { if ((compat.sidecar && cliAuthors.indexOf(def.split("@")[1]) >= 0) || !hasCompat) { var d0 = build("sidecar"); if (d0) return withCli(d0, def.split("@")[1]); } }
       else if (clients[def] && (compat[def] || !hasCompat)) { var d = build(def); if (d) return d; }
     }
-    // 2) no (valid) default → the compat-ranked top app for this OS (matches the panel picker's default ordering):
-    //    native non-CLI · friendly non-CLI · native CLI · friendly CLI · plain; hidden (no `compat` class) omitted.
-    var isCli = function (id) { return id === "sidecar" || ((clients[id] || {}).encoder === "sidecar") || !!(clients[id] || {}).cli; };   // `cli`: csq-socks
-    var rank = function (id) { var cl = compat[id], cli = isCli(id);   // apps before sidecars in each band; plain last (matches the panel picker)
+    var isCli = function (id) { return id === "sidecar" || ((clients[id] || {}).encoder === "sidecar") || !!(clients[id] || {}).cli; };
+    var rank = function (id) { var cl = compat[id], cli = isCli(id);
       return cl === "native" ? (cli ? 3 : 1)
         : (cl === "friendly" || cl === "friendly_core") ? (cli ? 4 : 2)
         : cl === "plain" ? (cli ? 6 : 5) : 9; };
-    var autostartOf = function (id) { return !!(((clients[id] || {}).platforms || {})[os] || {}).autostart; };   // opens one-tap (registers a URL scheme)
+    var autostartOf = function (id) { return !!(((clients[id] || {}).platforms || {})[os] || {}).autostart; };
     var ranked = [];
     for (var id in clients) if (compat[id] && has(clients[id].platforms && clients[id].platforms[os])) ranked.push(id);
-    // compat band first, then the one-tap (autostart) apps ahead of paste/QR-only ones, then alphabetical — mirrors the panel picker.
     ranked.sort(function (a, b) { return rank(a) - rank(b) || ((autostartOf(b) ? 1 : 0) - (autostartOf(a) ? 1 : 0)) || (a < b ? -1 : a > b ? 1 : 0); });
-    // A WDTT fork's system default is its own app, the top of this rank (until 2026-10-14 XXcipherX's one-tap app
-    // stood in where a fork's own could not open one-tap; its repository is gone — the panel's picker agrees).
     for (var k = 0; k < ranked.length; k++) { var r2 = build(ranked[k]); if (r2) return withCli(r2, cliAuthors[0]); }
-    // 3) legacy fallback: the fork's own clients list order — ONLY when there's no compat map (serve.json predating
-    //    `compat`). With a compat map present, step 2 already decided; never resurrect a client the compat map omits.
     if (!hasCompat) {
       var cids = (srv && srv.clients) || [];
       for (var j = 0; j < cids.length; j++) { var r = build(cids[j]); if (r) return withCli(r, cliAuthors[0]); }
     }
     return null;
   }
-  // The visitor's device OS, mapped to a catalog platform key (best-effort from the UA / platform string).
   function _subDetectOs() {
     var ua = ((navigator.userAgent || "") + " " + (navigator.platform || "")).toLowerCase();
     if (/android/.test(ua)) return "android";
@@ -309,10 +281,7 @@
     if (/linux/.test(ua)) return "linux";
     return "";
   }
-  // The SELECTED OS — auto-detected, overridable via the header OS picker; drives which client-settings value-set
-  // AND which download the config/Start button use. Persisted so a re-open keeps the choice.
   var OS_LIST = [["android", "Android"], ["ios", "iOS"], ["linux", "Linux"], ["windows", "Windows"], ["macos", "macOS"]];
-  // per-OS brand glyphs (viewBox-only → sized by CSS); macOS = the Finder face, matching the panel's OS picker.
   var OS_ICON = {
     android: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.2 9.3h9.6v7.2a1 1 0 0 1-1 1H15v2.1a1.1 1.1 0 0 1-2.2 0V17.5h-1.6v2.1a1.1 1.1 0 0 1-2.2 0V17.5h-.8a1 1 0 0 1-1-1zM5 9.6a1.1 1.1 0 0 1 1.1 1.1v4.4a1.1 1.1 0 0 1-2.2 0v-4.4A1.1 1.1 0 0 1 5 9.6zm14 0a1.1 1.1 0 0 1 1.1 1.1v4.4a1.1 1.1 0 0 1-2.2 0v-4.4A1.1 1.1 0 0 1 19 9.6zM8.3 8.4a3.9 3.9 0 0 1 1.7-2.7l-.82-1.35a.28.28 0 0 1 .48-.28l.83 1.4a4.6 4.6 0 0 1 3 0l.83-1.4a.28.28 0 0 1 .48.28L14 5.7a3.9 3.9 0 0 1 1.7 2.7zm1.8-1.6a.62.62 0 1 0 0-1.24.62.62 0 0 0 0 1.24zm3.8 0a.62.62 0 1 0 0-1.24.62.62 0 0 0 0 1.24z"/></svg>',
     ios: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.8 12.7c-.02-2.2 1.8-3.26 1.88-3.32-1.02-1.5-2.62-1.7-3.19-1.72-1.36-.14-2.65.8-3.34.8-.68 0-1.75-.78-2.88-.76-1.5.02-2.85.86-3.61 2.19-1.54 2.68-.4 6.65 1.1 8.83.73 1.07 1.6 2.27 2.74 2.23 1.1-.045 1.52-.71 2.85-.71 1.33 0 1.7.71 2.87.69 1.18-.02 1.93-1.09 2.65-2.16.83-1.24 1.18-2.44 1.2-2.5-.026-.01-2.3-.885-2.32-3.51zM13.6 6.35c.6-.73.995-1.74.888-2.75-.86.035-1.9.57-2.52 1.3-.55.64-1.03 1.68-.9 2.66.955.075 1.93-.49 2.53-1.21z"/></svg>',
@@ -346,25 +315,25 @@
     amnezia: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M174.6 444.7c7.7-.6 18.2.3 17-12.5-5.1-1.9-10.6-3.8-15.4-6.1-.6-.3-1.3-.6-1.9-1-9.6 6.1-15.4 16.3-24.6 22.7-.3.6-1 1-1.3 1.6 1.6.3 3.5 1 5.4 1.6 7.4.4 13.8-5.3 20.8-6.3" fill="#fedaa5"/><path d="M0 388.4c.3.3.6.6 1 .3h.3v-2.9L0 387.1zm280.5-152.9c6.7-.3 13.4-.3 19.8 3.8 1 0 1.9-.3 2.6 0 16.3 10.2 7.7-7.7 7.7-8.6 0-2.9.3-5.4 1-7.7-2.2-4.2-4.2-8.3-5.8-12.5-4.2-11.5-7.7-23.3-11.5-34.9-4.2 9-8 18.2-11.2 27.8-.3.6-.6 1.3-1.3 1.9-2.2 2.6-6.7 2.6-10.9 1.9 2.6 5.4 4.8 10.9 6.7 16.6 1.6 3.7 2.6 7.9 2.9 11.7m28.2-90.2c-1.9 4.5-4.2 9-6.1 13.1 22.4 8.3 42.5 20.2 60.1 36.1 2.9 2.6 5.1 5.4 7.4 8.3 1.3 1.6 2.2 3.5 3.2 5.4 4.5.3 9.3 0 13.8-2.2 3.2-1.6 6.1-4.5 9-6.7 0 0-.3 0-.3-.3 5.4-7.7 12.8-14.7 16.6-22.7-2.6-1.9-5.1-3.8-8-5.4-2.6-1.6-3.8-4.5-2.6-7.4.3-.6.6-1.6 1.3-2.2 1-2.2.3-5.1-1.6-6.4-2.6-1.6-5.4-2.9-8.3-2.9-1.6 0-3.5-.3-4.8-1.6-8.6-7.7-16.3-15.7-24.9-22.4-12.2-9.6-24.6-18.6-37.1-27.5-4.5-3.2-9.9-4.5-15.7-4.5-4.8.3-9.6 0-14.1 0h-.6c1.9 5.1 4.5 9.9 5.1 15.4 1.2 12.2 12.7 22.7 7.6 33.9" fill="#fce8ec"/><path d="M127.6 472.5c-1.9 2.9-4.5 5.1-6.1 8.3-4.2 9-4.8-1.6-8-1.6h-3.2c-.6 2.6-1.3 5.4-1.6 8-.6 2.9-.6 6.1-1 9-.3 3.2 2.2 5.8 5.1 4.8 3.5-1.3 5.8-3.5 7.4-7 2.2-5.4 4.2-10.6 6.1-16-.3-1 1-3.5 1.3-5.5m328.2-251.4 1.6-1.6c14.1-12.8 30.4-21.7 47.7-29.4 2.2-1 4.5-2.2 6.7-3.2.3 0 .3-.6 0-.6h-.3c-9.6-1.3-18.2-.3-27.5 1.6-6.1 1.3-12.2 2.9-18.2 4.2-.3 2.2-1 4.8-1.9 7-2.7 7.6-5.2 15-8.1 22m-21.1 35.2c-2.2 3.5-4.2 7.7-6.7 11.2-3.2 4.5-7.7 8.3-15 8.6-2.9 0-6.4-2.6-9.3-2.2-.6 23.3-2.6 46.7-8.3 69.7-2.9 10.9-7 21.1-12.5 31.7-1.6 3.2-6.4 3.8-8.3 1-.3-.3-.3-.6-.6-1.3-6.1-13.1-12.2-25.9-17.3-39-.6-1.6-1-2.9-1.6-4.5l-4.8 4.8c-4.2 4.5-10.9 6.7-15.7 10.6-3.2 2.6-6.7 4.2-10.2 5.1 1.9 3.8 3.8 7.7 6.1 11.2 6.4 10.9 12.2 21.7 15.4 33.9 3.5 13.4 2.6 17-9.6 24-11.5 6.7-23.7 12.8-35.8 18.9-2.2 1.3-5.1 1.6-7.7 1.6-9.6.3-19.2 0-28.8 0-21.4.6-42.9.3-63.7-5.8-.6 13.4-12.8 19.8-21.4 24.6-1.3.6-2.2 1.3-2.9 1.9 2.6 1.3 4.8 2.6 7.4 3.5 1.3.6 2.6 1 3.8 1.3 5.4 1 10.9 1.3 16 2.2 16 2.6 31.7 6.1 47.7 8 16.6 1.9 33.3.6 49.3-5.4 14.4-5.4 29.1-10.6 43.5-15.7 7.4-2.6 15.4-3.5 23-3.5 1.9 0 3.8 1.3 4.8 3.2 1.3 2.2 2.9 3.5 6.7 5.1 1.3.6 2.2 1.6 2.9 2.6 1.6 3.8 3.5 7.7 5.1 11.5 4.2 8.6 9 17 17 22.7 1.3 1 2.9 1.6 4.8 2.2s4.2-.6 3.8-2.6c-1.3-10.9-2.2-21.4-4.5-32-2.9-12.8-6.1-25.6-7-39-.6-10.2 1.6-19.5 8.3-27.5 6.4-8 12.5-16 18.9-24 8-9.9 13.1-20.8 12.2-34.2-1-13.1-.6-25.9 3.5-38.7 2.9-8.6 5.4-17.3 11.5-24.6 3.8-4.8 6.4-10.2 7.4-16.3.3-2.9-1.9-5.1-4.8-5.1H444c-2.6 0-4.8-1.9-5.1-4.5v-.6c-.6 1-1.3 1.9-1.9 2.6-.7.6-1.7 1.9-2.3 2.8" fill="#f18928"/><path d="M97.9 250.9c2.2-.6 4.5-1 7-1.6.6-.3 1.3-.3 1.9-.6.3 0 .3 0 .6-.3 9.6-20.5 23.7-37.4 40-52.8 11.5-10.9 24-20.2 37.4-28.5 0-3.2.3-6.4 1.3-9.6 1.3-4.2 1.6-9 2.6-13.4 0-.6.3-1.3.3-1.9 0-.3 0-.6.3-1.3 3.2-10.2 5.1-20.5 6.1-30.7-14.1 4.2-27.8 8.6-42.2 12.5-4.8 1.3-7.7 3.8-10.2 8-5.4 9-11.5 17.6-17.6 26.2-1.3 1.9-2.9 3.2-4.5 4.8-1.3 1.3-3.5 1.3-4.8 0-1.6-1.6-4.5-1-5.4 1.3-1 2.6-1.9 5.1-3.2 7.4-2.2 3.8-3.2 9-7.4 10.6-1.9.6-3.8 1.6-4.8 3.5-6.7 14.4-13.4 28.5-20.2 42.5-4.2 10.2-8 19.5-11.2 29.1 9.3-.6 18.2-1.6 27.2-3.5 2.3-.4 4.5-1.1 6.8-1.7" fill="#80c9c1"/><path d="M221.3 218.3c-1.6 1.9-1.3 5.1-2.2 7.4.3 0 .3.3.6.3 1-2.6 1.6-5.4 2.6-8-.6-.4-1-.1-1 .3M189 142.4c-.3.6-.3 1.3-.6 1.9-1 4.5-1 9-2.6 13.4-1 3.2-1.3 6.4-1.3 9.6 1.3-.6 2.2-1.6 3.5-2.2 3.5-1.9 7-3.5 11.2-3.5 1.9 0 3.2 1.9 2.6 3.8-6.1 19.5-12.5 39-18.6 58.5 11.2-1.3 20.5-8.6 29.1-18.2l1-1c.6-.6 2.6-1.6 2.6-1.6 2.6 3.2 5.1 6.4 7.7 9.6 2.2-7 4.5-13.8 6.4-20.8 2.6-8 5.4-16 8.3-24 .6-1.6 1.3-3.5 2.2-4.8 1.9-2.9 4.8-2.9 6.7 0 8.3 14.7 17 29.1 24 44.5 4.2.6 8.6.6 10.9-1.9.3-.3.6-1 1-1.6 3.2-9.6 7-18.9 11.5-28.1-1.9-6.1-3.8-12.2-5.8-18.2v-.6l1-1c3.5.6 7.4 1 10.9 2.2.6.3 1.3.6 1.9.6 1.9-4.2 4.2-8.6 6.1-13.1 4.8-11.5-6.7-22.1-8-33.6-.6-5.4-3.2-10.6-5.4-15.7-11.8-.6-20.5-5.4-24.9-17-3.5-8.6-6.4-17.6-9.3-26.9-1-3.5-2.2-7-3.2-10.6-1 2.9-1 6.1-1.3 8.3-.3 6.4-4.5 9.6-6.1 14.7-.6-.3-1-.3-1.6-.3-5.1-.3-10.6 4.5-15.4 5.4-.3 2.6-.6 4.8-1 7.4-1.6 10.6-8.3 16-18.6 17.6-9.6 1.6-10.6 2.2-11.5 11.8 0 .6-1 1-1.6 1.3-1.9.6-3.8 1.3-5.8 1.9-1 10.2-2.6 20.8-6.1 30.7.5.9.1 1.2.1 1.5" fill="#95c7db"/><path d="M250.8 65.7c1.6-5.1 5.8-8.3 6.1-14.7 0-2.2.3-5.4 1.3-8.3-2.2-7-4.2-14.1-6.4-21.1-1-2.9-2.2-5.4-3.5-8s-4.5-3.8-6.7-1.6c-1.6 1.9-2.6 4.2-3.2 8-1 9-1.6 17.6-2.6 26.5-.6 8-1.3 16-2.2 24 4.8-1 10.2-5.8 15.4-5.4.8.3 1.1.6 1.8.6" fill="#87add4"/><path d="M409.7 205.5c-5.4 9-4.8 22.4-17 26.5-3.5 1.3-7 1.6-10.6 1.9-2.6.3-5.1.6-7.7 1-1 .3-1.6.3-2.6.6-12.8 3.5-20.2 12.8-30.1 19.2-2.9 1.9-6.4 2.6-9.6 3.8.6 11.5-2.9 22.4-8 32.3-1.9 3.5 1.6 9.6-1.9 11.8-.6.6-1.9 1-3.5 1-1.9 0-3.8.6-5.4 1 1.3 3.5 2.2 7 2.9 10.9 11.2-.6 21.4-3.8 30.7-9.3-1.9-6.1-3.8-12.2-5.8-17.9-1-2.6-1.3-5.1-1.6-7.7-1.3-7 0-9.6 6.4-13.1 11.5-6.7 23.7-11.2 36.5-14.4 5.8-1.6 11.8-2.2 17.9-3.5 1.3-.3 2.6 0 3.8 0 0 .6.3 1.3.3 1.9v2.9c2.2-7 6.4-13.4 14.4-19.8 13.4-10.2 23.7-23 28.8-38.1-5.4 1-10.2 0-14.7-3.5-2.6-1.9-5.4-4.2-7.7-6.1-.3-.3-1-.6-1.3-1-4.3 7.4-7.8 14.4-14.2 19.6" fill="#fedaa5"/><path d="M374.9 216.7c0 1.6-1.3 3.2-2.6 3.8-13.4 6.7-26.5 14.7-42.2 16.3-6.7.6-11.5-1.6-14.7-7-1.3-2.2-2.2-4.5-3.5-6.4-.6 2.2-1 4.8-1 7.7 0 1 8.6 18.9-7.7 8.6-.6-.3-1.6 0-2.6 0 10.6 6.4 20.8 13.1 31.3 19.5 3.2-1.3 6.7-1.9 9.6-3.8 9.9-6.1 17.3-15.7 30.1-19.2 1-.3 1.6-.3 2.6-.6 2.6-.6 5.1-1 7.7-1 3.5-.3 7-1 10.6-1.9 12.2-4.2 11.8-17.6 17-26.5l-.3.3c-3.8-1.9-8-3.8-11.8-5.8-.3-.3-.6-.3-1.3-.6-2.9 2.2-5.8 4.8-9 6.7-4.8 2.2-9.3 2.9-13.8 2.2.9 1.9 1.6 4.8 1.6 7.7" fill="#fff1cf"/><path d="M332 258.6c-10.6-6.4-20.8-13.1-31.3-19.5-6.1-4.2-12.8-3.8-19.8-3.8 0 .6.3 1.3.3 1.9 1 7-1.6 12.8-7.7 16.6-6.4 4.2-13.4 7.4-20.5 9.6.3 2.9.6 5.8 1 8.6.6 7 1.3 13.8 1.6 20.8 13.1-2.9 26.2-3.8 39.7-3.8 7 0 12.2 3.2 15.7 9.3 1 1.9 1.9 4.2 2.9 6.4 1.6-.6 3.5-1 5.4-1.3 1.6 0 2.6-.3 3.2-1 3.5-2.2.3-8.3 1.9-11.8 4.7-9.7 7.9-20.2 7.6-32" fill="#a29ea1"/><path d="M86.7 302.1c1.6 0 3.2.3 4.5.3h3.5c.6-8.6 1.6-17.3 3.5-25.6-13.4.3-26.9.6-40.3.3-1.9 8-3.5 16.3-4.5 24.6 11.2-.9 22.4-.6 33.3.4" fill="#797aaa"/><path d="M418 235.2c-8 6.1-12.2 12.8-14.4 19.8v18.6c2.9-.3 6.4 2.6 9.3 2.2 7.4-.3 11.5-3.8 15-8.3 2.6-3.5 4.5-7.4 6.7-11.2.6-1.3 1.6-2.2 2.6-3.5.6-.6 1.3-1.6 1.9-2.6 0-6.1 1.3-11.8 5.1-16.3 3.5-4.5 7.4-9 11.5-12.8 3.2-7 5.8-14.4 8-21.7.6-2.2 1.3-4.8 1.9-7-5.8 1.3-11.2 2.9-17 4.2-.6 0-1.3.3-1.6.3-5.3 15-15.5 28.1-29 38.3" fill="#f8b570"/><path d="M176.6 245.8c4.2.6 8 1.6 11.8 3.8 2.9.3 6.1 1 9 1.3 4.8 0 9.3.3 14.1.3 2.9-8.6 5.4-17.3 8.3-26.2-.3 0-.3-.3-.6-.3 1.3-2.2.6-5.4 2.2-7.4.3-.3.6-.3 1-.6.6-1.6 1-3.2 1.6-4.8-2.6-3.2-4.8-6.4-7.7-9.6 0 0-1.9 1-2.6 1.6l-1 1c-8.6 9.6-17.9 17-29.1 18.2-2.6 7.9-4.8 15.3-7 22.7" fill="#87add4"/><path d="M396.3 199.7c.3.3.6.3 1.3.6 3.8 1.9 8 3.8 11.8 5.8l.3-.3c6.4-5.1 9.9-12.2 13.4-19.5-3.5-3.2-6.7-6.4-10.2-9.3-3.8 8-11.2 15-16.6 22.7q0-.45 0 0" fill="#f8c9d1"/><path d="M2.6 388.4v-3.5l-1 1v2.9c.3-.1.6-.1 1-.4" fill="#9b8bc1"/><path d="M10.9 386.5c13.1-2.9 25.9-6.4 39-9 2.9-.6 5.4-.6 7.7-.3 2.2-1 4.2-2.2 6.1-3.5 10.9-9 23.7-10.9 36.8-11.2.3-3.2 2.6-5.8 5.1-8 7.4-6.4 16-8.6 25.6-9.6 3.2-.3 6.1 2.6 5.4 5.4 0 .6-.3 1.3-.3 1.6-1.3 4.2-2.2 8.3-3.5 12.8 3.8-1.9 8-3.2 12.8-1 7 3.5 15-.3 22.7 0 10.9-29.1 33.6-51.8 65.2-64.3-1-6.7-2.9-13.4-5.8-19.8-3.8-8.3-11.5-11.5-22.7-6.1-12.5 6.1-26.2 10.6-40 8-.3 1-.6 1.6-.6 2.6-.6 1.9-1.9 4.2-3.8 5.4-4.5 3.2-9 6.4-13.8 8.6-15.4 7.7-31 13.8-48 16.6-1.3.3-2.6.3-4.5.3 0-4.5.3-8.6.6-13.1h-3.5c-1.6 0-3.2 0-4.8-.3-10.9-1-22.1-1-32.9-.6-1.3 11.8-1.6 24-1 36.5 0 1.6-.6 3.5-1.6 4.8-5.4 5.4-10.9 10.9-16.6 15.7-9.6 8.3-19.8 16.3-29.4 24.3-1 .6-1.6 1.3-2.2 2.2v3.5c2.5-.2 5.1-.9 8-1.5" fill="#6e5ea6"/><path d="M238.3 297.6c5.4-1.9 11.2-3.5 17-4.5-.3-7-1-13.8-1.6-20.8-.3-2.9-.6-5.8-1-8.6-1.6.3-2.9 1-4.5 1.3-13.1 3.5-26.5 4.5-40 4.5-.6 0-1.3-.3-2.2-.3.3-1 .3-1.9.6-2.6 1.3-4.2 2.6-8.3 3.8-12.8-7-.6-12.5-1.6-13.4-2.9-2.9-.3-6.1-1-9-1.3-3.8-2.2-8-3.5-11.8-3.8-3.8 12.2-7.7 24-11.5 36.1 13.4 2.6 27.2-1.9 40-8 11.2-5.4 18.9-2.2 22.7 6.1 2.9 6.4 4.8 13.1 5.8 19.8 1.6-.9 3.5-1.6 5.1-2.2m-49.9-47.7c2.9.3 5.8 1 9 1.3-3.3-.3-6.1-1-9-1.3M124.1 405c5.8 1.6 11.8 1 17.3-2.6 6.4-4.2 13.1-8 20.2-10.6 1-9.9 3.2-19.2 6.4-28.1-7.7-.3-15.4 3.5-22.7 0-4.8-2.2-9-1-13.1 1-2.2 8-4.5 16-6.7 24-.3 1.3-1.3 2.6-2.6 2.9-2.6.6-4.8 0-7-1.3-9.3-6.1-13.8-15-15.7-25.6v-2.6c-13.1.3-25.6 2.2-36.8 11.2-1.6 1.3-3.8 2.6-5.8 3.5 4.8.6 9 2.9 12.2 8.6 5.1 9.3 12.8 17.3 20.5 24.6l2.6 2.6c6.9-7.6 18.7-11.1 31.2-7.6" fill="#797aaa"/><path d="M144.9 446.6c2.9-1.6 3.8-1 4.8 1.3 9-6.4 15-16.6 24.6-22.7-9-4.8-13.4-12.5-13.4-23.3 0-3.2.3-6.7.6-9.9-7 2.6-13.4 6.4-20.2 10.6-5.4 3.5-11.5 4.5-17.3 2.6-12.5-3.5-24.3 0-31 8 6.4 6.4 12.8 12.5 18.9 18.9 1 1 2.2 2.6 2.2 3.8 0 5.4.3 10.9 0 16.3 5.4 0 10.9-.3 16.6-.6 4.9-.5 9.7-2.4 14.2-5" fill="#a29ea1"/><path d="M350.6 335.3c1.6-1.6 2.9-3.2 4.5-4.8-2.9-8-5.4-15.7-8-23.7-9.3 5.4-19.5 8.6-30.7 9.3.3 1.6.3 3.5.3 5.4.3 10.6 3.2 20.5 7.7 29.7 3.5-1 7-2.6 10.6-5.4 4.7-3.8 11.4-6 15.6-10.5" fill="#f8b570"/><path d="M149.7 447.9c-1.3-2.2-2.2-2.9-4.8-1.3-4.5 2.6-9.3 4.5-14.1 4.8-5.4.3-10.9.3-16.6.6 0 3.2-.3 6.7-.6 9.9-.6 5.8-1.9 11.8-3.2 17.6h3.2c3.5 0 4.2 10.6 8 1.6 1.3-3.2 3.8-5.4 6.1-8.3.3-.3.6-.6 1-1.3 1-3.5 1.9-7 3.2-10.6 3.2-8.6 9-12.5 16.6-11.2.6-.8.9-1.5 1.2-1.8" fill="#b59259"/><path d="M200.2 435.1c-.6-.3-1.3-.3-1.9-.6-2.2-.6-4.5-1.3-6.7-2.2 1.3 12.8-9.3 11.8-17 12.5-7.4.6-13.4 6.7-20.8 6.4.3 0 .3 0 .6.3 7.4 3.2 14.4 7 21.4 10.6 1-.6 1.9-1.3 2.9-1.9 8.7-5.3 20.9-11.7 21.5-25.1m-72.6 37.4c-.6 2.2-1.6 4.5-1.3 6.1.6-1.3 1-2.9 1.6-4.2.3-1 .6-1.9 1-3.2-.3.4-1 .7-1.3 1.3" fill="#f8b570"/><path d="M98.5 276.1c1.6-7 3.5-13.8 6.1-20.5 1-2.6 1.9-4.8 3.2-7.4-.3 0-.3 0-.6.3-.6.3-1.3.3-1.9.6-2.6.6-4.8 1-7 1.6s-4.5 1-6.7 1.6c-9 1.9-17.9 2.9-27.2 3.5-2.2 6.7-4.2 13.8-5.8 20.5 12.7.5 26.2.5 39.9-.2" fill="#a29ea1"/><path d="M211.4 251.8c-4.8 0-9.3-.3-14.1-.3.6 1.3 6.4 2.2 13.4 2.9.1-1.3.4-1.9.7-2.6" fill="#7d89c1"/><path d="M197.3 251.2c-2.9-.3-5.8-1-9-1.3" fill="none"/></svg>'
   };
   var AWG_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAMAAADVRocKAAAA/1BMVEUAAABgmTNebZOHozPhjTk9VKe0e6recgFmnDGmrl5+fxZ2eHm0dq/ydxD+/QFWqVXvmEz7wzfDhapeljJcY5leljIA/wCPqDKqrVvnljK4ga7hjjq4cR46fzo9VKYCAvy0e6c9VKa0e6n/AAA7V6VjcYmFozLikTg+Pr1jcIywY2H3o1SGozP///80NH/ccQGorV/ccQD6f3qnrV3/AP8teXumpqZVqqr/f/96j2j//2p//wB/f//6wjnQxGF//38AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgms7HAAAAQHRSTlMA+vv6+/v6+xb6AgMRCwID+/3+pBRZAR0NHv1iAwOcAWJkogEVnpugBFwDBmoBA1mhpAJhAQUEAwL2AgICU/8CdnWMowAACCtJREFUeNrVWol24sgOFWaJsbFxwJg9hLATSKezddLr///VSKUqu8pboHnvzBmd7owzgG7deyVV2TTAfy4c79/Fj5yS13yOqOTzHgzH8HQ27A/bdn7ovzt2288H8GsbKBbJBbuHP8zwFSm7L8K2pdgGJsc9jINxCcAUuhXbNSTwB5iqf1iv19Uk1utDX8BMKNdisn/inIvFsFYrA4igUulC20xvH6q5sV736R2TSfL2CYxrpRKBXalUbIiNxvT9gvQiauMh6T7ebIaLPV3ta+UMoF3RKCCOva6WBuXb4I9gQ4u5JwIIMClWiBggBXTBmU4BDuXpqxVC4BiC73vDWjmAzwA9NJuM7lc/jQRhDPcebBhq/wkAatTGeu1Wq+cg4LKHkkuhBw4DoEZ8cRbCZjyOxfoMoCf/axTlAUufuqzfB/xxOOhGG+GXDJsYoGsAYFvlvLu/zgXYYDFBsQkicZfzM8ChL9pi4LQd36eJR3+dge3HRWwClBQRtoFcekUBiGYFZ5A3Yx2y6rCupACGZX3mmADdPo264gFOgwTscQpgsS/bDvT0Nk3M8jnu2/gGb2N6UAZgJ/l7mN4/ZYtCycenUoggzm/D1DlxO/LvDRIlZeQ4dpLfPmPH82CiU/CLlmYnHp+Vn+rbKNR9UZH2NIX8sxgMdRewTj2veFBIAOcMgL0JUMt1IXK0/GJknx73Rh1d1a6uvn7xFiUC0cg+B2ACsoqukviSGhlRpBOoVCI4S6JNKj0BDFMnlp4BIPbNvHrJ9eYpnZ4AvJzNTAdon1Gkw0z+K8+UKE0AXW7npsL9xsnW330mPwL4uYO6V+qyA4d1FgDbQCbVAHK3+2QzQ4A8sX2/Wu3nFJHMDBqCSUAphAcK5UWeQgM6yvTpjJVi8EXk/Kou6Nq0wJULt5N5lNfLA8BNMqvRRObFwvHyAdRu3wXXiXolZWTTHtzPSvRV+urJq7REyYGoDYkb01yFCOBHIcDia67JakwQeVVP3SwDB8Qx4pCa5Qvl7QQ0E/LauMcAvUKXHT4JOVEK15Oye5Okjoaw0N/Si5tL+ZF12WcLSCMnr0oRwE8APBOgm6RUGmV6GbkxwCENoIposoCJzI/no+/mvRkfejVDMr3ch+cmHyXzATwx3iTA9S9fm6Z/BIBq3sipxJbr8R0em00G+GMO67sOKFEWksBv83AR6XWj2to2KfgwaDYZIYW8b4wajQ6IG2AFcH2tnSEjdePhpA7ZU7PbBzJ/1TgSHKHVwOjcQQspPMn8tetxsuM4JoCyOTXvvqMFzWaFy8jWFbodEcAtAhzZBMp//Qv6qT6LW2uq9Z3ex4/MoNl81ufdG1rAAHt4RzYyPzL4XgSQTI7IkIgAKH4/GgP1nSxojFrI4A3ZkP4Uv4oBECI7747sMYeW/50taDTIAZSrEVwzgp+YHANMzf2tp2s0EBY0mcUzrlVGC247ymP6ZSQA8I9WCGo/i//XVCG6ZpvR2p9/E0yiUWJBi+jcNTrMYKMfWyLH1Lyd3M9qAGLxPgsVabNUWIAKvcMLydVhBr4OMFWSTE1KxjgaSHsFQDuxPrYAGwJaI8lgo4+ieMWJ5tP0zj/gzIOIiQyUnC3uglEDl4+/oFwEULv+tejnbJlx2WRbjbvgUXndVu9sSQvI45djqyEYIMIw91ikdULPdIXnRPPZF0w+rJ3y340taMmC4ipK3V/E8y2KDM1iE1zYfQhl/oBvUYRHaXFLAby8vAiwDjoQQPpuOTLnm+pliDVyLQs+PmYEtSKAHXwzJ52rOoIoZJ8MJhSmiSnNUeO4kARCyrrCi1fYCQqsUUsbpe6RyQS1AC14yn8OErtgVz5GgvkTA8hluwrLCiHU+hjb7GnGWEENAbIPmDM78SiewVIhmXQmAVZCo1bSx3TZCQK6E8l7duqqw8SRM3Jx8ITBtJzUpaIK4abOaC59TACIIoIOZ8c/eU9EkgMXfu5FFUfjlV57ZYVY9y2aUJd6YXOpPkYCKL5ggARybjMdWUgftHEc1QBoiHVKhVZ8Dct6Xf72BjtBtCHMIHcFhfv7ReF9eJNX8y4BRrTOb7JwuDRnCCAohMJ8topW1JG3sUHRc8e2Q+kxbsk9CbAiA6RC5LBw5MYiDoS9sCypEJcnP6T1ip69q6x3t607tqBhvcWFuZLjYQtzAbDiV7gU0GsGCIKhV/TM640nI35iJC1GgN0sZIXqc3gQbyON6oTwU5hPCqE+qBDnH5c8kdrLZo8DV3ojJanXl6xQopGsXkFaKRSUPhRUfaPS47ItzBuKBddVfqlR3VrNVgpATojgk/xiU+0k6S1a6M1SELBuMDHHw4wBZPDbOyL/sOypKcWLHC7ys7x0jiW8yjfNwACwFIFg432Wn51uxB+tx5EQmC1FI6QpBCT/CfnFGTmbnwDI3u32J6j8BkBHDIjTHpO1ZN0bAORFKF5ezpVqukY4H+Dk7wC/gbtL52cvbjDqyQsJQCcYwhnfMaJK4W6VAlAJ079TdGB45vd/NNViKQojBriD879fDEOeCCchvP7F95c0EeYnUnAz30+eiLCtZ/xMtchF+dXM4RK6mc+xguqilOZ4nQCEf5sfZrO4peYPcgwt5YXE1raJSyhgG8+2GCHvaA/bh+V2qRiE7t8DEAUm4G7jQWfuCRcRQEXSe01CDke2dZkDFD9FL6BCbrbZ9QPeJQhIQdtrMgAhHC8CeCCbLbXdGwiudbEDvD2KbdnNGYg7cRZ7vRBAzItwljdywxVY7qUERCHNIcwH34VwOQDM/u//HCUslPl/INDF8Q9Q/LZ1gHSMggAAAABJRU5ErkJggg==";
-  function svgUri(raw) { return "data:image/svg+xml," + encodeURIComponent(raw); }   // for an <img src>
-  function svgNode(raw) {   // for the DOM — no innerHTML, so the strict CSP is satisfied
+  function svgUri(raw) { return "data:image/svg+xml," + encodeURIComponent(raw); }
+  function svgNode(raw) {
     return document.importNode(new DOMParser().parseFromString(raw, "image/svg+xml").documentElement, true);
   }
 
   var WG_CLIENTS = {
-    amneziavpn: { name: "AmneziaVPN", autostart: true, logo: svgUri(BRAND_SVG.amnezia), page: "https://amnezia.org/en/downloads",   // "— Autostart" (the vpn:// one-tap auto-import) only applies on Android
+    amneziavpn: { name: "AmneziaVPN", autostart: true, logo: svgUri(BRAND_SVG.amnezia), page: "https://amnezia.org/en/downloads",
       android: "https://play.google.com/store/apps/details?id=org.amnezia.vpn",
       ios: "https://apps.apple.com/app/amneziavpn/id1600529900",
-      macos: "https://apps.apple.com/app/amneziavpn/id1600529900",   // Apple-Silicon Macs run the iOS app from the App Store (same id) → "just tap open"
-      windows: "https://amnezia.org/en/downloads", linux: "https://amnezia.org/en/downloads" },   // Win/Linux = .exe/.tar via the downloads page (no store)
+      macos: "https://apps.apple.com/app/amneziavpn/id1600529900",
+      windows: "https://amnezia.org/en/downloads", linux: "https://amnezia.org/en/downloads" },
     amneziawg: { name: "AmneziaWG", logo: AWG_PNG, page: "https://github.com/amnezia-vpn/amneziawg-windows-client/releases",
       android: "https://play.google.com/store/apps/details?id=org.amnezia.awg",
-      ios: "https://apps.apple.com/app/amneziawg/id6478942365", macos: "https://apps.apple.com/app/amneziawg/id6478942365",   // one App Store listing runs on iPhone/iPad + Mac
-      windows: "https://github.com/amnezia-vpn/amneziawg-windows-client/releases", linux: "" },   // no standalone Linux app
+      ios: "https://apps.apple.com/app/amneziawg/id6478942365", macos: "https://apps.apple.com/app/amneziawg/id6478942365",
+      windows: "https://github.com/amnezia-vpn/amneziawg-windows-client/releases", linux: "" },
     wireguard: { name: "WireGuard", logo: svgUri(BRAND_SVG.wireguard), page: "https://www.wireguard.com/install/",
       android: "https://play.google.com/store/apps/details?id=com.wireguard.android",
       ios: "https://apps.apple.com/app/wireguard/id1441195209", macos: "https://apps.apple.com/app/wireguard/id1451685025",
-      windows: "https://download.wireguard.com/windows-client/wireguard-installer.exe", linux: "https://www.wireguard.com/install/" }   // Linux = per-distro
+      windows: "https://download.wireguard.com/windows-client/wireguard-installer.exe", linux: "https://www.wireguard.com/install/" }
   };
   var WG_ORDER = { awg: ["amneziavpn", "amneziawg"], wg: ["amneziavpn", "amneziawg", "wireguard"] };
   function isIOSSafari() {
@@ -373,22 +342,21 @@
     return ios && /Version\/\d/.test(ua) && /Safari\//.test(ua) &&
       !/CriOS|FxiOS|EdgiOS|OPiOS|OPT\/|DuckDuckGo|GSA\/|YaBrowser|FBAN|FBAV|FB_IAB|Instagram|Line\/|SnapChat|Twitter/.test(ua);
   }
-  function wgGetApp(type) {   // returns the WG/AWG client apps for the CURRENT OS → the "Get … manually" bubble (two-target rows)
+  function wgGetApp(type) {
     var awg = type === "awg";
     var order = WG_ORDER[awg ? "awg" : "wg"], os = subOs(), items = [];
     var cat = (_lastData && _lastData.wg_catalog) || {};
     order.forEach(function (id) {
       var app = WG_CLIENTS[id]; if (!app) return;
       var res = cat[id] || null, plat = (res && res.platforms && res.platforms[os]) || null;
-      var page = (res && res.page) || app.page || app[os] || "";                          // row body → the app's downloads page
-      // download icon → the best DIRECT installer for this OS (panel-resolved), else the store / page
+      var page = (res && res.page) || app.page || app[os] || "";
       var dl = (plat && (plat.url || plat.store || plat.page || plat.github)) || app[os] || page;
-      if (!dl && !page) return;                                                            // nothing offered for this OS
-      var nm = app.name + ((app.autostart && os === "android") ? " — Autostart" : "");     // Autostart (one-tap auto-import) is Android-only
+      if (!dl && !page) return;
+      var nm = app.name + ((app.autostart && os === "android") ? " — Autostart" : "");
       items.push({ id: id, name: nm, logo: app.logo, page: page || dl, dl: dl, isFile: !!urlFileName(dl) });
     });
     if (!items.length) return null;
-    var primary = items[0];   // Amnezia VPN → the Start button's get-app fallback
+    var primary = items[0];
     return { app: awg ? "AmneziaWG" : "WireGuard", platform: os,
              file: primary.dl, fileName: "", page: primary.page,
              headerTitle: t(awg ? "getAwgClient" : "getWgClient"), wgItems: items };
@@ -400,7 +368,6 @@
     return o ? "https://github.com/" + o + "/releases/latest/download/client-android-arm64" : CORE_FALLBACK;
   }
   function platLbl(p) { return ({ android: "Android", ios: "iOS", windows: "Windows", macos: "macOS", linux: "Linux" })[p] || ""; }
-  // The OS an asset targets, inferred from its filename ("" if unknown — e.g. a store link).
   function assetOs(name) {
     var L = String(name || "").toLowerCase();
     if (/\.apk$|client-android|[-_]android[-_.]/.test(L)) return "android";
@@ -408,13 +375,12 @@
     if (/\.(exe|msi)$|client-windows|[-_]windows[-_.]|win(?:64|32)/.test(L)) return "windows";
     if (/\.(dmg|pkg)$|client-darwin|darwin|mac(?:os)?[-_.]/.test(L)) return "macos";
     if (/\.(deb|appimage|rpm)$|client-linux|[-_]linux[-_.]|\.tar(?:\.|$)/.test(L)) return "linux";
-    if (/client-freebsd|[-_]freebsd[-_.]/.test(L)) return "freebsd";   // a real client, but for an OS we don't list → scoped out of every bubble
+    if (/client-freebsd|[-_]freebsd[-_.]/.test(L)) return "freebsd";
     return "";
   }
-  // If a URL points at a downloadable installer, its filename; else "" (a store / instructions PAGE — opened, not saved).
   function urlFileName(u) {
     u = String(u || "");
-    if (!/\/releases\/(?:latest\/)?download\/|\.(apk|ipa|exe|msi|deb|dmg|pkg|appimage|rpm|zip|tar(?:\.[a-z]+)?)(?:$|\?)/i.test(u)) return "";   // tagged (/releases/download/<tag>/) OR latest (/releases/latest/download/)
+    if (!/\/releases\/(?:latest\/)?download\/|\.(apk|ipa|exe|msi|deb|dmg|pkg|appimage|rpm|zip|tar(?:\.[a-z]+)?)(?:$|\?)/i.test(u)) return "";
     return u.split(/[?#]/)[0].split("/").pop() || "";
   }
   function triggerDownload(url) {
@@ -422,19 +388,16 @@
     document.body.appendChild(a); a.click();
     setTimeout(function () { try { a.remove(); } catch (_) {} }, 0);
   }
-  // Installer assets only — drop checksums / signatures / patch-deltas / source archives / server-role binaries, which
-  // aren't things a user installs. Leaves the real .apk/.exe/.deb/.dmg/… + extensionless CLI client binaries.
   function installerAssets(assets) {
     return (assets || []).filter(function (a) {
       var n = (a && a.name) || "";
       if (/\.(sha\d+|sig|asc|txt|json|patch|md|ya?ml)$/i.test(n)) return false;
       if (/(^|[-_.])sources?([-_.]|$)/i.test(n)) return false;
       if (/^server[-_]/i.test(n)) return false;
-      if (/^lib[a-z0-9]|\.aar$|xcframework/i.test(n)) return false;   // dev libraries/frameworks (libfreeturn-*, mobile.aar, Mobile.xcframework.zip) — not user-run clients
+      if (/^lib[a-z0-9]|\.aar$|xcframework/i.test(n)) return false;
       return true;
     });
   }
-  // Friendly "OS · format · arch" label from an asset filename (falls back to the raw name if nothing parses).
   function assetLabel(name) {
     var L = String(name || "").toLowerCase();
     var os = platLbl(assetOs(name));
@@ -453,7 +416,7 @@
   }
   function getAppRow(ga) {
     var wrap = el("div", "scell-getapp");
-    if (ga.wgItems) {   // WG/AWG multi-app bubble: each row = logo/name → downloads page + a download icon → direct file
+    if (ga.wgItems) {
       var btnW = el("button", "scell-getapp-a scell-getapp-btn"); btnW.type = "button";
       btnW.textContent = t("getAppManual").replace("{app}", ga.app) + " ▾";
       btnW.onclick = function (e) { e.stopPropagation(); openDlBubble(btnW, ga, null); };
@@ -461,18 +424,14 @@
       return wrap;
     }
     var files = installerAssets(ga.assets);
-    var want = ga.platform;   // keep only this OS's files (drop other-OS variants); OS-less items (store links) stay
+    var want = ga.platform;
     var scoped = files.filter(function (f) { var o = assetOs(urlFileName(f.url) || f.name); return !o || o === want; });
     files = scoped.length ? scoped : files;
-    // Lead the bubble with the store/TestFlight install link where one exists (e.g. iOS: the recommended path — the
-    // .ipa needs self-signing), so both show: "… · TestFlight" then "iOS · IPA".
     if (ga.store) files = [{ name: ga.app + " · " + storeLabel(ga.store), url: ga.store }].concat(files);
     var label = ga.author
       ? t("getAppBy").replace("{app}", ga.app).replace("{author}", forkLabel(ga.author))
-      : (files.length ? t("getAppManual").replace("{app}", ga.app)   // opens a bubble → "Get <app> manually"
+      : (files.length ? t("getAppManual").replace("{app}", ga.app)
                       : t("getApp").replace("{app}", ga.app) + (platLbl(ga.platform) ? " · " + platLbl(ga.platform) : ""));
-    // ALWAYS a dropdown (▾) for consistency — even a page-only app (no direct installer, e.g. the Sidecar CLI) opens
-    // a bubble whose header links its releases page, instead of a bare ↗ URL.
     var btn = el("button", "scell-getapp-a scell-getapp-btn"); btn.type = "button";
     btn.textContent = label + " ▾";
     btn.onclick = function (e) { e.stopPropagation(); openDlBubble(btn, ga, files); };
@@ -501,29 +460,25 @@
   function disarmOverlayBack() {
     if (!_ovArmed) return;
     _ovArmed = false; window.removeEventListener("popstate", _ovOnPop);
-    try { history.back(); } catch (_) {}   // drop the entry we pushed (listener already gone → the popstate is a no-op)
+    try { history.back(); } catch (_) {}
   }
-  // The single user-initiated dismiss for every hint: close whichever is open + drop the Back entry. (A transition
-  // between hints uses the raw close* instead, so the entry carries over.) Only one is ever open, so closing all is safe.
   function dismissHints() { closeAllHints(); disarmOverlayBack(); }
   var _fitInner = null, _fitRO = null;
   function fitOverlay(inner) {
     if (!inner || !document.body.contains(inner)) return;
-    inner.style.transform = "none";                                          // measure natural (unscaled) size
+    inner.style.transform = "none";
     var nw = inner.scrollWidth, nh = inner.scrollHeight;
     if (!nw || !nh) return;
-    var CLOSE = 56;                                                          // 14px inset + 42px button
-    var availW = window.innerWidth - 48,                                     // 48 = the overlay's own 24px padding
+    var CLOSE = 56;
+    var availW = window.innerWidth - 48,
         availH = window.innerHeight - 2 * CLOSE;
-    var CEIL = 1.3, FLOOR = 0.4;                                             // ceiling: never gigantic · floor: readable, only the rare landscape-phone + 11-step case reaches it
+    var CEIL = 1.3, FLOOR = 0.4;
     var k = Math.min(availW / nw, availH / nh, CEIL);
     if (k < FLOOR) k = FLOOR;
     inner.style.transformOrigin = "center center";
     inner._fitK = k;
     paintCard(inner);
   }
-  // The card's transform is shared: the fit owns the SCALE, a dismiss-swipe owns the OFFSET. Compose them here
-  // so a drag can't wipe out the fit (and a re-fit mid-drag can't snap the card back under the finger).
   function paintCard(inner, dy) {
     var k = (inner._fitK == null) ? 1 : inner._fitK;
     if (dy == null) dy = inner._dragY || 0;
@@ -537,7 +492,7 @@
   function openFit(inner) {
     clearFit(); _fitInner = inner;
     fitOverlay(inner);
-    requestAnimationFrame(function () { fitOverlay(inner); });                // re-fit once fonts/layout settle
+    requestAnimationFrame(function () { fitOverlay(inner); });
     if (window.ResizeObserver) { _fitRO = new ResizeObserver(function () { fitOverlay(inner); }); try { _fitRO.observe(inner); } catch (_) {} }
   }
   window.addEventListener("resize", function () { if (_fitInner) fitOverlay(_fitInner); });
@@ -569,26 +524,26 @@
       if (!own) return;
       var dx = e.touches[0].clientX - x0, dy = e.touches[0].clientY - y0;
       if (axis === null) {
-        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;             // still inside the tap slop
-        if (Math.abs(dx) > Math.abs(dy)) { own = false; return; }     // horizontal → not a dismiss
-        if (scroller &&                                              // the list can still scroll this way → it keeps the gesture
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        if (Math.abs(dx) > Math.abs(dy)) { own = false; return; }
+        if (scroller &&
             ((dy < 0 && scroller.scrollTop < scroller.scrollHeight - scroller.clientHeight - 1) ||
              (dy > 0 && scroller.scrollTop > 1))) { own = false; return; }
         axis = "v";
       }
-      e.preventDefault();                                            // the card follows the finger, nothing else moves
+      e.preventDefault();
       paint(dy);
     }, { passive: false });
     ov.addEventListener("touchend", function () {
       if (!own || axis !== "v") { own = false; return; }
       own = false;
       var vel = Math.abs(dyNow) / Math.max(1, Date.now() - t0);
-      if (Math.abs(dyNow) > 70 || (Math.abs(dyNow) > 32 && vel > 0.5)) {   // committed → see it out the way it was going
+      if (Math.abs(dyNow) > 70 || (Math.abs(dyNow) > 32 && vel > 0.5)) {
         anim("transform .18s ease-in");
         paint((dyNow < 0 ? -1 : 1) * (window.innerHeight * 0.8 + 120));
         ov.style.opacity = "0";
         setTimeout(onClose, 170);
-      } else {                                                            // short of the threshold → spring back
+      } else {
         anim("transform .22s cubic-bezier(.22,.7,.3,1)");
         paint(0);
         setTimeout(function () { anim(""); }, 240);
@@ -596,7 +551,6 @@
     }, { passive: true });
   }
 
-  // The landscape/desktop "Connections" button rides with the USERNAME
   function headerSwitch(onOpen) {
     var who = document.getElementById("who"); if (!who) return null;
     var row = (who.parentNode && who.parentNode.classList && who.parentNode.classList.contains("who-row"))
@@ -604,14 +558,13 @@
     if (!row) { row = el("div", "who-row"); who.parentNode.insertBefore(row, who); row.appendChild(who); }
     var slot = row.querySelector(".who-switch");
     if (!slot) { slot = el("span", "who-switch"); row.appendChild(slot); }
-    slot.textContent = "";                                   // a rebuild (lang/theme) re-makes the button
+    slot.textContent = "";
     if (!onOpen) return null;
     var b = el("button", "pswitch pswitch-head", t("connections")); b.type = "button";
     b.setAttribute("aria-label", t("pickOpen"));
     b.onclick = onOpen; slot.appendChild(b);
     return b;
   }
-  // Jump picker — any config in two taps
   var _pickOv = null;
   function closeConfigPicker() {
     if (!_pickOv) return;
@@ -623,27 +576,21 @@
     if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); dismissHints(); }
   }
   function openConfigPicker(peers, cur, jump, extra) {
-    // Raw close, not dismissHints: this is a TRANSITION between overlays, so the Back entry has to carry over —
-    // disarming here would queue a history.back() that lands on the entry armOverlayBack() pushes below.
     closeAllHints();
     if (!peers.length) return;
     var ov = el("div", "cp-overlay");
     var panel = el("div", "cp-panel");
     var head = el("div", "cp-head"), title = el("div", "cp-title"), list = el("div", "cp-list");
-    // The close button lives in the BOX's own header, so it belongs to the picker rather than floating over the
-    // page. It sits outside `title` because switching levels rebuilds the title and would otherwise wipe it.
     var x = el("button", "cp-close"); x.type = "button"; x.setAttribute("aria-label", t("close")); x.textContent = "×";
     x.onclick = dismissHints;
     head.appendChild(title); head.appendChild(x);
     panel.appendChild(head); panel.appendChild(list);
     ov.appendChild(panel);
-    ov.onclick = function (e) { if (e.target === ov) dismissHints(); };   // only the backdrop closes
+    ov.onclick = function (e) { if (e.target === ov) dismissHints(); };
 
     function isHere(en) { return cur && en.pi === cur.pi && en.ci === cur.ci; }
     function go(en) { dismissHints(); jump(en.pi, en.ci); }
     function row(on) { var r = el("button", "cp-row" + (on ? " on" : "")); r.type = "button"; return r; }
-    // Last, and named for what it is rather than for a device: the networks those devices reach. Shown at the top level of the
-    // picker only — inside one device's connections it would read as one of that device's.
     function netsRow(list) {
       if (!extra) return;
       var r = row(!!cur && cur.pi === extra.pi);
@@ -666,15 +613,14 @@
       g.entries.forEach(function (en) {
         var r = row(isHere(en));
         var lead = el("span", "cp-lead");
-        // the protocol's own brand mark leads the row, in full colour — see rowIcon()
         var mark = rowIcon(en.mode);
         if (mark) { var ic = el("span", "cp-ico"); ic.appendChild(mark); lead.appendChild(ic); }
-        if (en.badge) {   // a COPY of the cell's badge row: its marker buttons would be dead (no handlers) and nested in this row's
-          var bc = en.badge.cloneNode(true);   // button — each becomes its icon alone (the turtle, the magnet), shown, not pressable
+        if (en.badge) {
+          var bc = en.badge.cloneNode(true);
           Array.prototype.forEach.call(bc.querySelectorAll(".scell-mark"), function (x) {
             var icon = el("span"); icon.className = x.className; icon.classList.remove("scell-mark");
             icon.setAttribute("role", "img"); icon.setAttribute("aria-label", x.getAttribute("aria-label") || "");
-            icon.title = x.getAttribute("data-note") || x.getAttribute("aria-label") || "";   // no bubble in a row button: the note
+            icon.title = x.getAttribute("data-note") || x.getAttribute("aria-label") || "";
             while (x.firstChild) icon.appendChild(x.firstChild);
             x.replaceWith(icon);
           });
@@ -684,7 +630,7 @@
         r.onclick = function () { go(en); };
         list.appendChild(r);
       });
-      if (!back) netsRow(list);        // one device ⇒ the picker opens here, so this IS the top level
+      if (!back) netsRow(list);
     }
     function showPeers() {
       title.textContent = ""; list.textContent = "";
@@ -693,9 +639,8 @@
         var r = row(cur && g.entries.some(function (en) { return en.pi === cur.pi; }));
         r.appendChild(el("span", "cp-name", g.title));
         if (g.dead && g.entries[0] && g.entries[0].badge) {
-          r.appendChild(g.entries[0].badge.cloneNode(true));   // BLOCKED / EXPIRED — say so here, don't make them tap to find out
+          r.appendChild(g.entries[0].badge.cloneNode(true));
         } else {
-          // one dot per connection, in its server's colour — a miniature of the rail you'd otherwise swipe
           var dots = el("span", "cp-dots");
           g.entries.forEach(function (en) {
             var d = el("i", "cp-dot" + (isHere(en) ? " on" : ""));
@@ -718,8 +663,6 @@
     armOverlayBack();
   }
 
-  // Download bubble — a single global popover anchored just below its trigger, growing downward, capped so it never
-  // overlaps the button bar (maxHeight = barTop − top − 12).
   var _dlBubble = null;
   function closeDlBubble() {
     if (!_dlBubble) return;
@@ -731,10 +674,10 @@
   function _dlOutside(e) { if (_dlBubble && !_dlBubble.contains(e.target)) closeDlBubble(); }
   function _dlKey(e) { if (e.key === "Escape") { e.preventDefault(); closeDlBubble(); } }
   function openDlBubble(anchor, ga, files) {
-    if (_dlBubble && _dlBubble._anchor === anchor) { closeDlBubble(); return; }   // second click on same trigger → toggle off
+    if (_dlBubble && _dlBubble._anchor === anchor) { closeDlBubble(); return; }
     closeDlBubble(); closeNoteBubble();
     var b = el("div", "dl-bubble"); b._anchor = anchor;
-    if (ga.headerTitle) {   // multi-app bubble (WG/AWG) — a plain title, no single releases page to link
+    if (ga.headerTitle) {
       b.appendChild(el("div", "dl-bubble-title", ga.headerTitle));
     } else {
       var isGithub = /github\.com/.test(ga.page || "");
@@ -744,7 +687,7 @@
       if (ga.tag) b.appendChild(el("div", "dl-bubble-ver", t(ga.pinned ? "dlPinned" : "dlLatest").replace("{ver}", ga.tag)));
     }
     var list = el("div", "dl-bubble-list");
-    if (ga.wgItems) {   // WG/AWG two-target rows: [logo + name] → downloads page · [⬇] → best direct installer for this OS
+    if (ga.wgItems) {
       ga.wgItems.forEach(function (f) {
         var row = el("div", "dl-bubble-item has-logo wg-row");
         var body = el("a", "dl-row-body"); body.href = f.page; body.target = "_blank"; body.rel = "noopener";
@@ -756,17 +699,17 @@
         body.addEventListener("click", function () { setTimeout(closeDlBubble, 60); });
         row.appendChild(body);
         var dlb = el("a", "dl-row-dl"); dlb.href = f.dl; dlb.title = t("dlShort"); dlb.setAttribute("aria-label", t("dlShort")); dlb.appendChild(iconEl("download"));
-        if (f.isFile) dlb.onclick = function (e) { e.preventDefault(); triggerDownload(f.dl); setTimeout(closeDlBubble, 60); };   // direct installer → download in place
-        else { dlb.target = "_blank"; dlb.rel = "noopener"; dlb.addEventListener("click", function () { setTimeout(closeDlBubble, 60); }); }   // store / page → new tab
+        if (f.isFile) dlb.onclick = function (e) { e.preventDefault(); triggerDownload(f.dl); setTimeout(closeDlBubble, 60); };
+        else { dlb.target = "_blank"; dlb.rel = "noopener"; dlb.addEventListener("click", function () { setTimeout(closeDlBubble, 60); }); }
         row.appendChild(dlb);
         list.appendChild(row);
       });
     } else files.forEach(function (f) {
       var fn = urlFileName(f.url);
       var it = el("a", "dl-bubble-item" + (f.logo ? " has-logo" : "")); it.href = f.url; it.rel = "noopener";
-      if (!fn) it.target = "_blank";   // store / page → new tab; a direct file downloads in the same tab (correct name)
+      if (!fn) it.target = "_blank";
       if (f.logo) { var lg = el("img", "dl-item-logo"); lg.src = f.logo; lg.alt = ""; it.appendChild(lg); }
-      var col = f.logo ? el("span", "dl-item-col") : it;   // with a logo, the text sits in a column beside it
+      var col = f.logo ? el("span", "dl-item-col") : it;
       col.appendChild(el("span", "dl-item-label", fn ? assetLabel(fn) : (f.name || f.url)));
       col.appendChild(el("span", "dl-item-file", fn || String(f.url).replace(/^https?:\/\//, "").split(/[\/?#]/)[0]));
       if (f.logo) it.appendChild(col);
@@ -775,8 +718,6 @@
     });
     b.appendChild(list);
     document.body.appendChild(b);
-    // Open right under the "Get … manually ▾" link (it lives in the header now), centred on it, growing downward —
-    // capped so it never runs into the button bar at the bottom.
     var ar = anchor.getBoundingClientRect();
     var bar = (anchor.closest && anchor.closest(".ppage") && anchor.closest(".ppage").querySelector(".pbar"))
       || document.querySelector(".pbar") || document.querySelector(".bar");
@@ -794,7 +735,7 @@
   }
 
   var _noteBubble = null;
-  var _canHover = window.matchMedia ? window.matchMedia("(hover: hover)") : null;   // asked at event time (a mouse plugged in)
+  var _canHover = window.matchMedia ? window.matchMedia("(hover: hover)") : null;
   function closeNoteBubble() {
     if (!_noteBubble) return;
     if (_noteBubble._anchor) { _noteBubble._anchor.setAttribute("aria-expanded", "false"); _noteBubble._anchor.removeAttribute("aria-describedby"); }
@@ -806,46 +747,44 @@
   }
   function _nbOutside(e) { if (_noteBubble && !_noteBubble.contains(e.target) && !_noteBubble._anchor.contains(e.target)) closeNoteBubble(); }
   function _nbKey(e) { if (e.key === "Escape") { e.preventDefault(); closeNoteBubble(); } }
-  function _nbScroll(e) { if (_noteBubble && !_noteBubble.contains(e.target)) closeNoteBubble(); }   // its own (capped) text scrolls
+  function _nbScroll(e) { if (_noteBubble && !_noteBubble.contains(e.target)) closeNoteBubble(); }
   function openNoteBubble(anchor, text, hover) {
     if (_noteBubble && _noteBubble._anchor === anchor) { if (!hover) _noteBubble._hover = false; return; }
     closeNoteBubble();
-    if (!hover) closeDlBubble();                       // a click replaces the download list; a pointer passing over does not
+    if (!hover) closeDlBubble();
     var b = el("div", "note-bubble", typeof text === "function" ? null : text); b._anchor = anchor; b._hover = !!hover;
-    if (typeof text === "function") b.appendChild(text());   // a bubble with structure (the torrent port) builds its own body
+    if (typeof text === "function") b.appendChild(text());
     b.setAttribute("role", "tooltip"); b.id = "note-bubble";
     document.body.appendChild(b);
     anchor.setAttribute("aria-expanded", "true"); anchor.setAttribute("aria-describedby", b.id);
     var ar = anchor.getBoundingClientRect(), w = b.offsetWidth, h = b.offsetHeight;
     b.style.left = Math.round(Math.min(Math.max(12, ar.left + ar.width / 2 - w / 2), window.innerWidth - w - 12)) + "px";
-    // below the marker, or above it where below runs off the screen and above has more room; capped either way
     var below = window.innerHeight - ar.bottom - 20, above = ar.top - 20;
     if (h > below && above > below) { b.style.maxHeight = above + "px"; b.style.top = Math.round(Math.max(12, ar.top - 8 - Math.min(h, above))) + "px"; }
-    else { b.style.maxHeight = Math.max(24, below) + "px"; b.style.top = Math.round(ar.bottom + 8) + "px"; }   // no room either side: the larger, scrolled
+    else { b.style.maxHeight = Math.max(24, below) + "px"; b.style.top = Math.round(ar.bottom + 8) + "px"; }
     _noteBubble = b;
     setTimeout(function () {
-      if (_noteBubble !== b) return;                   // closed before the listeners went on (a quick hover sweep)
+      if (_noteBubble !== b) return;
       document.addEventListener("pointerdown", _nbOutside, true);
       document.addEventListener("keydown", _nbKey, true);
       window.addEventListener("resize", closeNoteBubble);
       window.addEventListener("scroll", _nbScroll, true);
     }, 0);
   }
-  function noteMarker(cls, svg, label, text, body) {   // body: optional builder of the bubble's content (text stays the tooltip)
+  function noteMarker(cls, svg, label, text, body) {
     var m = el("button", "scell-mark " + cls); m.type = "button";
     m.innerHTML = svg; m.setAttribute("aria-label", label); m.setAttribute("aria-expanded", "false");
-    m.setAttribute("data-note", text);   // the picker's copy has no bubble: its icon shows this as a tooltip
+    m.setAttribute("data-note", text);
     m.onclick = function (e) {
       e.stopPropagation();
-      if (_noteBubble && _noteBubble._anchor === m && !_noteBubble._hover) closeNoteBubble();   // pinned → second click closes
-      else openNoteBubble(m, body || text, false);                                             // opens, or pins a hover's
+      if (_noteBubble && _noteBubble._anchor === m && !_noteBubble._hover) closeNoteBubble();
+      else openNoteBubble(m, body || text, false);
     };
     m.onmouseenter = function () { if (_canHover && _canHover.matches) openNoteBubble(m, body || text, true); };
     m.onmouseleave = function () { if (_noteBubble && _noteBubble._anchor === m && _noteBubble._hover) closeNoteBubble(); };
     return m;
   }
 
-  // "Ask on tap" choice popover (Safari-on-iOS): Open the app (deliberate scheme fire) vs Get the app (store/TestFlight).
   var _startChoice = null;
   var _schemeFiredAt = {};
   function closeStartChoice() {
@@ -869,8 +808,8 @@
       btn.onclick = function () { closeStartChoice(); fn(); };
       return btn;
     };
-    b.appendChild(mk(t("startGetApp").replace("{app}", c.dlAppName || app), t("startNeedIt"), onGet, "get"));   // Get first — bluish
-    b.appendChild(mk(t("startOpenApp").replace("{app}", app), t("startHaveIt"), onOpen, "open"));               // Open second — greenish
+    b.appendChild(mk(t("startGetApp").replace("{app}", c.dlAppName || app), t("startNeedIt"), onGet, "get"));
+    b.appendChild(mk(t("startOpenApp").replace("{app}", app), t("startHaveIt"), onOpen, "open"));
     document.body.appendChild(b);
     var bar = (anchor.closest && anchor.closest(".ppage") && anchor.closest(".ppage").querySelector(".pbar")) || document.querySelector(".pbar") || document.querySelector(".bar");
     var barTop = bar ? bar.getBoundingClientRect().top : window.innerHeight - 76;
@@ -892,10 +831,10 @@
     document.removeEventListener("keydown", _phKey, true);
   }
   function _phKey(e) { if (e.key === "Escape") dismissHints(); }
-  function amneziaIcon() {   // the AmneziaVPN app logo
+  function amneziaIcon() {
     var img = el("img", "ph-icon"); img.src = (WG_CLIENTS.amneziavpn || {}).logo || svgUri(BRAND_SVG.amnezia); img.alt = ""; return img;
   }
-  function amneziaDlPanel() {   // static (in-overlay) downloads bubble: header link + this-OS item, styled like .dl-bubble
+  function amneziaDlPanel() {
     var os = subOs(), pageUrl = "https://amnezia.org/en/downloads", av = WG_CLIENTS.amneziavpn || {}, osUrl = av[os] || pageUrl;
     var b = el("div", "dl-bubble ph-dlpanel");
     var head = el("a", "dl-bubble-head"); head.href = pageUrl; head.target = "_blank"; head.rel = "noopener";
@@ -914,7 +853,7 @@
     var ov = el("div", "ih-overlay ph-overlay");
     var inner = el("div", "ih-inner ph-inner");
     var copied = el("div", "ph-copied"); copied.appendChild(iconEl("checks")); copied.appendChild(el("span", null, t("linkCopied")));
-    inner.appendChild(copied);   // green "Connection link copied" ✓✓ — well above the steps
+    inner.appendChild(copied);
     var head = el("div", "ph-head");
     head.appendChild(amneziaIcon());
     head.appendChild(el("span", "ph-title", "AmneziaVPN"));
@@ -928,7 +867,7 @@
     var panel = null;
     dl.onclick = function (e) {
       e.preventDefault();
-      if (panel) { panel.remove(); panel = null; dl.classList.remove("open"); return; }   // toggle
+      if (panel) { panel.remove(); panel = null; dl.classList.remove("open"); return; }
       panel = amneziaDlPanel();
       openDlPanel(dl, panel, function () { panel.remove(); panel = null; dl.classList.remove("open"); });
     };
@@ -937,7 +876,7 @@
     ov.appendChild(inner);
     var x = el("button", "ih-close"); x.type = "button"; x.setAttribute("aria-label", "Close"); x.textContent = "×";
     x.onclick = dismissHints; ov.appendChild(x);
-    ov.onclick = function (e) { if (e.target === ov) dismissHints(); };   // only the dark backdrop closes — no auto-dismiss
+    ov.onclick = function (e) { if (e.target === ov) dismissHints(); };
     document.body.appendChild(ov);
     _pasteHint = ov; openFit(inner);
     attachSwipeClose(ov, dismissHints);
@@ -945,7 +884,7 @@
     armOverlayBack();
   }
 
-  function appDlPanelFor(name, fileUrl, pageUrl) {   // static in-overlay downloads bubble (styled like .dl-bubble)
+  function appDlPanelFor(name, fileUrl, pageUrl) {
     var b = el("div", "dl-bubble ph-dlpanel");
     var head = el("a", "dl-bubble-head"); head.href = pageUrl || fileUrl || "#"; head.target = "_blank"; head.rel = "noopener";
     head.textContent = (name || "App") + " ↗"; b.appendChild(head);
@@ -970,18 +909,17 @@
     var ov = el("div", "ih-overlay ph-overlay");
     var inner = el("div", "ih-inner ph-inner");
     var done = el("div", "ph-copied"); done.appendChild(iconEl("checks")); done.appendChild(el("span", null, t("linkCopied")));
-    inner.appendChild(done);   // green "Connection link copied" ✓✓
+    inner.appendChild(done);
     var head = el("div", "ph-head"); head.appendChild(el("span", "ph-title", app)); inner.appendChild(head);
     var steps = el("div", "ph-steps");
-    if (c && c.stepList && c.stepList.length) {   // the client's own steps, chosen by the cell (csq-socks, La Lune on 2.5)
+    if (c && c.stepList && c.stepList.length) {
       c.stepList.forEach(function (ln) { steps.appendChild(stepEl(ln.replace("{app}", app))); });
-    } else if (c && c.instructions) {   // per-app-per-OS override from the catalog (each newline = one step) — no code change to retune
+    } else if (c && c.instructions) {
       String(c.instructions).split("\n").forEach(function (ln) { if (ln.trim()) steps.appendChild(stepEl(ln.replace("{app}", app))); });
     } else {
-      // WINGS V DeX gets its exact button labels (Добавить профиль → Из буфера); anything else → a generic import flow.
       var isWings = /^wingsv:/i.test((c && c.openUri) || "");
       var keys = isWings ? ["liWings1", "liWings2", "liWings3"] : ["liGen1", "liGen2", "liGen3", "liGen4"];
-      keys.forEach(function (k) { steps.appendChild(stepEl(t(k).replace("{app}", app))); });   // stepEl bolds *…*-wrapped labels
+      keys.forEach(function (k) { steps.appendChild(stepEl(t(k).replace("{app}", app))); });
     }
     inner.appendChild(steps);
     if (c && (c.dlAppUrl || c.dlAppPage)) {
@@ -989,7 +927,7 @@
       var panel = null;
       dl.onclick = function (e) {
         e.preventDefault();
-        if (panel) { panel.remove(); panel = null; dl.classList.remove("open"); return; }   // toggle
+        if (panel) { panel.remove(); panel = null; dl.classList.remove("open"); return; }
         panel = appDlPanelFor(c.dlAppName || app, c.dlAppUrl, c.dlAppPage);
         openDlPanel(dl, panel, function () { panel.remove(); panel = null; dl.classList.remove("open"); });
       };
@@ -999,7 +937,7 @@
     ov.appendChild(inner);
     var x = el("button", "ih-close"); x.type = "button"; x.setAttribute("aria-label", "Close"); x.textContent = "×";
     x.onclick = dismissHints; ov.appendChild(x);
-    ov.onclick = function (e) { if (e.target === ov) dismissHints(); };   // only the dark backdrop closes — no auto-dismiss
+    ov.onclick = function (e) { if (e.target === ov) dismissHints(); };
     document.body.appendChild(ov);
     _linkHint = ov; openFit(inner);
     attachSwipeClose(ov, dismissHints);
@@ -1029,12 +967,11 @@
     };
     return a;
   }
-  function stepEl(text) {   // a .ph-step that bolds *…*-wrapped names (app / screen / menu / button labels)
+  function stepEl(text) {
     var d = el("div", "ph-step"), parts = String(text).split("*");
     for (var i = 0; i < parts.length; i++) { if (i % 2) d.appendChild(el("b", null, parts[i])); else if (parts[i]) d.appendChild(document.createTextNode(parts[i])); }
     return d;
   }
-  // the 3 buttons are a COMPACT popover above the button bar (like the Safari ask-on-tap) — NOT a full-screen card
   function showVktgzChoice(c, anchor) {
     closeStartChoice(); closeDlBubble(); closeVktgzChoice(); closeVktgzHint(); closeNoteBubble();
     var b = el("div", "start-choice mz-choice");
@@ -1042,27 +979,22 @@
     var mk = function (n, label, sub, fn, go) {
       var btn = el("button", "start-choice-b mz-cbtn" + (go ? " go" : "")); btn.type = "button";
       btn.appendChild(el("span", "mz-num", String(n)));
-      var col = el("span", "mz-cbtn-col");        // label + a secondary line (the download filename / a hint), stacked
+      var col = el("span", "mz-cbtn-col");
       col.appendChild(el("span", "start-choice-l", label));
       if (sub) col.appendChild(el("span", "start-choice-s", sub));
       btn.appendChild(col);
-      // button 3 transitions to the walkthrough (raw close → keep the one Back entry); 1 & 2 just close (drop it).
       btn.onclick = function () { if (go) closeVktgzChoice(); else dismissHints(); fn(); };
       return btn;
     };
-    b.appendChild(mk(1, t("mzBtn1"), urlFileName(c.dlAppUrl) || c.dlAppName || "", function () { _openUrl(c.dlAppUrl); }));   // direct APK — its filename below
-    b.appendChild(mk(2, t("mzBtn2"), urlFileName(coreUrlFor(c.forkId)), function () { _openUrl(coreUrlFor(c.forkId)); }));   // direct core binary (THIS fork's core) — its filename below
-    b.appendChild(mk(3, t("mzBtn3"), t("mzBtn3Sub"), function () {                                                            // copy VKTGZ + walkthrough
+    b.appendChild(mk(1, t("mzBtn1"), urlFileName(c.dlAppUrl) || c.dlAppName || "", function () { _openUrl(c.dlAppUrl); }));
+    b.appendChild(mk(2, t("mzBtn2"), urlFileName(coreUrlFor(c.forkId)), function () { _openUrl(coreUrlFor(c.forkId)); }));
+    b.appendChild(mk(3, t("mzBtn3"), t("mzBtn3Sub"), function () {
       if (navigator.clipboard) navigator.clipboard.writeText(c.payload || "").catch(function () {});
       showVktgzHint(c);
     }, true));
     document.body.appendChild(b);
-    // the tapped Start button lives IN the action bar → its own .pbar is the reliable anchor (a pager slide's bar
-    // moves with the carousel, so scope to the button, not the first .pbar in the document).
     var bar = (anchor && anchor.closest && (anchor.closest(".pbar") || (anchor.closest(".ppage") && anchor.closest(".ppage").querySelector(".pbar")))) || document.querySelector(".pbar") || document.querySelector(".bar");
     var barTop = bar ? bar.getBoundingClientRect().top : (window.innerHeight - 76);
-    // seat the card just ABOVE the buttons area, clamped by its measured height so it can never overlap the bar
-    // (top clamp) nor spill past the viewport bottom (bottom clamp) whatever the scroll position.
     var ch = b.getBoundingClientRect().height;
     var top = Math.max(8, Math.min(barTop - ch - 12, window.innerHeight - ch - 8));
     b.style.left = "50%"; b.style.transform = "translateX(-50%)"; b.style.bottom = "auto"; b.style.top = top + "px";
@@ -1088,7 +1020,7 @@
     var la = el("a", "ph-dl"); la.href = "#"; la.textContent = t("pasteDownload"); la.onclick = function (e) { e.preventDefault(); _openUrl(c.dlAppUrl); }; links.appendChild(la);
     var lc = el("a", "ph-dl"); lc.href = "#"; lc.textContent = t("mzGetCore"); lc.onclick = function (e) { e.preventDefault(); _openUrl(coreUrlFor(c.forkId)); }; links.appendChild(lc);
     var lg = el("a", "ph-dl"); lg.href = "#"; lg.textContent = t("mzGetConfig"); lg.onclick = function (e) { e.preventDefault(); if (c.wgConf) download(c.wgConf, c.base, "conf"); }; links.appendChild(lg);
-    links.appendChild(copyRow("copyCfg", function () { return c.payload; }, "mzCopied"));   // what step 7 pastes ("Import -> From clipboard")
+    links.appendChild(copyRow("copyCfg", function () { return c.payload; }, "mzCopied"));
     inner.appendChild(links);
     ov.appendChild(inner);
     var x = el("button", "ih-close"); x.type = "button"; x.setAttribute("aria-label", "Close"); x.textContent = "×"; x.onclick = dismissHints; ov.appendChild(x);
@@ -1099,17 +1031,14 @@
     armOverlayBack();
   }
 
-  // CLI (sidecar) client: Start copies the command — with the "./client" swapped to the ACTUAL downloaded binary for
-  // this OS (Windows → .\client-windows-…exe) — and shows the OS's short run steps + client/config download links.
   var _cliHint = null;
   function closeCliHint() { if (!_cliHint) return; _cliHint.remove(); _cliHint = null; document.removeEventListener("keydown", _cliKey, true); }
   function _cliKey(e) { if (e.key === "Escape") dismissHints(); }
-  // Format a raw "./client <flags>" cmd into a runnable line for this OS.
   function cliCmdStr(cmd, bin) {
     var flags = String(cmd || "").replace(/^\s*\.?[\\/]?client\s*/, "");
     return ((subOs() === "windows") ? ".\\" : "./") + (bin || "client") + (flags ? " " + flags : "");
   }
-  function cliCommand(c) { return cliCmdStr(c.cmd, c.dlAppFile); }   // the native/preferred author's command (what Start copies)
+  function cliCommand(c) { return cliCmdStr(c.cmd, c.dlAppFile); }
   function showCliHint(c) {
     closeCliHint();
     var ov = el("div", "ih-overlay ph-overlay");
@@ -1122,8 +1051,6 @@
     var steps = el("div", "ph-steps"), arr = ((t("cliSteps") || {})[subOs()]) || ((t("cliSteps") || {}).linux) || [];
     for (var i = 0; i < arr.length; i++) steps.appendChild(stepEl(arr[i]));
     inner.appendChild(steps);
-    // Action links grouped together (binary + config side by side, was: config stranded below the command box), NATIVE
-    // build first, plus a Copy-the-command link. The runnable command(s) render below so the two downloads stay paired.
     var authors = (c.cliAuthors && c.cliAuthors.length) ? c.cliAuthors : [{ fork: "samosvalishe", cmd: c.cmd, native: false }];
     var links = el("div", "mz-links cli-links");
     authors.forEach(function (a) {
@@ -1141,7 +1068,7 @@
     lc.onclick = function (e) { e.preventDefault(); var cmd = cliCommand(c); if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(function () {}); showToast(t("cmdCopied")); };
     links.appendChild(lc);
     inner.appendChild(links);
-    var alist = el("div", "cli-authors");   // the runnable command(s), tap-to-copy — below the links, native first (matches the link order)
+    var alist = el("div", "cli-authors");
     authors.forEach(function (a) {
       var cmdS = cliCmdStr(a.cmd, "client");
       var cbox = el("pre", "cfgtext cmdtext cli-auth-cmd", cmdS); cbox.title = t("tapCopy");
@@ -1158,7 +1085,6 @@
     armOverlayBack();
   }
 
-  // brief centred toast (e.g. "link copied")
   var _toastEl = null, _toastT = 0;
   function showToast(msg) {
     if (_toastEl) { try { _toastEl.remove(); } catch (_) {} clearTimeout(_toastT); }
@@ -1166,7 +1092,6 @@
     _toastT = setTimeout(function () { try { el2.remove(); } catch (_) {} if (_toastEl === el2) _toastEl = null; }, 2800);
   }
 
-  // ── base64 (both standard and url-safe, padding optional) → bytes ──
   function b64ToBytes(s) {
     s = String(s || "").replace(/-/g, "+").replace(/_/g, "/").replace(/\s+/g, "");
     while (s.length % 4) s += "=";
@@ -1175,14 +1100,11 @@
     return out;
   }
 
-  // ── config assembly — byte-identical to the panel's buildConf() ──
   function guardAllowed(a) {
     var parts = ((a || "").trim() || "0.0.0.0/0, ::/0").split(",").map(function (x) { return x.trim(); }).filter(Boolean);
     if (parts.indexOf("0.0.0.0/0") >= 0 && !parts.some(function (p) { return p.indexOf(":") >= 0; })) parts.push("::/0");
     return parts.join(", ");
   }
-  // AmneziaWG 3.x keys only for a 3.1 interface (a HeaderProtectionKey in its dict), RandomTrailers as `1`, never
-  // DisableCookies, and there the keepalive k becomes k-(k+10) — js/crypto.js awgConfLines/clientKeepalive, rule for rule.
   function buildConf(o) {
     var L = ["[Interface]", "PrivateKey = " + o.privkey, "Address = " + o.address];
     if (o.dns && o.dns.length) L.push("DNS = " + o.dns.join(", "));
@@ -1204,7 +1126,6 @@
     return L.join("\n") + "\n";
   }
 
-  // ── QR — mirrors the panel's qrDataURL() ──
   function qrDataURL(text, targetPx) {
     var q = qrcode(0, "L");
     q.addData(text); q.make();
@@ -1227,10 +1148,7 @@
     if (txt != null) e.textContent = txt;
     return e;
   }
-  // The badge's "by <author>" tail. One string in the catalog, not " by " glued on in three cells: those three were
-  // English on a Russian page (since 07774a7), because a literal cannot follow the language selector.
   function tagBy(author) { return el("span", "scell-tag-by", t("by").replace("{author}", forkLabel(author))); }
-  // A chevron arrow as an inline SVG (built via the DOM so the strict CSP is happy). dir: l/r/u/d.
   function chevronEl(dir) {
     var NS = "http://www.w3.org/2000/svg";
     var D = { l: "M15 18l-6-6 6-6", r: "M9 18l6-6-6-6", u: "M18 15l-6-6-6 6", d: "M6 9l6 6 6-6" };
@@ -1244,7 +1162,6 @@
   function arrowBtn(cls, dir, label) {
     var b = el("button", cls); b.type = "button"; b.setAttribute("aria-label", label); b.appendChild(chevronEl(dir)); return b;
   }
-  // Action-bar icons, DOM-built for the strict CSP. Each is a list of [svgTag, attrs].
   var ICONS = {
     qr: [["rect", { x: 3, y: 3, width: 7, height: 7, rx: 1.5 }], ["rect", { x: 14, y: 3, width: 7, height: 7, rx: 1.5 }],
          ["rect", { x: 3, y: 14, width: 7, height: 7, rx: 1.5 }], ["path", { d: "M14 14h3v3M21 14v3M17 21h4M14 21h.01M21 21v.01M17 17h.01" }]],
@@ -1255,7 +1172,7 @@
     check: [["path", { d: "M20 6 9 17l-5-5" }]],
     launch: [["path", { d: "M14 4h6v6" }], ["path", { d: "M20 4l-8 8" }], ["path", { d: "M18 14v3a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3V9a3 3 0 0 1 3-3h3" }]],
     link: [["path", { d: "M9.5 14.5l5-5" }], ["path", { d: "M11.5 6.5l1.2-1.2a3.6 3.6 0 0 1 5.1 5.1L17.7 11.4" }], ["path", { d: "M12.5 17.5l-1.2 1.2a3.6 3.6 0 0 1-5.1-5.1L6.3 12.6" }]],
-    checks: [["path", { d: "M1.5 13.5l4 4 9-9" }], ["path", { d: "M10.5 14.5l.7.7 9-9" }]]   // double check (copied)
+    checks: [["path", { d: "M1.5 13.5l4 4 9-9" }], ["path", { d: "M10.5 14.5l.7.7 9-9" }]]
   };
   function iconEl(name) {
     var NS = "http://www.w3.org/2000/svg";
@@ -1288,8 +1205,6 @@
   function iconBtn(cls, name, label) {
     var b = el("button", cls); b.type = "button"; b.title = label; b.setAttribute("aria-label", label); b.appendChild(iconEl(name)); return b;
   }
-  // The signature START button face: a glowing brand orb (radial gradient) with two pairs of radiating "connect"
-  // arcs and a central power glyph — reads as start / turn-on / go. Inline SVG so it themes off the CSS vars.
   var START_SVG =
     '<svg viewBox="0 0 100 100" aria-hidden="true" focusable="false">' +
     '<defs><radialGradient id="startorb" cx="50%" cy="34%" r="74%">' +
@@ -1303,7 +1218,6 @@
     '<path d="M77 25 a41 41 0 0 1 0 50" stroke-width="2.4" stroke-opacity=".15"/></g>' +
     '<g stroke="var(--brand-ink)" stroke-width="6" stroke-linecap="round" fill="none">' +
     '<path d="M50 27 v19"/><path d="M38.5 38 a17 17 0 1 0 23 0"/></g></svg>';
-  // brief "Copied to clipboard" bubble centred over a text box (its wrapper must be position:relative)
   function flashCopied(container) {
     if (!container) return;
     var old = container.querySelector(".copied-bubble"); if (old) old.remove();
@@ -1322,7 +1236,6 @@
     turn: '<svg viewBox="1.5 1.6 21 20.8" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g1" gradientUnits="userSpaceOnUse" x1="2" y1="4" x2="22" y2="20"><stop offset="0" stop-color="#1FC8D6"/><stop offset="1" stop-color="#2B7CD3"/></linearGradient></defs><path d="M16.7 5.2 A8.7 8.7 0 1 0 16.7 18.8" fill="none" stroke="url(#g1)" stroke-width="1.6" stroke-linecap="round"/><path d="M14.44 18.98 L12.94 21.57" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M12.32 19.66 L15.06 20.88" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M7.87 19.12 L4.91 19.64" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M5.98 17.94 L6.8 20.82" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M3.53 14.17 L1.24 12.25" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M3.22 11.97 L1.55 14.45" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M4.53 7.68 L4.53 4.68" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M6.03 6.02 L3.04 6.34" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M10.15 4.27 L12.45 2.34" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M12.38 4.35 L10.22 2.26" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M11 9.7 V12.4" fill="none" stroke="url(#g1)" stroke-width="1.35" stroke-linecap="round"/><path d="M11 12.4 L8.1 14.4" fill="none" stroke="url(#g1)" stroke-width="1.35" stroke-linecap="round"/><path d="M11 12.4 L13.9 14.4" fill="none" stroke="url(#g1)" stroke-width="1.35" stroke-linecap="round"/><circle cx="11" cy="7.7" r="2.0" fill="none" stroke="url(#g1)" stroke-width="1.35"/><circle cx="7.5" cy="15.4" r="1.5" fill="none" stroke="url(#g1)" stroke-width="1.35"/><circle cx="14.5" cy="15.4" r="1.5" fill="none" stroke="url(#g1)" stroke-width="1.35"/><path d="M17.5 9.9 H20.4" fill="none" stroke="url(#g1)" stroke-width="1.25" stroke-linecap="round"/><path d="M17.5 11.7 H21.4" fill="none" stroke="url(#g1)" stroke-width="1.25" stroke-linecap="round"/><path d="M17.5 13.5 H20.4" fill="none" stroke="url(#g1)" stroke-width="1.25" stroke-linecap="round"/></svg>'
   };
   var _protoN = 0;
-  // Row icons for the jump picker
   var ROW_ICON_SVG = { wg: BRAND_SVG.wireguard, awg: BRAND_SVG.amnezia };
   var TURN_ROW_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16.7 5.2 A8.7 8.7 0 1 0 16.7 18.8" fill="none" stroke="#7C7FF0" stroke-width="1.7" stroke-linecap="round"/><path d="M14.28 19.12 L13.1 21.43" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M12.53 19.68 L14.85 20.86" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M7.66 19.09 L5.12 19.67" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M6.1 18.11 L6.68 20.64" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M3.42 13.99 L1.35 12.43" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M3.17 12.17 L1.6 14.25" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M4.6 7.48 L4.47 4.88" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M5.83 6.11 L3.24 6.25" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M10.35 4.19 L12.25 2.42" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M12.19 4.26 L10.42 2.35" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M11 9.7 V12.4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><path d="M11 12.4 L8.1 14.4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><path d="M11 12.4 L13.9 14.4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><circle cx="11" cy="7.7" r="2.0" fill="none" stroke="currentColor" stroke-width="1.35"/><circle cx="7.5" cy="15.4" r="1.5" fill="none" stroke="currentColor" stroke-width="1.35"/><circle cx="14.5" cy="15.4" r="1.5" fill="none" stroke="currentColor" stroke-width="1.35"/><path d="M18.4 10.6 H21.6" fill="none" style="stroke:var(--turn-dash)" stroke="#EF4444" stroke-width="1.25" stroke-linecap="round"/><path d="M18.4 12.4 H22.7" fill="none" style="stroke:var(--turn-dash)" stroke="#EF4444" stroke-width="1.25" stroke-linecap="round"/><path d="M18.4 14.2 H21.6" fill="none" style="stroke:var(--turn-dash)" stroke="#EF4444" stroke-width="1.25" stroke-linecap="round"/></svg>';
   function rowIcon(mode) {
@@ -1338,21 +1251,19 @@
   }
 
   function fitText(box) {
-    if (box.querySelector && box.querySelector(".qrbox")) return;   // QR view: the QR is fixed and the command keeps its normal font
+    if (box.querySelector && box.querySelector(".qrbox")) return;
     var pres = (box.classList && box.classList.contains("cfgtext") && !box.classList.contains("cmdtext")) ? [box]
-             : (box.querySelectorAll ? [].slice.call(box.querySelectorAll(".cfgtext:not(.cmdtext)")) : []);   // the command keeps its own font
+             : (box.querySelectorAll ? [].slice.call(box.querySelectorAll(".cfgtext:not(.cmdtext)")) : []);
     if (!pres.length) return;
-    // Landscape/desktop is a simple scrolling document — every config box uses ONE uniform CSS font size (no
-    // per-config fit-shrinking, which made wrapping links render larger than the width-limited AWG config).
     if (window.matchMedia && window.matchMedia("(orientation: landscape)").matches) {
       for (var q = 0; q < pres.length; q++) pres[q].style.fontSize = "";
       return;
     }
-    var CEIL = 15, FLOOR = 3, f = CEIL, j;   // ceiling (config/link text never grows past this, even when it'd fit bigger); floor low so a huge AWG config still fits alongside the command
+    var CEIL = 15, FLOOR = 3, f = CEIL, j;
     for (j = 0; j < pres.length; j++) pres[j].style.fontSize = CEIL + "px";
     for (var i = 0; i < 80 && f > FLOOR; i++) {
-      var fits = box.scrollHeight <= box.clientHeight + 1;                 // whole box fits vertically…
-      for (j = 0; fits && j < pres.length; j++)                           // …and every NON-wrapping block fits its width
+      var fits = box.scrollHeight <= box.clientHeight + 1;
+      for (j = 0; fits && j < pres.length; j++)
         if (!pres[j].classList.contains("wrap") && !pres[j].classList.contains("cmdtext") && pres[j].scrollWidth > pres[j].clientWidth + 1) fits = false;
       if (fits) break;
       f -= 0.5; for (j = 0; j < pres.length; j++) pres[j].style.fontSize = f + "px";
@@ -1363,11 +1274,11 @@
     "cacggghp": { dark: "#5FB0E0", light: "#2C7EC0" }, "WINGS-N": { dark: "#C98BE0", light: "#9B4FC7" },
     "samosvalishe": { dark: "#E0A85F", light: "#C07A1E" }, "Moroka8": { dark: "#E07A9A", light: "#C24468" },
     "anton48": { dark: "#D9CF5F", light: "#8E8420" },
-    "WDTT": { dark: "#A78BFA", light: "#7C3AED" } };   // WDTT (amurcanov) — a turn-family server; violet, kin to the Turn group accent
+    "WDTT": { dark: "#A78BFA", light: "#7C3AED" } };
   var IFACE_COLORS = { wg: { dark: "#3FD89A", light: "#0E9E63" }, awg: { dark: "#1FC8D6", light: "#0E9BB0" }, wdtt: { dark: "#81B512", light: "#5EAF0E" }, csqtt: { dark: "#F97316", light: "#E5620C" } };
-  var THEME = { color: "", light: "", forkOv: {}, nodeOv: {} };   // set from the served subscription data
+  var THEME = { color: "", light: "", forkOv: {}, nodeOv: {} };
   function isLight() {
-    var d = document.documentElement.getAttribute("data-theme");   // manual override wins; else the OS preference
+    var d = document.documentElement.getAttribute("data-theme");
     if (d === "light") return true; if (d === "dark") return false;
     return !!(window.matchMedia && matchMedia("(prefers-color-scheme: light)").matches);
   }
@@ -1376,7 +1287,6 @@
     var r = parseInt(h.slice(0, 2), 16) / 255, g = parseInt(h.slice(2, 4), 16) / 255, b = parseInt(h.slice(4, 6), 16) / 255;
     return isNaN(r) ? 0.5 : 0.299 * r + 0.587 * g + 0.114 * b;
   }
-  // Resolve a themed override ({dark,light} | string | null) for the current mode — mirrors the panel's pickThemed.
   function pickThemed(v, defDark, defLight) {
     var light = isLight();
     if (v && typeof v === "object") return (light ? v.light : v.dark) || (light ? defLight : defDark);
@@ -1384,12 +1294,10 @@
     return light ? defLight : defDark;
   }
   function forkColor(fork) { var s = turnServer(fork), d = (s && s.color) || FORK_COLORS_FALLBACK[fork] || { dark: "#8FA8C0", light: "#5E7085" }; return pickThemed(THEME.forkOv[fork], d.dark, d.light); }
-  // Self-contained turn-family kinds (own their interface, keyless, address minted on connect) — one place, mirrors
-  // the app's isSelfContainedKind. Every shared gate on the sub page reads this so a new such kind is one edit.
   function isSelfContained(type) { var k = (type || "").toLowerCase(); return k === "wdtt" || k === "csqtt"; }
   function ifaceColor(type) { var k = (type || "").toLowerCase(); if (k !== "awg" && !isSelfContained(k)) k = "wg"; return pickThemed(null, IFACE_COLORS[k].dark, IFACE_COLORS[k].light); }
-  function nodeColor(nodeId, fallback) { var c = THEME.nodeOv[nodeId]; return (c && (c.dark || c.light)) ? pickThemed(c, fallback, fallback) : fallback; }   // server name in its panel colour
-  function modeColor(m) { return m === "turn" ? "#7C5CFF" : ifaceColor(m); }   // Turn = the panel's turn-proxy accent (violet)
+  function nodeColor(nodeId, fallback) { var c = THEME.nodeOv[nodeId]; return (c && (c.dark || c.light)) ? pickThemed(c, fallback, fallback) : fallback; }
+  function modeColor(m) { return m === "turn" ? "#7C5CFF" : ifaceColor(m); }
   function applyFavicon(accent, light) {
     var centre = light ? "#FFFFFF" : "#0A0E15";
     var svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
@@ -1401,7 +1309,7 @@
   }
   function applyBrand() {
     var light = isLight();
-    var brand = (light ? THEME.light : THEME.color) || (light ? "#0E9BB0" : "#1FC8D6");   // panel's per-mode defaults
+    var brand = (light ? THEME.light : THEME.color) || (light ? "#0E9BB0" : "#1FC8D6");
     var de = document.documentElement;
     de.style.setProperty("--brand", brand);
     de.style.setProperty("--brand-2", "color-mix(in srgb, " + brand + " 70%, #fff)");
@@ -1410,9 +1318,8 @@
   }
   try { if (window.matchMedia) matchMedia("(prefers-color-scheme: light)").addEventListener("change", function () { applyBrand(); paintCtl(); if (_lastData && _lastKey) render(_lastData, _lastKey); }); } catch (_) {}
 
-  // ── language + theme controls (top-right) ──
   var SUPPORTED = ["en", "ru"];
-  var LANGS = ["en"], LANG_DEFAULT = "en";       // which languages the admin enabled + the default (from the served data)
+  var LANGS = ["en"], LANG_DEFAULT = "en";
   var _lastData = null, _lastKey = null;
   function resolveLang() {
     var enabled = LANGS.filter(function (l) { return SUPPORTED.indexOf(l) >= 0; });
@@ -1423,7 +1330,6 @@
     document.documentElement.lang = LANG;
     return enabled;
   }
-  // Capture where the reader is right now (which page + deployment + QR/config view) so a rebuild can restore it.
   function capturePos() {
     var pager = document.querySelector("#peers .pager");
     if (!pager) return null;
@@ -1432,17 +1338,17 @@
     var pg = pages[pi], sub = (pg && pg._pos) ? pg._pos() : { cell: 0, view: null };
     return { page: pi, cell: sub.cell, view: sub.view };
   }
-  function reRender() {   // rebuild for a lang/theme change, but land the reader back where they were
+  function reRender() {
     if (!_lastData || !_lastKey) return;
     var pos = capturePos();
     render(_lastData, _lastKey, pos);
   }
   function setLang(l) { LANG = l; _lsSet("swgsub-lang", l); document.documentElement.lang = l; paintCtl(); reRender(); }
-  function setTheme(mode) {   // "light" | "dark" | "" (auto)
+  function setTheme(mode) {
     _lsSet("swgsub-theme", mode);
     if (mode) document.documentElement.setAttribute("data-theme", mode); else document.documentElement.removeAttribute("data-theme");
     applyBrand(); paintCtl();
-    reRender();   // re-tint the fork tags + mode tabs for the new mode, keeping the reader in place
+    reRender();
   }
   var _iconSun = "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round'><circle cx='12' cy='12' r='4.2'/><path d='M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M19.1 4.9l-1.4 1.4M6.3 17.7l-1.4 1.4'/></svg>";
   var _iconMoon = "<svg viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M21 12.8A8.5 8.5 0 1 1 11.2 3a6.6 6.6 0 0 0 9.8 9.8z'/></svg>";
@@ -1451,30 +1357,28 @@
     var lb = document.getElementById("lang-btn");
     if (lb) {
       if (enabled.length > 1) { lb.hidden = false;
-        var nextLang = enabled[(enabled.indexOf(LANG) + 1) % enabled.length];   // the button shows what you'd SWITCH TO
+        var nextLang = enabled[(enabled.indexOf(LANG) + 1) % enabled.length];
         lb.textContent = (STR[nextLang] || STR.en).langName; lb.title = t("langLabel"); }
-      else lb.hidden = true;                       // one language → no selector, just the default
+      else lb.hidden = true;
     }
     var tb = document.getElementById("theme-btn");
     if (tb) { var light = isLight(); tb.innerHTML = light ? _iconMoon : _iconSun; tb.title = light ? t("themeToDark") : t("themeToLight"); }
     var ob = document.getElementById("os-btn");
     if (ob) { var cur = subOs(), lbl = (OS_LIST.filter(function (o) { return o[0] === cur; })[0] || ["", cur])[1];
-      ob.innerHTML = OS_ICON[cur] || OS_ICON.linux; ob.title = t("osLabel") + ": " + lbl; }   // show the CURRENT OS's icon
+      ob.innerHTML = OS_ICON[cur] || OS_ICON.linux; ob.title = t("osLabel") + ": " + lbl; }
     var menu = document.getElementById("os-menu");
     if (menu) [].forEach.call(menu.children, function (mi) { mi.classList.toggle("on", mi.getAttribute("data-os") === subOs()); });
   }
-  // Header OS picker: a "devices" icon that opens a menu of the OSes — the choice re-generates the configs (settings
-  // value-set) and swaps the downloads to that OS. Built once, in wireControls.
   function closeOsMenu() { var m = document.getElementById("os-menu"); if (m) m.hidden = true; document.removeEventListener("click", closeOsMenu); document.removeEventListener("keydown", _osKey); }
   function _osKey(e) { if (e.key === "Escape") closeOsMenu(); }
   function ensureOsControl() {
     var ctl = document.querySelector(".topctl"); if (!ctl || document.getElementById("os-btn")) return;
-    var b = el("button", "ctl os-ctl"); b.id = "os-btn"; b.type = "button"; b.innerHTML = OS_ICON[subOs()] || OS_ICON.linux;   // the detected/selected OS's icon
-    ctl.insertBefore(b, ctl.firstChild);   // OS picker sits first (left of language / theme)
+    var b = el("button", "ctl os-ctl"); b.id = "os-btn"; b.type = "button"; b.innerHTML = OS_ICON[subOs()] || OS_ICON.linux;
+    ctl.insertBefore(b, ctl.firstChild);
     var menu = el("div", "os-menu"); menu.id = "os-menu"; menu.hidden = true;
     OS_LIST.forEach(function (o) {
       var mi = el("button", "os-mi"); mi.type = "button"; mi.setAttribute("data-os", o[0]);
-      mi.innerHTML = "<span class='os-mi-ic'>" + (OS_ICON[o[0]] || "") + "</span>";   // icon + title
+      mi.innerHTML = "<span class='os-mi-ic'>" + (OS_ICON[o[0]] || "") + "</span>";
       mi.appendChild(el("span", "os-mi-t", o[1]));
       mi.onclick = function () { closeOsMenu(); setSubOs(o[0]); };
       menu.appendChild(mi);
@@ -1484,9 +1388,8 @@
       e.stopPropagation();
       if (!menu.hidden) return closeOsMenu();
       var r = b.getBoundingClientRect();
-      // align the menu's LEFT edge with the button's left edge; if that would run off the right, shift it left to fit
       menu.style.top = (r.bottom + 8) + "px"; menu.style.right = "auto"; menu.style.left = "-9999px";
-      menu.hidden = false;                                   // unhide first so offsetWidth is measurable
+      menu.hidden = false;
       var mw = menu.offsetWidth || 148;
       menu.style.left = Math.max(8, Math.min(r.left, window.innerWidth - mw - 8)) + "px";
       paintCtl();
@@ -1494,15 +1397,15 @@
     };
   }
   var _noFocusRing = false;
-  function suppressButtonFocus() {   // mouse-clicking a button must not leave it focused (a later key press would flash its focus ring)
+  function suppressButtonFocus() {
     if (_noFocusRing) return; _noFocusRing = true;
     document.addEventListener("mousedown", function (e) {
       var b = e.target && e.target.closest && e.target.closest("button");
-      if (b) e.preventDefault();   // don't focus on click; keyboard Tab focus still works
+      if (b) e.preventDefault();
     }, false);
   }
   var _stickWired = false;
-  function wireStickyHeader() {   // landscape/desktop only: past the fold, collapse the header into a sticky top bar + a side rail
+  function wireStickyHeader() {
     if (_stickWired) return; _stickWired = true;
     var update = function () {
       var landscape = window.matchMedia && window.matchMedia("(orientation: landscape)").matches;
@@ -1528,8 +1431,6 @@
   }
 
   function showState(msg, sub, kind) {
-    // kind (optional): "blocked" | "expired" renders the message as a prominent status WORD (red), shown under the
-    // header username and before the explanatory text. Plain states (loading, errors) pass no kind → unchanged.
     var s = document.getElementById("state");
     s.hidden = false;
     s.className = "state" + (kind ? " state-" + kind : "");
@@ -1540,16 +1441,14 @@
     document.getElementById("peers").hidden = true;
   }
 
-  // Download base name: nodename_<port>_<peer-last-ip-octet>. The port is the interface's listen port for a WG/AWG
-  // config, or the turn-proxy's listen port for a turn config — so WG and turn files for the same peer never collide.
   function fileName(tgt, mode, tp) {
     var node = tgt.node_name || tgt.node || "node";
     var port = (mode === "turn" && tp)
-      ? ((String(tp.listen || "").split(":").pop()) || (String(tp.service || "").match(/(\d+)\D*$/) || [])[1] || "")   // turn-proxy listen port
-      : (tgt.type === "wdtt" && tgt.wdtt) ? (tgt.wdtt.dtls_port || "")                                                  // WDTT DTLS port
-      : (tgt.type === "csqtt" && tgt.csqtt) ? (tgt.csqtt.port || "")                                                    // csqtt UDP/DTLS port
-      : (String(tgt.endpoint || "").split(":").pop() || "");                                                            // iface listen port (from Endpoint)
-    var ipLast = (String(tgt.ip || "").split("/")[0].split(".").pop()) || "";   // last octet of the peer's tunnel IP
+      ? ((String(tp.listen || "").split(":").pop()) || (String(tp.service || "").match(/(\d+)\D*$/) || [])[1] || "")
+      : (tgt.type === "wdtt" && tgt.wdtt) ? (tgt.wdtt.dtls_port || "")
+      : (tgt.type === "csqtt" && tgt.csqtt) ? (tgt.csqtt.port || "")
+      : (String(tgt.endpoint || "").split(":").pop() || "");
+    var ipLast = (String(tgt.ip || "").split("/")[0].split(".").pop()) || "";
     var s = node + "_" + port + "_" + ipLast;
     return s.replace(/[^\w.-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "swg";
   }
@@ -1566,21 +1465,17 @@
       btn.textContent = t("copied"); setTimeout(function () { btn.textContent = label; }, 1400);
     }, function () {});
   }
-  // Decode a data: URL to a Blob WITHOUT fetch() — the sub's strict CSP (connect-src) would block fetching it.
   function dataUrlToBlob(url) {
     var comma = url.indexOf(","), mime = (url.slice(0, comma).match(/:(.*?);/) || [])[1] || "image/png";
     var bin = atob(url.slice(comma + 1)), arr = new Uint8Array(bin.length);
     for (var i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
     return new Blob([arr], { type: mime });
   }
-  // Copy / save the QR itself (a PNG) — used when the QR is the thing on screen, so Copy/Download act on
-  // what you see, not the hidden config text.
   function downloadImage(url, name) {
     var a = document.createElement("a");
     a.href = url; a.download = (name || "qr").replace(/\.(conf|txt|png)$/i, "") + ".png";
     document.body.appendChild(a); a.click(); a.remove();
   }
-  // The direct WireGuard/AmneziaWG config for a deployment (byte-identical to the panel's buildConf).
   function confFor(secret, tgt) {
     return buildConf({
       privkey: secret.k, address: (tgt.ip || "").split("/")[0] + "/32",
@@ -1590,8 +1485,6 @@
     });
   }
 
-  // ── Fullscreen QR viewer (tap the QR to enlarge for scanning; tap anywhere / Esc to close). Mirrors the
-  //    admin panel's qrZoom. DOM-built (no innerHTML) so the strict CSP is happy. ──
   var qrZoomEl = null;
   function zoomQR(payload, label) {
     if (qrZoomEl) { try { qrZoomEl.remove(); } catch (_) {} qrZoomEl = null; }
@@ -1612,9 +1505,9 @@
   function makeCell(userName, peer, it, mode, secret, vkLink, reason, multi) {
     var tgt = it.tgt, cell = el("div", "scell");
     var node = el("div", "scell-node");
-    var srvRow = el("div", "scell-srv");   // holds the protocol/app badge + the Primary/Backup role — the server name rides the peer-title line
+    var srvRow = el("div", "scell-srv");
     node.appendChild(srvRow);
-    if (mode !== "turn") {   // WG/AWG cells get a protocol badge (like the turn app badge) + Primary/Backup when there's >1 deployment
+    if (mode !== "turn") {
       var ic0 = ifaceColor(tgt.type);
       var ib = el("span", "scell-tag", tgt.type === "awg" ? t("awg") : t("wg"));
       ib.style.color = ic0;
@@ -1626,10 +1519,8 @@
         if (!isBk0) role0.style.color = ic0;
         srvRow.appendChild(role0);
       }
-      // "Get … manually" → a bubble of the WG/AWG client apps for this OS (Amnezia VPN, AmneziaWG, WireGuard). Amnezia
-      // VPN leads (the only vpn:// one-tap, Android) but all are offered; the Start button's get-app falls back to it.
       var wga = wgGetApp(tgt.type);
-      if (wga) node.appendChild(getAppRow(wga));   // under the server/app name line (in the header block)
+      if (wga) node.appendChild(getAppRow(wga));
     }
     var stage = el("div", "scell-stage");
     cell.appendChild(node); cell.appendChild(stage);
@@ -1638,7 +1529,6 @@
     var ctrl = { ready: false, payload: "", ext: "conf", isLink: false, hasQR: false, cmd: null, view: "qr",
                  base: fileName(tgt, mode, it.tp), redraw: null, notify: null,
                  srvName: (tgt.node_name || tgt.node || tgt.iface || "server"), srvColor: nodeColor(tgt.node, ifaceColor(tgt.type)),
-                 // enlarged-QR caption tail = the CLIENT app: WG/AWG cells name WireGuard/AmneziaWG; a turn cell overrides it with its app below.
                  zoomTail: (mode !== "turn" ? (tgt.type === "awg" ? "AmneziaWG" : "WireGuard") : (tgt.node_name || tgt.node || tgt.iface || "")) };
 
     ctrl.copyInto = function (btn, restore) {
@@ -1658,19 +1548,17 @@
       if (!ctrl.cmd) return null;
       var c = el("div", "cmdblk");
       if (withLabel) c.appendChild(el("div", "cmdlbl", t("clientCmd")));
-      var box = el("div", "cmdrow");   // the one-line command + a copy affordance pinned to its right edge
-      var cp = el("pre", "cfgtext cmdtext", ctrl.cmd); cp.title = t("tapCopy");   // fixed readable font via CSS; clips if long
+      var box = el("div", "cmdrow");
+      var cp = el("pre", "cfgtext cmdtext", ctrl.cmd); cp.title = t("tapCopy");
       var copy = copyBtn("cmdcopy", function () { return ctrl.cmd; }, box);
       cp.onclick = function () { copy.onclick(); };
       box.appendChild(cp); box.appendChild(copy);
       c.appendChild(box); return c;
     }
-    // Re-fit the block(s) only when the stage WIDTH changes (viewport / rotation). Our layout pass nudges the stage's
-    // top padding — a HEIGHT-only change — and re-fitting on that would fight the placement (fit ↔ shift oscillation).
     function attachFit(wrap) {
       var doFit = function () {
         fitText(wrap);
-        var mp = wrap.querySelector(".cfgtext");   // remember the config's fitted size so the QR view's command matches
+        var mp = wrap.querySelector(".cfgtext");
         if (mp && !wrap.querySelector(".qrbox") && mp.style.fontSize) ctrl.cfgFont = mp.style.fontSize;
         if (ctrl.notify) ctrl.notify();
       };
@@ -1687,15 +1575,15 @@
         var box = el("div", "qrbox");
         try { ctrl.qrUrl = qrDataURL(ctrl.payload, 760); var img = el("img", "qrimg"); img.alt = "config QR"; img.src = ctrl.qrUrl; box.appendChild(img); }
         catch (_) { ctrl.qrUrl = null; ctrl.hasQR = false; ctrl.view = "text"; return draw(); }
-        box.title = t("enlarge");   // tap the QR to open it fullscreen for scanning
+        box.title = t("enlarge");
         box.onclick = function () { zoomQR(ctrl.payload, [peer.title, ctrl.zoomTail].filter(Boolean).join(" · ")); };
-        var cmdQ = cmdBlock(true);               // QR view: keep the "Client command" label, same as the config view
-        if (!cmdQ) { stage.appendChild(box); }   // plain single QR
-        else {                                   // dual config: QR replaces the WG/AWG config, the command stays under it
+        var cmdQ = cmdBlock(true);
+        if (!cmdQ) { stage.appendChild(box); }
+        else {
           var wrapq = el("div", "textwrap"); wrapq.appendChild(box); wrapq.appendChild(cmdQ);
           stage.appendChild(wrapq); attachFit(wrapq);
         }
-      } else if (ctrl.view === "link" && ctrl.openUri) {   // WG/AWG third view: the vpn:// deep-link as copy-able text
+      } else if (ctrl.view === "link" && ctrl.openUri) {
         var wrapL = el("div", "textwrap");
         var cfgL = el("div", "cfgwrap");
         var preL = el("pre", "cfgtext wrap", ctrl.openUri); preL.title = t("tapCopy");
@@ -1704,7 +1592,7 @@
         cfgL.appendChild(copyBtn("cfgcopy", function () { return ctrl.openUri; }, cfgL));
         wrapL.appendChild(cfgL);
         stage.appendChild(wrapL); attachFit(wrapL);
-      } else if (ctrl.view === "config" && ctrl.wgConf) {   // MYSOREZ third view: the underlying WG/AWG .conf as text (the VKTGZ QR/string are the other two)
+      } else if (ctrl.view === "config" && ctrl.wgConf) {
         var wrapW = el("div", "textwrap");
         var cfgW = el("div", "cfgwrap");
         var preW = el("pre", "cfgtext", ctrl.wgConf); preW.title = t("tapCopy");
@@ -1715,13 +1603,13 @@
         stage.appendChild(wrapW); attachFit(wrapW);
       } else {
         var wrap = el("div", "textwrap");
-        var cfgwrap = el("div", "cfgwrap");   // relative box so the copy affordance sits in the bottom-right corner
+        var cfgwrap = el("div", "cfgwrap");
         var pre = el("pre", "cfgtext" + (ctrl.wrapCfg ? " wrap" : ""), ctrl.payload); pre.title = t("tapCopy");
         pre.onclick = function () { ctrl.copyInto(null, ""); flashCopied(cfgwrap); };
         cfgwrap.appendChild(pre);
         cfgwrap.appendChild(copyBtn("cfgcopy", function () { return ctrl.payload; }, cfgwrap));
         wrap.appendChild(cfgwrap);
-        var cmdT = cmdBlock(true); if (cmdT) wrap.appendChild(cmdT);   // config view: labelled, fit with the config
+        var cmdT = cmdBlock(true); if (cmdT) wrap.appendChild(cmdT);
         stage.appendChild(wrap); attachFit(wrap);
       }
       if (ctrl.notify) ctrl.notify();
@@ -1731,32 +1619,26 @@
     if (mode === "turn") {
       if (it.csqtt) {
         var cd = it.csqtt, cfc = ifaceColor("csqtt");
-        // raw VK inputs → csqttArtifact combines/strips/dedupes them (same one place the operator app uses)
-        var cga = turnGetApp("csqtt", cd.version, false, cd.line);   // the operator's per-OS default csqtt client (CSQTT) → download / Start (this server's release)
-        // …and its encoder: on iOS that is anton48's VK TURN Proxy, which is handed its own vkturnproxy:// link —
-        // it reads a csqtt:// one too, but keeps only the first VK call link of it.
+        var cga = turnGetApp("csqtt", cd.version, false, cd.line);
         var cart = SWGTurn.csqttArtifact({ host: cd.endpoint_host, port: cd.port, password: cd.password,
-          vk_hash: cd.vk_hash, vk_links: (_lastData && _lastData.vk_links) || [] }, cga && cga.enc, cd.line);   // 2.5 → the sealed link + a QR
-        var csfork = forkLabel(cd.fork || "csqtt");   // the catalog's name (amurcanov), never a copy of it here
-        var cffork = forkColor("csqtt");   // the csqtt FORK colour (catalog key "csqtt"), distinct from the iface colour cfc
+          vk_hash: cd.vk_hash, vk_links: (_lastData && _lastData.vk_links) || [] }, cga && cga.enc, cd.line);
+        var csfork = forkLabel(cd.fork || "csqtt");
+        var cffork = forkColor("csqtt");
         var cAppName = (cga && (cga.productName || cga.app)) || "CSQTT";
         var ctag = el("span", "scell-tag");
-        // server + app chips take the FORK colour (like the WDTT/turn cells); the role chip below keeps the iface colour.
         var csrv = el("span", null, csfork); csrv.style.color = cffork; ctag.appendChild(csrv);
         ctag.appendChild(el("span", "scell-tag-sep", " · ")); var capp = el("span", null, cAppName); capp.style.color = cffork; ctag.appendChild(capp);
-        if (cga && cga.author && cga.author !== csfork) ctag.appendChild(tagBy(cga.author));   // cross-author client only
+        if (cga && cga.author && cga.author !== csfork) ctag.appendChild(tagBy(cga.author));
         srvRow.appendChild(ctag);
         var crl = tgt.primary || "";
-        var cBackup = multi && crl === "backup";                                // csqtt is its own protocol family → the "CSQTT" role chip, in the csqtt type colour
+        var cBackup = multi && crl === "backup";
         var crole = el("span", "scell-role" + (cBackup ? " scell-backup" : "") + (multi && crl ? " scell-role-on" : ""));
         if (multi && crl) crole.appendChild(document.createTextNode(t(crl) + " "));
-        // 2.1 and 2.5 cannot reach each other's servers, and their cards were alike until the app was downloaded: the chip
-        // names the server's version (operator, 2026-10-20). No line = a node too old to say = 2.1 (swg-sub _running_lines).
         crole.appendChild(el("span", "scell-role-if", "CSQTT " + (cd.line || "2.1")));
         if (!cBackup) crole.style.color = cfc;
         srvRow.appendChild(crole);
         ctrl.forkId = "csqtt"; ctrl.app = (cga && (cga.productName || cga.app)) || "CSQTT"; ctrl.zoomTail = ctrl.app;
-        if (cart.vkMissing) {                                                  // no VK link yet → the same warning the turn/WDTT cells show
+        if (cart.vkMissing) {
           var cvkw = el("div", "scell-vk scell-vkwarn");
           cvkw.appendChild(el("div", "scell-vkwarn-t", t("vkMissingT")));
           cvkw.appendChild(el("div", "scell-vkwarn-d", t("vkMissing").replace("{app}", t("theApp"))));
@@ -1764,25 +1646,18 @@
         }
         if (cga) {
           ctrl.dlAppUrl = cga.file; ctrl.dlAppFile = cga.fileName; ctrl.dlAppName = cga.app; ctrl.dlAppPage = cga.page;
-          // "Get CSQTT 2.5.1 …": the version of the release it fetches (a rebuild's -N kept), so which app it is shows before the tap
           var cver = /(\d+\.\d+\.\d+(?:-\d+)?)/.exec(cga.pinned ? cga.tag : "");
           var cshown = {}; for (var ck in cga) cshown[ck] = cga[ck];
           if (cver) cshown.app = cga.app + " " + cver[1];
           node.appendChild(getAppRow(cshown));
         }
-        ctrl.cliApp = false; ctrl.vktgz = false;         // csqtt client is an app, never a CLI/VKTGZ flow
-        // 2.1: no scanner in its apps → the csqtt:// link itself; 2.5: its app scans one → a QR (cart.qr), the link sealed
-        // asynchronously (Web Crypto) — the same draw-then-apply as a turn proxy's buildAsync artifact.
+        ctrl.cliApp = false; ctrl.vktgz = false;
         var capply = function (text) {
           ctrl.payload = text; ctrl.ready = true; ctrl.ext = cart.ext || "txt";
           ctrl.isLink = true; ctrl.hasQR = !!cart.qr; ctrl.cmd = null; ctrl.wrapCfg = true;
           ctrl.stepList = !cga ? null : cga.cid === "csqsocks" ? ((t("csqSocksSteps") || {})[subOs()] || null)
-            : (cga.cid === "lalune" && cd.line === "2.5") ? t("laluneSteps25") : null;   // La Lune's Add dialog defaults to 2.1
-          // the steps show where Start copies the link (the desktop); a one-tap app (La Lune on Android) is handed the link as
-          // before (operator, 2026-10-29)
+            : (cga.cid === "lalune" && cd.line === "2.5") ? t("laluneSteps25") : null;
           ctrl.openUri = text; ctrl.noAutoFire = !(cga && cga.autostart); ctrl.instructions = (cga && cga.instructions) || "";
-          // A one-tap csqtt app (the CSQTT app, La Lune on Android) is handed the link by the scheme — AND it is copied, so a
-          // visitor sent to install the app first still has the link when they come back to it.
           ctrl.copyOnOpen = true;
           ctrl.view = "qr";
           draw();
@@ -1792,89 +1667,72 @@
       } else if (it.wdtt) {
         var wd = it.wdtt, wfork = wd.fork || "amurcanov", wfc = forkColor(wfork);
         var wclients = ((_lastData && _lastData.turn_catalog) || {}).clients || {};
-        var wga = turnGetApp(wfork, wd.version);   // the operator's per-OS default client for THIS fork → encoder + app name + download (this server's release)
+        var wga = turnGetApp(wfork, wd.version);
         var wasClient = (wga && wga.enc) ? wga.enc : ((subOs() === "ios") ? "anton48" : "wdtt");
-        var wclientQR = !!(wga && wclients[wga.cid] && wclients[wga.cid].qr);   // only some clients scan a QR; the rest import a pasted link
+        var wclientQR = !!(wga && wclients[wga.cid] && wclients[wga.cid].qr);
         var wcs = (wasClient === "qwdtt") ? (turnClientCS(wfork, wasClient) || {}) : {};
         var wWorkers = String(wcs.workers == null ? "" : wcs.workers).trim();
         var wart = SWGTurn.wdttArtifact({ password: wd.password, endpoint_host: wd.endpoint_host, dtls_port: wd.dtls_port,
           wg_port: wd.wg_port, tun_port: wd.tun_port, raw_port: wd.raw_port, workers: wWorkers,
           vk_hash: wd.vk_hash, vk_links: (_lastData && _lastData.vk_links) || [] }, wasClient);
         var wAppName = (wga && (wga.productName || wga.app)) || wart.app;
-        // Badge "<fork> · <app>", collapsing to just the fork when the app name echoes it — same rule the turn cells use.
         var wHasApp = wAppName && wAppName !== wfork;
         var wtag = el("span", "scell-tag");
         var wsrv = el("span", null, forkLabel(wfork)); wsrv.style.color = wfc; wtag.appendChild(wsrv);
-        // Colour the app chip by the fork its client is NATIVE to (not the server fork) — same rule the turn cells use,
-        // so "AMURCANOV · PWDTT" shows PWDTT in its home fork's colour, not amurcanov's.
         var wAppFork = (wga && wclients[wga.cid] && wclients[wga.cid].native_fork) || wfork;
         var wAppColor = forkColor(wAppFork);
         if (wHasApp) { wtag.appendChild(el("span", "scell-tag-sep", " · ")); var wapp = el("span", null, wAppName); wapp.style.color = wAppColor; wtag.appendChild(wapp);
-          if (wga && wga.author && wga.author !== wfork) wtag.appendChild(tagBy(wga.author)); }   // app author (e.g. luminescq)
+          if (wga && wga.author && wga.author !== wfork) wtag.appendChild(tagBy(wga.author)); }
         srvRow.appendChild(wtag);
         var wrl = tgt.primary || "";
-        var wBackup = multi && wrl === "backup";                                 // WDTT is its own protocol family in the panel → the "WDTT" role chip (not the built-in WG), in the WDTT type colour
+        var wBackup = multi && wrl === "backup";
         var wrole = el("span", "scell-role" + (wBackup ? " scell-backup" : "") + (multi && wrl ? " scell-role-on" : ""));
         if (multi && wrl) wrole.appendChild(document.createTextNode(t(wrl) + " "));
         wrole.appendChild(el("span", "scell-role-if", "WDTT"));
         if (!wBackup) wrole.style.color = ifaceColor("wdtt");
         srvRow.appendChild(wrole);
         ctrl.forkId = wfork; ctrl.app = wAppName; ctrl.zoomTail = wHasApp ? wAppName : forkLabel(wfork);
-        if (wart.vkMissing) {                                                   // no VK link yet → the same warning the turn cells show
+        if (wart.vkMissing) {
           var wvkw = el("div", "scell-vk scell-vkwarn");
           wvkw.appendChild(el("div", "scell-vkwarn-t", t("vkMissingT")));
           wvkw.appendChild(el("div", "scell-vkwarn-d", t("vkMissing").replace("{app}", t("theApp"))));
           cell.appendChild(wvkw);
         }
         if (wga) { ctrl.dlAppUrl = wga.file; ctrl.dlAppFile = wga.fileName; ctrl.dlAppName = wga.app; ctrl.dlAppPage = wga.page; node.appendChild(getAppRow(wga)); }
-        // RAW-IP mode: this server accepts it, but no WDTT app can read the port from a link yet — so state the
-        // number and the two settings that switch it on. Speed is the reason to bother; the trade is named.
         if (wd.raw_port) {
           var wraw = el("div", "scell-raw");
           wraw.appendChild(el("div", "scell-raw-t", t("rawT")));
           wraw.appendChild(el("div", "scell-raw-d", t("rawD").replace("{port}", wd.raw_port)));
           (wvkw || node).appendChild(wraw);
         }
-        ctrl.cliApp = false; ctrl.vktgz = false;   // WDTT clients are apps, never a CLI/VKTGZ flow
-        // The VK link is embedded IN the WDTT link (wrapAPassword+vkLink / wdtt://…:vkHash), so no separate "add this
-        // link" prompt is needed. Wire the payload straight into the shared config/QR + Start-button machinery.
+        ctrl.cliApp = false; ctrl.vktgz = false;
         ctrl.payload = wart.text; ctrl.ready = true; ctrl.ext = wart.ext || "txt";
-        ctrl.isLink = !!wart.uri; ctrl.hasQR = !!(wart.qr && wclientQR); ctrl.cmd = null;   // QR only when the resolved client actually scans one
+        ctrl.isLink = !!wart.uri; ctrl.hasQR = !!(wart.qr && wclientQR); ctrl.cmd = null;
         ctrl.wrapCfg = !!wart.uri;
         if (wart.uri) { ctrl.openUri = wart.text; ctrl.noAutoFire = !(wga && wga.autostart); ctrl.instructions = (wga && wga.instructions) || ""; }
         ctrl.view = (wart.qr && wclientQR) ? "qr" : "text";
         draw();
       } else {
       var tp = it.tp, forkId = SWGTurn.fork(tp.service);
-      var fc = forkColor(forkId);                                               // the panel's colour for this fork
-      var ga = turnGetApp(forkId, tp.version, it.tgt.type === "awg");   // resolves the client for the VISITOR'S OS (also drives the get-app row / Start button below) — this proxy's release
+      var fc = forkColor(forkId);
+      var ga = turnGetApp(forkId, tp.version, it.tgt.type === "awg");
       var asClient = (ga && ga.enc) ? ga.enc : null;
-      var art = conf ? SWGTurn.artifact(conf, tp, vkLink, turnClientCS(forkId, asClient), (_lastData && _lastData.vk_links), asClient) : null;   // SETTINGS SPLIT: the RESOLVED client's saved values (asClient) + all VK links. _lastData (NOT `data` — makeCell isn't nested in render()) is the current payload, set at render() entry.
+      var art = conf ? SWGTurn.artifact(conf, tp, vkLink, turnClientCS(forkId, asClient), (_lastData && _lastData.vk_links), asClient) : null;
       var appName = (ga && (ga.productName || ga.app)) || (art && art.app);
-      // app badge: a branded/resolved app name → "{fork} · {app}"; otherwise just "{fork} app". Every fork now resolves
-      // to a client for the visitor's OS (cacggghp → VK TURN Proxy on mobile, CLI on desktop), so there's no "no app" case.
       var appInfo = appName ? { badge: appName, kind: "app", app: appName }
                   : { badge: t("forkApp").replace("{fork}", forkLabel(forkId)), kind: "fork", fork: forkId };
-      // badge = just the fork when it echoes its own id (a generic fork like Moroka8 with no app name); "fork · App"
-      // when there's a real app name (WINGS V/DeX, FreeTurn, VK TURN Proxy, CLI client)
       var hasAppName = appName && appName !== forkId;
-      ctrl.app = appName;   // Axis-3: the client app name for the "Open in {app}" deep-link button
-      // Colour the app name by the fork its client is NATIVE to (server used vs app's home fork). Same fork for a
-      // native pairing → one colour; a cross-fork app → the app chip takes its own fork's colour.
+      ctrl.app = appName;
       var appFork = (art && typeof SWGTurn.encoderFork === "function" && SWGTurn.encoderFork(art.enc)) || forkId;
       var appColor = forkColor(appFork);
-      // Enlarged-QR caption (peer.title · …): a turn cell names the APP; the main-screen caption keeps the server name.
       ctrl.zoomTail = hasAppName ? appName : forkLabel(forkId);
-      // Badge = "<server used> · <app>": the server chip in the used fork's colour, the app chip in its native fork's.
       var tag = el("span", "scell-tag");
-      // Two relays of the SAME fork on one deployment would otherwise render as two identical badges, leaving
-      // the reader to guess which is which. The port is the one thing that always separates them.
       var srvName = it.dupFork ? (forkLabel(forkId) + " :" + String(tp.listen || "").split(":").pop()) : forkLabel(forkId);
       var srvChip = el("span", null, srvName); srvChip.style.color = fc; tag.appendChild(srvChip);
       if (hasAppName) {
         tag.appendChild(el("span", "scell-tag-sep", " · "));
         var appChip = el("span", null, appName); appChip.style.color = appColor; tag.appendChild(appChip);
-        if (ga && ga.author && ga.author !== forkId) tag.appendChild(tagBy(ga.author));   // app author (e.g. luminescq / SpaceNeuroX)
+        if (ga && ga.author && ga.author !== forkId) tag.appendChild(tagBy(ga.author));
       }
       srvRow.appendChild(tag);
       var ifaceUp = (tgt.type === "awg") ? "AWG" : "WG";
@@ -1885,27 +1743,21 @@
       role.appendChild(el("span", "scell-role-if", ifaceUp));
       if (!isBackup) role.style.color = ifaceColor(tgt.type);
       srvRow.appendChild(role);
-      // Plain (unobfuscated) → the fork's normal transport, which VK throttles: mark it slow with a brand-coloured turtle.
-      // A tap opens the same bubble as the torrent magnet (operator, 2026-10-21) — a title alone never showed on a phone.
       if (turnCellPlain(forkId, it.tgt.type === "awg")) srvRow.appendChild(noteMarker("scell-slow", TURTLE_SVG, t("slowMark"), t("slowPlain")));
-      if (ga) { ctrl.dlAppUrl = ga.file; ctrl.dlAppFile = ga.fileName; ctrl.dlAppName = ga.app; ctrl.dlAppPage = ga.page; node.appendChild(getAppRow(ga)); }   // Start button → the DIRECT installer file; the text link (getAppRow) → the releases page
-      ctrl.vktgz = !!(ga && ga.cid === "mysorez" && art && art.enc === "vktgz");   // MYSOREZ VK TURN Proxy app importing a VKTGZ: profile → the 3-button assemble flow
-      ctrl.cliApp = !!(ga && ga.cid === "sidecar");   // the CLI (sidecar) client → copy the OS command + file-run steps
+      if (ga) { ctrl.dlAppUrl = ga.file; ctrl.dlAppFile = ga.fileName; ctrl.dlAppName = ga.app; ctrl.dlAppPage = ga.page; node.appendChild(getAppRow(ga)); }
+      ctrl.vktgz = !!(ga && ga.cid === "mysorez" && art && art.enc === "vktgz");
+      ctrl.cliApp = !!(ga && ga.cid === "sidecar");
       ctrl.forkId = forkId;
       ctrl.wgConf = (ctrl.vktgz && conf) ? conf.replace(/^([ \t]*Endpoint[ \t]*=).*$/m, "$1 127.0.0.1:9000") : conf;
       if (!conf) { draw(); return { el: cell, ctrl: ctrl }; }
-      // VK-link notice (freeturn/samosvalishe forks): lives in the cell, positioned by syncVHints BETWEEN the
-      // up-arrow and the box (the up-arrow moves up to make room). Same slot for the "no VK link" warning.
       if (art.vkMissing) {
         var vkw2 = el("div", "scell-vk scell-vkwarn");
         vkw2.appendChild(el("div", "scell-vkwarn-t", t("vkMissingT")));
         vkw2.appendChild(el("div", "scell-vkwarn-d", t("vkMissing").replace("{app}", t("theApp"))));
         cell.appendChild(vkw2);
-      } else if (art.vk && !art.vkEmbedded && !ctrl.vktgz) {   // an artifact that CARRIES the call link (freeturn's `vk`, MYSOREZ's VKTGZ profile) must not also ask the reader to paste it
-        // show only the PRIMARY VK call link (tap-to-copy). The config still embeds every link for forks that accept
-        // several; the on-screen prompt just names the one to add so it stays simple.
+      } else if (art.vk && !art.vkEmbedded && !ctrl.vktgz) {
         var vall = (art.vkLinks && art.vkLinks.length) ? art.vkLinks : ((vkLink || "").trim() ? [(vkLink || "").trim()] : []);
-        ctrl.vkPrimary = vall[0] || "";   // Start copies this, for the forks whose artifact cannot carry the link itself
+        ctrl.vkPrimary = vall[0] || "";
         var vlist = vall.slice(0, 1);
         var vkw = el("div", "scell-vk");
         var vkLbl = (appInfo.kind === "app") ? t("vkAddApp").replace("{app}", appInfo.app)
@@ -1921,30 +1773,26 @@
       var apply = function (text) {
         ctrl.payload = text; ctrl.ready = true; ctrl.ext = art.ext || "conf";
         ctrl.isLink = !!art.uri; ctrl.hasQR = !!art.qr; ctrl.cmd = art.cmd || null; ctrl.cliAuthors = art.cliAuthors || null;
-        if (ctrl.cliAuthors && ga && ga.cliAuthor) {   // the admin picked ONE CLI build for this OS → show only it (no author list, no native tag)
+        if (ctrl.cliAuthors && ga && ga.cliAuthor) {
           var pick = ctrl.cliAuthors.filter(function (a) { return a.fork === ga.cliAuthor; });
           if (pick.length) { ctrl.cliAuthors = [pick[0]]; ctrl.cmd = pick[0].cmd; }
         }
-        // wrap a long single-line payload (a scheme URI OR a paste-token like VKTGZ:) so config view reads across
-        // lines instead of shrinking to one tiny line; a multi-line .conf (sidecar) stays unwrapped.
         ctrl.wrapCfg = !!(art.uri || art.wrap);
-        // Axis-3: a scheme fork's config IS the tappable open-in-app URI (ctrl.app already = art.app). Start fires it
-        // ONLY when this app+OS declares `autostart`; otherwise noAutoFire → copy the link + show the import steps.
         if (art.uri) { ctrl.openUri = text; ctrl.noAutoFire = !(ga && ga.autostart); ctrl.instructions = (ga && ga.instructions) || ""; }
-        ctrl.view = art.qr ? "qr" : "text";   // anything scannable (incl. dual config + command) opens on the QR
+        ctrl.view = art.qr ? "qr" : "text";
         draw();
       };
       if (art.text != null) apply(art.text);
       else { draw(); Promise.resolve().then(art.buildAsync).then(apply).catch(function (e) { ctrl.ready = false; stage.innerHTML = ""; stage.appendChild(el("div", "cfg-fail", (e && e.message) || t("cantGen"))); if (ctrl.notify) ctrl.notify(); }); }
       }
     } else {
-      if (wga) { ctrl.dlAppUrl = wga.file; ctrl.dlAppFile = wga.fileName; ctrl.dlAppName = wga.app; }   // Start-button download-fallback (WG/AWG client app)
+      if (wga) { ctrl.dlAppUrl = wga.file; ctrl.dlAppFile = wga.fileName; ctrl.dlAppName = wga.app; }
       if (conf) { ctrl.payload = conf; ctrl.ready = true; ctrl.hasQR = true; ctrl.ext = "conf"; ctrl.view = "qr"; }
       if (conf) {
-        ctrl.app = AMNEZIA_VPN.name; ctrl.dlAppName = AMNEZIA_VPN.name;   // the Start button opens/gets Amnezia VPN → the ask reads "Open/Get Amnezia VPN"
+        ctrl.app = AMNEZIA_VPN.name; ctrl.dlAppName = AMNEZIA_VPN.name;
         Promise.resolve().then(function () { return SWGTurn.amneziaVpn(conf); })
           .then(function (link) { ctrl.openUri = link; if (ctrl.notify) ctrl.notify(); })
-          .catch(function () {});   // no deep link (no CompressionStream) → QR + download + "Get the app" remain
+          .catch(function () {});
       }
       draw();
     }
@@ -1953,14 +1801,14 @@
 
   var hint = function (cls, dir) { var s = el("span", cls); s.setAttribute("aria-hidden", "true"); s.appendChild(chevronEl(dir)); return s; };
 
-  var _relayoutRail = null;   // render() points this at its alignRail so a page's layout pass can re-centre the icon rail
+  var _relayoutRail = null;
   function networksPage(nets) {
     var page = el("section", "ppage");
     page.setAttribute("data-mode", "nets");
     var srow = el("div", "srow"), cell = el("div", "scell"), stage = el("div", "scell-stage");
     var box = el("div", "netbox");
     var head = el("p", "netbox-h", t("netsTitle"));
-    head.setAttribute("data-pick", "");   // the picker's trigger here, as a device's title is on its own page
+    head.setAttribute("data-pick", "");
     box.appendChild(head);
     var list = el("ul", "netbox-list");
     nets.forEach(function (n) {
@@ -1980,7 +1828,7 @@
   }
   function deadPeerPage(row) {
     var peer = row.peer;
-    var expired = !!peer.expired && !peer.disabled;   // an explicit block wins over a lapsed date if somehow both
+    var expired = !!peer.expired && !peer.disabled;
     var page = el("section", "ppage");
     page.setAttribute("data-mode", "dead");
     var srow = el("div", "srow");
@@ -1988,12 +1836,11 @@
     var stage = el("div", "scell-stage");
     var box = el("div", "peer-dead " + (expired ? "state-expired" : "state-blocked"));
     var nameEl = el("p", "peer-dead-name", peer.title || t("peer"));
-    nameEl.setAttribute("data-pick", "");   // the picker's trigger on a page that has no title bar
+    nameEl.setAttribute("data-pick", "");
     box.appendChild(nameEl);
     box.appendChild(el("p", "state-word", expired ? t("subExpiredWord") : t("subBlockedWord")));
     box.appendChild(el("p", "state-sub", expired ? t("subExpiredSub") : t("subDisabledSub")));
     stage.appendChild(box); cell.appendChild(stage); srow.appendChild(cell); page.appendChild(srow);
-    // up/down peer-nav hints so the carousel still walks past this page (render hides the ends)
     page.appendChild(hint("vhint vhint-u", "u")); page.appendChild(hint("vhint vhint-d", "d"));
     page._pick = { row: row, dead: true, title: peer.title || t("peer"),
                    cells: [{ srv: "", kind: "",
@@ -2009,24 +1856,23 @@
           if ((((_lastData && _lastData.turn_client_default) || {})[wfk] || {})[subOs()] === "none") return;
           items.push({ tgt: tt, wdtt: tt.wdtt || {} }); return;
         }
-        if (tt.type === "csqtt") {   // csqtt peer → a cell in the Turn group (raw-TUN VK-turn server)
+        if (tt.type === "csqtt") {
           if (!turnGetApp("csqtt", (tt.csqtt || {}).version, false, (tt.csqtt || {}).line)) return;
           items.push({ tgt: tt, csqtt: tt.csqtt || {} }); return;
         }
         var seen = {}, tps = [], isAwg = (tt.type === "awg");
         (tt.turn || []).forEach(function (tp) { var f = SWGTurn.fork(tp.service), k = tp.service || tp.listen;
           if (seen[k]) return;
-          if (isAwg && turnWgOnly(f)) return;   // a WireGuard-only fork can't front this AmneziaWG interface
-          if (!turnGetApp(f, null, isAwg)) return;   // no client app for the visitor's OS (and this interface) → hide this deployment entirely (no card, no dot)
+          if (isAwg && turnWgOnly(f)) return;
+          if (!turnGetApp(f, null, isAwg)) return;
           seen[k] = 1; tps.push({ tp: tp, f: f }); });
-        // listen is the tiebreak so two relays of one fork keep a fixed order between polls instead of swapping.
         tps.sort(function (a, b) { return turnCellRank(a.f, isAwg) - turnCellRank(b.f, isAwg) || forkRank(a.f) - forkRank(b.f)
-                 || String(a.tp.listen || "").localeCompare(String(b.tp.listen || "")); });   // client-priority, then canonical fork order
+                 || String(a.tp.listen || "").localeCompare(String(b.tp.listen || "")); });
         var nfork = {}; tps.forEach(function (x) { nfork[x.f] = (nfork[x.f] || 0) + 1; });
         tps.forEach(function (x) { items.push({ tgt: tt, tp: x.tp, dupFork: nfork[x.f] > 1 }); });
       });
     } else {
-      orderedTargets(peer.targets).forEach(function (tt) { if (isSelfContained(tt.type) || tt.direct === false) return; if ((tt.type === "awg") === (mode === "awg")) items.push({ tgt: tt }); });   // WDTT + csqtt belong to the Turn group only — never the wg/awg lists; primary connection first
+      orderedTargets(peer.targets).forEach(function (tt) { if (isSelfContained(tt.type) || tt.direct === false) return; if ((tt.type === "awg") === (mode === "awg")) items.push({ tgt: tt }); });
     }
     if (!items.length) return null;
     var reason = row.bad ? t("outOfDate") : (!peer.sec ? t("notReady") : null);
@@ -2036,31 +1882,27 @@
     var head = el("div", "ppage-head");
     var titleEl = el("span", "ppage-title");
     var nameEl = el("span", "ppage-name", peer.title || t("peer"));
-    var srvEl = el("span", "ppage-srv");   // "· edge-1" in the server colour — updated per deployment by syncBar
+    var srvEl = el("span", "ppage-srv");
     titleEl.appendChild(nameEl); titleEl.appendChild(srvEl);
-    titleEl.setAttribute("data-pick", "");   // the device name doubles as the jump picker's trigger (render wires it)
+    titleEl.setAttribute("data-pick", "");
     head.appendChild(titleEl);
     var dotEls = [], sL, sR;
     if (items.length > 1) {
       var navrow = el("div", "navrow");
       var dots = el("div", "ppage-dots"); for (var i = 0; i < items.length; i++) { var d = el("span", "pdot"); dotEls.push(d); dots.appendChild(d); }
-      navrow.appendChild(dots);   // the dots stay by the peer name; the L/R arrows move to the screen edges
+      navrow.appendChild(dots);
       head.appendChild(navrow);
       sL = hint("navarrow navarrow-l", "l"); sR = hint("navarrow navarrow-r", "r");
-      page.appendChild(sL); page.appendChild(sR);   // screen-edge arrows, vertically centred on the box by syncVHints
+      page.appendChild(sL); page.appendChild(sR);
     }
     page.appendChild(head);
 
     var srow = el("div", "srow");
-    // Primary/Backup is a DEPLOYMENT role — a single deployment reached via several turn-proxies is NOT a "backup".
-    // So base `multi` on distinct deployments (it.tgt), not on the number of turn cells.
     var _deps = {}; items.forEach(function (it) { _deps[it.tgt.node + "|" + it.tgt.iface] = 1; });
     var multi = Object.keys(_deps).length > 1;
     var ctrls = items.map(function (it) {
       var cc = makeCell(userName, peer, it, mode, secret, vkLink, reason, multi);
       var srv = it.tgt.p2p && cc.el.querySelector(".scell-srv");
-      // Where the node forwards the device's own port (swg-sub's p2p_port, Part C) the bubble opens with it: the one number
-      // the user must type into the client, then how, then the speed setting.
       var fp = it.tgt.p2p_port, fd = fp && t("p2pPortD") + (it.tgt.p2p_addr ? " " + t("p2pPortAt").replace("{addr}", it.tgt.p2p_addr).replace("{port}", fp) : "");
       if (srv) srv.appendChild(noteMarker("scell-p2p", MAGNET_SVG, t("p2pMark"), fp ? t("p2pPortL") + " " + fp + ". " + fd + " " + t("p2pHint") : t("p2pHint"),
         fp && function () {
@@ -2073,7 +1915,6 @@
     });
     page.appendChild(srow);
 
-    // up/down swipe HINT (vertical, between peers) — flanks the QR top/bottom; render hides the ends.
     var vUp = hint("vhint vhint-u", "u"), vDown = hint("vhint vhint-d", "d");
     page.appendChild(vUp); page.appendChild(vDown);
 
@@ -2081,54 +1922,41 @@
     var toggle = iconBtn("pbtn ico", "doc", t("showConfig"));
     var dlB = iconBtn("pbtn ico", "download", t("download"));
     var shareB = iconBtn("pbtn ico", "share", t("share"));
-    // Connections — the picker's entry point, moved off the floating pill and into the bar's rightmost slot.
-    // `data-pick` is the picker's own wiring contract: render reveals and binds every trigger it finds.
     var connB = el("button", "pbtn ico pbtn-conn"); connB.type = "button";
     connB.title = t("connections"); connB.setAttribute("aria-label", t("pickOpen"));
     connB.appendChild(connIconEl());
     connB.setAttribute("data-pick", "");
-    // Not `hidden`: START is centred by the slots either side of it, so a subscription with nothing to pick
-    // must still leave this slot standing. The picker's wiring clears the visibility when there IS.
     connB.style.visibility = "hidden";
-    // The signature START button — deep-links into the app if installed, else downloads it (apk/exe/deb). Replaces the
-    // old plain "Open in app" button: bigger, round, glowing. The utility icons stay small, centred on its centre.
     var startB = el("button", "pbtn-start"); startB.type = "button";
     startB.innerHTML = START_SVG; startB.setAttribute("aria-label", t("start"));
-    // START is the CENTRE slot — utilities split to its left (Config, Download) and right (Share, Connections).
-    // Every slot is only visibility-toggled, never removed, so START stays centred whatever is available.
     bar.appendChild(toggle); bar.appendChild(dlB); bar.appendChild(startB); bar.appendChild(shareB); bar.appendChild(connB);
     page.appendChild(bar);
 
     var curIdx = 0;
     function cur() { return ctrls[curIdx]; }
     function flashIcon(btn, base, label) { setIcon(btn, "check", t("copied")); setTimeout(function () { setIcon(btn, base, label); }, 1400); }
-    // Keep the up/down hints an IDENTICAL gap from the visible content box, whatever its size — so a taller
-    // config (e.g. AWG with the full S1–I5 ranges) pushes them out exactly as the QR does. Measured live.
-    var VH_GAP = 16, VH_GAP_CFG = 8;   // arrow↔box gap — normal for a QR, tighter for a config (arrows hug it)
+    var VH_GAP = 16, VH_GAP_CFG = 8;
     function syncVHints() {
       var cellEl = srow.children[curIdx] || srow.children[0];
       var stage = cellEl && cellEl.querySelector(".scell-stage");
-      var content = stage && stage.querySelector(".qrbox, .textwrap, .cfg-fail");   // .textwrap wraps 1–2 config blocks
+      var content = stage && stage.querySelector(".qrbox, .textwrap, .cfg-fail");
       if (!content) return;
-      // a QR (or QR+command) keeps the normal arrow gap; a plain config gets a tighter one (arrows hug it)
       var isQR = content.classList.contains("qrbox") || (content.querySelector && !!content.querySelector(".qrbox"));
       var vg = isQR ? VH_GAP : VH_GAP_CFG;
       var pr = page.getBoundingClientRect();
       var uH = vUp.offsetHeight || 27, dH = vDown.offsetHeight || 27;
 
-      // Desktop / landscape scrolls as a normal document — restore FULL in-flow layout (CSS handles the rest); the
-      // up/down chevrons are hidden (CSS), and the L/R deployment buttons are centred on the content column.
       if (window.matchMedia && window.matchMedia("(orientation: landscape)").matches) {
         head.style.top = ""; head.style.gap = ""; head.style.paddingTop = "";
         vUp.style.left = ""; vDown.style.left = ""; vUp.style.top = ""; vDown.style.top = "";
-        Array.prototype.forEach.call(srow.children, function (c) {   // clear ALL portrait inline positioning on every cell
+        Array.prototype.forEach.call(srow.children, function (c) {
           var st = c.querySelector(".scell-stage"); if (st) { st.style.alignItems = ""; st.style.paddingTop = ""; }
           var n = c.querySelector(".scell-node"); if (n) n.style.top = "";
           var k = c.querySelector(".scell-vk"); if (k) k.style.top = "";
           var w = c.querySelector(".textwrap"); if (w) w.style.gap = "";
-          var im = c.querySelector(".qrimg"); if (im) { im.style.maxWidth = ""; im.style.maxHeight = ""; }   // drop the portrait QR cap
+          var im = c.querySelector(".qrimg"); if (im) { im.style.maxWidth = ""; im.style.maxHeight = ""; }
         });
-        if (sL && sR) {   // centre the nav buttons on the CURRENT cell's content (QR / config, incl. the client command)
+        if (sL && sR) {
           var sc = stage.getBoundingClientRect();
           var midY = Math.round(sc.top - pr.top + sc.height / 2);
           sL.style.top = midY + "px"; sR.style.top = midY + "px"; sL.style.left = ""; sR.style.left = "";
@@ -2139,13 +1967,11 @@
       var node = cellEl.querySelector(".scell-node");
       var vk = cellEl.querySelector(".scell-vk");
       var hasVk = vk && getComputedStyle(vk).display !== "none";
-      // the box and its parts (config vs. sidecar command)
       var isTextwrap = content.classList.contains("textwrap");
       var configEl = content.classList.contains("qrbox") ? content
                    : ((content.querySelector && (content.querySelector(".qrbox") || content.querySelector(".cfgtext:not(.cmdtext)"))) || content);
       var isQRbox = !!(configEl.classList && configEl.classList.contains("qrbox"));
       var cmdEl = content.querySelector ? content.querySelector(".cmdblk") : null;
-      // the head holds [ title , (dots) ] — measure them apart so title↔dots also gets G
       var titleEl2 = head.querySelector(".ppage-title"), navrow2 = head.querySelector(".navrow");
       var titleH = titleEl2 ? titleEl2.offsetHeight : head.offsetHeight;
       var hasDots = !!navrow2, dotsH = hasDots ? navrow2.offsetHeight : 0;
@@ -2153,40 +1979,33 @@
       var vkH = hasVk ? vk.offsetHeight : 0;
       var cmdH = cmdEl ? cmdEl.offsetHeight : 0, hasCmd = cmdH > 0;
       var uShown = vUp.style.display !== "none", dShown = vDown.style.display !== "none";
-      // The bottom line is RESERVED whether or not the chevron is drawn on it. The last page draws none, and
-      // without this the whole column redistributed and everything stacked above slid ~74px down between pages.
       var dLineShown = true;
       var barTop = bar.getBoundingClientRect().top - pr.top;
       var GAP_MIN = 8;
 
-      var nEl = 2 /* title + config */ + (uShown ? 1 : 0) + (dLineShown ? 1 : 0) + (hasDots ? 1 : 0) + (hasTag ? 1 : 0) + (hasVk ? 1 : 0) + (hasCmd ? 1 : 0);
+      var nEl = 2   + (uShown ? 1 : 0) + (dLineShown ? 1 : 0) + (hasDots ? 1 : 0) + (hasTag ? 1 : 0) + (hasVk ? 1 : 0) + (hasCmd ? 1 : 0);
       var nGaps = nEl + 1;
       var fixedH = (uShown ? uH : 0) + titleH + (hasDots ? dotsH : 0) + (hasTag ? tagH : 0) + (hasVk ? vkH : 0) + (hasCmd ? cmdH : 0) + (dLineShown ? dH : 0);
 
-      // fit the CONFIG alone (not the command) to what's left after GAP_MIN on every gap
       stage.style.alignItems = "flex-start";
-      if (isTextwrap) content.style.maxHeight = "";                              // the wrap is natural height; only the config is capped
+      if (isTextwrap) content.style.maxHeight = "";
       var configCap = Math.max(48, barTop - fixedH - GAP_MIN * nGaps);
       if (isQRbox) {
-        // The QR is viewport-sized (min(..vw,..vh)) and won't shrink for an extra line (get-app / VK) or the taller
-        // Start bar — so cap it to the room left, keeping it square + scannable (floor 140px). Only bites when tight.
         var imgEl = configEl.querySelector && configEl.querySelector(".qrimg");
         if (imgEl) {
-          var pad = 2 * (parseFloat(getComputedStyle(configEl).paddingTop) || 12);   // qrbox top+bottom padding
-          // shrink to the room left (never overlap the bar); floor 96px — the inline QR is a preview, tap-to-enlarge scans.
+          var pad = 2 * (parseFloat(getComputedStyle(configEl).paddingTop) || 12);
           var maxDim = Math.max(96, configCap - pad);
           imgEl.style.maxWidth = maxDim + "px"; imgEl.style.maxHeight = maxDim + "px";
         }
       } else if (configEl.classList && configEl.classList.contains("cfgtext")) {
         configEl.style.maxHeight = configCap + "px";
         fitText(configEl);
-        if (configEl.style.fontSize && ctrls[curIdx]) ctrls[curIdx].cfgFont = configEl.style.fontSize;   // QR view's command matches
+        if (configEl.style.fontSize && ctrls[curIdx]) ctrls[curIdx].cfgFont = configEl.style.fontSize;
       }
       var configH = Math.min(configEl.offsetHeight, configCap);
-      var G = Math.max(GAP_MIN, Math.floor((barTop - fixedH - configH) / nGaps));   // the one gap that makes ALL lines equal
+      var G = Math.max(GAP_MIN, Math.floor((barTop - fixedH - configH) / nGaps));
 
-      // walk the stack top→bottom, giving every line the same gap G
-      var cellTop = cellEl.getBoundingClientRect().top - pr.top;                  // VK + tag are absolute WITHIN the cell
+      var cellTop = cellEl.getBoundingClientRect().top - pr.top;
       var y = G, upTop = null, headTop, tagTopP = null, vkTopP = null, configTop, boxBottom, downTop = null;
       if (uShown) { upTop = y; y += uH + G; }
       headTop = y; y += titleH; if (hasDots) y += G + dotsH;
@@ -2195,28 +2014,24 @@
       y += G; configTop = y; y += configH;
       if (hasCmd) y += G + cmdH;
       boxBottom = y;
-      // The chevron LINE exists whether or not the chevron is drawn on it (the last page has no "down"), so the
-      // Switch button gets its own unconditional y — otherwise it would jump on the one page that hides the arrow.
       var dLine = boxBottom + G;
       if (dShown) { y += G; downTop = y; }
 
       head.style.paddingTop = "0px"; head.style.gap = G + "px"; head.style.top = Math.round(headTop) + "px";
-      if (isTextwrap) content.style.gap = G + "px";                              // config↔command gap = G
+      if (isTextwrap) content.style.gap = G + "px";
       if (hasTag) { var nt = Math.round(tagTopP - cellTop); Array.prototype.forEach.call(srow.children, function (c) { var n = c.querySelector(".scell-node"); if (n) n.style.top = nt + "px"; }); }
       if (hasVk) vk.style.top = Math.round(vkTopP - cellTop) + "px";
       if (uShown) vUp.style.top = Math.round(upTop) + "px";
       if (dShown) vDown.style.top = Math.round(downTop) + "px";
-      // nudge the stage's top padding so the config's TOP lands at configTop (converges over the few layout passes)
       var curTop = configEl.getBoundingClientRect().top - pr.top;
       var curPad = parseFloat(stage.style.paddingTop) || 0;
       stage.style.paddingTop = Math.max(0, Math.round(curPad + configTop - curTop)) + "px";
-      // centre the up/down arrows over the config box; the L/R deployment arrows sit at the vertical mid of the stack
       var cr2 = configEl.getBoundingClientRect();
       var aCx = Math.round((cr2.left + cr2.right) / 2 - pr.left);
       vUp.style.left = aCx + "px"; vDown.style.left = aCx + "px";
       if (sL && sR) {
         var topRef = uShown ? (upTop + uH) : 0, botRef = dLineShown ? dLine : boxBottom;
-        var midY = Math.round((topRef + botRef) / 2 + (botRef - topRef) * 0.1);   // a touch below centre
+        var midY = Math.round((topRef + botRef) / 2 + (botRef - topRef) * 0.1);
         sL.style.top = midY + "px"; sR.style.top = midY + "px";
       }
     }
@@ -2227,25 +2042,22 @@
       curIdx = save; syncVHints();
     }
     function scheduleVH() {
-      var run = function () { layoutAll(); if (_relayoutRail) _relayoutRail(); };   // rail re-centres right after the box is placed
-      requestAnimationFrame(run); setTimeout(run, 90); setTimeout(run, 220);          // rAF + catch the async config re-fit
+      var run = function () { layoutAll(); if (_relayoutRail) _relayoutRail(); };
+      requestAnimationFrame(run); setTimeout(run, 90); setTimeout(run, 220);
     }
     function syncBar() {
       var c = cur();
-      if (c.srvName) { srvEl.textContent = "· " + c.srvName; srvEl.style.color = c.srvColor || ""; }   // "iPhone · edge-1"
-      // buttons keep FIXED positions — a hidden one reserves its slot (visibility:hidden)
+      if (c.srvName) { srvEl.textContent = "· " + c.srvName; srvEl.style.color = c.srvColor || ""; }
       var showToggle = c.ready && c.hasQR;
       toggle.style.visibility = showToggle ? "" : "hidden";
       if (showToggle) {
         var vs = cellViews(c), ci = vs.indexOf(c.view); if (ci < 0) ci = 0;
-        var nx = vs[(ci + 1) % vs.length];   // the toggle advertises the NEXT view
+        var nx = vs[(ci + 1) % vs.length];
         setIcon(toggle, nx === "qr" ? "qr" : nx === "link" ? "link" : "doc",
                 nx === "qr" ? t("showQR") : nx === "link" ? t("showLink") : (c.isLink ? t("showLink") : t("showConfig")));
       }
       var v = (c.ready && c.payload) ? "" : "hidden";
-      dlB.style.visibility = v; shareB.style.visibility = v;   // Connections is not tied to the cell's payload
-      // START: enabled whenever the cell is ready. Title reflects what it does — open the app (has a deep-link) or
-      // get it (download only). "app" name falls back to a generic label.
+      dlB.style.visibility = v; shareB.style.visibility = v;
       startB.style.visibility = c.ready ? "" : "hidden";
       var appNm = c.app || c.dlAppName || t("turnApp");
       var st = c.openUri ? t("startOpen").replace("{app}", appNm) : t("startGet").replace("{app}", appNm);
@@ -2254,15 +2066,13 @@
       if (sL) { sL.style.opacity = (curIdx <= 0) ? "0" : ""; sR.style.opacity = (curIdx >= items.length - 1) ? "0" : ""; }
       scheduleVH();
     }
-    ctrls.forEach(function (cc) { cc.notify = function () { if (ctrls[curIdx] === cc) syncBar(); else scheduleVH(); }; });   // a non-current cell finishing async still re-lays-out (so it's placed before you swipe to it)
-    // WG/AWG with an Amnezia VPN vpn:// link get a THREE-state toggle: QR → link → config. MYSOREZ (VKTGZ) gets its own
-    // three: QR (VKTGZ) → link (VKTGZ string) → config (the WG .conf). Everything else stays QR ↔ text.
+    ctrls.forEach(function (cc) { cc.notify = function () { if (ctrls[curIdx] === cc) syncBar(); else scheduleVH(); }; });
     function cellViews(c) {
       if (!c.hasQR) return ["text"];
       if (c.vktgz && c.wgConf) return ["qr", "link", "config"];
       return (mode !== "turn" && c.openUri) ? ["qr", "link", "text"] : ["qr", "text"];
     }
-    function viewText(c) {   // what Download/Share act on
+    function viewText(c) {
       if (c.view === "config" && c.wgConf) return c.wgConf;
       return (c.view === "link" && c.openUri) ? c.openUri : c.payload;
     }
@@ -2286,63 +2096,57 @@
     };
     function startDownload(c) {
       var os = subOs();
-      if (c.dlAppUrl && c.dlAppFile) triggerDownload(c.dlAppUrl);                 // direct installer → same-tab attachment download (real name, not a GUID)
-      else if (c.dlAppUrl && (os === "ios" || os === "android")) window.location.href = c.dlAppUrl;   // store / TestFlight: same-tab (window.open in the fallback timer is popup-blocked on mobile)
-      else if (c.dlAppUrl) window.open(c.dlAppUrl, "_blank", "noopener");         // desktop store / install page → new tab
+      if (c.dlAppUrl && c.dlAppFile) triggerDownload(c.dlAppUrl);
+      else if (c.dlAppUrl && (os === "ios" || os === "android")) window.location.href = c.dlAppUrl;
+      else if (c.dlAppUrl) window.open(c.dlAppUrl, "_blank", "noopener");
       else if (c.payload) download(c.payload, c.base, c.ext || "conf");
     }
-    // Per-app "this app is installed" flag, keyed by the scheme (e.g. vkturnproxy). Set once the user deliberately
-    // opens the app (or an auto-fire is detected as opened) so Safari-on-iOS skips the ask next time.
     function hasAppKey(c) { return "swgsub-hasapp-" + (String(c.openUri || "").split("://")[0] || "app"); }
     function fireScheme(c) {
       _schemeFiredAt[hasAppKey(c)] = Date.now();
       try { window.location.href = c.openUri; } catch (_) {}
     }
-    // Fire the deep-link, then fall back to the download if nothing handled it — for the AUTO-fire path on browsers
-    // that fail silently (Chrome/Firefox on iOS, Android, desktop). If the app opens, the page goes hidden → cancel.
     function fireDeepLink(c) {
       var t0 = Date.now(), left = false, key = hasAppKey(c);
       var mark = function () { left = true; };
       document.addEventListener("visibilitychange", mark); window.addEventListener("pagehide", mark); window.addEventListener("blur", mark);
-      try { window.location.href = c.openUri; } catch (_) {}   // hand the scheme link to the OS (opens the app if installed)
+      try { window.location.href = c.openUri; } catch (_) {}
       setTimeout(function () {
         document.removeEventListener("visibilitychange", mark); window.removeEventListener("pagehide", mark); window.removeEventListener("blur", mark);
-        if (left || document.hidden || Date.now() - t0 > 1500) { _lsSet(key, "1"); return; }   // app took over → remember it's installed
-        _lsSet(key, "");                        // still here, no hand-off → not installed → forget any stale flag…
-        startDownload(c);                       // …and get the app
+        if (left || document.hidden || Date.now() - t0 > 1500) { _lsSet(key, "1"); return; }
+        _lsSet(key, "");
+        startDownload(c);
       }, 1000);
     }
     function startCopyOpen(c) {
-      if (navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {});   // initiate copy in the gesture
+      if (navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {});
       var os = subOs();
-      if (os === "ios" || os === "macos") { showToast(t("vpnCopied")); if (c.dlAppUrl) setTimeout(function () { window.location.href = c.dlAppUrl; }, 1400); return; }   // copy → "Copied" → open the App Store (install / open, then paste the link)
-      showPasteHint(c);                                                                           // Windows/Linux (+ anything else): the link is copied → "paste it into AmneziaVPN" steps + downloads
+      if (os === "ios" || os === "macos") { showToast(t("vpnCopied")); if (c.dlAppUrl) setTimeout(function () { window.location.href = c.dlAppUrl; }, 1400); return; }
+      showPasteHint(c);
     }
     startB.onclick = function () {
       var c = cur(); if (!c.ready) return;
-      startB.classList.add("go"); setTimeout(function () { startB.classList.remove("go"); }, 600);   // tap pulse
+      startB.classList.add("go"); setTimeout(function () { startB.classList.remove("go"); }, 600);
       if (!c.openUri) {
-        if (c.vktgz) { showVktgzChoice(c, startB); return; }   // MYSOREZ: 3-button popover (get app · get core · assemble+connect)
-        if (c.cliApp && c.cmd) { var cmd = cliCommand(c); if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(function () {}); showCliHint(c); return; }   // CLI/sidecar → copy the per-OS command (matching the downloaded binary) + show the run steps
+        if (c.vktgz) { showVktgzChoice(c, startB); return; }
+        if (c.cliApp && c.cmd) { var cmd = cliCommand(c); if (navigator.clipboard) navigator.clipboard.writeText(cmd).catch(function () {}); showCliHint(c); return; }
         if (c.cmd) { if (navigator.clipboard) navigator.clipboard.writeText(c.cmd).catch(function () {}); showToast(t("cmdCopied")); return; }
-        startDownload(c); return;                                                          // no scheme, no command → get the app
+        startDownload(c); return;
       }
-      if (c.noAutoFire) { if (navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {}); showLinkImportHint(c); return; }   // WDTT app with no URL scheme (amurcanov/qWDTT/PWDTT) → copy the link + import steps, never fire a dead scheme
-      if (/^vpn:/i.test(c.openUri) && subOs() !== "android") { startCopyOpen(c); return; }   // Amnezia VPN off Android → copy the link + get the app
+      if (c.noAutoFire) { if (navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {}); showLinkImportHint(c); return; }
+      if (/^vpn:/i.test(c.openUri) && subOs() !== "android") { startCopyOpen(c); return; }
       var _dos = subOs();
       if (_dos === "macos" || _dos === "windows" || _dos === "linux") {
         if (navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {});
         showLinkImportHint(c); return;
       }
-      // freeturn/samosvalishe: the app imports the config via its scheme but CAN'T auto-receive the VK call link →
-      // copy the primary VK link so the user can paste it, THEN fire the scheme (below) as usual.
       if (c.vkPrimary) { if (navigator.clipboard) navigator.clipboard.writeText(c.vkPrimary).catch(function () {}); showToast(t("vkCopied")); }
-      else if (c.copyOnOpen && navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {});   // csqtt: the link survives an install detour
+      else if (c.copyOnOpen && navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {});
       if (isIOSSafari() && c.dlAppUrl) {
         var key = hasAppKey(c);
-        var open = function () { _lsSet(key, "1"); fireScheme(c); };          // "Open": remember + open, NO TestFlight fallback
+        var open = function () { _lsSet(key, "1"); fireScheme(c); };
         var get = function () { startDownload(c); };
-        if (_ls(key)) {   // remembered as installed → open directly; a quick re-tap (didn't open) clears it + re-asks
+        if (_ls(key)) {
           if (_schemeFiredAt[key] && Date.now() - _schemeFiredAt[key] < 4000) { _lsSet(key, ""); openStartChoice(startB, c, open, get); return; }
           fireScheme(c); return;
         }
@@ -2356,12 +2160,12 @@
     var raf = 0;
     srow.addEventListener("scroll", function () { if (raf) return; raf = requestAnimationFrame(function () { raf = 0; var i = current(); if (i !== curIdx) { curIdx = i; syncBar(); } else syncVHints(); }); }, { passive: true });
     dotEls.forEach(function (d, i) { d.onclick = function () { srow.scrollTo({ left: srow.children[i].offsetLeft - srow.offsetLeft, behavior: "smooth" }); }; });
-    if (sL && sR) {   // the edge arrows are clickable nav buttons (used in the landscape/desktop layout; harmless in portrait)
+    if (sL && sR) {
       var goCell = function (dir) { var i = current(), j = Math.max(0, Math.min(i + dir, srow.children.length - 1));
         if (j !== i) srow.scrollTo({ left: srow.children[j].offsetLeft - srow.offsetLeft, behavior: "smooth" }); };
       sL.onclick = function () { goCell(-1); }; sR.onclick = function () { goCell(1); };
     }
-    try { new ResizeObserver(scheduleVH).observe(srow); } catch (_) {}   // viewport / rotation → re-measure the hint gap
+    try { new ResizeObserver(scheduleVH).observe(srow); } catch (_) {}
     setTimeout(syncBar, 0);
     page._pick = { row: row, dead: false, title: peer.title || t("peer"),
                    cells: ctrls.map(function (c, i) {
@@ -2371,8 +2175,6 @@
                                              : ifaceColor((it && it.tgt && it.tgt.type) || mode),
                               badge: cellEl && cellEl.querySelector(".scell-srv") };
                    }) };
-    // Position snapshot/restore so a language or theme switch (which rebuilds every page) can drop the user back
-    // onto the SAME deployment + QR/config view they were reading — not the first config.
     page._pos = function () { return { cell: curIdx, view: ctrls[curIdx] ? ctrls[curIdx].view : null }; };
     page._seek = function (cell, view) {
       cell = Math.max(0, Math.min(cell | 0, srow.children.length - 1));
@@ -2387,18 +2189,18 @@
   }
 
   function render(data, cryptoKey, keepPos) {
-    closeNoteBubble();                                 // its marker is about to leave the DOM, and its text may change language
+    closeNoteBubble();
     _lastData = data; _lastKey = cryptoKey;
     LANGS = (data.langs && data.langs.enabled && data.langs.enabled.length) ? data.langs.enabled : ["en"];
     LANG_DEFAULT = (data.langs && data.langs.default) || "en";
-    resolveLang(); wireControls(); paintCtl();     // the admin controls which languages are offered + the default
+    resolveLang(); wireControls(); paintCtl();
     THEME.color = data.theme_color || ""; THEME.light = data.theme_color_light || "";
-    THEME.forkOv = data.turn_fork_colors || {};   // panel colour overrides
-    THEME.nodeOv = data.node_colors || {};   // per-node server colours
-    applyBrand();                                    // logo + favicon follow the panel's theme colour
+    THEME.forkOv = data.turn_fork_colors || {};
+    THEME.nodeOv = data.node_colors || {};
+    applyBrand();
     var who = document.getElementById("who");
     who.textContent = data.user && data.user.name ? data.user.name : "";
-    fitBrand();                                      // RU control may have just shown/hidden — re-check logo↔controls fit
+    fitBrand();
     if (data.disabled) {
       document.getElementById("peers").hidden = true;
       showState(t("subBlockedWord"), t("subDisabledSub"), "blocked");
@@ -2418,7 +2220,6 @@
     }
     var vkLink = data.vk_link || "", userName = data.user && data.user.name;
 
-    // Decrypt every peer's secret (privkey+psk) with the fragment key.
     var jobs = peers.map(function (peer) {
       if (!peer.sec) return Promise.resolve({ peer: peer, secret: null });
       var all = b64ToBytes(peer.sec);
@@ -2429,16 +2230,12 @@
 
     return Promise.all(jobs).then(function (rows) {
       var anyBad = rows.some(function (r) { return r.bad; });
-      // A blocked/expired peer gets a placeholder page (name + BLOCKED/EXPIRED), not real configs — so it's kept out
-      // of the protocol-group computation and rendered separately after the live peers.
       var deadRows = rows.filter(function (r) { return r.peer.disabled || r.peer.expired; });
       var liveRows = rows.filter(function (r) { return !(r.peer.disabled || r.peer.expired); });
-      // Which protocol groups apply: WG/AWG if ≥1 deployment of that type; TURN only when the feature is on AND
-      // ≥1 deployment has a proxy forwarding to it (same gate as the admin view).
       var has = { wg: false, awg: false, turn: false };
       liveRows.forEach(function (r) { (r.peer.targets || []).forEach(function (t) {
-        if (isSelfContained(t.type)) { if (data.turn_enabled) has.turn = true; return; }   // WDTT + csqtt are turn-family servers → the Turn group (not a WG/AWG deployment)
-        if (t.direct !== false) has[t.type === "awg" ? "awg" : "wg"] = true;   // direct:false = the peer publishes this deployment only through its proxies
+        if (isSelfContained(t.type)) { if (data.turn_enabled) has.turn = true; return; }
+        if (t.direct !== false) has[t.type === "awg" ? "awg" : "wg"] = true;
         if (data.turn_enabled && (t.turn || []).length) has.turn = true;
       }); });
       var groups = ["wg", "awg", "turn"].filter(function (m) { return has[m]; });
@@ -2446,8 +2243,6 @@
 
       var bar = el("div", "modebar"), pager = el("div", "pager"), btns = {}, firstOf = {};
       var pinMode = null, pinTimer = 0;
-      // keep the per-protocol mtab-* modifier: it carries each icon's size/baseline tweak, and rebuilding
-      // className without it flattened the wg/awg glyphs the first time a tab was clicked
       function highlight(cur) { groups.forEach(function (m) { var on = (m === cur); btns[m].className = "modetab mtab-" + m + (on ? " on" : ""); btns[m].disabled = on; }); }
       groups.forEach(function (mode) {
         liveRows.forEach(function (row) {
@@ -2461,28 +2256,21 @@
         b.appendChild(protoIcon(mode));
         var mc = modeColor(mode); b.style.setProperty("--mc", mc); b.style.setProperty("--mc-ink", hexLum(mc) > 0.6 ? "#06222a" : "#EAFBFF");
         b.onclick = function () {
-          pinMode = mode; highlight(mode);                                       // highlight NOW, don't wait for the scroll
+          pinMode = mode; highlight(mode);
           var f = firstOf[mode]; if (f) f.scrollIntoView({ behavior: "smooth", block: "start" });
-          // Hold the pin until the smooth-scroll actually LANDS on this group (syncGroup releases it) — a fixed timer
-          // would drop the pin mid-flight and briefly light up whichever group the scroll is passing through.
-          clearTimeout(pinTimer); pinTimer = setTimeout(function () { pinMode = null; syncGroup(); }, 1500);   // safety fallback only
+          clearTimeout(pinTimer); pinTimer = setTimeout(function () { pinMode = null; syncGroup(); }, 1500);
         };
         btns[mode] = b; bar.appendChild(b);
       });
       if ((data.networks || []).length && liveRows.length) pager.appendChild(networksPage(data.networks));
-      // blocked/expired peers last — one placeholder page each, so they're visible in the carousel but carry no config
       deadRows.forEach(function (row) { pager.appendChild(deadPeerPage(row)); });
       if (!pager.children.length) { showState(t("noConfigs"), t("noConfigsSub")); return; }
       if (groups.length > 1) wrap.appendChild(bar);
       wrap.appendChild(pager);
 
       var pages = Array.prototype.slice.call(pager.children);
-      // Where the networks page landed, if this subscription has one. The pick index below is built from pages that carry a
-      // config (`_pick`), and this page carries none — so it is named here, once, and handed to the picker as its last row.
       var netsIdx = -1;
       for (var ni = 0; ni < pages.length; ni++) if (pages[ni].getAttribute("data-mode") === "nets") { netsIdx = ni; break; }
-      // up/down hint per page: hint both directions, except no "up" on the first page and no "down" on the last
-      // (a lone page hints neither). left/right hints are handled inside the page (per deployment).
       pages.forEach(function (pg, i) {
         var u = pg.querySelector(".vhint-u"), d = pg.querySelector(".vhint-d");
         if (u) u.style.display = (pages.length > 1 && i > 0) ? "" : "none";
@@ -2508,25 +2296,23 @@
       function jumpTo(pi, ci) {
         var pg = pages[pi]; if (!pg) return;
         if (pg._seek) pg._seek(ci, null);
-        pg.scrollIntoView({ block: "start" });   // instant (no smooth) — land, don't animate past every page between
+        pg.scrollIntoView({ block: "start" });
         syncGroup();
       }
-      function curPick() {   // where the reader is right now, so the picker can mark it
+      function curPick() {
         var pi = curIndex(), pg = pages[pi];
         return { pi: pi, ci: ((pg && pg._pos) ? pg._pos() : { cell: 0 }).cell };
       }
       var openPicker = function () {
         openConfigPicker(pickPeers, curPick(), jumpTo, netsIdx >= 0 ? { pi: netsIdx, n: (data.networks || []).length } : null);
       };
-      // ⚠️ A single config USED TO mean no picker at all — nothing to choose between. With a networks page there are still two
-      // places to be, and it is the one nothing else leads to, so the button is offered for it as well.
       var pickOn = pickTotal > 1 || netsIdx >= 0;
-      headerSwitch(pickOn ? openPicker : null);   // one button beside the username (wide layout only)
+      headerSwitch(pickOn ? openPicker : null);
       if (pickOn) {
         pages.forEach(function (pg) {
           Array.prototype.forEach.call(pg.querySelectorAll("[data-pick]"), function (trg) {
             if (trg.tagName === "BUTTON") { trg.hidden = false; trg.style.visibility = ""; trg.onclick = openPicker; return; }
-            trg.classList.add("pickable");                       // plain text → give it a button's semantics
+            trg.classList.add("pickable");
             trg.setAttribute("role", "button");
             trg.setAttribute("tabindex", "0");
             trg.setAttribute("aria-label", t("pickOpen"));
@@ -2538,39 +2324,32 @@
         });
       }
 
-      function alignRail() { /* icon row is static now — nothing to reposition */ }
-      _relayoutRail = alignRail;   // let a page's layout pass (QR↔config toggle, fit, swipe) re-centre the rail
+      function alignRail() {   }
+      _relayoutRail = alignRail;
       function syncGroup() {
-        // highlight the group of the page actually in view (the top-most visible one — same logic as paging)
         var pg = pages[curIndex()];
         var mode = pg ? pg.getAttribute("data-mode") : (pages[0] ? pages[0].getAttribute("data-mode") : groups[0]);
         if (pinMode) {
-          if (mode === pinMode) { pinMode = null; clearTimeout(pinTimer); }   // scroll arrived → release the pin
-          else { highlight(pinMode); return; }                                // still travelling → keep the target lit
+          if (mode === pinMode) { pinMode = null; clearTimeout(pinTimer); }
+          else { highlight(pinMode); return; }
         }
         highlight(mode);
       }
       var raf = 0, navLock = false;
       function curIndex() {
-        // portrait: the PAGER is the scroll container, so measure against its top. landscape/desktop: the WINDOW
-        // scrolls, so measure against a fixed point just below the sticky header (in viewport coords).
         var pagerScrolls = getComputedStyle(pager).overflowY !== "visible";
         var top = pagerScrolls ? (pager.getBoundingClientRect().top + 6) : 80;
         for (var i = 0; i < pages.length; i++) { if (pages[i].getBoundingClientRect().bottom > top) return i; }
         return pages.length - 1;
       }
-      pager._cur = curIndex;   // capturePos() (outer scope) asks the pager itself, so the rule lives in ONE place
+      pager._cur = curIndex;
 
-      // Step exactly ONE peer up/down (shared by the vertical swipe + wheel). A lock during the animation stops a
-      // fling from chaining.
       function stepConfig(dir) {
         if (navLock) return;
         navLock = true; setTimeout(function () { navLock = false; }, 460);
         var i = curIndex(), j = Math.max(0, Math.min(i + dir, pages.length - 1));
         if (j !== i) pages[j].scrollIntoView({ behavior: "smooth", block: "start" });
       }
-      // Step exactly ONE deployment left/right in the CURRENT page's carousel (mirrors stepConfig for the
-      // horizontal axis) — so a fast flick advances one server/fork, not three.
       function stepCell(dir) {
         if (navLock) return;
         var pg = pages[curIndex()]; if (!pg) return;
@@ -2588,33 +2367,29 @@
       pager.addEventListener("scroll", onScroll, { passive: true });
       window.addEventListener("scroll", onScroll, { passive: true });
       window.addEventListener("resize", onScroll, { passive: true });
-      // Restore the reader's place (deployment + QR/config view + which page) after a lang/theme rebuild — BEFORE
-      // the first syncGroup so nothing flashes the top config first.
       if (keepPos && pages.length) {
         var kp = Math.max(0, Math.min(keepPos.page | 0, pages.length - 1));
         var kpg = pages[kp];
         if (kpg && kpg._seek) kpg._seek(keepPos.cell, keepPos.view);
-        kpg.scrollIntoView({ block: "start" });   // instant (no smooth) — land, don't animate from the top
+        kpg.scrollIntoView({ block: "start" });
       }
       syncGroup();
-      requestAnimationFrame(syncGroup);   // re-sync once laid out
-      setTimeout(alignRail, 120);         // catch the QR's async first paint
+      requestAnimationFrame(syncGroup);
+      setTimeout(alignRail, 120);
 
-      var scrollableUnder = function (node) {   // a config-text box that itself needs scrolling — let it, don't page
+      var scrollableUnder = function (node) {
         for (var n = node; n && n !== pager; n = n.parentNode) {
           if (n.classList && n.classList.contains("cfgtext") && n.scrollHeight > n.clientHeight + 2) return true;
         }
         return false;
       };
       var wAcc = 0, wT = 0, hAcc = 0, hT = 0;
-      // Firefox reports wheel deltas in LINES (deltaMode 1) or PAGES (2), not pixels like Chrome — so the raw
-      // deltas are tiny and never reach the 120px step threshold, blocking scroll entirely. Normalise to pixels.
       function wpx(d, e) { return e.deltaMode === 1 ? d * 16 : e.deltaMode === 2 ? d * (pager.clientHeight || 800) : d; }
       pager.addEventListener("wheel", function (e) {
-        if (getComputedStyle(pager).overflowY === "visible") return;   // window-scrolled layout → native wheel is right
+        if (getComputedStyle(pager).overflowY === "visible") return;
         if (scrollableUnder(e.target)) return;
         e.preventDefault();
-        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {   // horizontal wheel → step ONE deployment (no fling-skip)
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
           var nx = Date.now(); if (nx - hT > 180) hAcc = 0; hT = nx;
           hAcc += wpx(e.deltaX, e);
           if (Math.abs(hAcc) > 120) { stepCell(hAcc > 0 ? 1 : -1); hAcc = 0; }
@@ -2632,7 +2407,7 @@
   }
 
   function fitBrand() {
-    document.body.classList.remove("logo-inline");                 // always measure the DEFAULT centred layout
+    document.body.classList.remove("logo-inline");
     var brand = document.querySelector(".brand"), ctl = document.querySelector(".topctl");
     if (brand && ctl && brand.getBoundingClientRect().right > ctl.getBoundingClientRect().left - 8) {
       document.body.classList.add("logo-inline");
@@ -2642,7 +2417,7 @@
   window.addEventListener("orientationchange", function () { setTimeout(fitBrand, 60); });
 
   function start() {
-    wireControls(); paintCtl(); fitBrand();        // theme toggle works even before the data loads
+    wireControls(); paintCtl(); fitBrand();
     var lp = document.querySelector("#state p"); if (lp) lp.textContent = t("loading");
     var seg = location.pathname.split("/").filter(Boolean);
     var token = seg.length ? seg[seg.length - 1] : "";
@@ -2661,7 +2436,7 @@
 
     crypto.subtle.importKey("raw", keyBytes, { name: "AES-GCM" }, false, ["decrypt"])
       .then(function (cryptoKey) {
-        return fetch("api/" + encodeURIComponent(token), { cache: "no-store" }).then(function (res) {   // RELATIVE (no leading /) → resolves under any reverse-proxy mount, same as the assets
+        return fetch("api/" + encodeURIComponent(token), { cache: "no-store" }).then(function (res) {
           if (res.status === 404) { showState(t("notFound"), t("notFoundSub")); return null; }
           if (!res.ok) { showState(t("err"), t("errServer")); return null; }
           return res.json().then(function (j) {

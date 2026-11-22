@@ -12,7 +12,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// ───────────────────────── icons + panels ─────────────────────────
 export const ICON = {
   arrow: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>',
   dots: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2.1"/><circle cx="12" cy="12" r="2.1"/><circle cx="19" cy="12" r="2.1"/></svg>',
@@ -70,17 +69,13 @@ export const ICON = {
   globe: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18z"/></svg>',
   bolt: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>',
   gauge: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 13.5 16 9"/><path d="M4 18a9 9 0 1 1 16 0"/></svg>',
-  // a rule's own settings (where it leaves by, for whom, as which address) — tuning one thing, not the app's settings
   sliders: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg>',
   gear: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V20a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-2.7-1.1l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 4.6 13H4.5a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.1-2.7l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 2.7-1.1V2a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-1.1 2.7v.1a2 2 0 1 1 0 4z"/></svg>',
   trash: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M4 7h16M9 7V4.5h6V7M6.5 7l1 13h9l1-13"/></svg>',
   link: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M10 13a4 4 0 0 0 6 .5l2-2a4 4 0 0 0-5.7-5.7l-1.2 1.1M14 11a4 4 0 0 0-6-.5l-2 2A4 4 0 0 0 11.7 18l1.2-1.1"/></svg>',
   qr: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1.2"/><rect x="14" y="3" width="7" height="7" rx="1.2"/><rect x="3" y="14" width="7" height="7" rx="1.2"/><path d="M14 14h3v3M21 14v3M17 21h4M14 21h.01M21 21v.01M17 17h.01"/></svg>',
   doc: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>',
-  // `</>` — the rule field's text view. Round joins and the same 2px stroke as the rest of the set, so it
-  // sits beside the drag grip without reading as a different family.
   code: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 7.5L4 12l4.5 4.5M15.5 7.5L20 12l-4.5 4.5M13.5 4.5l-3 15"/></svg>',
-  // OS/platform brand glyphs (Android/iOS/Windows/macOS from the sub-page picker; Linux = Simple Icons Tux) — viewBox-only, CSS-sized
   os_android: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.2 9.3h9.6v7.2a1 1 0 0 1-1 1H15v2.1a1.1 1.1 0 0 1-2.2 0V17.5h-1.6v2.1a1.1 1.1 0 0 1-2.2 0V17.5h-.8a1 1 0 0 1-1-1zM5 9.6a1.1 1.1 0 0 1 1.1 1.1v4.4a1.1 1.1 0 0 1-2.2 0v-4.4A1.1 1.1 0 0 1 5 9.6zm14 0a1.1 1.1 0 0 1 1.1 1.1v4.4a1.1 1.1 0 0 1-2.2 0v-4.4A1.1 1.1 0 0 1 19 9.6zM8.3 8.4a3.9 3.9 0 0 1 1.7-2.7l-.82-1.35a.28.28 0 0 1 .48-.28l.83 1.4a4.6 4.6 0 0 1 3 0l.83-1.4a.28.28 0 0 1 .48.28L14 5.7a3.9 3.9 0 0 1 1.7 2.7zm1.8-1.6a.62.62 0 1 0 0-1.24.62.62 0 0 0 0 1.24zm3.8 0a.62.62 0 1 0 0-1.24.62.62 0 0 0 0 1.24z"/></svg>',
   os_ios: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.8 12.7c-.02-2.2 1.8-3.26 1.88-3.32-1.02-1.5-2.62-1.7-3.19-1.72-1.36-.14-2.65.8-3.34.8-.68 0-1.75-.78-2.88-.76-1.5.02-2.85.86-3.61 2.19-1.54 2.68-.4 6.65 1.1 8.83.73 1.07 1.6 2.27 2.74 2.23 1.1-.045 1.52-.71 2.85-.71 1.33 0 1.7.71 2.87.69 1.18-.02 1.93-1.09 2.65-2.16.83-1.24 1.18-2.44 1.2-2.5-.026-.01-2.3-.885-2.32-3.51zM13.6 6.35c.6-.73.995-1.74.888-2.75-.86.035-1.9.57-2.52 1.3-.55.64-1.03 1.68-.9 2.66.955.075 1.93-.49 2.53-1.21z"/></svg>',
   os_windows: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 5.6l7.4-1.02v7.06H3zm8.3-1.14L21 3.1v8.54h-9.7zM3 12.44h7.4v7.06L3 18.44zm8.3 0H21v8.5l-9.7-1.36z"/></svg>',
@@ -89,8 +84,6 @@ export const ICON = {
 };
 export const Ic = ({ i }) => html`<span class="ic" dangerouslySetInnerHTML=${{ __html: ICON[i] || "" }}></span>`;
 
-// A titled, icon-headed group panel — the primary way related info is clustered
-// (server details / health / vitals / config). tone tints the icon square.
 export function Panel({ icon, title, count, actions, tone, children, pad, lead }) {
   return html`<section class="panel">
     <div class="panel-head">
@@ -102,7 +95,6 @@ export function Panel({ icon, title, count, actions, tone, children, pad, lead }
   </section>`;
 }
 
-// ───────────────────────── toasts (imperative; outside the Preact tree) ─────────────────────────
 export function toast(msg, kind = "info", ms = 5500) {
   const host = $("#toasts"); if (!host) return;
   const t = document.createElement("div");
@@ -122,14 +114,13 @@ export function typeToConfirm(phrase) {
 }
 export function copy(text, what) { navigator.clipboard.writeText(text); toast((what || T("Copied")) + ".", "ok", 1500); }
 
-// mutations (optimistic, status-on-failure)
 let _mutSeq = 0;
 export function adoptOrphanPatch(o) {
   return s => {
     const target = { node: o.node, iface: o.iface, ip: (o.allowed_ips || "").split("/")[0] };
     const peers = (s.roster && s.roster.peers) || {};
     const mine = Object.entries(peers).find(([, p]) => p && p.pubkey === o.pubkey);
-    if (mine) {                                   // known peer gaining a deployment → just add the target
+    if (mine) {
       const p = mine[1];
       if (!(p.targets || []).some(t => t && t.node === target.node && t.iface === target.iface))
         p.targets = (p.targets || []).concat([target]);
@@ -137,7 +128,7 @@ export function adoptOrphanPatch(o) {
     }
     peers["adopting:" + o.node + "|" + o.iface + "|" + o.pubkey] = {
       user_id: null, title: "", pubkey: o.pubkey, psk: o.preshared_key || "",
-      targets: [target], created_at: panelNowS(),   // the grace window this is judged against runs on the PANEL's clock (reconcile.js)
+      targets: [target], created_at: panelNowS(),
     };
   };
 }
@@ -153,7 +144,7 @@ export function mutate({ key, patch, call, onOk, timeout = 8000 }) {
     catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
     clearTimeout(timer);
     if (!r || !r.ok) {
-      delete Store.pending[id];                                  // revert optimistic change
+      delete Store.pending[id];
       if (key) Store.rowErrors[key] = { msg: (r && (srvText(r) || r.code)) || T("request failed"), at: Date.now() };
       Store.apply();
       toast((r && (srvText(r) || r.code)) || T("Action failed."), "err", 4500);
@@ -161,12 +152,11 @@ export function mutate({ key, patch, call, onOk, timeout = 8000 }) {
     }
     if (key) delete Store.rowErrors[key];
     if (onOk) { try { onOk(r); } catch (_) {} }
-    if (Store.pending[id]) Store.pending[id].done = true;        // keep applied until the next poll supersedes
+    if (Store.pending[id]) Store.pending[id].done = true;
     await Store.poll().catch(() => {});
     return r;
   })();
 }
-// a sheet's Save waits for the panel (q189 SPA-3, the root)
 export async function sheetSend(call, setErr, setBusy) {
   if (setBusy) setBusy(true);
   if (setErr) setErr("");
@@ -179,25 +169,24 @@ export async function sheetSend(call, setErr, setBusy) {
 export function rowError(key) { return Store.rowErrors[key] || null; }
 export function dismissError(key) { if (Store.rowErrors[key]) { delete Store.rowErrors[key]; Store.apply(); } }
 
-// modal
 let _setStack = () => {};
 let _stack = [];
-let _modalSeq = 0;   // bumps on every open/close — lets a confirm tell if onConfirm replaced the modal
-let _onStack = null;   // a phone: attachBackCloses keeps one history entry per open sheet
+let _modalSeq = 0;
+let _onStack = null;
 function _applyStack(next) { _stack = next; _modalSeq++; _setStack(next); if (_onStack) _onStack(next.length); }
 export function openModal(node) { _applyStack(_stack.length ? [..._stack.slice(0, -1), node] : [node]); }
 export function pushModal(node) { _applyStack([..._stack, node]); }
 function _blurActive() { requestAnimationFrame(() => { const a = document.activeElement; if (a && a.blur && a.tagName !== "BODY") a.blur(); }); }
-export function closeModal() { _applyStack(_stack.slice(0, -1)); _blurActive(); }   // drop the focus ring the trigger regains on ESC/close
+export function closeModal() { _applyStack(_stack.slice(0, -1)); _blurActive(); }
 export function closeAllModals() { _applyStack([]); _blurActive(); }
 export function closeModals(n) { _applyStack(_stack.slice(0, Math.max(0, _stack.length - Math.max(1, n | 0)))); _blurActive(); }
-let _sheetStack = [];   // mounted Sheet tokens (LIFO) — only the topmost handles Esc/Enter/Tab
+let _sheetStack = [];
 
 let _rowClickT = null;
 const _rowInteractive = e => !!(e.target.closest && e.target.closest("button, a, input, select, textarea, label, .assigncell, .rowacts, .selwrap, .tg-gw"));
 export function rowSingle(e, fn) { if (_rowInteractive(e)) return; clearTimeout(_rowClickT); _rowClickT = setTimeout(() => { _rowClickT = null; fn(); }, 200); }
 export function rowDouble(e, fn) { if (_rowInteractive(e)) return; clearTimeout(_rowClickT); _rowClickT = null; fn(); }
-export const rowNoSelect = e => { if (e.detail > 1) e.preventDefault(); };   // stop the 2nd click of a double-click from selecting the row text
+export const rowNoSelect = e => { if (e.detail > 1) e.preventDefault(); };
 
 export function Portal({ children }) {
   const host = useRef(null);
@@ -207,8 +196,6 @@ export function Portal({ children }) {
   return null;
 }
 
-/* See parkTitles in js/screen-nodes.js — the same rule for the innerHTML header bubbles, which have no ref
-   to hang an effect on. Keep the two in step. */
 function useNoNativeTitle(ref, active) {
   useEffect(() => {
     if (!active || !ref.current) return;
@@ -218,12 +205,11 @@ function useNoNativeTitle(ref, active) {
     };
     for (let el = ref.current; el && el !== document.body; el = el.parentElement) park(el);
     ref.current.querySelectorAll("[title]").forEach(park);
-    return () => parked.forEach(([el, v]) => { try { el.setAttribute("title", v); } catch (_) { /* gone with the row */ } });
+    return () => parked.forEach(([el, v]) => { try { el.setAttribute("title", v); } catch (_) {   } });
   }, [active]);
 }
 
-// `children` may be a function: it is handed `close`, for a bubble that carries its own close control.
-export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly, autoOpen, clickOnly }) {   // flipFit: now every bubble's behaviour (callers may still pass it)
+export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly, autoOpen, clickOnly }) {
   const [open, setOpen] = useState(false), [pinned, setPinned] = useState(!!autoOpen), [pos, setPos] = useState(null);
   const ref = useRef(null), popRef = useRef(null), closeT = useRef(null);
   const show = open || pinned;
@@ -232,7 +218,7 @@ export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly,
   const place = () => { const el = ref.current; if (!el) return; const r = el.getBoundingClientRect();
     const pop = popRef.current, M = 8, vw = window.innerWidth, vh = window.innerHeight;
     let ph = 340, pw = 300;
-    if (pop) {                                  // its natural height: without the cap a previous placement put on it
+    if (pop) {
       const cap = pop.style.maxHeight; pop.style.maxHeight = ""; ph = pop.offsetHeight; pw = pop.offsetWidth; pop.style.maxHeight = cap;
     }
     const below = vh - r.bottom - 6 - M, above = r.top - 6 - M;
@@ -267,7 +253,7 @@ export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly,
     const onEsc = e => {
       if (e.key !== "Escape") return;
       if (modalDepth() !== depthAtPin) return;
-      if (document.querySelector(".ddpop")) return;     // a dropdown is open (it portals to <body>) — its Escape first
+      if (document.querySelector(".ddpop")) return;
       e.stopPropagation(); e.preventDefault(); setPinned(false); setOpen(false);
     };
     window.addEventListener("scroll", onMove, true); window.addEventListener("resize", onMove);
@@ -292,21 +278,17 @@ export function attachBackCloses() {
   _onStack = n => { if (n > depth) for (; depth < n; depth++) history.pushState({ swgSheet: depth + 1 }, ""); else depth = n; };
   window.addEventListener("popstate", () => {
     const qr = document.querySelector(".qr-overlay"), pop = document.querySelector(".deppop"), cat = document.querySelector(".catpick-pop .pop-x");
-    if (cat) { if (location.href !== url) { eat = true; history.pushState(history.state, "", url); } cat.click(); return; }   // a routing field's search
+    if (cat) { if (location.href !== url) { eat = true; history.pushState(history.state, "", url); } cat.click(); return; }
     if (!qr && !pop && !_stack.length && !document.querySelector(".osapp-menu")) {
-      if (location.href === url) history.back();   // a closed sheet's entry left behind: not a page, step past it
+      if (location.href === url) history.back();
       return;
     }
-    // what this Back took: the top sheet's own entry when the address did not change, a page's when it did (no sheet entry left)
     const tookSheet = location.href === url;
     if (!tookSheet) { eat = true; history.pushState(history.state, "", url); }
-    // a layer inside a sheet (a client app menu, a QR, a bubble) has no entry of its own: the sheet gets back the one this took (F55)
     const giveBack = () => { if (tookSheet && _stack.length) history.pushState({ swgSheet: depth }, ""); };
-    if (document.querySelector(".osapp-menu")) { document.dispatchEvent(new CustomEvent("m-outside-tap")); giveBack(); return; }   // F4
+    if (document.querySelector(".osapp-menu")) { document.dispatchEvent(new CustomEvent("m-outside-tap")); giveBack(); return; }
     if (qr) { qr.click(); giveBack(); return; }
     if (pop) { if (pop.classList.contains("m-titletap")) pop.remove(); else window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })); giveBack(); return; }
-    // the top sheet, through its GUARDED close — the X's, the swipe's and Esc's — so unsaved edits ask first (F51). Its entry is the
-    // one this Back took; a sheet that stays (it asked, in place) gets one back, and a confirm it opened gets its own.
     depth = Math.max(0, _stack.length - 1);
     const top = _sheetStack[_sheetStack.length - 1];
     if (top && top.close) top.close(); else closeModal();
@@ -318,12 +300,8 @@ export function attachBackCloses() {
   }, true);
 }
 
-// A phone: the visible part of the page (above the keyboard) as --m-vvt / --m-vvh, for what is docked to it rather than to the
-// layout viewport the keyboard does not shrink (m/m.css: a routing field's search)
 export function attachViewportVars() {
   const v = window.visualViewport, root = document.documentElement;
-  // --m-kbpad: the keyboard is up (the visible page much shorter than the window) — what is pinned to its bottom stands clear of a
-  // browser bar laid over that edge (Brave, measured on the operator's phone: ~30 px)
   const set = () => { const h = v ? v.height : innerHeight;
     root.style.setProperty("--m-vvt", (v ? v.offsetTop : 0) + "px"); root.style.setProperty("--m-vvh", h + "px");
     root.style.setProperty("--m-kbpad", innerHeight - h > 150 ? "36px" : "0px"); };
@@ -345,8 +323,6 @@ export function attachTitleTaps() {
       if (!el && n.getAttribute("title")) el = n;
     }
     if (!el) return;
-    // a tag that names itself (an interface's protocol badge — "AWG 3.1" titled "AmneziaWG 3.1") says nothing new: no bubble
-    // (operator, 2026-10-29: "that slider is useless")
     if (el.matches(".tg, .iftype, .tag, .capb, .ce-tag")) return;
     bub = document.createElement("div");
     bub.className = "deppop m-titletap";
@@ -365,13 +341,12 @@ export function attachSwipePeek() {
     const row = n < 3 && [...document.querySelectorAll(SWIPE_ROW)].find(r => { const b = r.getBoundingClientRect(); return b.height && b.top > 60 && b.bottom < innerHeight - 80; });
     if (!row || document.querySelector(".overlay.show")) return;
     try { localStorage.setItem("swg-peek", String(n + 1)); } catch (_) {}
-    row.style.scrollSnapType = "none";                       // a snap point would swallow a part-way slide
+    row.style.scrollSnapType = "none";
     row.scrollTo({ left: 76, behavior: "smooth" });
     setTimeout(() => { row.scrollTo({ left: 0, behavior: "smooth" }); setTimeout(() => { row.style.scrollSnapType = ""; }, 500); }, 750);
   }, 1200);
   window.addEventListener("hashchange", peek);
   peek();
-  // the ⋮ in a closed row's right lane (m/m.css) opens it, as the swipe does — and nothing under it opens
   document.addEventListener("click", e => {
     const row = e.target && e.target.closest && e.target.closest(SWIPE_ROW);
     if (!row || row.scrollLeft > 4 || e.target.closest("button, a, input, .iconbtn")) return;
@@ -384,26 +359,20 @@ export function attachSwipePeek() {
 export function attachBubbleSwipe() {
   let d = null;
   document.addEventListener("touchstart", e => {
-    const pop = e.target && e.target.closest && e.target.closest(".deppop, .qr-overlay-inner");   // a QR enlargement is a sheet too
+    const pop = e.target && e.target.closest && e.target.closest(".deppop, .qr-overlay-inner");
     if (!pop || e.touches.length !== 1) { d = null; return; }
-    // the sheet swipe's own guards (F13): a drag that starts in a field is the field's; one in a scroller that is not at its
-    // top — the bubble itself included, which m.css makes the scroller — scrolls it
     if (e.target.closest("input, textarea, select")) { d = null; return; }
     let sc = e.target;
     for (; sc; sc = sc === pop ? null : sc.parentElement) if (sc.scrollHeight > sc.clientHeight + 1 && /auto|scroll/.test(getComputedStyle(sc).overflowY)) break;
     if (sc && sc.scrollTop > 0) { d = null; return; }
     d = { pop, x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now(), dy: 0 };
   }, { passive: true, capture: true });
-  // ⚠️ NOT PASSIVE: on a real phone the page under a bubble took the drag as its own scroll and Chrome sent touchcancel —
-  // the bubble never closed (operator, 2026-10-29). A downward drag on it is the bubble's, so the page is told no.
   document.addEventListener("touchmove", e => {
     if (!d) return;
     const ddx = Math.abs(e.touches[0].clientX - d.x), ddy = e.touches[0].clientY - d.y;
-    if (!d.dy && ddx > 10 && ddx > Math.abs(ddy)) { d.pop.style.removeProperty("transform"); d = null; return; }   // sideways: not a close
+    if (!d.dy && ddx > 10 && ddx > Math.abs(ddy)) { d.pop.style.removeProperty("transform"); d = null; return; }
     d.dy = Math.max(0, ddy);
     if (d.dy > 0 && e.cancelable) e.preventDefault();
-    // important: m.css docks a bubble with `transform: none !important`, which a plain inline transform loses to — the
-    // bubble stood still under the finger (operator, 2026-10-29: "glitching")
     d.pop.style.setProperty("transition", "none", "important");
     if (d.dy) d.pop.style.setProperty("transform", "translateY(" + d.dy + "px)", "important"); else d.pop.style.removeProperty("transform");
   }, { passive: false, capture: true });
@@ -413,17 +382,15 @@ export function attachBubbleSwipe() {
     const back = () => { pop.style.setProperty("transition", "transform .2s var(--ease)", "important"); pop.style.removeProperty("transform"); };
     if (dy < 70 && !(dy > 24 && dy / Math.max(1, Date.now() - t) > 0.5)) return back();
     if (pop.classList.contains("m-titletap")) return pop.remove();
-    if (pop.classList.contains("qr-overlay-inner")) return pop.parentElement.click();   // its own close (crypto.js qrZoom)
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));   // a pinned one
-    pop.dispatchEvent(new MouseEvent("mouseleave"));                                                          // one a tap opened as a hover
+    if (pop.classList.contains("qr-overlay-inner")) return pop.parentElement.click();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    pop.dispatchEvent(new MouseEvent("mouseleave"));
     setTimeout(() => { if (pop.isConnected) back(); }, 260);
   };
   document.addEventListener("touchend", bubbleEnd, { capture: true });
   document.addEventListener("touchcancel", bubbleEnd, { capture: true });
 }
 
-// A phone: a notification goes on a swipe in any direction (operator, 2026-10-29) — dragged more than 50 px it leaves that
-// way and is gone; less, it springs back. Its own timer still ends it otherwise.
 export function attachToastSwipe() {
   let d = null;
   document.addEventListener("touchstart", e => {
@@ -459,18 +426,18 @@ export function attachOutsideTapGuard() {
   let eat = 0;
   document.addEventListener("pointerdown", e => {
     eat = 0;
-    const layer = document.querySelector(".ddpop, .uc-pop, .deppop, .osdd-menu, .osapp-menu");   // the OS / app pickers (turn.js)
+    const layer = document.querySelector(".ddpop, .uc-pop, .deppop, .osdd-menu, .osapp-menu");
     const t = e.target, ae = document.activeElement;
     if (!layer || (t && layer.contains(t)) || (ae && ae !== document.body && ae.contains && ae.contains(t))) return;
     eat = Date.now();
     if (ae && ae.blur && ae.matches && ae.matches("input, textarea, select")) ae.blur();
-    document.querySelectorAll(".deppop.m-titletap").forEach(b => b.remove());   // its own close rides the click eaten below
+    document.querySelectorAll(".deppop.m-titletap").forEach(b => b.remove());
   }, true);
   document.addEventListener("click", e => {
-    if (!e.isTrusted) return;                        // a click the app sends itself (a swipe's close) is never the eaten tap
+    if (!e.isTrusted) return;
     if (!eat || Date.now() - eat > 800) return;
     eat = 0; e.stopPropagation(); e.preventDefault();
-    document.dispatchEvent(new CustomEvent("m-outside-tap"));   // a layer that closes on a document click closes on this instead (turn.js)
+    document.dispatchEvent(new CustomEvent("m-outside-tap"));
   }, true);
 }
 
@@ -485,10 +452,8 @@ const STATUS_WORDS = once(() => ({
   expiring: T("status|Expiring"), blocking: T("status|Blocking"), unknown: T("status|Unknown"),
   unassigned: T("status|Unassigned"), orphan: T("status|Orphan"), removing: T("status|Removing"), empty: T("status|Empty"),
 }));
-// badges show a capitalised label (Online / Dangling / Broken …); an unlisted status falls back to its key
 export const statusLabel = s => { const k = STATUS_LABEL[s] || s || ""; return STATUS_WORDS()[k] || (k.charAt(0).toUpperCase() + k.slice(1)); };
 
-// deferred navigation intent: "open Settings, on THIS section"
 let _pendingSection = null, _pendingTurnIps = false, _setSection = () => {};
 export function goSettings(section) { _pendingSection = section; closeAllModals(); go("#/panel/settings"); }
 export function goSettingsTurnIps() { _pendingSection = "turn"; _pendingTurnIps = true; closeAllModals(); go("#/panel/settings"); }
@@ -501,7 +466,6 @@ export const gotoSettingsSection = s => _setSection(s);
 export function Tag({ kind, label, color, muted, gen3, notip }) {
   return html`<span class=${"tg tg-" + (kind || "gen") + (gen3 ? " awg3" : "") + (muted ? " muted" : "")} style=${color && !muted ? "--tgc:" + color : ""} ...${notip ? {} : tip3(gen3)}>${label}</span>`;
 }
-// Is this roster target an AWG deployment on an AmneziaWG 3.1 interface? What every protocol tag of a target passes as `gen3`.
 export const tgt3 = t => !!t && awgGen(t.node, t.iface) === "3.1";
 export function awgSwitchTag(node, iface, short) {
   const to = awgGenPending(node, iface);
@@ -511,13 +475,10 @@ export function awgSwitchTag(node, iface, short) {
       : T("Waiting for the node to apply it — until then its clients keep working on the old config, and new QR codes already show the new one.")}><${Ic} i="clock"/>${short ? T("tag|switching") : to === "3.1" ? T("tag|switching to 3.1") : T("tag|switching to 2.0")}</span>`;
 }
 
-// sheets, section furniture, confirms
 export function secTitle(title, count, grow, anchor) {
   return html`<div class="section-title" data-sec=${anchor || null}><h2>${title}</h2>${count != null ? html`<span class="count">${count}</span>` : null}${grow === false ? null : html`<span class="grow"></span>`}</div>`;
 }
 
-// The shared toolbar search box (Peers / Users / Activity / Live / expanded-peer grids): a magnifier
-// icon + a filter input. Only placeholder / value / onInput vary per screen.
 export function SearchBox({ placeholder, value, onInput }) {
   return html`<div class="search"><${Ic} i="search"/><input placeholder=${placeholder} value=${value} onInput=${onInput}/></div>`;
 }
@@ -532,7 +493,7 @@ export function subjectBlocked(subject) {
 }
 function attachSheetSwipe(root, canSwipe, wantsGuard, close) {
   let st = null;
-  const scrollerAbove = el => {        // an element between the touch and the sheet that can still scroll content down
+  const scrollerAbove = el => {
     for (; el && el !== root; el = el.parentElement) {
       if (el.scrollTop > 0 && el.scrollHeight > el.clientHeight) { const o = getComputedStyle(el).overflowY; if (o === "auto" || o === "scroll") return true; }
     }
@@ -555,8 +516,8 @@ function attachSheetSwipe(root, canSwipe, wantsGuard, close) {
     if (!st) return;
     const dx = e.touches[0].clientX - st.x, dy = e.touches[0].clientY - st.y;
     if (!st.on) {
-      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) { st = null; return; }   // sideways: a rail, a pager — never a close
-      if (dy < -6) { st = null; return; }                                              // up: the content scrolls
+      if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) { st = null; return; }
+      if (dy < -6) { st = null; return; }
       if (dy < 10) return;
       st.on = true; root.classList.add("m-dragging");
     }
@@ -570,7 +531,7 @@ function attachSheetSwipe(root, canSwipe, wantsGuard, close) {
     if (!s.on) return;
     const fast = s.dy > 40 && s.dy / Math.max(1, Date.now() - s.t) > 0.6;
     if (!(s.dy > Math.min(140, root.offsetHeight * 0.3) || fast)) return reset(true);
-    if (wantsGuard()) { reset(true); close(); return; }              // the discard prompt shows: spring back, never off the screen
+    if (wantsGuard()) { reset(true); close(); return; }
     root.classList.remove("m-dragging"); root.classList.add("m-springback");
     root.style.transform = "translateY(100%)";
     setTimeout(() => { close(); if (root.isConnected) reset(false); root.classList.remove("m-springback"); }, 180);
@@ -581,60 +542,51 @@ function attachSheetSwipe(root, canSwipe, wantsGuard, close) {
   const onCancel = () => { if (st && st.on) reset(true); st = null; };
   root.addEventListener("touchcancel", onCancel);
   return () => { root.removeEventListener("touchstart", onStart); root.removeEventListener("touchmove", onMove); root.removeEventListener("touchend", onEnd);
-    root.removeEventListener("touchcancel", onCancel); };   // all four (F43)
+    root.removeEventListener("touchcancel", onCancel); };
 }
 export function Sheet({ title, children, foot, onClose, width, headExtra, dirtyRef, closeRef, cleanRef, onBack, noGuard, noSwipe, subject, err }) {
-  useStore();                                    // track live block/unblock while the modal is open
+  useStore();
   onClose = onClose || closeModal;
   const blocked = subjectBlocked(subject);
   const ref = useRef(null);
-  const dirty = useRef(false);   // set by a real user edit — programmatic value changes don't fire input/change
-  const discardRef = useRef(false);             // armed once; read live so the captured onKey closure stays correct
+  const dirty = useRef(false);
+  const discardRef = useRef(false);
   const [discard, setDiscardState] = useState(false);
   const setDiscarding = v => { discardRef.current = v; setDiscardState(v); };
   const fields = () => Array.from(ref.current ? ref.current.querySelectorAll("input,textarea,select") : []);
   const wantsGuard = () => !noGuard && (dirty.current || (dirtyRef && dirtyRef.current)) && !discardRef.current;
   const tryClose = () => { if (wantsGuard()) { setDiscarding(true); return; } onClose(); };
-  if (closeRef) closeRef.current = tryClose;   // expose the guarded close so a footer Cancel routes through it too
+  if (closeRef) closeRef.current = tryClose;
   if (cleanRef) cleanRef.current = () => { dirty.current = false; };
   const tryCloseRef = useRef(tryClose); tryCloseRef.current = tryClose;
-  const noGuardRef = useRef(noGuard); noGuardRef.current = noGuard;   // read live (the Sheet instance is reused across openModal)
+  const noGuardRef = useRef(noGuard); noGuardRef.current = noGuard;
   const noSwipeRef = useRef(noSwipe); noSwipeRef.current = noSwipe;
   const wantsGuardRef = useRef(wantsGuard); wantsGuardRef.current = wantsGuard;
 
   useEffect(() => {
     const root = ref.current; if (!root) return;
-    // [data-nodirty]: a control that only chooses what the sheet SHOWS (a traffic window's dates) — nothing to save, nothing to lose
     const onEdit = e => { if (!(e.target && e.target.closest && e.target.closest("[data-nodirty]"))) dirty.current = true; };
     root.addEventListener("input", onEdit, true);
     root.addEventListener("change", onEdit, true);
-    // fields can opt out of autofocus with [data-noautofocus] (e.g. the VK box); and a view modal (noGuard)
-    // never grabs focus onto a button as a fallback
     let first = root.querySelector("[autofocus]") || root.querySelector("input:not([data-noautofocus]),textarea:not([data-noautofocus]),select,button.btn-primary");
     if (first && noGuardRef.current && first.tagName === "BUTTON") first = null;
-    // A phone never focuses a field by itself (operator, 2026-10-29): that raises the on-screen keyboard over a sheet the
-    // operator opened to read. The field is one tap away.
     if (first && !isMobile()) setTimeout(() => { try { first.focus(); } catch (_) {} }, 0);
-    const tok = { close: () => tryCloseRef.current() }; _sheetStack.push(tok);   // only the TOP stacked Sheet reacts to Esc/Enter/Tab; a phone's Back closes it through `close`
+    const tok = { close: () => tryCloseRef.current() }; _sheetStack.push(tok);
     const onKey = e => {
-      if (_qrZoomOpen()) return;   // a QR enlargement is open — let it handle Esc (collapse it, keep the modal)
-      if (_sheetStack[_sheetStack.length - 1] !== tok) return;   // a child modal is on top — defer to it
-      if ((e.key === "Enter" || e.key === "Escape") && e.target && e.target.dataset && e.target.dataset.enter === "self") return;   // input handles its own Enter/Esc (e.g. inline rename) — don't submit/close the sheet
+      if (_qrZoomOpen()) return;
+      if (_sheetStack[_sheetStack.length - 1] !== tok) return;
+      if ((e.key === "Enter" || e.key === "Escape") && e.target && e.target.dataset && e.target.dataset.enter === "self") return;
       if ((e.key === "Enter" || e.key === "Escape") && document.querySelector(".ddpop")) return;
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); tryCloseRef.current(); return; }
       if (e.key === "Enter" && e.target.closest && (root.contains(e.target) || e.target.closest(".uc-pop, .deppop, .osdd-menu, .osapp-menu, .catpick-pop"))
           && e.target.closest("button, a[href], [role=button], [role=switch], [role=radio], [role=checkbox], [role=tab]")) return;
-      // A held Enter is one press: its repeats never reach the primary — on a phone the Enter that opened a confirmation
-      // would otherwise, held a moment, confirm it unseen (verify F12). A textarea's repeated newlines stay its own.
       if (e.key === "Enter" && e.repeat && e.target.tagName !== "TEXTAREA") { e.preventDefault(); return; }
       if (e.key === "Enter" && !noGuardRef.current && e.target.tagName !== "TEXTAREA" && !e.shiftKey) {
-        // view modals (QR / turn) have no single submit action — Enter must not fire a random primary button
-        // (e.g. "Enable subscription"); their own fields (the VK box) handle Enter themselves
         const primary = root.querySelector(".sheet-foot .btn-primary:not([disabled])") || root.querySelector(".btn-primary:not([disabled])");
         if (primary) { e.preventDefault(); primary.click(); }
         return;
       }
-      if (e.key === "Tab") {                                   // focus trap
+      if (e.key === "Tab") {
         const f = fields().concat(Array.from(root.querySelectorAll("button"))).filter(el => !el.disabled && el.offsetParent !== null);
         if (!f.length) return;
         const first = f[0], last = f[f.length - 1];
@@ -642,7 +594,7 @@ export function Sheet({ title, children, foot, onClose, width, headExtra, dirtyR
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     };
-    document.addEventListener("keydown", onKey, true);          // capture so it works regardless of focus
+    document.addEventListener("keydown", onKey, true);
     const unswipe = isMobile() ? attachSheetSwipe(root, () => !noSwipeRef.current, () => wantsGuardRef.current(), () => tryCloseRef.current()) : null;
     return () => {
       if (unswipe) unswipe();
@@ -686,10 +638,10 @@ export function ConfirmSheet({ title, body, note, log, confirmLabel, busyLabel, 
   const [raw, setRaw] = useState(false);
   const [typed, setTyped] = useState("");
   const isLog = log != null && String(log) !== "";
-  const canToggle = isLog && logRaw(log) !== logRendered(log);   // only offer raw/rendered when they differ (ANSI present)
-  const typeOk = !requireType || typed.trim() === requireType;   // type-to-confirm gate for destructive actions
+  const canToggle = isLog && logRaw(log) !== logRendered(log);
+  const typeOk = !requireType || typed.trim() === requireType;
   const go = async () => { if (busy || !typeOk) return; if (!onConfirm) return back(); setBusy(true); const seq = _modalSeq;
-    try { await onConfirm(); } finally { if (_modalSeq === seq) closeModal(); } };   // skip close if onConfirm opened another modal (no flicker)
+    try { await onConfirm(); } finally { if (_modalSeq === seq) closeModal(); } };
   const tone = danger || warn;
   return html`<${Sheet} title=${title} onClose=${back}
     foot=${html`<${Fragment}>
@@ -712,17 +664,11 @@ export function ConfirmSheet({ title, body, note, log, confirmLabel, busyLabel, 
 let _qrZoomOpen = () => false;
 export const setQrZoomProbe = fn => { _qrZoomOpen = fn; };
 
-// App registers how a modal stack actually renders (see the header note).
 export const setModalRenderer = fn => { _setStack = fn; };
-// How deep the modal stack is. Openers ask this to decide "replace the top" vs "stack a child", and the
-// service-issue alert uses it to avoid popping over a modal the operator already has open.
 export const modalDepth = () => _stack.length;
-// Drop every modal WITHOUT the focus-blur closeModal does. The hash router calls this on navigation: the
-// screen underneath is being replaced anyway, and blurring there would fight the new screen's autofocus.
 export const clearModalStack = () => _applyStack([]);
 export const blurActive = () => _blurActive();
 
-// drag-to-reorder
 export function orderById(items, savedOrder, idOf) {
   const ord = savedOrder || [];
   if (!ord.length) return items;
@@ -733,7 +679,6 @@ export function orderById(items, savedOrder, idOf) {
     return pa - pb || a[1] - b[1];
   }).map(x => x[0]);
 }
-// 6-dot grip glyph used as the drag handle on reorderable cards.
 export const GRIP_SVG = `<svg width="11" height="16" viewBox="0 0 11 16" fill="currentColor"><circle cx="3" cy="3" r="1.4"/><circle cx="8" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="8" cy="13" r="1.4"/></svg>`;
 export function flipPlay(container, first) {
   requestAnimationFrame(() => {
@@ -742,24 +687,24 @@ export function flipPlay(container, first) {
       const f = first.get(el.dataset.rid); if (!f) continue;
       const l = el.getBoundingClientRect();
       const dx = f.left - l.left, dy = f.top - l.top;
-      if (dx || dy) { el.style.transition = "none"; el.style.transform = "translate(" + dx + "px," + dy + "px)"; moved.push(el); }   // INVERT
+      if (dx || dy) { el.style.transition = "none"; el.style.transform = "translate(" + dx + "px," + dy + "px)"; moved.push(el); }
     }
     if (!moved.length) return;
-    requestAnimationFrame(() => { for (const el of moved) { el.style.transition = "transform .24s cubic-bezier(.2,.7,.2,1)"; el.style.transform = ""; } });   // PLAY
+    requestAnimationFrame(() => { for (const el of moved) { el.style.transition = "transform .24s cubic-bezier(.2,.7,.2,1)"; el.style.transform = ""; } });
     setTimeout(() => { for (const el of moved) { el.style.transition = ""; el.style.transform = ""; } }, 320);
   });
 }
-export function useReorder(ids, onReorder, axis = "x", sel = {}) {   // axis "x" = horizontal grid (left/right edges); "y" = vertical list (top/bottom); sel = {container, card} CSS selectors
-  const CONT_SEL = sel.container || ".ifgrid, .nodegrid";   // the drop container (dragEnd has no event target for it)
-  const CARD_SEL = sel.card || ".ifcard, .ncard";           // the draggable row/card (for the floating ghost + FLIP)
-  const [drag, setDrag] = useState(null);     // { id, k } — for the highlight (k = insertion index among the OTHER cards)
+export function useReorder(ids, onReorder, axis = "x", sel = {}) {
+  const CONT_SEL = sel.container || ".ifgrid, .nodegrid";
+  const CARD_SEL = sel.card || ".ifcard, .ncard";
+  const [drag, setDrag] = useState(null);
   const dragId = drag && drag.id;
-  const prev = useRef(null);      // our floating translucent preview
-  const off = useRef([0, 0]);     // cursor offset within the grabbed card
-  const cont = useRef(null);      // container element (dragEnd has no event target for it)
-  const liveK = useRef(-1);       // CURRENT insertion index — a ref so dragEnd never reads a stale closure
-  const idRef = useRef(null);     // the dragged id
-  const esc = useRef(false);      // ESC pressed mid-drag → cancel (best-effort; some browsers swallow keydown while dragging)
+  const prev = useRef(null);
+  const off = useRef([0, 0]);
+  const cont = useRef(null);
+  const liveK = useRef(-1);
+  const idRef = useRef(null);
+  const esc = useRef(false);
   const onKey = useRef(null);
   const rest = dragId ? ids.filter(x => x !== dragId) : ids;
   const k = drag ? drag.k : -1;
@@ -767,8 +712,6 @@ export function useReorder(ids, onReorder, axis = "x", sel = {}) {   // axis "x"
   const gapR = (k >= 0 && k < rest.length) ? rest[k] : null;
   const trail = axis === "y" ? " drop-b" : " drop-r";
   const lead = axis === "y" ? " drop-t" : " drop-l";
-  // insertion index from the cursor over the WHOLE container (releasing in a gap / past the ends still
-  // lands at the nearest spot, no pixel-precise aiming). Counts the non-dragged cards before the cursor.
   const indexAt = (container, x, y) => {
     let i = 0;
     for (const el of container.querySelectorAll("[data-rid]")) {
@@ -782,15 +725,13 @@ export function useReorder(ids, onReorder, axis = "x", sel = {}) {   // axis "x"
   };
   const movePrev = (x, y) => { if (prev.current) prev.current.style.transform = "translate(" + (x - off.current[0]) + "px," + (y - off.current[1]) + "px)"; };
   const stopPreview = () => { if (prev.current) { prev.current.remove(); prev.current = null; } };
-  // Commit on dragEND (always fires) using the LAST highlighted position, so releasing OUTSIDE the
-  // container still drops at the highlighted gap. ESC, or never highlighting a spot, returns to origin.
   const finish = () => {
     if (onKey.current) { window.removeEventListener("keydown", onKey.current, true); onKey.current = null; }
     const c = cont.current, kk = liveK.current, did = idRef.current, cancelled = esc.current;
     stopPreview(); cont.current = null; idRef.current = null; liveK.current = -1; esc.current = false;
     setDrag(null);
-    if (cancelled || kk < 0 || !c || !did) return;            // ESC / nothing highlighted → back to original
-    const first = new Map();                                   // FLIP: snapshot positions before the reorder
+    if (cancelled || kk < 0 || !c || !did) return;
+    const first = new Map();
     for (const el of c.querySelectorAll("[data-rid]")) first.set(el.dataset.rid, el.getBoundingClientRect());
     const arr = ids.filter(x => x !== did); arr.splice(kk, 0, did);
     if (arr.join(" ") !== ids.join(" ")) { onReorder(arr); flipPlay(c, first); }
@@ -823,7 +764,7 @@ export function useReorder(ids, onReorder, axis = "x", sel = {}) {   // axis "x"
           } catch (_) {}
           setDrag({ id, k: -1 });
         },
-        onDrag: e => { if (e.clientX || e.clientY) movePrev(e.clientX, e.clientY); },   // follow the cursor (fires even outside the container)
+        onDrag: e => { if (e.clientX || e.clientY) movePrev(e.clientX, e.clientY); },
         onDragEnd: () => finish(),
       };
     },
@@ -834,7 +775,7 @@ export function useReorder(ids, onReorder, axis = "x", sel = {}) {   // axis "x"
           const nk = indexAt(e.currentTarget, e.clientX, e.clientY);
           liveK.current = nk;
           if (!drag || drag.k !== nk) setDrag({ id: dragId, k: nk }); },
-        onDrop: e => { e.preventDefault(); },   // the real commit happens in dragEnd (covers release-outside too)
+        onDrop: e => { e.preventDefault(); },
       };
     },
     item(id) {
@@ -843,7 +784,6 @@ export function useReorder(ids, onReorder, axis = "x", sel = {}) {   // axis "x"
   };
 }
 
-// shared bits
 const IFOP_BUSY_W = once(() => ({ start: T("ifop|starting"), stop: T("ifop|stopping"), restart: T("ifop|restarting"), apply: T("ifop|applying"), ignore: T("ifop|ignoring"), unignore: T("ifop|restoring") }));
 const IFOP_DONE_W = once(() => ({ start: T("ifop|started"), stop: T("ifop|stopped"), restart: T("ifop|restarted"), apply: T("ifop|applied"), ignore: T("ifop|ignored"), unignore: T("ifop|restored") }));
 const IFOP_FAIL_W = once(() => ({ start: T("ifop|failed to start"), stop: T("ifop|failed to stop"), restart: T("ifop|failed to restart"), apply: T("ifop|failed to apply"), ignore: T("ifop|couldn\u2019t ignore"), unignore: T("ifop|couldn\u2019t restore") }));
@@ -851,8 +791,6 @@ export const ifopBusy = verb => IFOP_BUSY_W()[verb] || verb;
 export const ifopDone = verb => IFOP_DONE_W()[verb] || verb;
 export const ifopFail = verb => IFOP_FAIL_W()[verb] || T("ifop|failed");
 export const IFOP_PANEL = new Set(["ignore", "unignore"]);
-// The optimistic op badge for an interface/WDTT card (busy→ok→fail flash, driven by trackIfaceOps). Returns the
-// tag vnode or null so a card can show a live "applying/applied/failed" status like every other card.
 export function opTag(key) {
   const op = Store.ifaceOp[key]; if (!op) return null;
   if (op.phase === "busy") return html`<span class="tg tg-busy"><${Ic} i="clock"/>${ifopBusy(op.verb)}</span>`;
@@ -865,27 +803,20 @@ export const STATUS_ICON = { online: "check", ready: "clock", partial: "warn", p
   blocked: "warn", faulty: "warn", dangling: "err", broken: "warn", unknown: "info", unassigned: "user", orphan: "link", removing: "trash", empty: "info",
   disabled: "off", blocking: "off", restoring: "refresh", expired: "warn", expiring: "warn" };
 
-// a node/panel host that's mid re-install or method conversion (signalled before it goes down)
 const PROC_LABEL = once(() => ({
   reinstalling: T("re-installing"), "converting-bare": T("converting to bare-metal"), "converting-docker": T("converting to docker"), updating: T("updating"), uninstalling: T("uninstalling"),
   reinstalled: T("re-installed"), "reinstalled-updated": T("re-installed and updated"), "converted-bare": T("converted to bare-metal"), "converted-docker": T("converted to docker"), updated: T("updated"), uptodate: T("up to date"),
   "reinstall-aborted": T("re-install aborted"), "convert-aborted": T("convert aborted"), "update-aborted": T("update aborted"), "uninstall-aborted": T("uninstall aborted"),
   "reinstall-failed": T("re-install failed"), "convert-failed": T("convert failed"), "update-failed": T("update failed"), "uninstall-failed": T("uninstall failed"), "adopt-failed": T("take-over failed"), "adopted-container": T("took over a container's interface"), "adopt-container-failed": T("container take-over failed"), failed: T("proc|failed") }));
-// a node still AWAITING ENROLL never came up, so a "re-install" of it is really a first install — relabel the reinstall* states
 const PROC_LABEL_FRESH = once(() => ({ reinstalling: T("installing"), reinstalled: T("installed"), "reinstalled-updated": T("installed and updated"),
   "reinstall-aborted": T("install aborted"), "reinstall-failed": T("install failed") }));
-// The one way to name a proc state. `fresh` picks the first-install wording; an unknown state shows its key.
 export const procLabel = (state, fresh) => (fresh && PROC_LABEL_FRESH()[state]) || PROC_LABEL()[state] || state;
-// Lifecycle tag categories. inProc = an op actually running (violet clock, blocks actions). Terminals:
-// success (green, ~5s, no ×), aborted (grey + ×), failed (red + error popup + ×) — all shown beside the real status.
 export const procFailed  = s => !!s && /failed$/.test(s);
 export const procAborted = s => !!s && /aborted$/.test(s);
-export const procSuccess = s => s === "reinstalled" || s === "reinstalled-updated" || s === "converted-bare" || s === "converted-docker" || s === "updated" || s === "uptodate" || s === "adopted-container";   // i18n-keys
-export const isUpdateState = s => s === "updating" || s === "updated" || s === "update-failed" || s === "update-aborted" || s === "uptodate";   // the whole UPDATE lifecycle lives ONLY in the dh-ver pill, never as a proc-tag beside the node title   // i18n-keys
+export const procSuccess = s => s === "reinstalled" || s === "reinstalled-updated" || s === "converted-bare" || s === "converted-docker" || s === "updated" || s === "uptodate" || s === "adopted-container";
+export const isUpdateState = s => s === "updating" || s === "updated" || s === "update-failed" || s === "update-aborted" || s === "uptodate";
 export const inProc      = s => !!s && !procFailed(s) && !procAborted(s) && !procSuccess(s);
-// in-progress proc-tag colour by op — converting→purple, uninstalling→red, everything else active (re-installing /
-// updating / installing) → yellow. (pending→blue and ready→green are handled by the turn/iface lifecycle classes.)
-export const procInClass = s => s === "uninstalling" ? "procuninstall" : (s || "").startsWith("converting") ? "procconvert" : "procbusy";   // i18n-keys
+export const procInClass = s => s === "uninstalling" ? "procuninstall" : (s || "").startsWith("converting") ? "procconvert" : "procbusy";
 export const procErr = rec => (rec && rec.proc_err_key)
   ? T(rec.proc_err_key, srvVars(rec.proc_err_vars))
   : ((rec && rec.proc_err) || null);
@@ -895,27 +826,26 @@ export function procTag(state, onX, err, fresh) {
   if (procSuccess(state)) return err
     ? html`<span class="nstat procok tg-click" title=${T("What happened")}
         onClick=${e => { e.stopPropagation(); e.preventDefault(); openConfirm({ title: lbl, log: err, confirmLabel: T("Close") }); }}><${Ic} i="check"/> ${lbl}</span>`
-    : html`<span class="nstat procok"><${Ic} i="check"/> ${lbl}</span>`;   // green, auto-clears (no ×)
+    : html`<span class="nstat procok"><${Ic} i="check"/> ${lbl}</span>`;
   const xbtn = onX ? html`<button class="xbtn" title=${T("Dismiss — show the node's actual status")} onClick=${e => { e.stopPropagation(); e.preventDefault(); onX(e); }}><${Ic} i="x"/></button>` : null;
   if (procAborted(state)) return html`<span class="nstat procaborted"><${Ic} i="info"/> ${lbl}${xbtn}</span>`;
-  if (procFailed(state)) {   // whole tag clickable → details popup (when there's a log tail), distinct hover, no caption
+  if (procFailed(state)) {
     const open = err ? (e => { e.stopPropagation(); e.preventDefault(); openConfirm({ title: lbl, log: err, confirmLabel: T("Close") }); }) : null;
     return html`<span class=${"nstat procfail" + (open ? " tg-click" : "")} onClick=${open}><${Ic} i="warn"/> ${lbl}${xbtn}</span>`;
   }
-  return html`<span class=${"nstat " + procInClass(state)}><${Ic} i="clock"/> ${lbl}</span>`;   // in-progress (colour by op)
+  return html`<span class=${"nstat " + procInClass(state)}><${Ic} i="clock"/> ${lbl}</span>`;
 }
-export function dismissNodeProc(id) {   // optimistic: drop the tag NOW, clear on the server in the background; re-poll only if it fails
+export function dismissNodeProc(id) {
   const n = (Store.nodes || []).find(x => x.id === id);
   if (n) { n.proc_status = null; n.proc_err = null; bus.emit(); }
   api.procClearNode(id).then(r => { if (r && r.ok === false) { toast(srvText(r) || T("Couldn't dismiss."), "err"); Store.poll(); } });
 }
-export function dismissHostProc() {   // optimistic
+export function dismissHostProc() {
   Store.hostProc = null; Store.hostProcErr = null; bus.emit();
   api.procClearHost().then(r => { if (r && r.ok === false) { toast(srvText(r) || T("Couldn't dismiss."), "err"); Store.poll(); } });
 }
 export function Badge({ s, title }) {
   const ic = STATUS_ICON[s];
-  // online → a glowing animated dot in the status colour (green), not a check — matches the turn badge
   if (s === "online") return html`<span class="badge b-online" title=${title || ""}><span class="sdot"></span>${statusLabel(s)}</span>`;
   return html`<span class=${"badge b-" + s + (ic ? " ic" : "")} title=${title || ""}>${ic ? html`<${Ic} i=${ic}/>` : null}${statusLabel(s)}</span>`;
 }
@@ -932,7 +862,6 @@ export function turnProxyTitle(node, service) {
   const tp = ((Store.stats[node] || {}).turn_proxies || []).find(x => x && x.service === service);
   return (tp && tp.title) || "";
 }
-// The interface badge for one peer-grid row (protocol and interface name).
 export function gridIfaceTag(t) {
   return html`<${Tag} kind=${targetType(t)} label=${t.iface} muted=${!t.online} gen3=${tgt3(t)}/>`;
 }
@@ -944,10 +873,8 @@ const STATUS_REASONS = once(() => ({
   expiring: T("the access date is coming up — will be removed from every server when it passes"),
 }));
 export const statusReason = s => STATUS_REASONS()[s] || "";
-export function protoLabel(type) { return type === "awg" ? "AmneziaWG" : type === "wg" ? "WireGuard" : T("WireGuard or AmneziaWG"); }   // i18n-keys: protocol names
+export function protoLabel(type) { return type === "awg" ? "AmneziaWG" : type === "wg" ? "WireGuard" : T("WireGuard or AmneziaWG"); }
 export function blockedReason(type) { return T("reaching the server but the handshake never completes — likely DPI / MTU / wrong {proto} params", { proto: protoLabel(type) }); }
-// The other "restricted" signature: the handshake DOES complete, repeatedly, because the session will not
-// hold. Mirrors the dynamic reason reconcile.js sets peer-wide.
 export function churnReason() { return T("the tunnel keeps collapsing and being rebuilt — the session won't hold, which is what a filtered or DPI'd connection looks like"); }
 export function uncatPop(trigger) {
   return html`<${Popover} hoverOnly flipFit cls="turnwrap" popCls="uncatpop" trigger=${trigger}>
@@ -959,30 +886,24 @@ export function uncatPop(trigger) {
 export function gridStatusBadge(t, p, re) {
   const st = t.status || p.status;
   const reason = (t.down ? T("Interface {iface} is down — {why}", { iface: t.iface, why: t.down })
-    // "restricted" now covers two failures. `t.fault` says which one this deployment hit, so the bubble
-    // stops telling a peer whose session keeps collapsing that its handshake never completed.
-    : st === "blocked" ? (t.fault === "churn" ? churnReason() : blockedReason(t.type))   // name THIS deployment's datapath (wg / awg) in the "wrong params" hint
+    : st === "blocked" ? (t.fault === "churn" ? churnReason() : blockedReason(t.type))
     : (p.reason || statusReason(st))) || "";
   if (peerUncategorised(t) && !re && st !== "blocked" && st !== "faulty") {
     return uncatPop(html`<span class="badge b-uncat ic"><${Ic} i="warn"/>${statusLabel(st)}</span>`);
   }
   const kv = t.online && !t.viaTurn && !re ? keylessVia(t) : null;
   if (t.online && (t.viaTurn || (kv && kv.fork))) {
-    const tf = kv ? kv.fork : turnFork(t.viaTurn), tn = kv ? kv.label : forkLabel(tf), tc = turnColor(tf);   // the id picks the colour, the name is shown
+    const tf = kv ? kv.fork : turnFork(t.viaTurn), tn = kv ? kv.label : forkLabel(tf), tc = turnColor(tf);
     const ptitle = kv ? "" : turnProxyTitle(t.node, t.viaTurn);
     return html`<span class="turnwrap" title="">
       <span class="badge b-turn" style=${"--tfc:" + tc}><span class="sdot"></span>${statusLabel(st)}</span>
       <span class="turnbub">${T("Connected via")} <span class="tg tg-turn" style=${"--tfc:" + tc}>${tn}</span>${ptitle ? html` <b class="turnbub-t">${ptitle}</b>` : null}</span></span>`;
   }
-  // A pinned action failure (e.g. "node hasn't reported <iface> yet") rides the status as a hover bubble —
-  // not a persistent inline chip cluttering the row. Dismiss from inside the bubble.
   if (re) {
     return html`<span class="turnwrap" title="">
       <${Badge} s=${st}/>
       <span class="turnbub statusbub err"><span class="statusbub-h" style="color:var(--dangling)"><${Ic} i="err"/>${T("Error")}</span>${re.msg}</span></span>`;
   }
-  // Blocked / Faulty carry an explanation — show it in our own hover bubble (like the "Connected via" one) instead
-  // of a native title, colour-headed with the status colour so the *why* reads at a glance.
   if ((st === "blocked" || st === "faulty") && reason) {
     const bc = "var(--fault)";
     return html`<span class="turnwrap" title="">
@@ -991,8 +912,6 @@ export function gridStatusBadge(t, p, re) {
   }
   return html`<${Badge} s=${st} title=${reason}/>`;
 }
-// A status Badge that, for the states carrying an explanation (Restricted / Faulty), shows the SAME hover
-// bubble as the peers grid — so the peer view modal's badges explain *why* on hover, not just a native title.
 export function badgeWithReason(st, reason) {
   reason = reason || statusReason(st);
   if ((st === "blocked" || st === "faulty") && reason) {
@@ -1016,24 +935,21 @@ export function rateCell(rx, tx) {
   const live = (rx || 0) + (tx || 0) > 0; const [d, u] = dlul(rx, tx);
   return html`<span class=${"ratecell" + (live ? " live" : "")}>↓ ${rate(d)} <span class="up">↑ ${rate(u)}</span></span>`;
 }
-// cumulative transfer cell — same down/up colours as rateCell (green ↓ / blue ↑ once anything moved). Takes
-// already perspective-adjusted down/up byte totals.
 export function xferCell(db, ub) {
   const has = (db || 0) + (ub || 0) > 0;
   return html`<span class=${"addr xfer" + (has ? " live" : "")}>↓ ${fmtBytes(db)} <span class="up">↑ ${fmtBytes(ub)}</span></span>`;
 }
 
 export function DepBadge({ others }) {
-  const [open, setOpen] = useState(false);     // hover preview
-  const [pinned, setPinned] = useState(false); // click-pinned (mobile / sticky)
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
   const [pos, setPos] = useState(null);
-  const ref = useRef(null), popRef = useRef(null);   // ⚠️ popRef was read by onDoc and never made: a tap outside threw, nothing closed it
+  const ref = useRef(null), popRef = useRef(null);
   const closeT = useRef(null);
   const show = open || pinned;
   const cancelClose = () => clearTimeout(closeT.current);
   const scheduleClose = () => { cancelClose(); closeT.current = setTimeout(() => setOpen(false), 140); };
   const place = () => { const el = ref.current; if (!el) return; const r = el.getBoundingClientRect(); setPos({ left: Math.round(r.left), top: Math.round(r.bottom + 6) }); };
-  // a phone: the list is a sheet, as the updates list is (operator, 2026-10-29: the bubble would not close and looked thin)
   const rows = others.map(d => html`<div class="deprow" key=${tkey(d.node, d.iface)}>
         <span class="dep-name" style=${"color:" + (Store.nodeColor(d.node) || "var(--ink)")}>${Store.nodeName(d.node)}</span>
         <${Tag} kind=${targetType(d)} label=${d.iface} muted=${!d.online} gen3=${tgt3(d)}/>
@@ -1060,12 +976,6 @@ export function DepBadge({ others }) {
   return html`<span class=${"depmore" + (show ? " on" : "")} ref=${ref}
     onClick=${e => { e.stopPropagation(); setPinned(p => !p); }}
     onMouseEnter=${() => { cancelClose(); setOpen(true); }} onMouseLeave=${scheduleClose}>+${others.length}
-    ${/* ⚠️ PORTALED, like every other bubble here — not merely for stacking contexts (Portal's own
-          reason) but because this trigger is an INLINE span inside a table cell. A block-level child of
-          an inline box splits it, and `position:fixed` does not save you: measured in the peers grid,
-          hovering took the badge from 18px to 38.8px tall and the row from 49.5px to 60px, leaving a
-          stray fragment of the split inline box under the cell. Rendering at <body> keeps the span a
-          single unbroken inline box, so the row does not move at all. */""}
     ${show && pos ? html`<${Portal}><div class="deppop" ref=${popRef} style=${"left:" + pos.left + "px;top:" + pos.top + "px"}
       onClick=${e => e.stopPropagation()} onMouseEnter=${cancelClose} onMouseLeave=${scheduleClose}>
       ${rows}
@@ -1073,37 +983,26 @@ export function DepBadge({ others }) {
   </span>`;
 }
 
-// small ⓘ next to a pending/failed command — hover for the node's error, click to read it in full.
-// `cls` tones it (e.g. "warn" = yellow for a non-fatal in-progress note); `title` overrides the modal heading.
 export function CmdErr({ err, cls, title }) {
-  if (!err) return null;   // clickable error icon → details popup (no native tooltip caption)
+  if (!err) return null;
   return html`<span class=${"cmderr" + (cls ? " " + cls : "")} onClick=${e => { e.stopPropagation(); openConfirm({ title: title || T("Command failed on the node"), log: err, confirmLabel: T("Close") }); }}><${Ic} i="info"/></span>`;
 }
-// a status tag that, when it carries a node `msg`, makes the WHOLE tag clickable (opens the message) with
-// a hover highlight + pointer — so the click target is the tag, not a tiny icon next to it.
 export function StatusTag({ cls, icon, label, msg, title }) {
   const ic = icon ? html`<${Ic} i=${icon}/>` : null;
-  if (!msg) return html`<span class=${cls} title=${title || ""}>${ic}${label}</span>`;   // plain (non-error) tag keeps its hint
-  // an error/detail tag: the WHOLE tag is clickable (→ popup), distinct hover, no native caption
+  if (!msg) return html`<span class=${cls} title=${title || ""}>${ic}${label}</span>`;
   return html`<span class=${cls + " tg-click"}
     onClick=${e => { e.preventDefault(); e.stopPropagation(); openConfirm({ title: title || T("Details"), log: msg, confirmLabel: T("Close") }); }}>${ic}${label}</span>`;
 }
 
-// ───────────────────────── form controls ─────────────────────────
-// The app-wide on/off switch (34×19). Used for every enable/disable toggle in Settings.
 export const Switch = ({ on, onChange, title, disabled }) => html`<label class=${"swt" + (disabled ? " swt-off" : "")} title=${title || ""}>
   <input type="checkbox" checked=${!!on} disabled=${!!disabled} onChange=${e => onChange(e.target.checked)}/><span class="track"></span><span class="knob"></span></label>`;
 export function usePopup({ keep = null, drop = "auto", onClose, disabled = false, rows = ".ddopt:not(:disabled)", minBelow = 240, clampW = 0, search = null } = {}) {
   const [open, setOpen] = useState(false), [pos, setPos] = useState(null);
   const ref = useRef(null), popRef = useRef(null);
-  // "was this opened from the keyboard, and at which end" — a mouse open must NOT pull focus into the popup (it would
-  // paint a focus ring nobody asked for); a keyboard open must, or the arrows have nothing to move.
   const kbd = useRef(null);
   const typed = useRef({ s: "", t: 0 });
   const wasOpen = useRef(false);
   useEffect(() => { if (wasOpen.current && !open && onClose) onClose(); wasOpen.current = open; }, [open]);
-  // what belongs to this list: its trigger, its popup, and what the caller says (`keep`) — ONE test for every place that
-  // asks (outside click, focus moving, Escape), so they cannot drift apart
   const inside = t => !!t && ((ref.current && ref.current.contains(t)) || (popRef.current && popRef.current.contains(t)) || !!(keep && keep(t)));
   const place = () => { const el = ref.current; if (!el) return; const r = el.getBoundingClientRect();
     const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
@@ -1111,9 +1010,7 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
     setPos({ left: Math.round(clampW ? Math.max(8, Math.min(r.left, window.innerWidth - clampW - 8)) : r.left),
              top: Math.round(flip ? r.top - 4 : r.bottom + 4), width: Math.round(r.width), flip,
              maxh: Math.max(180, Math.round(flip ? above : below) - 16) }); };
-  // Back to the trigger on close, which is what a native select does and what keeps a keyboard user from being dumped
-  // on <body> in the middle of a form. Guarded: a choice may unmount this very control.
-  const shut = () => { setOpen(false); setPos(null); };   // the position goes in the same update: a reopened list never paints a frame at its last place
+  const shut = () => { setOpen(false); setPos(null); };
   const close = back => { shut(); kbd.current = null;
     if (back && ref.current) { const b = ref.current.querySelector("button"); if (b) b.focus(); } };
   const rowEls = () => (popRef.current ? [...popRef.current.querySelectorAll(rows)] : []);
@@ -1130,8 +1027,6 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
     focusAt(order.find(el => (el.textContent || "").trim().toLowerCase().startsWith(q)));
   };
   useEffect(() => { if (!open) return; place();
-    // only a scroll that moves the trigger re-places the list — a log stream scrolling under it (it follows new lines
-    // many times a second) does not
     const onMove = e => { const t = e && e.target;
       if (t && t !== document && t.contains && ref.current && !t.contains(ref.current)) return; place(); };
     const onDoc = e => { if (!inside(e.target)) shut(); };
@@ -1146,10 +1041,8 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
     return () => { window.removeEventListener("scroll", onMove, true); window.removeEventListener("resize", onMove);
       document.removeEventListener("pointerdown", onDoc, true); document.removeEventListener("keydown", onKey, true);
       document.removeEventListener("focusin", onFocus, true); };
-    // `drop` is a dependency because the caller changes it WHILE the list is open — the form that must not be covered
-    // appears after the list was opened, so a placement fixed at open time would be the wrong one.
   }, [open, drop]);
-  useEffect(() => { if (!open || !pos || !search || !popRef.current || isMobile()) return;   // a phone: no keyboard over the list
+  useEffect(() => { if (!open || !pos || !search || !popRef.current || isMobile()) return;
     const s = popRef.current.querySelector(search); if (s) { kbd.current = null; s.focus(); } }, [open, !!pos]);
   useEffect(() => {
     if (!open || !pos || !kbd.current) return;
@@ -1158,16 +1051,14 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
   }, [open, !!pos]);
   const onPopKey = e => {
     const k = e.key, t = e.target, inField = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA");
-    if (e.isComposing) return;                                // an IME composition owns its keys, Escape included
-    if (k === "Tab") { shut(); return; }              // let focus carry on out of the popup naturally
+    if (e.isComposing) return;
+    if (k === "Tab") { shut(); return; }
     if (k === "ArrowDown") { e.preventDefault(); moveBy(1); return; }
     if (k === "ArrowUp") { e.preventDefault(); moveBy(-1); return; }
-    if (inField) return;                                      // a row's own field (or a search box) owns its typing
+    if (inField) return;
     if (k === "Home") { e.preventDefault(); moveTo(0); return; }
     if (k === "End") { e.preventDefault(); moveTo(1e9); return; }
     if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && /\S/.test(k)) {
-      // a key typed on a row of a list with a search box goes to the box: focused here, during keydown, the browser
-      // delivers the character to it (nothing is prevented)
       const s = search && popRef.current && popRef.current.querySelector(search);
       if (s) { s.focus(); return; }
       e.preventDefault(); typeAhead(k); }
@@ -1179,7 +1070,6 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
     if (open) { const els = rowEls(); if (els.length) focusAt(els.find(el => el.classList.contains("sel")) || els[at === "last" ? els.length - 1 : 0]); return; }
     kbd.current = at; setOpen(true);
   };
-  // the trigger's click: a keyboard "click" (Enter, Space: detail 0) opens with the focus in the list
   const toggle = e => { if (disabled) return; const willOpen = !open; kbd.current = willOpen && e && e.detail === 0 ? "first" : null;
     if (willOpen) setOpen(true); else shut(); };
   return { open, setOpen, pos, ref, popRef, close, toggle, onBtnKey, onPopKey };
@@ -1197,11 +1087,8 @@ export function Dropdown({ value, onChange, options, className, placeholder, dis
       disabled=${o.disabled} title=${o.title || ""} aria-disabled=${o.refuse ? "true" : undefined}
       class=${"ddopt" + (sel ? " sel" : "") + (o.disabled ? " off" : "") + (o.className ? " " + o.className : "")}
       onClick=${() => { if (o.disabled) return;
-        // REFUSED, AND SAID SO. The popup stays open on purpose: whatever unblocks the row is in the row.
         if (o.refuse) return toast(o.refuse, "info");
         onChange(o.value); P.close(true); }}>${o.label}</button>`;
-    // THE WHOLE ROW CARRIES THE SELECTION, not just the label button — a tint that stops short of the
-    // row's own control reads as a rendering fault rather than as a selected row.
     return o.extra ? html`<div class=${"ddrow" + (sel ? " sel" : "")}>${btn}<span class="ddx">${o.extra}</span></div>` : btn;
   };
   return html`<div class=${"dropdown " + (className || "")} ref=${P.ref}>
@@ -1218,7 +1105,6 @@ export function Dropdown({ value, onChange, options, className, placeholder, dis
     </div><//>` : null}
   </div>`;
 }
-// grow a textarea to fit its content (starts at one row like a textbox, expands as lines wrap)
 export const autoGrow = el => { if (!el) return; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; };
 export function Disclosure({ title, summary, sumCls, open, onToggle, children }) {
   return html`<${Fragment}>
@@ -1230,7 +1116,6 @@ export function Disclosure({ title, summary, sumCls, open, onToggle, children })
   <//>`;
 }
 
-// a list sized by the fleet, not by the operator
 export const LIST_PAGE = 15;
 export const pageSlice = (list, page) => list.slice((page - 1) * LIST_PAGE, page * LIST_PAGE);
 export function ListPager({ page, setPage, total }) {
@@ -1244,7 +1129,6 @@ export function ListPager({ page, setPage, total }) {
   </div>`;
 }
 
-// a list capped inside a hover bubble
 export const capShown = (n, cap) => (n <= cap + 1 ? n : cap);
 export function useCapped(items, cap = 6) {
   const [all, setAll] = useState(false);
@@ -1267,45 +1151,44 @@ export function IpPicker({ ips, sel, setSel, custom, setCustom, placeholder }) {
   <//>`;
 }
 
-// ── interface/WDTT op lifecycle: the same optimistic badge treatment nodes get ───────────────────
 export function trackIfaceOps() {
   const now = Date.now();
   for (const key of Object.keys(Store.ifaceOp)) {
     const op = Store.ifaceOp[key];
     if (op.phase !== "busy") { if (op.until && now > op.until) delete Store.ifaceOp[key]; continue; }
-    if (IFOP_PANEL.has(op.verb)) continue;   // panel-side: settled by its own handler, not by watching the node
+    if (IFOP_PANEL.has(op.verb)) continue;
     const cut = key.indexOf("|"); const node = key.slice(0, cut), iface = key.slice(cut + 1);
     const nrec = (Store.nodes || []).find(n => n.id === node) || {};
     const _snap = Store.stats[node] || {};
     const _wSnap = (_snap.wdtt || []).find(w => w && w.iface === iface) || (_snap.csqtt || []).find(c => c && c.iface === iface);
     const istate = _wSnap
-      ? { down: _wSnap.active !== "active" && !_wSnap.stopped, stopped: !!_wSnap.stopped }   // active state from the WDTT readback
+      ? { down: _wSnap.active !== "active" && !_wSnap.stopped, stopped: !!_wSnap.stopped }
       : (((Store.stats[node] || {}).interfaces || {})[iface] || {});
-    const down = !!istate.down, stopped = !!istate.stopped, notup = down || stopped;   // a stopped iface reports `stopped`, not `down`
+    const down = !!istate.down, stopped = !!istate.stopped, notup = down || stopped;
     const cerr = (nrec.cmd_errors || {})[iface];
-    const starting = (nrec.starting || []).includes(iface);   // panel requests still queued (cleared once the snapshot reflects)
+    const starting = (nrec.starting || []).includes(iface);
     const stopping = (nrec.stopping || []).includes(iface);
     const restarting = (nrec.restarting || []).includes(iface);
-    let done = null;   // { phase, err }
-    if (op.verb === "apply") {                                 // up iface live-apply (no restart) → time-based
+    let done = null;
+    if (op.verb === "apply") {
       if (cerr && now - op.started > 4000) done = { phase: "fail", err: cerr };
-      else if (now - op.started > 6000) done = { phase: "ok" };   // node has had a sync to pick it up
+      else if (now - op.started > 6000) done = { phase: "ok" };
     } else if (_wSnap && (op.verb === "start" || op.verb === "stop")) {
       const there = op.verb === "start" ? !notup : notup;
       if (there) done = { phase: "ok" };
       else if (cerr && now - op.started > 4000) done = { phase: "fail", err: cerr };
       else if (now - op.started > 60000) done = { phase: "fail", err: cerr || T("timed out") };
-    } else if (op.verb === "start") {                          // success once the iface is actually UP (not just "not down")
+    } else if (op.verb === "start") {
       if (!notup) done = { phase: "ok" };
       else if (cerr && now - op.started > 4000) done = { phase: "fail", err: cerr };
       else if (!starting && now - op.started > 8000) done = { phase: "fail", err: cerr || T("the interface didn't come up") };
       else if (now - op.started > 20000) done = { phase: "fail", err: cerr || T("timed out") };
-    } else if (op.verb === "stop") {                           // success once it's actually down/stopped
+    } else if (op.verb === "stop") {
       if (notup) done = { phase: "ok" };
       else if (cerr && now - op.started > 4000) done = { phase: "fail", err: cerr };
       else if (!stopping && now - op.started > 8000) done = { phase: "fail", err: cerr || T("the interface didn't stop") };
       else if (now - op.started > 20000) done = { phase: "fail", err: cerr || T("timed out") };
-    } else {                                                   // RESTART of an up iface → done when the request clears + it's up
+    } else {
       if (down && cerr) done = { phase: "fail", err: cerr };
       else if (!restarting && now - op.started > 6000) done = down ? { phase: "fail", err: cerr || T("didn't come back up") } : { phase: "ok" };
       else if (now - op.started > 18000) done = down ? { phase: "fail", err: cerr || T("didn't come back up") } : { phase: "ok" };
@@ -1313,8 +1196,8 @@ export function trackIfaceOps() {
     if (done) {
       const ms = done.phase === "ok" ? 5000 : 10000;
       Store.ifaceOp[key] = { verb: op.verb, phase: done.phase, until: now + ms, err: done.err || "" };
-      setTimeout(() => Store.apply(), 0);        // re-render NOW so the done tag shows on the current screen
-      setTimeout(() => Store.apply(), ms + 100); // and again to clear it when it expires
+      setTimeout(() => Store.apply(), 0);
+      setTimeout(() => Store.apply(), ms + 100);
     }
   }
 }
@@ -1325,7 +1208,7 @@ export async function startOrRestartWdtt(node, iface, verb) {
   const body = { node, iface };
   if (verb === "stop") body.stopped = true;
   else if (verb === "start") body.stopped = false;
-  else body.restart = Date.now();   // restart nonce → node systemctl restart
+  else body.restart = Date.now();
   const r = await api.wdttSet(body);
   if (!r.ok) {
     Store.ifaceOp[key] = { verb, phase: "fail", until: Date.now() + 10000, err: srvText(r) || T("request failed") };
@@ -1340,7 +1223,7 @@ export async function startOrRestartCsqtt(node, iface, verb) {
   const body = { node, iface };
   if (verb === "stop") body.stopped = true;
   else if (verb === "start") body.stopped = false;
-  else body.restart = Date.now();   // restart nonce → node systemctl restart
+  else body.restart = Date.now();
   const r = await api.csqttSet(body);
   if (!r.ok) {
     Store.ifaceOp[key] = { verb, phase: "fail", until: Date.now() + 10000, err: srvText(r) || T("request failed") };
@@ -1349,7 +1232,6 @@ export async function startOrRestartCsqtt(node, iface, verb) {
   await Store.poll();
 }
 
-// pinned, explained failure for a row's last action; dismissable
 export function RowError({ k }) {
   const e = rowError(k);
   if (!e) return null;
@@ -1363,8 +1245,8 @@ export function useHostOnNode(host, ips) {
     const h = String(host || "").trim().toLowerCase().replace(/\.$/, "");
     const have = (ips || []).filter(Boolean);
     if (!h) { setState(""); return; }
-    if (!have.length) { setState(""); return; }          // nothing to compare against yet — say nothing
-    if (/^[\d.]+$/.test(h) || h.includes(":")) {        // an IP literal answers itself
+    if (!have.length) { setState(""); return; }
+    if (/^[\d.]+$/.test(h) || h.includes(":")) {
       setState(have.includes(h) || ["0.0.0.0", "::", "*"].includes(h) ? "ok" : "bad");
       return;
     }
@@ -1381,7 +1263,7 @@ export function useHostOnNode(host, ips) {
         const got = ((r && r.data && r.data.ips) || []);
         _resolveCache.set(h, got);
         if (!dead) setState(got.some(ip => have.includes(ip)) ? "ok" : "bad");
-      } catch (_) { if (!dead) setState(""); }            // can't tell → don't cry wolf
+      } catch (_) { if (!dead) setState(""); }
     }, 450);
     return () => { dead = true; clearTimeout(t); };
   }, [String(host || ""), (ips || []).join(",")]);
@@ -1398,12 +1280,10 @@ export function useExitDeviceOnNode(node, dev, iface) {
     const key = node + "|" + d + "|" + (iface || "");
     const shape = r => {
       const k = r.known, why = r.why_not || "";
-      // ROLE FIRST. A managed interface is not "no such device" — it plainly exists; saying so would be
-      // false and would send the operator looking for a typo they did not make.
       if (why) return { state: "bad", why, up: r.up, bootPersist: r.boot_persist };
       if (k === true) return { state: "ok", why: "", up: r.up, bootPersist: r.boot_persist };
       if (k === false) return { state: "bad", why: "", up: null, bootPersist: null };
-      return { state: "", why: "", up: null, bootPersist: null };   // k == null → we cannot say
+      return { state: "", why: "", up: null, bootPersist: null };
     };
     const hit = _exitCache.get(key);
     if (hit && (Date.now() - hit.at) < _EXIT_TTL_MS) { setV(shape(hit.d)); return; }
@@ -1414,11 +1294,9 @@ export function useExitDeviceOnNode(node, dev, iface) {
         const r = await api.exitCheck(node, d, iface);
         const data = (r && r.data) || null;
         if (!data) { if (!dead) setV({ state: "", why: "", up: null, bootPersist: null }); return; }
-        // A role refusal is durable (it is about what this device IS); `known` is a snapshot fact and
-        // `null` is the transient one. Cache the first, never the last.
         if (data.why_not || data.known !== null) _exitCache.set(key, { at: Date.now(), d: data });
         if (!dead) setV(shape(data));
-      } catch (_) { if (!dead) setV({ state: "", why: "", up: null, bootPersist: null }); }   // can't tell → don't cry wolf
+      } catch (_) { if (!dead) setV({ state: "", why: "", up: null, bootPersist: null }); }
     }, 450);
     return () => { dead = true; clearTimeout(t); };
   }, [node, String(dev || ""), iface || ""]);
@@ -1439,7 +1317,6 @@ export const exitRefusalSentences = (value) => ({
     nic_wan: T("That's already where this node's traffic leaves, so choosing it would change nothing — and it would report no traffic of its own. Leave the outbound interface on Auto instead."),
 });
 
-/** The sentence for one refusal code, or "" when there is nothing useful to say about it. */
 export const exitRefusalText = (code, device) =>
   (code ? (exitRefusalSentences(device || "")[String(code)] || "") : "");
 
@@ -1452,7 +1329,6 @@ export function ExitDevicePick({ node, value, onChange, iface, disabled, placeho
   const showCustom = custom || valIsCustom;
   const sel = showCustom ? "__custom__" : (value || "");
   const st = useExitDeviceOnNode(node, showCustom ? value : "", iface);
-  // Only `bad` warns. Everything else is either fine or something we cannot honestly claim.
   const WHY = () => exitRefusalSentences(value);
   const msg = st.state !== "bad" ? ""
     : (WHY()[st.why] || T("This node doesn't report a device by that name."));
@@ -1468,17 +1344,8 @@ export function ExitDevicePick({ node, value, onChange, iface, disabled, placeho
         value=${value || ""} onInput=${e => onChange(e.target.value)} disabled=${disabled}
         spellcheck="false" autocomplete="off"/>` : null}
     ${msg ? html`<div class="hint err">${msg}</div>` : null}
-    ${/* WHY the list is empty, because "No device reported" alone reads as a broken panel. It is usually
-          true and unremarkable: the picker only offers devices this box DIALS OUT on (a host address plus a
-          peer carrying a default route), and a node that only SERVES clients has none. Measured across the
-          real fleet: every wg/awg device on every node was a server. Not shown once the operator is typing
-          — at that point the four-state verdict above is the useful sentence. */""}
     ${!offer.length && !showCustom
       ? html`<div class="hint">${T("This node isn't dialling out anywhere yet, so there's nothing to offer. Register with WARP or paste a profile instead — or type a device name if you run one.")}</div>` : null}
-    ${/* What existence does NOT answer, each said separately and only when we actually know it (§11.4).
-          A device can be present and down; and "will it come back after a reboot" is a different claim
-          from "is it here now" — `boot_persist` is TRI-STATE and null means this host does not start
-          interfaces from units at all, where any answer would be an invention. */""}
     ${st.state === "ok" && st.up === false
       ? html`<div class="hint">${T("This device exists but is down right now — traffic will fall through until it comes back.")}</div>` : null}
     ${st.state === "ok" && st.bootPersist === false
@@ -1518,7 +1385,7 @@ export function ExitEgressPick({ discovered, value, onChange, onCommit, disabled
   const inRef = useRef(null), grab = useRef(false);
   useEffect(() => { if (grab.current && inRef.current) { grab.current = false; inRef.current.focus(); } }, [custom]);
   const onSel = v => { if (v === "__custom__") { grab.current = true; setCustom(true); }
-                       else { setCustom(false); onChange(v); done(v); } };   // "" clears, an address pins it
+                       else { setCustom(false); onChange(v); done(v); } };
   const dd = html`<${Dropdown} value=${sel} onChange=${onSel} disabled=${disabled} options=${options}/>`;
   if (sel !== "__custom__") return dd;
   return html`<span class="ipk-combo">${dd}
@@ -1530,12 +1397,10 @@ export function ExitEgressPick({ discovered, value, onChange, onCommit, disabled
   </span>`;
 }
 
-// interface op flashes — the iface twins of the turn* maps, read by the node cards
-export const ifaceReady = {};         // "node|iface"   -> expiry ts for the green "ready" flash (5s after an interface comes up)
-export const ifaceWasBusy = {};       // "node|iface"   -> was it pending/creating last render
-export const ifaceFlash = {};         // "node|iface"   -> expiry ts for a ONE-SHOT highlight: an interface that
-                                      // has just arrived somewhere in a grid of a dozen, so the eye can find it
-export const adoptSeen = new Set();   // "node|<proc at>" -> that outcome has already armed its flash
+export const ifaceReady = {};
+export const ifaceWasBusy = {};
+export const ifaceFlash = {};
+export const adoptSeen = new Set();
 
 export function ThemedSwatch({ val, onChange, sample, title }) {
   const v = (val && typeof val === "object") ? val : { dark: val || "", light: val || "" };
@@ -1543,8 +1408,6 @@ export function ThemedSwatch({ val, onChange, sample, title }) {
     <input type="color" class="tf-color" value=${v[mode]}
       title=${(title ? title + " · " : "") + (mode === "dark" ? T("Dark theme") : T("Light theme"))}
       onInput=${e => onChange({ ...v, [mode]: e.target.value })}/>
-    ${/* the CLASS keeps the raw mode (it selects the backdrop); only the caption is spelled out, and as
-          two literal keys rather than T(mode) so the extractor can see them */""}
     <span class=${"tsw-bub tsw-" + mode}>${sample(v[mode], mode)}
       <span class="tsw-cap">${mode === "dark" ? T("theme|dark") : T("theme|light")}</span></span>
   </span>`;
@@ -1560,7 +1423,7 @@ export function useAnchoredList(open, setOpen, deps) {
     if (!open) { setPos(null); return; }
     place();
     const onMove = () => place();
-    const onDoc = e => { const t = e.target;   // close when the click is outside BOTH the input and the portaled list
+    const onDoc = e => { const t = e.target;
       if (!((wrapRef.current && wrapRef.current.contains(t)) || (listRef.current && listRef.current.contains(t)))) setOpen(false); };
     window.addEventListener("scroll", onMove, true); window.addEventListener("resize", onMove);
     document.addEventListener("pointerdown", onDoc, true);
@@ -1572,22 +1435,18 @@ export function useAnchoredList(open, setOpen, deps) {
 export function applyForkColors() {
   let el = document.getElementById("tf-colors");
   if (!el) { el = document.createElement("style"); el.id = "tf-colors"; (document.head || document.documentElement).appendChild(el); }
-  // RAW-IP is a qWDTT capability, so its tag/port take the qWDTT fork's colour — including whatever the
-  // operator picked for it in Settings. One rule, so every RAW mark tracks that fork instead of a hardcoded hue.
   const raw = turnColor("qwdtt") || "#FACC15";
   el.textContent = turnForkList().map(f => ".tf-" + f.id + "{--tfc:" + turnColor(f.id) + "}").join("")
     + ".tg-raw{color:" + raw + ";background:color-mix(in srgb," + raw + " 15%,transparent)}"
     + ".rawport{color:" + raw + "}";
 }
-export const meshGenLabel = g => ({ wg: "WG", "2.0": "AWG 2.0", "3.1": "AWG 3.1" })[g || "2.0"] || g;   // i18n-keys: protocol names, the same in every language
+export const meshGenLabel = g => ({ wg: "WG", "2.0": "AWG 2.0", "3.1": "AWG 3.1" })[g || "2.0"] || g;
 export const meshGenColor = g => ifaceColor(g === "wg" ? "wg" : g === "3.1" ? "awg3" : "awg");
 export function ifaceColor(type) {
   const t = (type || "").toLowerCase();
   const k = t === "awg" ? "awg" : t === "awg3" ? "awg3" : t === "wdtt" ? "wdtt" : t === "csqtt" ? "csqtt" : "wg";
   return pickThemed(null, IFACE_COLOR_DEFAULTS[k].dark, IFACE_COLOR_DEFAULTS[k].light);
 }
-// perceived brightness (0–1) of a #rrggbb / #rgb colour — used to pick a contrasting ink for text on the brand.
-// the brand accent for the ACTIVE light/dark mode — each mode has its own picker (else its built-in default).
 export function themeColor() {
   const ps = Store.panelSettings || {};
   return resolvedTheme() === "light" ? (ps.theme_color_light || THEME_COLOR_LIGHT_DEFAULT)
@@ -1597,16 +1456,14 @@ let _themeSig = null;
 export function applyThemeColors() {
   const theme = themeColor(), wg = ifaceColor("wg"), awg = ifaceColor("awg"), awg3 = ifaceColor("awg3"), wdtt = ifaceColor("wdtt"), csqtt = ifaceColor("csqtt");
   const sig = [resolvedTheme(), theme, wg, awg, awg3, wdtt, csqtt].join("|");
-  if (sig === _themeSig) return;   // nothing changed since last poll → skip the DOM write
+  if (sig === _themeSig) return;
   _themeSig = sig;
   const de = document.documentElement, cm = (c, p, m) => "color-mix(in srgb, " + c + " " + p + "%, " + m + ")";
-  const brand = clampBrand(theme, resolvedTheme() === "light");   // legible against the active background
+  const brand = clampBrand(theme, resolvedTheme() === "light");
   de.style.setProperty("--brand", brand);
-  de.style.setProperty("--brand-2", cm(brand, 70, "#fff"));   // the lighter brand accent
-  de.style.setProperty("--tp-rx", brand);                      // throughput chart "down" series tracks the theme
-  de.style.setProperty("--awg3", awg3);                        // an AmneziaWG 3.1 interface's badges, switch and caption (app.css var(--awg3))
-  // text sitting ON the brand colour (primary buttons) must contrast with whatever colour was applied — dark ink on a
-  // light brand, light ink on a dark one — so a dark theme colour doesn't make the button label invisible.
+  de.style.setProperty("--brand-2", cm(brand, 70, "#fff"));
+  de.style.setProperty("--tp-rx", brand);
+  de.style.setProperty("--awg3", awg3);
   de.style.setProperty("--brand-ink", hexLum(brand) > 0.55 ? "#04232A" : "#EAFBFF");
   let el = document.getElementById("theme-colors");
   if (!el) { el = document.createElement("style"); el.id = "theme-colors"; (document.head || document.documentElement).appendChild(el); }
@@ -1615,7 +1472,6 @@ export function applyThemeColors() {
     ".iftype.awg,.tg-awg{background:" + cm(awg, 15, "transparent") + ";color:" + awg + "}" +
     ".iftype.wdtt,.tg-wdtt{background:" + cm(wdtt, 15, "transparent") + ";color:" + wdtt + "}" +
     ".iftype.csqtt,.tg-csqtt{background:" + cm(csqtt, 15, "transparent") + ";color:" + csqtt + "}" +
-    // the create-interface Protocol chips track the SAME configured type colours (selected state only)
     ".chip.c-wg.on{color:" + wg + ";border-color:" + wg + ";background:" + cm(wg, 15, "transparent") + "}" +
     ".chip.c-awg.on{color:" + awg + ";border-color:" + awg + ";background:" + cm(awg, 15, "transparent") + "}" +
     ".chip.c-wdtt.on{color:" + wdtt + ";border-color:" + wdtt + ";background:" + cm(wdtt, 15, "transparent") + "}" +
@@ -1633,24 +1489,20 @@ export function applyFavicon(accent) {
 }
 export function applyThemeMode() {
   document.documentElement.dataset.theme = resolvedTheme();
-  // The phone's status bar follows the panel's theme, not the system's (MOBILE-PLAN hook 7; index.html sets it at load).
   const tc = document.querySelector('meta[name="theme-color"]'); if (tc) tc.content = resolvedTheme() === "light" ? "#FFFFFF" : "#10151E";
-  _themeSig = null;            // force the accent injection to re-pick this mode's brand colour
+  _themeSig = null;
   applyThemeColors();
-  applyForkColors();           // turn-fork tints are per-mode too
+  applyForkColors();
 }
 export function setThemeMode(mode) { try { localStorage.setItem("swg-theme", mode); } catch (_) {} applyThemeMode(); const b = document.getElementById("theme-btn"); if (b) paintThemeBtn(b); }
 export function cycleThemeMode() { const i = THEME_MODES.indexOf(themeMode()); setThemeMode(THEME_MODES[(i + 1) % THEME_MODES.length]); }
-export const THEME_ICON = {   // inline SVGs — the button shows the CURRENT mode. auto = the "contrast" glyph (a circle with one
-  // half filled), the widely-used convention (GitHub et al.) for "follows the system" — clearer than a monitor.
+export const THEME_ICON = {
   light: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`,
   dark: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`,
   auto: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>`,
 };
 export function paintLangBtn(b) {
   if (!b) return;
-  // The button shows the language you SWITCH TO, not the one you are in: in English it reads «РУ», in
-  // Russian "EN". A control that names the current state leaves you guessing what pressing it does.
   const next = nextLang();
   const row = LANGS.find(([c]) => c === next) || [];
   b.textContent = row[2] || next.toUpperCase();

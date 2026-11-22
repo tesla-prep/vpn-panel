@@ -28,20 +28,11 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// SCREEN: ADOPTION CANDIDATE
-/* Adopt-sheet intro. The node NAME is a value the code supplies, so it rides in as a marker; the rest of
-   the emphasis is the translator's, so it travels as *…* (see Trich in js/i18n.js). */
-/* The docker step names a compose KEY (swg-node → ports:) that must stay verbatim and monospace. */
-/* "This interface is *down* … The node reported: <code>reason</code>. Use *Start interface* — …" The reason
-   is a code-supplied value in a <code>, and the rest of the emphasis is the translator's. Both, so both. */
 function ifaceDownNote(reason) {
   const [a, b] = Tsplit("This interface is *down* on the node — its config below is read from the *.conf* (not live). The node reported: {reason}. Use *Start interface* — if the bring-up fails, the exact reason (port clash, a left-over kernel interface of the same name, an unsupported AmneziaWG parameter, …) shows here.", "reason");
   const rich = t => t.split("*").map((p, i) => (i % 2 ? html`<b>${p}</b>` : p));
-  // T() on the NODE's sentence: node messages are English by construction, and this page is not. Ours are
-  // fixed sentences that sit in the catalogue as keys; anything else falls through unchanged.
   return html`<${Fragment}>${rich(a)}<code>${T(reason)}</code>${rich(b)}<//>`;
 }
-/* The middle clause differs with whether the key survives, so it arrives as a translated VALUE. */
 function ifaceGoneNote(iface, nodeName, verdict) {
   const [a, b] = Tsplit("Interface *{iface}* is gone from {node} — the panel no longer sees it, so this view is *read-only* and shows the panel's saved config. {verdict} The only action here is *Restore interface*.", "verdict", { iface, node: nodeName });
   const rich = t => t.split("*").map((p, i) => (i % 2 ? html`<b>${p}</b>` : p));
@@ -71,11 +62,9 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   const [q, setQ] = useState("");
   const node = decodeURIComponent(rawNode);
   const iface = decodeURIComponent(rawIface);
-  const nrec = (Store.nodes || []).find(n => n.id === node);   // FULL record (turn_manage/restarting/cmd_errors/ip_ifaces)
+  const nrec = (Store.nodes || []).find(n => n.id === node);
   if (!nrec) return html`<div class="screen"><div class="crumb"><a href="#/nodes">${T("col|Nodes")}</a><span class="sep">/</span><b>${T("val|server")}</b></div>
     <div class="empty"><b>${T("Unknown server")}</b>${T("this server isn't in the fleet.")}</div></div>`;
-  // WDTT owns its interface (reported in snap.wdtt, not describe) → a dedicated detail (server info + users),
-  // not the wg/awg config view. Keyed off the read-back so it's never mistaken for a missing/ghost wg iface.
   const _wInst = ((Store.stats[node] || {}).wdtt || []).find(w => w && w.iface === iface);
   const _wCfg = !_wInst && ((nrec.wdtt_cfg || {})[iface] || null);
   if (_wInst || _wCfg) return html`<${WdttIfaceDetail} node=${node} iface=${iface} w=${_wInst || { iface }} nrec=${nrec} missing=${!_wInst}/>`;
@@ -85,13 +74,12 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   const dname = nrec.name || node;
   const meta = Store.ifaceMeta(node, iface);
   const _rawMiss = (!meta && nrec.missing_ifaces && nrec.missing_ifaces[iface]) || null;
-  const missIf = (_rawMiss && _rawMiss.key_source) ? _rawMiss : null;   // RECOVERABLE (key backup/vault) → read-only, only action Restore interface
-  const ghostIf = (!meta && !missIf && ghostIface(node, iface)) || null;   // lost + KEYLESS → read-only, only action Recreate and rekey interface
+  const missIf = (_rawMiss && _rawMiss.key_source) ? _rawMiss : null;
+  const ghostIf = (!meta && !missIf && ghostIface(node, iface)) || null;
   const live = Store.recon.nodeStatus[node] === "live";
-  const blocked = !live || inProc(nrec.proc_status) || !!missIf;   // missing → fully read-only (every edit/lifecycle button off; only Restore acts)
-  // a pending listen-port change: desired (panel) != reported (node) until the node converges
+  const blocked = !live || inProc(nrec.proc_status) || !!missIf;
   const updating = !!(meta && meta.desired_port && meta.listen_port && Number(meta.desired_port) !== Number(meta.listen_port));
-  const type = ghostIf   // a ghost has no meta/awg_params → infer the badge from the peers that reference it (else it always reads "wg")
+  const type = ghostIf
     ? (Store.recon.peers.some(p => (p.targets || []).some(t => t.node === node && t.iface === iface && t.type === "awg")) ? "awg" : "wg")
     : ((((meta && meta.awg_params) || (missIf && missIf.awg_params)) && Object.keys((meta && meta.awg_params) || (missIf && missIf.awg_params) || {}).length) ? "awg" : "wg");
   const peers = Store.recon.peers.filter(p => p.targets.some(t => t.node === node && t.iface === iface));
@@ -99,18 +87,16 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   const orphans = Store.recon.orphans.filter(o => o.node === node && o.iface === iface);
   const restarting = (nrec.restarting || []).includes(iface);
   const istate = (((Store.stats[node] || {}).interfaces || {})[iface] || {});
-  const istopped = !!istate.stopped;   // operator stopped it → a choice, not a failure (no error notice)
-  const idown = !istopped && istate.down;   // genuinely down (failed to come up)
-  const notup = !!idown || istopped;        // either way: offer Start + Edit
-  const op = Store.ifaceOp[node + "|" + iface];   // start/stop/restart lifecycle (busy/ok/fail flash)
+  const istopped = !!istate.stopped;
+  const idown = !istopped && istate.down;
+  const notup = !!idown || istopped;
+  const op = Store.ifaceOp[node + "|" + iface];
   const ap = (meta && meta.awg_params) || (missIf && missIf.awg_params) || {};
-  // …and where the record is the whole set (`awg_exact`), a 2.0 field it lacks is NONE — said, faintly, in its column
   const apNone = meta && meta.awg_exact ? AWG_ORDER.filter(k => !AWG3_KEYS.includes(k) && ap[k] == null) : [];
   const awgGrp = pred => [...Object.entries(ap).filter(([k]) => pred(k) && !AWG3_KEYS.includes(k)).map(([k, v]) => k + "=" + v),
     ...apNone.filter(pred).map(k => html`<span class="awg-none-v">${k}=${T("val|none")}</span>`)];
   const awgCols = [awgGrp(k => k[0] === "J"), awgGrp(k => k[0] === "S"), awgGrp(k => k[0] === "H"), awgGrp(k => !"JSH".includes(k[0]))];
   const rows = peers.slice().sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || String(a.name).localeCompare(String(b.name)));
-  // one {peer,target} row per peer on this interface, fed to the shared PeerGrid
   const ifaceRows = rows.map(p => ({ p, t: p.targets.find(d => d.node === node && d.iface === iface) || {} }));
   const ifaceShown = {};
   for (const { p, t } of ifaceRows) (ifaceShown[p.id] = ifaceShown[p.id] || new Set()).add(tkey(t.node, t.iface));
@@ -128,10 +114,7 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
       <div class="grow"></div>
     </div>
     ${idown ? html`<div class="notice warn"><${Ic} i="warn"/><span>${ifaceDownNote((nrec.cmd_errors || {})[iface] || idown)}</span>
-      ${/* The repair, on the card the operator is already looking at. A down interface whose DEVICE is gone
-            used to be a dead end: it is reported, so it never reaches missing_ifaces, /api/iface/recreate
-            refused it, and the node retried a doomed set-iface every 5s in silence (§7.5). It is the same
-            repair as a missing interface and deliberately the same flow. */
+      ${
         (() => { const bi = brokenIface(node, iface); return bi ? html`<button class="btn btn-mini restore" style="margin-left:auto;flex:none" disabled=${!bi.ripe}
           title=${bi.ripe ? T("The device is gone from the node — rebuild it from the saved config with its original server key") : T("Confirming it's really down (a couple of minutes) before Rebuild is offered")}
           onClick=${() => confirmRebuildInterface(node, iface, bi)}><${Ic} i="refresh"/> ${T("Rebuild interface")}</button>` : null; })()}
@@ -163,8 +146,6 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
       : !meta ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("This interface hasn't been reported in a snapshot yet.")}</span></div>`
       : html`<${Panel} icon="key" title=${T("Interface details")} tone=${type === "awg" ? "" : "online"}
           actions=${Store.ifaceGone[node + "|" + iface]
-            // Delete already submitted, the node has not torn it down yet. Leaving Stop/Restart/Edit live
-            // invites commands against an interface that is going away; show what is happening instead.
             ? html`<${StatusTag} cls="tg-del" icon="clock" label="deleting" title=${T("The node tears it down on its next sync")}/>`
             : html`<${Fragment}>${op && op.phase === "busy" ? html`<span class="tg-busy"><${Ic} i="clock"/>${ifopBusy(op.verb)}…</span>` : op && op.phase === "ok" ? html`<span class="tg-ok"><${Ic} i="check"/>${ifopDone(op.verb)}</span>` : op && op.phase === "fail" ? html`<${StatusTag} cls="tg-del" icon="warn" label=${ifopFail(op.verb)} msg=${op.err || T("the action failed on the node")} title=${T("Action failed on the node")}/>` : null}${(op && op.phase === "busy") ? null : notup
               ? html`<button class="btn btn-mini" disabled=${blocked} title=${blocked ? T("Unavailable while the node is down / converting") : T("Bring this interface up on the node")} onClick=${() => startOrRestartIface(node, iface, "start")}><${Ic} i="play"/> ${(isMobile() ? T("rowact|Start") : T("Start service"))}</button>`
@@ -174,8 +155,6 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
           <div class="ig-item"><span class="ig-l">${T("Server address")}</span><span class="ig-v">${meta.address || "—"}</span></div>
           <div class="ig-item"><span class="ig-l">${T("Traffic")}</span><span class="ig-v">${ifTrafficBadge(meta.egress_mode, meta.egress_node, node, meta.exit_id)}</span></div>
           ${(() => {
-            // MTU used to sit here. It is a create-time constant that never moves on its own and is still on
-            // Edit interface; this one changes minute to minute and had nowhere on this page to live.
             const d = meta.drops;
             return html`<div class="ig-item"><span class="ig-l">${T("col|Drops")}</span><span class="ig-v">${d
               ? html`<${DropsPop} d=${d} iface=${iface} node=${node} alignRight=${false}
@@ -195,7 +174,7 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
 
     <${Panel} icon="users" title=${T("Peers on this interface")} count=${peers.length} pad=${false}
         lead=${html`<div class="search hdr"><${Ic} i="search"/><input placeholder=${T("Search title, user, address…")} value=${q} onInput=${e => setQ(e.target.value)}/></div>`}
-        actions=${Store.ifaceGone[node + "|" + iface] ? null   // teardown in flight → adding a peer to it is a dead end
+        actions=${Store.ifaceGone[node + "|" + iface] ? null
           : html`<button class="btn btn-mini" disabled=${blocked} title=${blocked ? T("Unavailable while the node is down / converting") : ""} onClick=${() => openCreatePeer({ node, iface, lock: true })}><${Ic} i="plus"/> ${T("Add peer")}</button>`}>
       <${PeerGrid} rows=${ifaceFiltered} agg=${false} node=${node} iface=${iface} shownByPeer=${ifaceShown} q=${q} blocked=${blocked}/>
     <//>
@@ -251,7 +230,7 @@ export function ReclaimSheet({ node, iface, w, family, onBusy }) {
 export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
   useStore();
   const [q, setQ] = useState("");
-  const isCsq = kind === "csqtt";               // same page, two self-contained kinds
+  const isCsq = kind === "csqtt";
   const dname = nrec.name || node;
   const live = Store.recon.nodeStatus[node] === "live";
   const blocked = !live || inProc(nrec.proc_status);
@@ -262,18 +241,16 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
     family=${isCsq ? "csqtt" : "wdtt"} onBusy=${setReclaiming}/>`);
   const fork = w.fork || cfg.fork || (isCsq ? "csqtt" : "amurcanov");
   const active = w.active === "active";
-  const adopting = ((isCsq ? nrec.csqtt_adopting : nrec.wdtt_adopting) || []).includes(iface);   // a csqtt take-over too: same window
+  const adopting = ((isCsq ? nrec.csqtt_adopting : nrec.wdtt_adopting) || []).includes(iface);
   const awaiting = !adopting && (!!w.await_restore || !!missing);
   const stopped = !!cfg.stopped;
   const failErr = (nrec.cmd_errors || {})[iface] || "";
-  const never = !adopting && !!missing && !!failErr && !((nrec.wdtt_vault || {})[iface]);   // a take-over's failure is not "never created"
-  // csqtt derives every client credential from the panel-owned password — there is no server keypair to escrow,
-  // so a missing csqtt server is never "restorable", only recreatable from panel state (which self-heals).
+  const never = !adopting && !!missing && !!failErr && !((nrec.wdtt_vault || {})[iface]);
   const restorableK = !isCsq && !!((nrec.wdtt_vault || {})[iface]);
-  const notup = !active && !awaiting;   // stopped / starting → offer Start; else Stop + Restart
+  const notup = !active && !awaiting;
   const restoring = (nrec.wdtt_restoring || []).includes(iface);
   const restorable = restorableK;
-  const op = Store.ifaceOp[node + "|" + iface];   // start/stop/restart/apply lifecycle (busy/ok/fail flash)
+  const op = Store.ifaceOp[node + "|" + iface];
   const peers = Store.recon.peers.filter(p => p.targets.some(t => t.node === node && t.iface === iface));
   const rows = peers.slice().sort((a, b) => STATUS_RANK[a.status] - STATUS_RANK[b.status] || String(a.name).localeCompare(String(b.name)));
   const ifaceRows = rows.map(p => ({ p, t: p.targets.find(d => d.node === node && d.iface === iface) || {} }));
@@ -283,10 +260,8 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
   const opFlash = op && op.phase === "busy" ? html`<span class="tg-busy"><${Ic} i="clock"/>${ifopBusy(op.verb)}…</span>`
     : op && op.phase === "ok" ? html`<span class="tg-ok"><${Ic} i="check"/>${ifopDone(op.verb)}</span>`
     : op && op.phase === "fail" ? html`<${StatusTag} cls="tg-del" icon="warn" label=${ifopFail(op.verb)} msg=${op.err || T("the action failed on the node")} title=${T("Action failed on the node")}/>` : null;
-  // A JS comment must stay OUT of the template below: inside an html`` literal it is text — one rendered in this
-  // page's header ("// i18n-keys: …", 1.8.8 qualification).
-  const kindLabel = isCsq ? "CSQTT" : "WDTT";   // i18n-keys: product names, the same in every language
-  const lineSuffix = isCsq ? " " + csqttRunLine(node, iface) : "";   // "amurcanov 2.5" — the badge carries the csqtt line
+  const kindLabel = isCsq ? "CSQTT" : "WDTT";
+  const lineSuffix = isCsq ? " " + csqttRunLine(node, iface) : "";
   return html`<div class="screen">
     <${NodeRail} active=${node}/>
     <div class="crumb"><a href="#/nodes">${T("col|Nodes")}</a><span class="sep">/</span><a href=${"#/node/" + encodeURIComponent(node)}>${dname}</a><span class="sep">/</span><b>${iface}</b></div>
@@ -294,7 +269,7 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
       <div class="title"><h1>${iface}</h1><span class=${"iftype " + (isCsq ? "csqtt" : "wdtt")}>${kindLabel}</span><${ForkTag} fork=${fork} suffix=${lineSuffix}/>${adopting ? html`<span class="tg-busy"><${Ic} i="clock"/>${T("tag|adopting")}</span>` : awaiting ? html`<span class="nstat down"><${Ic} i="shield"/> ${missing ? T("tag|missing") : T("awaiting restore")}</span>` : (op && op.phase === "busy") ? html`<span class="tg-busy"><${Ic} i="clock"/>${ifopBusy(op.verb)}</span>` : stopped ? html`<span class="nstat stopped" title=${T("Stopped by you — Start it whenever you're ready")}><${Ic} i="stop"/> ${T("tag|stopped")}</span>` : active ? html`<span class="reporting">${T("tag|running")}</span>` : html`<span class="nstat stale"><${Ic} i="clock"/> ${T("tag|starting")}</span>`}<span class="when"><${OnlinePeersTag} nodeId=${node} iface=${iface} total=${peers.length} orphans=${0}/></span></div>
       <div class="grow"></div>
     </div>
-    ${adopting && failErr   /* the attempt failed and the node retries: say why and how it ends — never "never created" or Remove here */
+    ${adopting && failErr
       ? html`<div class="notice warn"><${Ic} i="warn"/><span>${Trich("The node couldn't take this server over yet: *{err}*. It keeps trying — once that server is stopped, the take-over completes; otherwise the panel stops trying 5 minutes after the take-over started.", { err: failErr })}</span></div>`
       : adopting ? html`<div class="notice"><${Ic} i="clock"/><span>${Trich("This server is being *taken over* — the node stops the existing one and brings it back up under the panel with its original identity and users. Its controls stay disabled until that finishes.")}</span></div>` : null}
     ${never ? html`<div class="notice warn"><${Ic} i="warn"/><span>${Trich("The node refused to install this server, so it was never created: *{err}*. Fix that and create it again, or remove it — there is no identity to restore and nothing to recreate.", { err: failErr })}
@@ -305,10 +280,8 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">${restorable ? html`<button class="btn btn-primary" disabled=${restoring} onClick=${() => wdttRestoreIdentity(node, iface)}><${Ic} i="shield"/> ${restoring ? T("Restoring…") : T("Restore server identity")}</button>` : null}<button class=${restorable ? "btn btn-ghost" : "btn btn-primary"} disabled=${restoring} onClick=${() => wdttRecreateFresh(node, iface)}>${T("Recreate fresh")}</button></div></span></div>` : null}
     <${Panel} icon="key" title=${T("Interface details")} tone="online"
         actions=${Store.ifaceGone[node + "|" + iface]
-          // Delete already submitted, the node has not torn it down yet — same guard as the wg/awg page.
           ? html`<${StatusTag} cls="tg-del" icon="clock" label="deleting" title=${T("The node tears it down on its next sync")}/>`
           : adopting
-          // Take-over in flight: Stop/Restart/Edit/Delete would all act on a server that is being replaced.
           ? html`<${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|adopting")} title=${T("The node applies the take-over on its next sync")}/>`
           : unclaimed
           ? html`<button class="btn btn-mini btn-primary" disabled=${blocked || reclaiming} onClick=${reclaim}
@@ -327,14 +300,11 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
 
     <${IfaceThroughput} node=${node} iface=${iface}/>
 
-    ${/* A WDTT fork IS a turn-family server, so this page shows its card in the same section the node screen
-          uses — read-only here: no add-proxy button, because a WDTT server owns its own transport
-          and nothing can be pointed at this interface. */""}
     ${turnEnabled() ? html`<${TurnProxiesBlock} node=${node} nrec=${nrec} metas=${Store.describe[node] || {}} title=${isCsq ? T("CSQTT proxy") : T("WDTT proxy")} iface=${iface}/>` : null}
 
     <${Panel} icon="users" title=${T("Peers on this interface")} count=${peers.length} pad=${false}
         lead=${html`<div class="search hdr"><${Ic} i="search"/><input placeholder=${T("Search title, user, address…")} value=${q} onInput=${e => setQ(e.target.value)}/></div>`}
-        actions=${Store.ifaceGone[node + "|" + iface] ? null   // teardown in flight → adding a peer to it is a dead end
+        actions=${Store.ifaceGone[node + "|" + iface] ? null
           : html`<button class="btn btn-mini" disabled=${blocked} title=${blocked ? T("Unavailable while the node is down") : ""} onClick=${() => openCreatePeer({ node, iface, lock: true })}><${Ic} i="plus"/> ${T("Add peer")}</button>`}>
       <${PeerGrid} rows=${ifaceFiltered} agg=${false} node=${node} iface=${iface} shownByPeer=${ifaceShown} q=${q} blocked=${blocked}/>
     <//>
@@ -347,7 +317,7 @@ export function OrphanRow({ o }) {
     <td data-label=${T("Key")} class="addr">${o.pubkey.slice(0, 22)}…</td>
     <td data-label=${T("col|Address")}><span class="addr">${o.iface} · ${o.allowed_ips || "—"}</span></td>
     <td data-label="" style="text-align:right" class="rowacts">
-      <button class="btn btn-mini" onClick=${() => mutate({   // server assigns the real id; this is the overlay
+      <button class="btn btn-mini" onClick=${() => mutate({
         key: "orphan:" + o.node + "|" + o.iface + "|" + o.pubkey,
         patch: adoptOrphanPatch(o),
         call: () => api.peerAdopt({ pubkey: o.pubkey, psk: o.preshared_key || "", target: { node: o.node, iface: o.iface, ip: (o.allowed_ips || "").split("/")[0] } }),
@@ -357,7 +327,7 @@ export function OrphanRow({ o }) {
 }
 
 export function openCreateIface(node) { openModal(html`<${LoadIfaceSheet} node=${node}/>`); }
-export function BridgePortSheet({ iface, port }) {   // shown after creating an iface on a bridge docker node
+export function BridgePortSheet({ iface, port }) {
   const p = port || "PORT";
   const portsLine = `- "${p}:${p}/udp"`;
   return html`<${Sheet} title=${T("Publish port · {v1}", { v1: iface })}>
@@ -367,24 +337,20 @@ export function BridgePortSheet({ iface, port }) {   // shown after creating an 
   <//>`;
 }
 
-// ═════════════════════════ AmneziaWG 3.1 (docs/AWG3-PLAN.md §7.7) ═════════════════════════
-// The 3.x keys — the tail of AWG_ORDER, the SPA's one list, never a second copy of it.
 const AWG3_KEYS = AWG_ORDER.slice(AWG_ORDER.indexOf("HeaderProtectionKey"));
 function Awg3Row({ ap }) {
   const has = k => String((ap || {})[k] ?? "").trim() !== "";
   if (!AWG3_KEYS.some(has)) return null;
-  // a narrow column (a phone) breaks a line after its "=" or between the words of the key — never inside a value or a word
   const words = k => k.split(/(?=[A-Z])/).flatMap((w, i) => i ? [html`<wbr/>`, w] : [w]);
   const kv = k => html`<span>${words(k)}=<wbr/><span class="awg3-v">${k === "HeaderProtectionKey" ? T("val|set") : k === "RandomTrailers" ? T("val|on") : ap[k]}</span></span>`;
-  const cols = [["HeaderProtectionKey", "RandomTrailers", "DisableCookies"], ...AWG3_EDIT_COLS].map(g => g.filter(has).map(kv));   // i18n-keys: conf key names, as the conf spells them
+  const cols = [["HeaderProtectionKey", "RandomTrailers", "DisableCookies"], ...AWG3_EDIT_COLS].map(g => g.filter(has).map(kv));
   return html`<div class="awg3-cap">${T("AmneziaWG 3.1")}</div><div class="iface-grid awg3-row">
     ${cols.map(g => html`<div class="ig-item"><span class="ig-v">${g.length ? g : "—"}</span></div>`)}
   </div>`;
 }
-export const AWG3_EDIT_COLS = [["ContentPaddingAddition", "MaxHandshakeAttempts"], ["RekeyAfterTime", "RekeyTimeout"], ["RejectAfterTime", "KeepaliveTimeout"]];   // i18n-keys: conf key names, as the conf spells them
+export const AWG3_EDIT_COLS = [["ContentPaddingAddition", "MaxHandshakeAttempts"], ["RekeyAfterTime", "RekeyTimeout"], ["RejectAfterTime", "KeepaliveTimeout"]];
 export const awgIsNone = v => String(v == null ? "" : v).trim() === "-";
-// The 2.0 grid's four columns (J / S / H / I), drawn by the Edit sheet and by Settings' templates.
-export const AWG_COLS = [["Jc", "Jmin", "Jmax"], ["S1", "S2", "S3", "S4"], ["H1", "H2", "H3", "H4"], ["I1", "I2", "I3", "I4", "I5"]];   // i18n-keys: conf key names, as the conf spells them
+export const AWG_COLS = [["Jc", "Jmin", "Jmax"], ["S1", "S2", "S3", "S4"], ["H1", "H2", "H3", "H4"], ["I1", "I2", "I3", "I4", "I5"]];
 export function awgOmitIssue(d, template) {
   const n = AWG_COLS[0].filter(k => awgIsNone((d || {})[k])).length;
   if (n && n < 3) return T("Jc, Jmin and Jmax go together — set all three to -, or none of them.");
@@ -392,7 +358,6 @@ export function awgOmitIssue(d, template) {
     return T("Every field is - — leave at least one, or use WireGuard interfaces.");
   return "";
 }
-// W1 (A2): RandomTrailers on without ContentPaddingAddition is allowed, and pads every small packet about five times over.
 export const awgW1 = (d, rtOn) => rtOn && awgIsNone((d || {}).ContentPaddingAddition)
   ? T("ContentPaddingAddition is none while RandomTrailers is on — every small packet is padded about five times over.") : "";
 export function Awg3Grid({ value, onKey, hpk, rt, hpkTip, rtTip, hint, placeholders }) {
@@ -404,11 +369,7 @@ export function Awg3Grid({ value, onKey, hpk, rt, hpkTip, rtTip, hint, placehold
       class=${awgIsNone(v[k]) ? "awg-none" : null} ...${placeholders ? { placeholder: placeholders[k] || "" } : {}} onInput=${e => onKey(k, e.target.value)}/></label>`)}</div>`)}
   </div>${awgW1(v, !!rt && rt !== "—") ? html`<p class="hint warnish awg-omit-hint">${awgW1(v, true)}</p>` : null}`;
 }
-// Is an S1–S4 in this AWG dict one the panel re-draws on a switch to 3.1 — set and under 12, or not a number (awg3_full)?
-// One test for the switch window and the Edit sheet's 3.1 cells, so the two never say different things about the same values.
 const awgLowS = d => ["S1", "S2", "S3", "S4"].some(k => { const v = String((d || {})[k] ?? "").trim(); return v !== "" && (!/^\d+$/.test(v) || +v < 12); });
-// The one sentence that says which apps carry 3.1 (docs/AWG3-PLAN.md §3) — in the switch window, where the switch is confirmed,
-// and under the switch in the create form, which has no switch window.
 const awg3Apps = () => T("Only apps that carry AmneziaWG 3.1 can connect: Amnezia VPN 5.0.1.5 or newer, AmneziaWG from the App Store or from GitHub (not the Google Play build), WG Tunnel 5.6 or newer. WINGS V, Keenetic and MikroTik cannot.");
 export function AwgLoadLine({ node, nrec }) {
   const st = (nrec || {}).awg_load || null;
@@ -436,7 +397,6 @@ export function AwgGenField({ value, onChange, no3, no2, label, hint, was, node,
     ${nrec ? html`<${AwgLoadLine} node=${node} nrec=${nrec}/>` : null}
   </div>`;
 }
-// The devices a switch cuts, in their own window (15 a page, a filter once it pages): a list sized by the fleet never renders inline.
 function AwgDevicesSheet({ node, iface }) {
   useStore();
   const [q, setQ] = useState(""), [page, setPage] = useState(1);
@@ -457,7 +417,7 @@ function AwgDevicesSheet({ node, iface }) {
     <${ListPager} page=${pg} setPage=${setPage} total=${rows.length}/>
   <//>`;
 }
-const GW_SHOWN = 5;   // gateways named in the switch window; the rest are counted, and listed in the device window
+const GW_SHOWN = 5;
 function AwgSwitchSheet({ node, iface, to, commit, sent }) {
   useStore();
   const [busy, setBusy] = useState(false), [err, setErr] = useState(""), [srvBlk, setSrvBlk] = useState(null), [typed, setTyped] = useState("");
@@ -476,9 +436,9 @@ function AwgSwitchSheet({ node, iface, to, commit, sent }) {
     setBusy(true); setErr("");
     let r;
     try { r = await commit(); } catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
-    if (r && !r.ok) {   // an accepted switch closed every window; a refusal stays here, naming what blocks it
+    if (r && !r.ok) {
       setBusy(false);
-      if (r.code === "turn_awg3" && Array.isArray(r.turn_proxies)) setSrvBlk(r.turn_proxies);   // the notice above names them and says what to do
+      if (r.code === "turn_awg3" && Array.isArray(r.turn_proxies)) setSrvBlk(r.turn_proxies);
       else setErr(srvText(r) || T("save failed"));
     }
   };
@@ -494,7 +454,7 @@ function AwgSwitchSheet({ node, iface, to, commit, sent }) {
         ${gws.length > GW_SHOWN ? html`<li class="awgsw-more"><button type="button" class="linkbtn" onClick=${() => pushModal(html`<${AwgDevicesSheet} node=${node} iface=${iface}/>`)}>${T("…and {v1} more", { v1: gws.length - GW_SHOWN })}</button></li>` : null}</ul></div></div>` : null}
     ${blk.length ? html`<div class="notice danger"><${Ic} i="warn"/><div>
       <div>${T("The panel refuses this switch while these turn proxies point at {v1} — their app carries AmneziaWG 2.0 only:", { v1: iface })}</div>
-      <ul class="awgsw-list">${blk.map(b => { const lp = (String(b.service).match(/-(\d+)$/) || [])[1];   // the proxy's own listen port, which its service name ends in
+      <ul class="awgsw-list">${blk.map(b => { const lp = (String(b.service).match(/-(\d+)$/) || [])[1];
         return html`<li key=${b.service}><b>${b.title || forkLabel(b.fork)}</b> <span class="faint">${forkLabel(b.fork)}${lp ? " · :" + lp : ""}</span></li>`; })}</ul>
       <div>${T("Point each at a 2.0 interface, or delete it, and switch once the node has applied that.")}</div></div></div>` : null}
     ${line("warn", "users", peers.length
@@ -502,7 +462,6 @@ function AwgSwitchSheet({ node, iface, to, commit, sent }) {
           ? Trich("Affected: {v1} of {v2}.", { v1: devBtn, v2: plural(users, "gen|user") }) : Trich("Affected: {v1}.", { v1: devBtn })}`
       : T("No device is on this interface yet — nothing to re-import."))}
     ${nodeStale(node) ? line("warn", "clock", T("{v1} is not reporting — the switch applies when it is back. Until then its clients keep working on the old config, and new QR codes already show the new one.", { v1: Store.nodeName(node) })) : null}
-    ${/* what follows by itself, and what it does not — one notice, a line per fact */""}
     <div class="notice"><${Ic} i="info"/><ul class="awgsw-list awgsw-facts">
       <li>${subFeatureOn() ? T("Subscription pages and the panel's QR codes show the new config at once; each device still has to import it.")
         : T("The panel's QR codes show the new config at once; each device still has to import it.")}</li>
@@ -516,9 +475,9 @@ function AwgSwitchSheet({ node, iface, to, commit, sent }) {
     ${err ? html`<div class="formmsg err">${err}</div>` : null}
   <//>`;
 }
-const awgTail = " · AWG";   // i18n-keys: a protocol acronym, appended to the already-translated summary
-const natTail = " · NAT";   // …and the NAT source card, which now lives in the same section
-const MIMIC_NAME = { off: () => T("mimic|Off"), quic: () => "QUIC (HTTP/3)", dns: () => T("DNS query"),   // i18n-keys: a protocol name
+const awgTail = " · AWG";
+const natTail = " · NAT";
+const MIMIC_NAME = { off: () => T("mimic|Off"), quic: () => "QUIC (HTTP/3)", dns: () => T("DNS query"),
   builtin: () => T("Built-in"), custom: () => T("mimic|Custom") };
 const MIMIC_TAIL = { off: () => T("disguise: off"), quic: () => T("disguise: QUIC"), dns: () => T("disguise: DNS"),
   builtin: () => T("disguise: built-in"), custom: () => T("disguise: custom") };
@@ -529,10 +488,8 @@ const mimicWhy = (k, c) => c.why === "big" ? T("{v1}: a random part is at most 1
   : c.why === "huge" ? T("{v1}: more than one UDP packet can carry (65,507 bytes).", { v1: k })
   : c.why === "long" ? T("{v1}: longer than 4096 characters.", { v1: k })
   : T("{v1}: apps cannot read {v2} — use <b 0x…>, <r N>, <rc N>, <rd N> or <t>.", { v1: k, v2: c.tag });
-const MIMIC_BIG = 1232;            // a packet above this may be split on a 1280-byte path (plan §5)
-const MIMIC_MONTH = 30 * 24 * 30;  // handshakes a month for a device that stays connected: one every 2 minutes
-/* The picker and the lines under it. `eff` = the five lines Save would leave (a blank cell keeps the record's: the update
-   merges), `was` = the record's, `port` = the listen port in the form. */
+const MIMIC_BIG = 1232;
+const MIMIC_MONTH = 30 * 24 * 30;
 export function MimicPick({ eff, was, port, peers, restart, bad, onPick }) {
   const mim = mimicOf(eff), changed = MIMIC_KEYS.some(k => String(eff[k] ?? "") !== String(was[k] ?? ""));
   const size = ([a, b]) => T("1 packet, {v1}–{v2} bytes", { v1: fmtNum(a), v2: fmtNum(b) });
@@ -547,8 +504,7 @@ export function MimicPick({ eff, was, port, peers, restart, bad, onPick }) {
   const bytes = pk.reduce((n, [, c]) => n + c.bytes, 0), big = pk.find(([, c]) => c.bytes > MIMIC_BIG);
   const lp = String(port || "").trim(), fit = MIMIC_PRESETS[mim] && MIMIC_PRESETS[mim].port;
   const line = (t, cls) => html`<p class=${"hint mimic-line" + (cls ? " " + cls : "")}>${t}</p>`;
-  // what Save does to the devices (F1: each side sends its own I1–I5, so nobody is cut; a config carries the new set once issued)
-  const dev = plural(peers, "device"), preset = mim === "quic" || mim === "dns";   // a protocol it looks like
+  const dev = plural(peers, "device"), preset = mim === "quic" || mim === "dns";
   const savedLine = () => !peers
     ? (mim === "off" ? T("Configs issued from now on carry no disguise.") : preset ? T("Configs issued from now on are disguised as {v1}.", { v1: MIMIC_NAME[mim]() })
       : T("Configs issued from now on carry the I1–I5 below."))
@@ -559,50 +515,45 @@ export function MimicPick({ eff, was, port, peers, restart, bad, onPick }) {
     <div class="mimic-row"><span class="mimic-lbl">${T("Disguise as")}</span>
       <${Dropdown} className="selwrap mimic-dd" value=${mim} options=${opts} short=${() => MIMIC_NAME[mim]()} ariaLabel=${T("Disguise as")} onChange=${onPick}/></div>
     ${bad ? line(bad, "err") : html`
-      ${line(pk.length ? T("The disguise sends before each handshake: {v1}, {v2} — about {v3} a month for a device that stays connected.",   // the bytes counted as the packets are: «226 байт», «1 232 байта» (q189 RU pass)
+      ${line(pk.length ? T("The disguise sends before each handshake: {v1}, {v2} — about {v3} a month for a device that stays connected.",
         { v1: plural(pk.length, "packet"), v2: fmtNum(bytes) + " " + pluralWord(bytes, "byte"), v3: fmtBytes((bytes + 28 * pk.length) * MIMIC_MONTH) }) : T("No packets before the handshake."))}
       ${big ? line(T("{v1} is {v2} — above 1232 it may be split on a 1280-byte path, and split packets stand out.", { v1: big[0], v2: fmtNum(big[1].bytes) + " " + pluralWord(big[1].bytes, "byte") }), "warnish") : null}
       ${mim === "builtin" ? line(T("The set every swgPanel install ships, the same on every server.")) : null}
       ${fit && lp && +lp !== fit ? line(T("QUIC looks most natural on UDP 443 — this interface listens on {v1}.", { v1: lp })) : null}
       ${mim !== "off" ? line(T("Changes only what the packets before each handshake look like. It does not help where only listed addresses are allowed — a TURN server is the way there.")) : null}
       ${changed ? line(html`${savedLine()}${restart
-          ? " " + T("The interface restarts; connected devices reconnect in about 15 seconds.") /* measured 15.2–15.4 s, WireGuard's rekey after silence (q189 V-FEAT-A F6) */ : ""}`, "mimic-save") : null}`}
+          ? " " + T("The interface restarts; connected devices reconnect in about 15 seconds.")   : ""}`, "mimic-save") : null}`}
   </div>`;
 }
 export function LoadIfaceSheet({ node, pre, ghost, back }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
-  const isBridge = nrec.kind === "docker" && (nrec.net_mode || "host") === "bridge";   // only bridge needs port publishing
+  const isBridge = nrec.kind === "docker" && (nrec.net_mode || "host") === "bridge";
   const _defProto = (pre && pre.proto) || "awg";
-  const [proto, setProto] = useState(_defProto);   // wg | awg | wdtt | csqtt
-  const sugAwg = suggestIface(node, "awg"), sugWg = suggestIface(node, "wg");   // auto-suggested names (per base)
+  const [proto, setProto] = useState(_defProto);
+  const sugAwg = suggestIface(node, "awg"), sugWg = suggestIface(node, "wg");
   const sugWdtt = nextWdttName(node);
-  const sugWdttNet = suggestSubnet(node);   // WDTT takes the SAME subnet form as wg/awg (10.X.0.0/24, fleet-unique); the server .1 is derived on save
-  const sugWdttListen = suggestPort(node, "turn");                        // external DTLS (turn-proxy family)
-  const sugWdttWg = suggestPort(node, "turn", [sugWdttListen]);           // internal userspace-WG port (≠ the listen)
+  const sugWdttNet = suggestSubnet(node);
+  const sugWdttListen = suggestPort(node, "turn");
+  const sugWdttWg = suggestPort(node, "turn", [sugWdttListen]);
   const [iface, setIface] = useState((pre && pre.iface) || (_defProto === "wdtt" ? sugWdtt : _defProto === "awg" ? sugAwg : sugWg)); const [subnet, setSubnet] = useState((pre && pre.subnet) || ((pre && pre.proto) === "wdtt" ? sugWdttNet : suggestSubnet(node)));
   const [port, setPort] = useState(String((pre && pre.port) || ((pre && pre.proto) === "wdtt" ? sugWdttListen : suggestPort(node, "iface"))));
   const _wdttForks = enabledTurnForks().filter(f => f.kind === "wdtt");
   const _forkBuildable = f => (f.wdtt_versions || []).length > 0;
-  const [wgPort, setWgPort] = useState(String(sugWdttWg)); const [fork, setFork] = useState(((_wdttForks.find(f => (f.wdtt_versions || []).length) || _wdttForks[0] || {}).id) || "amurcanov");   // WDTT: internal userspace-WG port + which server fork (default = first enabled one that has a build)
-  // WDTT is a turn-family fork → needs turn management on this node AND at least one WDTT fork enabled (else there's
-  // nothing to create) — if every WDTT fork is disabled in Settings, don't offer the WDTT protocol at all.
+  const [wgPort, setWgPort] = useState(String(sugWdttWg)); const [fork, setFork] = useState(((_wdttForks.find(f => (f.wdtt_versions || []).length) || _wdttForks[0] || {}).id) || "amurcanov");
   const wdttOk = turnEnabled() && nrec.turn_manage && nrec.turn_arch_ok !== false && enabledTurnForks().some(f => f.kind === "wdtt");
   const isWdtt = proto === "wdtt";
   const sugCsqtt = nextCsqttName(node);
   const sugCsqttNet = suggestSubnet(node);
   const sugCsqttListen = suggestPort(node, "turn");
   const [maxPw, setMaxPw] = useState("500");
-  // csqtt fork picker. One fork ships today (amurcanov), but people are building others and the catalog is
-  // already fork-shaped — so the instance carries its fork from the start rather than being retrofitted later.
   const _csqttForks = enabledTurnForks().filter(f => f.kind === "csqtt");
   const csqttOk = turnEnabled() && nrec.turn_manage && nrec.turn_arch_ok !== false && _csqttForks.length > 0;
   const [cfork, setCfork] = useState((_csqttForks[0] || {}).id || "csqtt");
-  const [cline, setCline] = useState(CSQTT_DEFAULT_LINE);   // csqtt version — new servers start on 2.1 (docs/CSQTT-LINES-PLAN.md §8)
+  const [cline, setCline] = useState(CSQTT_DEFAULT_LINE);
   const isCsqtt = proto === "csqtt";
-  const _idf = (Store.panelSettings || {}).interface_defaults || {};   // panel-wide new-interface defaults
+  const _idf = (Store.panelSettings || {}).interface_defaults || {};
   const [dns, setDns] = useState(pre && pre.dns != null ? pre.dns : (_idf.dns || ["1.1.1.1"]).join(", ")); const [mtu, setMtu] = useState(String((pre && pre.mtu) || _idf.mtu || 1280)); const [ka, setKa] = useState(String(pre && pre.keepalive != null ? pre.keepalive : (_idf.keepalive || 25)));
-  const [reach, setReach] = useState((pre && pre.reach) || _idf.reach || "user");   // device access (§10.6): a recreate keeps the level it had (§11.2 F1); a fresh create takes the panel-wide default
-  // A recreate starts with the saved version; a fresh create uses the panel default when the node supports it.
+  const [reach, setReach] = useState((pre && pre.reach) || _idf.reach || "user");
   const no31 = nrec.awg31_no ? srvText(nrec.awg31_no) : "";
   const [genPick, setGen] = useState(null);
   const missing = (nrec.missing_ifaces || {})[iface.trim()];
@@ -610,30 +561,27 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
     : no31 ? "2.0" : _idf.awg_gen || DEFAULT_AWG_GEN);
   const ips = ipChoices(nrec);
   const [eg, setEg] = useState(() => egressInit({}));
-  const [blk, setBlk] = useState(() => defaultBlockFor(node));   // Filters & abuse — seeded from each category's default_on once the catalog loads
+  const [blk, setBlk] = useState(() => defaultBlockFor(node));
   const blkSeeded = useRef(false);
   useEffect(() => { loadBlockCatalog().then(() => { if (blkSeeded.current) return; blkSeeded.current = true; setBlk(defaultBlockFor(node)); }); }, []);
-  const [disc, setDisc] = useState({ routing: true, filters: false, advanced: false });   // collapsible sections; Routing opens by default (only shown in Smart mode)
+  const [disc, setDisc] = useState({ routing: true, filters: false, advanced: false });
   const tog = k => setDisc(d => ({ ...d, [k]: !d[k] }));
-  // endpoint host: dropdown of the node's known IPs (default the first), last entry = a free-text "Custom IP / Host…"
   const _preEp = pre && pre.endpoint;
   const [hostSel, setHostSel] = useState(_preEp ? (ips.includes(_preEp) ? _preEp : "__custom__") : (ips[0] || "__custom__"));
   const [hostCustom, setHostCustom] = useState(_preEp && !ips.includes(_preEp) ? _preEp : "");
-  // A WDTT/csqtt server listens for that host: on it when it lands on the box, else on every address (useListenState) —
-  // or on the one address picked under Listen on.
   const [pin, setPin] = useState("");
   const lst = useListenState(node, (isWdtt || isCsqtt) ? ipPickerVal(hostSel, hostCustom) : "", "", "", pin);
-  const pickProto = p => {   // switching base re-suggests the name only if the field is still an untouched suggestion
+  const pickProto = p => {
     const untouched = iface === sugAwg || iface === sugWg || iface === sugWdtt || iface === sugCsqtt || !iface.trim();
     if (untouched) setIface(p === "wg" ? sugWg : p === "wdtt" ? sugWdtt : p === "csqtt" ? sugCsqtt : sugAwg);
-    if (p === "wdtt") {   // WDTT: seed the subnet + collision-free DTLS listen + internal-WG ports
+    if (p === "wdtt") {
       if (!subnet.trim() || subnet === suggestSubnet(node)) setSubnet(sugWdttNet);
       if (!port.trim() || port === String(suggestPort(node, "iface"))) setPort(String(sugWdttListen));
       setWgPort(String(sugWdttWg));
-    } else if (p === "csqtt") {   // csqtt: seed the subnet + collision-free UDP DTLS listen (no internal WG port)
+    } else if (p === "csqtt") {
       if (!subnet.trim() || subnet === suggestSubnet(node)) setSubnet(sugCsqttNet);
       if (!port.trim() || port === String(suggestPort(node, "iface"))) setPort(String(sugCsqttListen));
-    } else if (port === String(sugWdttListen) || port === String(sugCsqttListen)) {   // switching away from a turn kind → restore the interface listen port
+    } else if (port === String(sugWdttListen) || port === String(sugCsqttListen)) {
       setPort(String(suggestPort(node, "iface")));
     }
     setProto(p);
@@ -650,21 +598,18 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
         reason: T("Recreating {v1} gives its {v2} brand-new keys once it's back. Unlock your encryption key now so each fresh config is captured the moment it's rekeyed — then it stays re-viewable in the panel and is served on the users' subscription pages.", { v1: ghost.iface, v2: plural(n, "peer") }),
         consequence: T("the interface is recreated and its peers are rekeyed, but their new configs are NOT captured — they can't be re-viewed or served on subscription pages, and you'd have to hand every client a fresh QR by other means. (Unlock later in this same tab before reloading and they're still saved; after a reload the new keys are gone for good.)"),
       });
-      setMsg({ k: "work", t: T("requesting…") });   // the prompt may have taken a while → restore the working state
+      setMsg({ k: "work", t: T("requesting…") });
     }
     let r;
     if (isWdtt) {
-      // WDTT interface: ONE record — this writes the same /api/wdtt/set the Turn-proxies card edits.
       const nm = iface.trim();
       const _ne = turnIfaceNameError(node, nm, "wdtt"); if (_ne) return fail(_ne);
       if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(subnet.trim())) return fail(T("Enter the tunnel subnet as CIDR, e.g. 10.8.0.0/24."));
       if (wgPort.trim() && !/^\d+$/.test(wgPort.trim())) return fail(T("Internal WG port must be a number."));
       const _dtlsHost = ipPickerVal(hostSel, hostCustom).trim() || "0.0.0.0";
       r = await api.wdttSet({ node, iface: nm, wg_addr: subnetServerAddr(subnet.trim()), listen: _dtlsHost + ":" + (port.trim() || "56000"),
-        wg_port: wgPort.trim() || "56001", fork, block: blk, reach, ...(pin ? { bind_ip: pin } : {}), ...egressBody(eg) });   // carry the routing mode + filters chosen at create time (same as edit)
+        wg_port: wgPort.trim() || "56001", fork, block: blk, reach, ...(pin ? { bind_ip: pin } : {}), ...egressBody(eg) });
     } else if (isCsqtt) {
-      // csqtt interface: ONE record — writes the same /api/csqtt/set the Turn-proxies card edits. Raw-TUN, so no
-      // internal WG port and no fork; takes the SUBNET like wg/awg (server .1 derived), a UDP DTLS listen, a pw cap.
       const nm = iface.trim();
       const _ne = turnIfaceNameError(node, nm, "csqtt"); if (_ne) return fail(_ne);
       if (!/\/24$/.test(subnet.trim())) return fail(T("csqtt needs a /24 tunnel subnet, e.g. 10.66.67.0/24."));
@@ -683,15 +628,13 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
         ...(proto === "awg" ? { awg_gen: gen } : {}) });
     }
     if (!r.ok) return fail(srvText(r) || T("Request failed."));
-    reportDropped(r);   // §5.4 — create carries a routing block too (the new-interface sheet has the field)
-    // optimistic: show the card — WITH the details just entered — the instant Create is clicked (use the
-    // component-scoped state vars, not the else-block locals). Onboarding doesn't know subnet/port yet.
+    reportDropped(r);
     const _newName = iface.trim();
     Store.ifaceNew[node + "|" + _newName] = {
       type: proto, subnet: subnet.trim(), port: port.trim(), endpoint: ipPickerVal(hostSel, hostCustom), at: Date.now(),
       ...(proto === "awg" && gen === "3.1" ? { gen: "3.1" } : {}),
     };
-    if (ghost) Store.ghostRekey[node + "|" + _newName] = { peers: ghost.peers || [], at: Date.now() };   // phase 2: rekey these once the fresh iface is live
+    if (ghost) Store.ghostRekey[node + "|" + _newName] = { peers: ghost.peers || [], at: Date.now() };
     closeModal(); Store.apply(); await Store.poll();
     if (!isWdtt && !isCsqtt && isBridge) { openModal(html`<${BridgePortSheet} iface=${_newName} port=${port.trim()}/>`); return; }
     toast(ghost ? ((ghost.peers || []).length === 1
@@ -699,8 +642,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
         : T("Recreating {v1} — keep this tab open and its {v2} are rekeyed automatically once it's back; otherwise rekey each from its peer view. Then hand out the fresh configs.", { v1: _newName, v2: plural((ghost.peers || []).length, "peer") }))
                 : T("Interface creation requested — applies on the node's next sync."), "ok", ghost ? 6000 : 3600);
   };
-  // subnets must be UNIQUE across the fleet (the mesh routes by subnet) → warn + block Save on a duplicate. Skip
-  // for onboarding (the node reports its own subnet) and for a ghost recreate (same iface, its subnet is expected).
   const _subConflict = (!ghost && subnet.trim()) ? subnetFleetConflict(subnet.trim(), null, null) : null;
   const _nameTaken = (!ghost && iface.trim()) ? (() => { const nm = iface.trim();
     if ((Store.describe[node] || {})[nm] || (nrec.wdtt_cfg || {})[nm] || (nrec.csqtt_cfg || {})[nm]
@@ -709,18 +650,10 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
     return null; })() : null;
   const nameErr = _nameTaken === "managed" ? T("An interface named {v1} already exists on this node.", { v1: iface.trim() })
     : null;
-  // live port-collision checks (new interface → no own ports). WDTT also needs its DTLS ≠ internal WG port.
   const pperr = portErrMsg(node, port, []);
   const wgperr = isWdtt ? ((port.trim() && wgPort.trim() && Number(port) === Number(wgPort)) ? T("The DTLS port and internal WG port must differ.") : portErrMsg(node, wgPort, [])) : null;
   return html`<${Sheet} title=${ghost ? T("Recreate & rekey · {iface}", { iface: ghost.iface }) : T("Create new interface")} onBack=${back || null}
     foot=${footRow({ onCancel: back || closeModal, disabled: busy || !!nameErr || !!_subConflict || !!pperr || !!wgperr || (!!egressSaveBlock(eg, nrec.routing_mode || "kernel")), title: (nameErr || pperr || wgperr || (_subConflict ? T("This subnet is already in use in the fleet") : (egressSaveBlock(eg, nrec.routing_mode || "kernel")))) || "", onAction: save, action: ghost ? T("Recreate & rekey") : T("Create") })}>
-    ${/* ⚠️ THE PROVENANCE LINE HAS TO MATCH WHERE THE VALUES CAME FROM. "(inferred from the peers)" was true
-         when this sheet guessed the protocol from a peer's target type and the port from a suggestion. A WARM
-         ghost is now pre-filled from the interface's own saved config — port, MTU, DNS, keepalive, endpoint
-         and its AmneziaWG band — so that parenthetical told the operator to distrust the one thing they
-         should trust, on the very screen that asks them to review it. The COLD path still infers, and still
-         says so. And with nothing deployed there is no client to re-import: saying "every client must" of
-         zero clients is an instruction nobody can follow. */""}
     ${ghost ? html`<div class="notice danger" style="margin-bottom:16px"><${Ic} i="warn"/><span>${
       ghost.warm && !ghost.total
         ? Trich("Interface *{iface}* is gone from {node} with *no recoverable key*, so it can't be restored — only recreated with a *new server key*. Nothing is deployed on it, so no client is affected. The settings below are its *last saved config* — review them and recreate.", { iface: ghost.iface, node: Store.nodeName(node) })
@@ -781,18 +714,13 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
         <${RoutingRules} node=${node} iface=${iface} blk=${blk} rows=${eg.rows || []} catchAll=${eg.catchAll} exitIps=${eg.exitIps} directIp=${eg.ip || ""} onChange=${(rows, catchAll, exitIps, ip) => setEg({ ...eg, rows, catchAll, exitIps, ip })}/>
       <//>` : null}
       <${ReachField} value=${reach} onChange=${setReach} create=${true}
-        unvouched=${/* the build a create installs, as the catalog vouches for it (§11.2 F4) */ isWdtt ? !(_wdttForks.find(f => f.id === fork) || {}).reach_vouched
+        unvouched=${  isWdtt ? !(_wdttForks.find(f => f.id === fork) || {}).reach_vouched
           : isCsqtt ? !(_csqttForks.find(f => f.id === cfork) || {}).reach_vouched : false}/>
       <${Disclosure} title=${T("Filters & abuse")} sumCls="on"
         summary=${blockActiveN(node, blk, eg.p2p) ? T("{v1} active", { v1: blockActiveN(node, blk, eg.p2p) }) : html`<span class="faint">${T("val|none")}</span>`}
         open=${disc.filters} onToggle=${() => tog("filters")}>
         <${BlockTraffic} node=${node} value=${blk} onChange=${setBlk} p2p=${eg.p2p} onP2p=${p => setEg(e => ({ ...e, p2p: p }))}/>
       <//>
-      ${/* ⚠️ TWO NAMED SECTIONS, ONE ACCORDION. The tunnel settings are named after the PROTOCOL rather
-            than left as a nameless run of fields, because the NAT source card now sits beside them and two
-            unlabelled groups read as one long list. Sub-accordions were the other option and were not
-            taken: only one protocol block can ever apply, so collapsing it would add a click to reach
-            settings that are always relevant, and a summary of summaries says less than this one line. */""}
       ${(!isWdtt && !isCsqtt) ? html`<${Disclosure} title=${T("Advanced settings")} summary=${T("MTU · keepalive · DNS") + (natPinApplies(eg) ? natTail : "")}
         open=${disc.advanced} onToggle=${() => tog("advanced")}>
         <div class="field secdiv"><label>${proto === "awg" ? T("AmneziaWG settings") : T("WireGuard settings")}</label></div>
@@ -806,7 +734,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
     ${msg ? html`<div class=${"formmsg " + msg.k}>${msg.t}</div>` : null}
   <//>`;
 }
-// Delete an interface — destructive, so gated behind typing "DELETE <iface>" (case-sensitive).
 export function DeleteIfaceSheet({ node, iface }) {
   const [txt, setTxt] = useState(""); const [busy, setBusy] = useState(false);
   const phrase = T("DELETE {v1}", { v1: iface });
@@ -816,13 +743,13 @@ export function DeleteIfaceSheet({ node, iface }) {
     setBusy(true);
     const r = await api.ifaceDelete({ node, iface });
     if (!r.ok) { setBusy(false); return toast(srvText(r) || T("Failed to delete interface."), "err"); }
-    const _m = Store.ifaceMeta(node, iface) || {};   // capture type/rows now — see the WDTT delete above
+    const _m = Store.ifaceMeta(node, iface) || {};
     Store.ifaceGone[node + "|" + iface] = { at: Date.now(),
       type: (_m.awg_params && Object.keys(_m.awg_params).length) ? "awg" : "wg", gen3: awgDict3(_m.awg_params),
       listen: _m.endpoint || ((_m.address || "").split("/")[0] + (_m.listen_port ? ":" + _m.listen_port : "")), subnet: _m.subnet || "" };
-    closeAllModals(); await Store.poll();   // iface is gone → close this + the editor behind it
+    closeAllModals(); await Store.poll();
     toast(T("Interface deletion requested — the node tears it down on its next sync."), "ok");
-    go("#/node/" + encodeURIComponent(node));   // this interface's page is going away
+    go("#/node/" + encodeURIComponent(node));
   };
   return html`<${Sheet} title=${T("Delete interface · {v1}", { v1: iface })}
     foot=${footRow({ onCancel: closeModal, danger: true, disabled: !ok || busy, onAction: del, action: T("Delete interface") })}>
@@ -830,18 +757,16 @@ export function DeleteIfaceSheet({ node, iface }) {
     <div class="field"><label>${typeToConfirm(phrase)}</label><input autofocus value=${txt} onInput=${e => setTxt(e.target.value)} placeholder=${phrase} autocomplete="off" spellcheck="false"/></div>
   <//>`;
 }
-// start/restart with an inline progress lifecycle on the interface card: busy tag (button hidden)
-// → green "started/restarted" 5s or red "failed" 10s (button back). verb = "start" (down) | "restart".
 export async function startOrRestartIface(node, iface, verb) {
   const key = node + "|" + iface;
   Store.ifaceOp[key] = { verb, phase: "busy", started: Date.now() }; Store.apply();
-  const m = verb === "stop" ? "ifaceStop" : verb === "start" ? "ifaceStart" : "ifaceRestart";   // i18n-keys: api method names
+  const m = verb === "stop" ? "ifaceStop" : verb === "start" ? "ifaceStart" : "ifaceRestart";
   const r = await api[m]({ node, iface });
   if (!r.ok) {
     Store.ifaceOp[key] = { verb, phase: "fail", until: Date.now() + 10000, err: srvText(r) || T("request failed") };
     Store.apply(); setTimeout(() => Store.apply(), 10100); return;
   }
-  await Store.poll();   // queued on the node; trackIfaceOps() watches for completion each poll
+  await Store.poll();
 }
 export function openEditIface(node, iface) { openModal(html`<${EditIfaceSheet} node=${node} iface=${iface}/>`); }
 
@@ -854,7 +779,6 @@ export function openIfaceEditor(node, iface) {
 export const DEFAULT_AWG_GEN = "3.1";
 const AWG31_MIN_S = 12, AWG31_MAX_S = 20;
 const AWG31_BASE = { Jmin: 40, Jmax: 70, H1: 1, H2: 2, H3: 3, H4: 4 };
-// The base fields shared by both versions. The server fills the 3.1 fields and creates a key per interface.
 export const AWG_KEYS = AWG_ORDER.slice(0, AWG_ORDER.indexOf("HeaderProtectionKey"));
 
 function awgRandomBelow(count) {
@@ -863,7 +787,6 @@ function awgRandomBelow(count) {
   return byte[0] % count;
 }
 
-// client-side AmneziaWG obfuscation generator — mirrors the panel's gen_awg_params (for the "Generate" button)
 export function genAwg(gen = DEFAULT_AWG_GEN, sMax = AWG31_MAX_S) {
   if (gen === "3.1") {
     const cap = Math.max(AWG31_MIN_S, Math.min(AWG31_MAX_S, sMax));
@@ -879,7 +802,6 @@ export function genAwg(gen = DEFAULT_AWG_GEN, sMax = AWG31_MAX_S) {
     I1: "<b 0xc000000001><r 64><t>", I2: "<r 24><t>", I3: "<r 32>",
     I4: "<b 0xc000000001><r 32><t>", I5: "<t><r 48>" };
 }
-// Values shown for blank cells, matching the selected generator.
 export function awgBlankHints(gen = DEFAULT_AWG_GEN) {
   if (gen === "3.1") {
     const s = `${AWG31_MIN_S}–${AWG31_MAX_S}`;
@@ -891,12 +813,9 @@ export function awgBlankHints(gen = DEFAULT_AWG_GEN) {
   for (const k of AWG_KEYS) out[k] = /^[SH][1-4]$/.test(k) ? T("blank = random") : String(g[k]);
   return out;
 }
-// labelled grid of the 12 AWG fields — read-only display (node settings) or editable (panel settings). A template: `omit` is
-// the line under it — what "-" means there (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md A7) — replaced by the rule a typed "-" breaks.
 export function AwgGrid({ value, onChange, readOnly, placeholders, omit }) {
   const v = value || {};
   const issue = !readOnly && omit ? awgOmitIssue(v, true) : "";
-  // J / S / H / I as columns, fields stacked — same layout as the interface AWG display
   return html`<div class="awg-cols">${AWG_COLS.map(grp => html`<div class="awg-col">${grp.map(k => html`<label class="awg-f"><span>${k}</span>${readOnly
     ? (awgIsNone(v[k]) ? html`<span class="awg-val awg-none">${T("val|none")}</span>`
       : html`<span class="awg-val">${v[k] != null && v[k] !== "" ? v[k] : "—"}</span>`)
@@ -909,10 +828,9 @@ export function MeshAwgParams({ title, eff, value, onChange, placeholders, about
   const v = value || {};
   const set2 = AWG_KEYS.some(k => String(v[k] ?? "").trim() !== ""), set3 = AWG3_EDIT_COLS.flat().some(k => String(v[k] ?? "").trim() !== "");
   const show3 = eff === "3.1";
-  // what this template still holds that the selected type does not use — kept, and said, never silently in effect
   const keptLine = eff === "2.0" && set3
     ? html`<div class="hint">${T("The AmneziaWG 3.1 values set here are kept for AWG 3.1 links — select AWG 3.1 to see them.")}</div>` : null;
-  if (eff === "wg") return null;                 // plain WireGuard has nothing to set: no block at all (operator, 2026-10-06)
+  if (eff === "wg") return null;
   const isSet = set2 || (show3 && set3);
   return html`<div style="margin-top:6px"><button type="button" class="advtoggle" onClick=${e => { const d = e.currentTarget.nextElementSibling; d.style.display = d.style.display === "none" ? "" : "none"; }}><span class="advcaret">▸</span> ${title}${isSet ? "" : html` <span class="faint" style="font-weight:400">${T("(auto)")}</span>`}</button>
     <div class="field" style="display:none;margin-top:8px">
@@ -930,15 +848,11 @@ export function MeshAwgParams({ title, eff, value, onChange, placeholders, about
           .filter(([k]) => !AWG_KEYS.includes(k) && !(show3 && AWG3_EDIT_COLS.flat().includes(k)))))}>${T("Clear (auto)")}</button>` : null}</div>
     </div></div>`;
 }
-/* A blank 3.1 cell of a mesh template, as background text: the next layer down, field by field — for a node, the panel's mesh
-   template; then the interface 3.1 defaults; then the built-in set (the panel's mesh_awg3 walks the same layers). */
 export function mesh3Hints(fromPanel) {
   const ps = Store.panelSettings || {}, pm = fromPanel ? (ps.mesh_awg || {}) : {}, d = (ps.interface_defaults || {}).awg3_params || {};
   const one = k => [pm[k], d[k], (ps.awg31_builtin || {})[k]].map(x => String(x ?? "").trim()).find(Boolean) || "";
   return Object.fromEntries(AWG3_EDIT_COLS.flat().map(k => [k, awgIsNone(one(k)) ? T("val|none") : one(k)]));
 }
-/* A blank cell of a link's mesh AWG grid, as background text: what it is made with — the panel's mesh template where it sets
-   the field (none where it sets "-"), else what the link actually carries (`live`, its record's params), else nothing: auto. */
 export function meshAwgHints(live, gen) {
   const pt = (Store.panelSettings || {}).mesh_awg || {}; live = live || {};
   const hints = awgBlankHints(gen);
@@ -959,8 +873,6 @@ export function MeshGenField({ value, onChange, inherit, hint, label, after }) {
 }
 
 export function openConnectionEdit(node, iface) { openModal(html`<${ConnectionEditSheet} node=${node} iface=${iface}/>`); }
-// A node↔node mesh link (system interface). Mesh-managed (no create/delete/egress here) — mostly status;
-// the only operator knob is whether this link can carry forwarded user traffic (reserved for Phase 2).
 export function ConnectionEditSheet({ node, iface }) {
   useStore();
   const meta = Store.ifaceMeta(node, iface) || {};
@@ -974,34 +886,30 @@ export function ConnectionEditSheet({ node, iface }) {
   const [relayPick, setRelayPick] = useState(null);
   const [quotaPick, setQuotaPick] = useState(null);
   const relayOn = relayPick === null ? relayOn0 : relayPick;
-  // This LINK's own type (plan §8 round 12): "" = the fleet's default. Followed from the server until touched, like the relay.
   const typeSet0 = ((nrec.mesh_peers || []).find(p => p.peer === peer) || {}).type_set || "";
   const [typePick, setTypePick] = useState(null);
   const typeSet = typePick === null ? typeSet0 : typePick;
   const typeDflt = (Store.panelSettings || {}).mesh_awg_gen || DEFAULT_AWG_GEN;
-  // …and its own AWG params (plan §8 round 13): {} = the fleet's default. Same follow-until-touched rule.
   const awgSet0 = ((nrec.mesh_peers || []).find(p => p.peer === peer) || {}).awg_set || {};
   const [awgPick, setAwgPick] = useState(null);
   const awgSet = awgPick === null ? awgSet0 : awgPick;
   const tplKey = o => JSON.stringify(Object.entries(o || {}).map(([k, x]) => [k, String(x ?? "").trim()]).filter(([, x]) => x).sort());
   const awgChanged = tplKey(awgSet) !== tplKey(awgSet0);
-  const relink = typeSet !== typeSet0 || awgChanged;             // either rebuilds the link on both ends
-  const live = meta.awg_params || {};                            // what the link carries now: a blank cell's background text
+  const relink = typeSet !== typeSet0 || awgChanged;
+  const live = meta.awg_params || {};
   const ph3 = (() => { const h = mesh3Hints(true); return Object.fromEntries(AWG3_EDIT_COLS.flat().map(k => [k, String(live[k] ?? "").trim() || h[k]])); })();
   const quota = quotaPick === null ? quota0 : quotaPick;
   const setRelayOn = setRelayPick, setQuota = setQuotaPick;
-  const nodeDown = nodeStale(node) || inProc(nrec.proc_status);   // node not reporting / mid re-install → can't apply a dial change
+  const nodeDown = nodeStale(node) || inProc(nrec.proc_status);
   const lk = nodeStale(node) ? "down" : (meta.handshake_age == null ? "connecting" : (meta.handshake_age < 180 ? "up" : "down"));
   const lkLabel = { up: "connected", connecting: "connecting", down: "down" }[lk];
   const proto = (meta.awg_params && Object.keys(meta.awg_params).length) ? "awg" : "wg";
     const Cell = (l, v) => html`<div class="conn-cell"><span class="cl">${l}</span><span class="cv">${v}</span></div>`;
-  // Sent before the sheet closes (q189 SPA-3): a refusal stays here, in the panel's words, with the type, AWG, dial and relay
-  // edits kept — the sheet used to close first, and the refusal took them all with it.
   const [busy, setBusy] = useState(false), [saveErr, setSaveErr] = useState("");
   const saveDial = async () => {
     const r = await sheetSend(() => api.connectionUpdate({ node, peer, dial_src: dialSrc, dial_endpoint: dialEp,
                                          relay_mode: relayOn ? "relay" : "forward", relay_quota_pct: Number(quota) || 50,
-                                         ...(typeSet !== typeSet0 ? { mesh_awg_gen: typeSet } : {}),   // only a change rebuilds the link
+                                         ...(typeSet !== typeSet0 ? { mesh_awg_gen: typeSet } : {}),
                                          ...(awgChanged ? { mesh_awg: Object.fromEntries(JSON.parse(tplKey(awgSet))) } : {}) }), setSaveErr, setBusy);
     if (!r.ok) return;
     closeModal();
@@ -1010,13 +918,11 @@ export function ConnectionEditSheet({ node, iface }) {
   const QUOTA_MAX = 90;
   const quotaErr = (() => { const q = Number(quota); return (!Number.isInteger(q) || q < 5 || q > QUOTA_MAX) ? T("CPU cap must be between {v1} and {v2}", { v1: "5", v2: String(QUOTA_MAX) }) : ""; })();
   const connDirty = dialSrc !== (meta.dial_src || "") || dialEp !== (meta.dial_endpoint || "")
-    || relayOn !== relayOn0 || quota !== quota0 || relink;   // enable Save only when something actually changed
-  // user interfaces on THIS node whose traffic is forwarded out through this link (egress → peer)
+    || relayOn !== relayOn0 || quota !== quota0 || relink;
   const allMeta = Store.describe[node] || {};
   const carried = Object.keys(allMeta).filter(k => !allMeta[k].system
     && allMeta[k].egress_mode === "forward" && allMeta[k].egress_node === peer)
     .map(k => ({ iface: k, subnet: allMeta[k].subnet, ip: allMeta[k].egress_ip }));
-  // interfaces that SMART-route some destination categories out through this link (not the whole iface)
   const smartCarried = Object.keys(allMeta).filter(k => !allMeta[k].system && allMeta[k].egress_mode === "smart")
     .map(k => ({ iface: k, cats: (allMeta[k].routing || []).filter(r => r.action === "exit" && r.node === peer)
       .map(r => r.category === "custom"
@@ -1043,8 +949,7 @@ export function ConnectionEditSheet({ node, iface }) {
           if (!_lk || _lk.rtt_ms == null) return "—";
           const _ls = typeof _lk.loss === "number" ? _lk.loss : null;
           const _pl = ((meshHealth(node).peers.find(x => x.peer === peer)) || {}).plink || null;
-          const _warn = _ls != null && _ls > 0;   // ⚠️ MESH IS THE EXCEPTION: a DC-to-DC leg is not a client link: ANY loss on it is worth seeing, so this one shows from the
-              // first lost packet rather than at the 0.05% the client-facing counters use.
+          const _warn = _ls != null && _ls > 0;
           const _val = html`<${Fragment}>${Math.round(_lk.rtt_ms)}${T("unit|ms")}${_warn
             ? html` <span class="dp-num" style=${"color:" + lossColorMesh(_ls)}>${T("(Loss {v1}%)", { v1: _ls })}</span>` : null}<//>`;
           return html`<${LossPop} l=${_lk} pl=${_pl} peerName=${Store.nodeName(peer)} node=${node} iface=${iface} trigger=${_val}/>`;
@@ -1073,7 +978,6 @@ export function ConnectionEditSheet({ node, iface }) {
       <div class="hint" style="margin-top:16px">${Trich("These interfaces' client traffic exits the fleet through *{node}*{smart}.", { node: Store.nodeName(peer), smart: smartCarried.length ? T(" — smart-routed by destination") : "" })}</div>
     </div>` : null}
     ${(() => {
-      // Datapath for this leg (RELAY-FEATURE-PLAN §4)
       const rst = ((Store.stats[node] || {}).relay) || {};
       const elig = Object.entries(((nrec.relay || {}).eligibility) || {}).filter(([, e]) => e.via === peer);
       const canRelay = elig.filter(([, e]) => !e.why).map(([k]) => k);
@@ -1148,7 +1052,7 @@ export function ConnectionEditSheet({ node, iface }) {
             })()}
         </div></div>` : null}
         ${barred.length ? html`<div class="notice warn" style="margin-top:11px"><${Ic} i="warn"/><span>
-          ${/* the key is the relay INSTANCE id (`<iface>.<peer>` for a smart leg); the operator knows the interface */
+          ${
             barred.map(([k, e]) => html`<div>${Trich("*{v1}* can't be relayed — {v2}. It keeps forwarding.", { v1: e.iface || k, v2: e.why })}</div>`)}
         </span></div>` : null}
         ${quotaErr ? html`<div class="notice err" style="margin-top:9px"><${Ic} i="warn"/><span>${quotaErr}</span></div>` : null}
@@ -1162,24 +1066,24 @@ export function ConnectionEditSheet({ node, iface }) {
   <//>`;
 }
 export function EditIfaceSheet({ node, iface }) {
-  useStore();   // re-render on each poll so live meta (drift appearing/clearing, cmd_errors) stays current while the sheet is open
+  useStore();
   const meta = Store.ifaceMeta(node, iface) || {};
-  const emode = ((Store.nodes || []).find(n => n.id === node) || {}).routing_mode || "kernel";   // for smart-rule validation (kernel = IP-only)
+  const emode = ((Store.nodes || []).find(n => n.id === node) || {}).routing_mode || "kernel";
   const ep = meta.endpoint || "";
   const epHost = ep.includes(":") ? ep.slice(0, ep.lastIndexOf(":")) : ep;
   const [host, setHost] = useState(epHost);
   const [port, setPort] = useState(String(meta.desired_port || meta.listen_port || ""));
-  const iperr = portErrMsg(node, port, [meta.listen_port, meta.desired_port]);   // live port-collision check (this iface's own port doesn't count)
+  const iperr = portErrMsg(node, port, [meta.listen_port, meta.desired_port]);
   const [dns, setDns] = useState((meta.dns || []).join(", "));
   const [mtu, setMtu] = useState(String(meta.mtu || 1280));
   const [ka, setKa] = useState(String(meta.keepalive || 25));
-  const [disc, setDisc] = useState({ routing: true, filters: false, advanced: false });   // collapsible sections; Routing opens by default (only shown in Smart mode)
+  const [disc, setDisc] = useState({ routing: true, filters: false, advanced: false });
   const tog = k => setDisc(d => ({ ...d, [k]: !d[k] }));
-  const [driftDone, setDriftDone] = useState(null);   // after resolving a server-key drift: "adopted" | "restoring" — the warning becomes a terminal confirmation (no buttons) until the drift clears on a later sync
+  const [driftDone, setDriftDone] = useState(null);
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const [eg, setEg] = useState(() => egressInit(meta));
-  const [blk, setBlk] = useState(() => [...(meta.block || [])]);   // active block-category ids (Block-traffic section)
-  const [reach, setReach] = useState(meta.reach || "user");         // device access (§10.6) — absent is "user"
+  const [blk, setBlk] = useState(() => [...(meta.block || [])]);
+  const [reach, setReach] = useState(meta.reach || "user");
   const isAwg = !!(meta.awg_params && Object.keys(meta.awg_params).length);
   const [awg, setAwg] = useState(() => Object.assign({}, meta.awg_params || {}));
   const setAwgK = (k, v) => setAwg(a => ({ ...a, [k]: v }));
@@ -1194,47 +1098,38 @@ export function EditIfaceSheet({ node, iface }) {
     ? T("{v1} cannot hold an empty AmneziaWG field yet — it is offline or needs an update", { v1: Store.nodeName(node) })
     : !meta.awg_exact && !Object.keys(((((_snapN.interfaces || {})[iface] || {}).meta || {}).awg_params) || {}).length
       ? T("{v1}: wait for the node to report this interface, then set a field to none", { v1: iface }) : "";
-  // The AmneziaWG version (docs/AWG3-PLAN.md §7.7): an AmneziaWG interface that is not a mesh link. Flipping it and pressing Save
-  // opens the switch window; the reason the panel would refuse either way greys that side (an older node can do neither).
   const genWas = awgGen(node, iface) || "2.0";
   const genSw = isAwg && !meta.system && (meta.tool || "awg") === "awg";
   const [gen, setGen0] = useState(genWas);
   const genChanged = genSw && gen !== genWas;
   const mimErr = mimBad ? mimicWhy(mimBad[0], mimBad[1]) : omitNo;
   const setGen = g => { setGen0(g);
-    // Flipped back before a Save: the 3.1 cells the flip filled go with it (a 2.0 save never sends them), so the sheet is as
-    // it was and does not ask about unsaved changes that were never the operator's.
     if (g !== "3.1" && genWas !== "3.1") return setAwg(a => Object.fromEntries(Object.entries(a).filter(([k]) => !AWG3_KEYS.includes(k))));
     if (g !== "3.1" || genWas === "3.1") return;
-    setDisc(d => ({ ...d, advanced: true }));   // where the 3.1 cells are — opened, so the flip shows them
+    setDisc(d => ({ ...d, advanced: true }));
     const ps = Store.panelSettings || {}, d = { ...(ps.awg31_builtin || {}), ...((ps.interface_defaults || {}).awg3_params || {}) };
     setAwg(a => AWG3_EDIT_COLS.flat().reduce((o, k) => (String(o[k] ?? "").trim() || d[k] == null ? o : { ...o, [k]: String(d[k]) }), a)); };
   const no3 = awg31No(nrec, iface) ? srvText(awg31No(nrec, iface)) : "";
   const no2 = (((Store.stats[node] || {}).datapath || {}).awg || {}).gen ? "" : no3;
   const ist = (((Store.stats[node] || {}).interfaces || {})[iface] || {});
-  const istopped = !!ist.stopped;            // operator stopped it (not a failure)
-  const idown = !istopped && ist.down;       // genuinely down
-  const notup = !!idown || istopped;         // either way: Save brings it up; footer offers Start
+  const istopped = !!ist.stopped;
+  const idown = !istopped && ist.down;
+  const notup = !!idown || istopped;
   const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false); const [saveErr, setSaveErr] = useState("");
   const doSave = async (switched) => {
     const body = { node, iface, endpoint_host: host.trim(), listen_port: port.trim(), dns: dns.trim(), mtu: mtu.trim(), keepalive: ka.trim(), block: blk, reach, ...egressBody(eg) };
     if (isAwg) body.awg_params = AWG_ORDER.reduce((o, k) => { const v = String(awg[k] == null ? "" : awg[k]).trim();
       if (v && (gen === "3.1" || !AWG3_KEYS.includes(k))) o[k] = v; return o; }, {});
-    // The panel answers BEFORE the sheet closes (q189 SPA-3): a refusal stays here, in the panel's words, with every edit kept —
-    // it used to close first and lose them all. A generation switch is sent from its own window, which shows its refusal there.
     const r = switched ? await api.ifaceUpdate({ ...body, awg_gen: gen }) : await sheetSend(() => api.ifaceUpdate(body), setSaveErr, setBusy);
     if (!r || !r.ok) return r;
-    // Accepted: down → "start" (real bring-up); up → "apply" live (no restart) — the lifecycle flips and the sheet closes now.
     const key = node + "|" + iface, verb = notup ? "start" : "apply";
-    // A switch is a recreate on the node, whenever it gets there: its tag (awgSwitchTag) stays until the node reports the new
-    // version, so it gets no "apply" lifecycle — that one says "applied" after 6 s whatever the node has done.
     if (!(switched && !notup)) Store.ifaceOp[key] = { verb, phase: "busy", started: Date.now() };
     Store.apply(); closeAllModals();
     const fail = (m) => { Store.ifaceOp[key] = { verb, phase: "fail", until: Date.now() + 5000, err: m }; Store.apply(); setTimeout(() => Store.apply(), 5100); };
-    reportDropped(r);   // §5.4: the panel keeps what it can and names what it could not
+    reportDropped(r);
 
     if (notup) { const r2 = await api.ifaceStart({ node, iface }); if (!r2.ok) return fail(srvText(r2) || T("start failed")); }
-    await Store.poll();   // trackIfaceOps drives busy → done
+    await Store.poll();
     toast(notup ? T("Interface saved — starting…") : T("Interface saved."), "ok");
   };
   const save = () => {
@@ -1243,7 +1138,7 @@ export function EditIfaceSheet({ node, iface }) {
     const portChanged = port.trim() !== String(meta.desired_port || meta.listen_port || "");
     const epChanged = host.trim() !== epHost;
     const awgRm = isAwg ? AWG_ORDER.filter(k => awgIsNone(awg[k]) && (meta.awg_params || {})[k] != null && !MIMIC_KEYS.includes(k)) : [];
-    if (portChanged || epChanged || awgRm.length) {           // client-breaking → confirm first (the editor stays open behind it)
+    if (portChanged || epChanged || awgRm.length) {
       const what = portChanged && epChanged ? T("endpoint and listen port") : portChanged ? T("listen port") : "endpoint";
       const title = !awgRm.length ? T("Change {what}?", { what }) : (portChanged || epChanged)
         ? T("Change {what} and remove {v1}?", { what, v1: awgRm.join(", ") }) : T("Remove {v1}?", { v1: awgRm.join(", ") });
@@ -1255,14 +1150,11 @@ export function EditIfaceSheet({ node, iface }) {
     }
     doSave();
   };
-  // enable Save only when something would change — mirror doSave()'s body; a down/stopped iface always allows Save (= bring-up)
   const _ifBody = { endpoint_host: host.trim(), listen_port: port.trim(), dns: dns.trim(), mtu: mtu.trim(), keepalive: ka.trim(), reach, ...egressBody(eg) };
   const _ifOrig = { endpoint_host: epHost, listen_port: String(meta.desired_port || meta.listen_port || ""), dns: (meta.dns || []).join(", "), mtu: String(meta.mtu || 1280), keepalive: String(meta.keepalive || 25), reach: meta.reach || "user", ...egressBody(egressInit(meta)) };
   const _awgTrim = src => AWG_ORDER.reduce((o, k) => { const v = String((src || {})[k] == null ? "" : (src || {})[k]).trim(); if (v) o[k] = v; return o; }, {});
   const edited = JSON.stringify(_ifBody) !== JSON.stringify(_ifOrig)
     || JSON.stringify([...blk].sort()) !== JSON.stringify([...(meta.block || [])].sort())
-    // …a cell typed into, not one cleared: the update keeps what a body leaves out (it merges), so a blank cell changes nothing
-    // and must not light Save — "-" is how a line is removed, and the line under the grid says so
     || (isAwg && Object.entries(_awgTrim(awg)).some(([k, v]) => v !== (_awgTrim(meta.awg_params)[k] || ""))) || genChanged;
   const ifaceDirty = notup || edited;
   const dirtyRef = useRef(false), closeRef = useRef(null);
@@ -1287,8 +1179,6 @@ export function EditIfaceSheet({ node, iface }) {
       const vaultRestore = !canRestore && !!meta.drift_key_blob;
       const vaultAct = html`<div class="kd-act">
         <button type="button" class="kd-btn kd-restore" onClick=${async () => {
-          // Unseal with the vault, RE-seal to this node's transport key, relay ciphertext — the exact path
-          // /api/iface/recreate has always used for a wiped box. The panel never sees the key.
           let sealed;
           try {
             await ensureVaultUnlocked();
@@ -1366,10 +1256,7 @@ export function EditIfaceSheet({ node, iface }) {
           class=${awgIsNone(awg[k]) ? "awg-none" : null} ...${meta.awg_exact && (meta.awg_params || {})[k] == null ? { placeholder: T("val|none") } : {}}
           onInput=${e => setAwgK(k, e.target.value)}/></label>`)}</div>`)}</div>
         <p class=${"hint awg-omit-hint" + (awgOmitIssue(awg) ? " err" : "")}>${awgOmitIssue(awg) || T("Type - in a cell to remove that line — every device re-imports, as with any change here outside I1–I5.")}</p>
-        ${/* The 3.1 set as a fifth group — while the sheet says 3.1, the moment the switch is flipped too (setGen fills it), so
-              one Save switches with the values wanted. HeaderProtectionKey and RandomTrailers
-              change only through the switch (an editable key was a one-keystroke way to cut every client with no window), so
-              they read set / on and ride along unchanged; the panel checks the rest (S ≥ 12, timings that do not cross). */
+        ${
           gen === "3.1" ? html`<${Awg3Grid} value=${awg} onKey=${setAwgK}
             hpk=${awg.HeaderProtectionKey ? T("val|set") : genChanged ? T("val|new on switch") : "—"} rt=${awg.RandomTrailers || genChanged ? T("val|on") : "—"}
             hpkTip=${T("Changes only through the version switch — every device has to re-import after it.")}

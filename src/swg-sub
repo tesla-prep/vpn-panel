@@ -1,40 +1,4 @@
 #!/usr/bin/env python3
-"""
-swg-sub — the public subscription surface.
-
-A tiny, READ-ONLY companion to swg-panel-server. It runs on the panel host and
-serves one thing: a per-user shareable page of that user's WireGuard/AmneziaWG
-QRs + configs, reached at
-
-    https://sub.<domain>/<token>#<unlock-key>
-
-The <token> (URL path) is an opaque per-user id — the server sees it and uses it
-only to find which ciphertext bucket to serve. The <unlock-key> lives in the URL
-*fragment*, which browsers never send to any server, so this process can NEVER
-decrypt a peer's private key: it only ever serves ciphertext + non-secret params.
-The browser on the phone does the decrypt with the fragment key.
-
-By design this program has ZERO write, admin, or node code. It reads only the
-subset of state it needs (roster, nodes, per-node snapshots, the subs token map +
-blobs, and a tiny subs/serve.json), all read-only. It never reads the secrets that
-would let a compromise escalate — the login hash, the TLS key, the subscription-key
-vault, panel-settings (webhook secrets) — which is why it runs as its OWN
-unprivileged user and the installer masks those paths from it. A compromise of this
-internet-facing surface yields only ciphertext, never the fleet.
-
-Least privilege: bare-metal runs it as user `swgsub` (group swg, read-only) with the
-secret paths made InaccessiblePaths in the unit; docker runs it as a separate
-container with the state mounted :ro and the same secrets masked (/dev/null + tmpfs).
-The files it DOES read are group-readable (0640); the vault + login hash stay 0600.
-
-Config all happens in the panel: Settings → Subscriptions (master enable, base URL,
-this listener's host/port/TLS). SWG_SUB_FLEET (defaults to the panel's
-/etc/swg-panel/fleet.json) locates the state files; enable + host/port/TLS are read
-from subs/serve.json (which the panel mirrors from its settings) — NOT from
-panel-settings.json, so this surface never opens the file that holds webhook secrets.
-The bind is set once at startup; the master `subscriptions.enabled` flag is re-read on
-EVERY request, so toggling it in the panel takes effect immediately — off ⇒ 404.
-"""
 
 import contextlib
 import hashlib
@@ -54,27 +18,21 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 FLEET_PATH = os.environ.get("SWG_SUB_FLEET") or os.environ.get("SWG_PANEL_FLEET", "/etc/swg-panel/fleet.json")
 WEB_DIR    = os.path.realpath(os.environ.get("SWG_SUB_WEB", os.path.dirname(os.path.abspath(__file__))))
-# swg-sub's OWN cert (never the panel's — an internet-facing process must not hold the panel's TLS key).
-# swg-netctl issues+installs here; the file is group-swg readable so swgsub can load it. Absent → plain HTTP.
 SUB_TLS_DIR  = os.environ.get("SWG_SUB_TLS_DIR", "/etc/swg-sub/tls")
 DEFAULT_SUB_CERT = os.path.join(SUB_TLS_DIR, "fullchain.pem")
 _w = os.environ.get("SWG_SUB_CERT_WATCH_S", "")
-_CERT_WATCH_S = max(1, int(_w)) if _w.isdigit() else 60   # how often the certificate files are looked at (the gate sets 1)
+_CERT_WATCH_S = max(1, int(_w)) if _w.isdigit() else 60
 DEFAULT_SUB_KEY  = os.path.join(SUB_TLS_DIR, "key.pem")
 
 
 LOG_OFF, LOG_ERR, LOG_WARNING, LOG_NOTICE, LOG_INFO, LOG_DEBUG = -1, 3, 4, 5, 6, 7
 LOG_LEVELS = {"off": LOG_OFF, "error": LOG_ERR, "warning": LOG_WARNING, "info": LOG_INFO, "debug": LOG_DEBUG}
 LOG_DEBUG_RATE = 100
-_LOG_STREAM = "stdout"       # sys.<this>, looked up per line (a redirect_stdout is honoured); swg-netctl: stderr — its
-                               # stdout carries a verb's JSON answer. A stream object here is used as it is.
-# level: the base level · until: Debug until this time.monotonic() (-1 = until changed, 0 = no Debug)
+_LOG_STREAM = "stdout"
 _LOG = {"level": LOG_INFO, "until": 0, "sec": 0, "n": 0, "dropped": 0}
 
 
 def _log_to_journal():
-    """True when stdout IS the stream systemd connected to the journal — JOURNAL_STREAM names its device:inode. An
-    inherited variable alone is not enough: a child whose stdout was redirected keeps it."""
     try:
         dev, ino = (int(x) for x in os.environ.get("JOURNAL_STREAM", "").split(":"))
         st = os.fstat(getattr(sys, _LOG_STREAM).fileno())
@@ -88,13 +46,11 @@ _LOG_TAG = {LOG_ERR: "E", LOG_WARNING: "W", LOG_NOTICE: "N", LOG_INFO: "I", LOG_
 
 
 def log_set(level, debug_left=0):
-    """Set the base level, and Debug for `debug_left` seconds on top of it (-1 = until changed, 0 = none)."""
     _LOG["level"] = level
     _LOG["until"] = -1 if debug_left == -1 else (time.monotonic() + debug_left if debug_left and debug_left > 0 else 0)
 
 
 def log_level():
-    """The level in force now: Debug while its time runs, else the base level."""
     u = _LOG["until"]
     return LOG_DEBUG if (u == -1 or (u and time.monotonic() < u)) else _LOG["level"]
 
@@ -103,8 +59,6 @@ _LOG_FILE = {"path": None, "cap": 0, "f": None, "size": 0, "lock": threading.RLo
 
 
 def log_file(path, cap):
-    """Also write each line to `path`, timestamped, below `cap` bytes in two files. cap 0 (logging Off) removes both
-    files and writes none; path None stops writing and keeps them. Never raises."""
     with _LOG_FILE["lock"]:
         if _LOG_FILE["f"] and (path != _LOG_FILE["path"] or not cap):
             with contextlib.suppress(OSError):
@@ -134,7 +88,7 @@ def _log_file_write(data):
                 _LOG_FILE["f"].close()
                 _LOG_FILE["f"] = None
                 os.replace(path, path + ".1")
-        except (OSError, AttributeError, ValueError):   # a nested write (a signal handler) may have rotated it under us
+        except (OSError, AttributeError, ValueError):
             _LOG_FILE["f"] = None
 
 
@@ -152,7 +106,6 @@ def _log_write(prio, text):
 
 
 def log(prio, msg, *args):
-    """Write one line (or several: each gets the prefix) at syslog priority `prio`, if the level lets it through."""
     if prio > _LOG["level"] and prio > log_level():
         return
     if prio == LOG_DEBUG or _LOG["dropped"]:
@@ -174,8 +127,6 @@ def log(prio, msg, *args):
 
 
 def _log_excepthook(et, ev, tb, *_):
-    """An uncaught exception's traceback at `err`. Printed bare, journald would file it at info — and below Info a
-    unit's LogLevelMax would drop exactly the line that explains the crash."""
     if et is None or issubclass(et, SystemExit):
         return
     log(LOG_ERR, "".join(traceback.format_exception(et, ev, tb)).rstrip("\n"))
@@ -185,33 +136,30 @@ sys.excepthook = _log_excepthook
 threading.excepthook = lambda a: _log_excepthook(a.exc_type, a.exc_value, a.exc_traceback)
 
 
-# A token is one opaque path segment. Kept tight so it can never escape into the
-# filesystem (the blob path re-sanitises again anyway) or collide with our routes.
 TOKEN_RE = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
 
 CTYPES = {".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
           ".js": "application/javascript; charset=utf-8", ".woff2": "font/woff2",
           ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon"}
 
-# Static assets are served under this prefix so a bare "/<token>" is unambiguous.
 ASSET_PREFIX = "/_a/"
 STATIC = {"sub.js": "sub.js", "sub.css": "sub.css", "qrcode.js": "vendor/qrcode.js",
           "turn-artifacts.js": "turn-artifacts.js"}
 
 SUB_BASE = ""
-SUB_BASE_ALT = ""                                            # a SECOND base swg-sub ALSO serves during a reverse-proxy
+SUB_BASE_ALT = ""
 def _norm_base(v):
     v = "/" + str(v or "").strip().strip("/")
     return "" if v == "/" else v
 def strip_base(path):
-    for b in (SUB_BASE, SUB_BASE_ALT):                       # serve the current base AND, during a path swap, the old one
+    for b in (SUB_BASE, SUB_BASE_ALT):
         if not b:
             continue
         if path == b:
             return "/"
         if path.startswith(b + "/"):
             return path[len(b):]
-    return path                                              # root mount, or outside every mount (e.g. /healthz) → untouched
+    return path
 
 def _read_version():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -233,9 +181,6 @@ VERSION = _read_version()
 
 
 def load_json(path, default):
-    """Tolerant read: absent, unreadable, or a mid-write parse error all fall back to
-    `default`. atomic_write/os.replace on the panel side means we never see a partial
-    file — a JSONDecodeError here just means the primary is momentarily inconsistent."""
     try:
         with open(path) as f:
             return json.load(f)
@@ -245,11 +190,8 @@ def load_json(path, default):
         return default
 
 
-# ── describe (server/interface params for config building), mirrored from swg-panel-server ──
-# Kept byte-for-byte compatible so a subscription config matches the panel's own QR.
 
 def node_describe(snapshot):
-    """Server/interface info from a node's pushed snapshot."""
     interfaces = {}
     for iface, blk in (snapshot.get("interfaces") or {}).items():
         meta = blk.get("meta") or {}
@@ -257,19 +199,13 @@ def node_describe(snapshot):
             "public_key": meta.get("public_key"), "listen_port": meta.get("listen_port"),
             "endpoint": meta.get("endpoint"), "address": meta.get("address"),
             "subnet": meta.get("subnet"), "awg_params": meta.get("awg_params", {}),
-            "mtu_reported": meta.get("mtu"),   # the node's ACTUAL link MTU (None from a node too old to report it)
+            "mtu_reported": meta.get("mtu"),
             "dns": meta.get("dns", []),
         }
     return interfaces
 
 
 def node_public_host(snap):
-    """First reported PUBLIC IPv4 of a node (skip private/loopback/link-local) — the host a client dials when the
-    operator hasn't set an explicit endpoint_host. Byte-for-byte the same rule as swg-panel-server's
-    node_public_ip: this used to be a hand-rolled prefix regex that claimed to mirror it and didn't, so the same
-    node could be advertised differently by the panel and by this page. It accepted any public IPv6 (the panel is
-    IPv4-only here) and, worse, anything that wasn't an IP at all — a malformed node_ips entry became the endpoint
-    handed to clients."""
     for ip in ((snap or {}).get("node_ips") or []):
         try:
             a = ipaddress.ip_address(ip)
@@ -280,16 +216,11 @@ def node_public_host(snap):
     return ""
 
 
-# The AmneziaWG 3.x keys — the tail of swg-panel-server's AWG_FIELDS (tests/cross_language_twins_selftest.py [3]).
 AWG3_FIELDS = ("HeaderProtectionKey", "RandomTrailers", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout",
                "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "DisableCookies")
 
 
 def apply_iface_meta(node_cfg, interfaces):
-    """Overlay the panel-side per-interface overrides (public endpoint host/port, DNS, MTU, keepalive,
-    AmneziaWG obfuscation) onto node-reported metadata — exactly what the panel emits into client configs,
-    field for field with swg-panel-server's apply_iface_meta. Read-only: never touches the node or any
-    file. Returns interfaces."""
     node_ep = (node_cfg or {}).get("endpoint_host")
     ifov = (node_cfg or {}).get("ifaces") or {}
     for ifn, ifc in interfaces.items():
@@ -305,33 +236,25 @@ def apply_iface_meta(node_cfg, interfaces):
             ifc["dns"] = d if isinstance(d, list) else [s.strip() for s in str(d).split(",") if s.strip()]
         ifc["mtu"] = ov.get("mtu") or ifc.get("mtu_reported") or 1280
         if ov.get("keepalive") is not None:
-            ifc["keepalive"] = ov["keepalive"]        # client PersistentKeepalive for this interface
+            ifc["keepalive"] = ov["keepalive"]
         ovawg = ov.get("awg_params")
         if isinstance(ovawg, dict) and ovawg:
             rep_awg = dict(ifc.get("awg_params") or {})
-            # The RECORD decides the generation (docs/AWG3-PLAN.md §7.1), as in the panel: a 3.x key the node still reports
-            # after a switch back to 2.0 — until it has applied it, or for as long as it stays offline — is not rendered.
             ifc["awg_params"] = {**{k: v for k, v in rep_awg.items() if k not in AWG3_FIELDS},
                                  **{k: ovawg[k] for k in ovawg if ovawg[k] not in (None, "")}}
     return interfaces
 
 
 def effective_client_params(peer, target, meta):
-    """The four non-secret render parameters for ONE deployment of one peer (DNS / MTU / AllowedIPs /
-    keepalive): the interface's live defaults, under the peer-wide `overrides`, under THIS target's own.
-    Byte-for-byte the same rule as swg-panel-server's effective_client_params — see that docstring for why
-    the rule lives in one place and is copied rather than paraphrased. Absent keys render live from the
-    interface defaults, so a fleet-wide default change still reaches a peer that never customised."""
     _pov = peer.get("overrides") if isinstance(peer, dict) and isinstance(peer.get("overrides"), dict) else {}
     _tov = target.get("overrides") if isinstance(target, dict) and isinstance(target.get("overrides"), dict) else {}
-    ov = {**_pov, **_tov}                               # the deployment's own setting wins, field by field
+    ov = {**_pov, **_tov}
     meta = meta if isinstance(meta, dict) else {}
     _ka = ov.get("keepalive")
     _ika = meta.get("keepalive")
-    if not (isinstance(_ka, int) and not isinstance(_ka, bool)):          # no per-peer/per-deployment value…
-        _ka = _ika if isinstance(_ika, int) and not isinstance(_ika, bool) else 25   # …so the interface's, else 25
+    if not (isinstance(_ka, int) and not isinstance(_ka, bool)):
+        _ka = _ika if isinstance(_ika, int) and not isinstance(_ika, bool) else 25
     return {
-        # dns=[] is meaningful — an explicit "no DNS line" — so the test is "is there a list", not "is it truthy"
         "dns": list(ov["dns"]) if isinstance(ov.get("dns"), list) else list(meta.get("dns") or []),
         "mtu": ov.get("mtu") or meta.get("mtu") or 1280,
         "allowed": ov.get("allowed") or "0.0.0.0/0, ::/0",
@@ -339,7 +262,6 @@ def effective_client_params(peer, target, meta):
     }
 
 
-# ── the subscription state (all read-only; the panel owns writes) ──
 
 _SUB_META = {
     "ru": {"desc": "Ваш доступ к VPN — настройки и QR-коды для ваших устройств в одном месте.",
@@ -348,9 +270,6 @@ _SUB_META = {
 }
 
 def _sub_meta(data, lang):
-    """Rewrite the shell's description/og for `lang`. English is what sub.html ships with, so that is a no-op;
-    an unknown code leaves the file as written rather than emptying the tags. Nothing here is per-user — the URL
-    carries a token, so a preview must describe the page and never say whose it is."""
     m = _SUB_META.get((lang or "").strip().lower()[:2])
     if not m:
         return data
@@ -366,7 +285,6 @@ def _sub_meta(data, lang):
 
 
 class State:
-    """Resolved paths into the panel's state dir, from fleet.json + the panel's own defaults."""
 
     def __init__(self, fleet):
         self.roster_path = fleet.get("roster_path", "/var/lib/swg-panel/users.json")
@@ -406,9 +324,6 @@ class State:
         return d if isinstance(d, dict) else {}
 
     def describe(self, nodes):
-        """Per-node {ifaces, turn} — snapshots are read from the mirror files the panel writes
-        (stats-<id>.json), so this needs no running panel. `turn` is the node's raw turn-proxy list
-        (non-secret client-config material: service / listen / wrap_key)."""
         out = {}
         for nid, cfg in nodes.items():
             snap = load_json(os.path.join(self.stats_dir, (cfg or {}).get("stats_file") or f"stats-{nid}.json"), None)
@@ -416,23 +331,16 @@ class State:
                 continue
             out[nid] = {"ifaces": apply_iface_meta(cfg, node_describe(snap)),
                         "turn": snap.get("turn_proxies") or [],
-                        "pub_host": node_public_host(snap),   # reported public IP → WDTT link host when endpoint_host is unset
-                        # each WDTT / csqtt server's RUNNING version, by interface → the page offers the app release it names
+                        "pub_host": node_public_host(snap),
                         "tver": _running_versions(snap),
-                        # each csqtt server's running LINE (2.1 / 2.5), by interface → the page offers only apps of that line
                         "tline": _running_lines(snap),
-                        # the networks this node ROUTES right now (swg-noded net_carried) — what the page may promise a user
                         "net_carried": snap.get("net_carried") if isinstance(snap.get("net_carried"), list) else [],
-                        # the torrent policy the node RUNS ({state, mode, route}) — a Route it could not lower runs as block
                         "p2p": _snap_p2p(snap),
-                        # the devices' incoming torrent ports it forwards, by interface ({addr, taken}, Part C)
                         "p2p_fwd": snap.get("p2p_fwd") if isinstance(snap.get("p2p_fwd"), dict) else {}}
         return out
 
 
 def _own_pins(cat, peers_out):
-    """The catalog with only the pins of versions THIS subscriber's servers run: serve.json carries the whole fleet's,
-    and which builds run on other people's servers is not theirs to read."""
     pins = cat.get("pins")
     if not isinstance(pins, dict):
         return cat
@@ -448,15 +356,12 @@ def _own_pins(cat, peers_out):
 
 
 def _snap_p2p(snap):
-    """The node's own report of its torrent policy (swg-noded smart_status `p2p`), or {} — read only as an object."""
     sr = snap.get("smartroute")
     v = sr.get("p2p") if isinstance(sr, dict) else None
     return v if isinstance(v, dict) else {}
 
 
 def _running_versions(snap):
-    """{iface: running version} of a node's WDTT and csqtt servers — any shape a snapshot carries (a list, or a map of
-    records) and nothing else: a stray value is skipped, never an exception inside every subscription's describe()."""
     out = {}
     for k in ("wdtt", "csqtt"):
         xs = snap.get(k)
@@ -467,21 +372,17 @@ def _running_versions(snap):
 
 
 def _running_lines(snap):
-    """{iface: running line} of a node's csqtt servers. "" when the node does not say (an older node: one line, 2.1)."""
     xs = snap.get("csqtt")
     return {x["iface"]: str(x.get("line") or "").strip()
             for x in (xs.values() if isinstance(xs, dict) else xs if isinstance(xs, list) else ())
             if isinstance(x, dict) and isinstance(x.get("iface"), str)}
 
 
-# ── networks this user can reach (docs/NETWORKS-PLAN.md §18) ──
-# The end user was never told: the office LAN a colleague's router fronts, shared with them, appeared nowhere they look.
 
 _KEYLESS = ("wdtt", "csqtt")
 
 
 def _net_prefix(s):
-    """A v4 CIDR normalised the way the panel stores it (`10.0.0.5` → `10.0.0.5/32`), or ""."""
     with contextlib.suppress(ValueError, TypeError):
         n = ipaddress.ip_network(str(s).strip(), strict=False)
         if n.version == 4:
@@ -490,10 +391,6 @@ def _net_prefix(s):
 
 
 def share_grants(p, users, nowv, groups):
-    """{uid: until} for a RESTRICTED provider, None when it is open to everyone on its node. Byte-for-byte the same rule as
-    swg-panel-server's share_grants (tests/sub_networks_selftest.py holds them together, source and answers): the owner
-    always, a grant whose user or group is gone or whose date has passed never, a group grant reaching its members, and a
-    user covered twice getting the widest date."""
     sh = p.get("share") if isinstance(p, dict) else None
     if isinstance(p, dict) and p.get("private"):
         return {p["user_id"]: 0} if p.get("user_id") in users else {}
@@ -521,7 +418,6 @@ def share_grants(p, users, nowv, groups):
 
 
 def _allowed_covers(allowed, prefix):
-    """Does a client AllowedIPs string route `prefix` into the tunnel? Same rule as swg-panel-server's `_allowed_covers`."""
     n = ipaddress.ip_network(prefix)
     for m in str(allowed or "").split(","):
         with contextlib.suppress(ValueError, TypeError):
@@ -531,16 +427,6 @@ def _allowed_covers(allowed, prefix):
 
 
 def sub_networks(roster, uid, describe, nodes, nowv):
-    """The networks this user's devices reach beyond the internet: [{prefix, node_name, via, covered}].
-
-    ⚠️ ONLY WHAT A NODE REPORTS ROUTING (`net_carried`). The page tells an end user what works, never what should: a network
-    the node refused, one waiting for its next sync, or one on a node too old to report is simply not listed.
-    A provider's network attaches to it on a node exactly as the panel's `node_networks` decides — earliest `created_at`, then
-    id, wins an identical prefix — so the provider named here is the one the node routes through.
-    A RESTRICTED network is listed for its owner and live grantees only, and only through a KEYED deployment: a turn-server
-    device reaches one only on a build the panel vouches for (§16), which this read-only page does not re-derive — left out
-    rather than promised. `via` (the provider's title) only for a restricted network — someone chose to share it; an open
-    one says where, not whose. `covered`: that device's own config routes it (None for a keyless deployment)."""
     users = roster.get("users") or {}
     peers = roster.get("peers") or {}
 
@@ -574,9 +460,9 @@ def sub_networks(roster, uid, describe, nodes, nowv):
                            for x in o.get("targets") or []):
                     continue
                 pres = [p_ for p_ in (_net_prefix(r) for r in o.get("routes") or []) if p_ in held and p_ not in claimed]
-                claimed.update(pres)                   # the first provider holding a prefix is the one the node routes
+                claimed.update(pres)
                 if opid == mine:
-                    continue                           # a device's own networks are behind it, not reached through it
+                    continue
                 g = share_grants(o, users, nowv, roster.get("groups"))
                 if g is not None and (uid not in g or not keyed):
                     continue
@@ -587,8 +473,6 @@ def sub_networks(roster, uid, describe, nodes, nowv):
                     out.append({"prefix": pre, "node_name": (nodes.get(nid) or {}).get("name") or nid,
                                 "via": (o.get("title") or "") if g is not None else "",
                                 "covered": None if allowed is None else _allowed_covers(allowed, pre)})
-    # one row per network per node: the device that routes it wins over one that doesn't, so a user with a phone and a
-    # narrowed laptop reads "reachable", with the narrowed device named only when nothing of theirs covers it
     best = {}
     for r in out:
         k = (r["prefix"], r["node_name"])
@@ -597,44 +481,34 @@ def sub_networks(roster, uid, describe, nodes, nowv):
     return sorted(best.values(), key=lambda r: (r["node_name"], ipaddress.ip_network(r["prefix"])))
 
 
-# torrents allowed on a deployment (1.8.11 S4b)
 
 P2P_ACTIONS = ("block", "direct", "iface", "exit", "dev")
 
 
 def p2p_policy(node):
-    """swg-panel-server's p2p_policy, copied — this process imports nothing of the panel (tests/sub_p2p_hint_selftest.py holds
-    the two together): what the operator saved, else block."""
     v = node.get("p2p")
     if isinstance(v, dict) and v.get("action") in P2P_ACTIONS:
         return v["action"]
     return "block"
 
 
-_P2P_RECS = {"wdtt": "wdtt", "csqtt": "csqtt"}   # a deployment's type → the node record set it lands on (else "ifaces")
+_P2P_RECS = {"wdtt": "wdtt", "csqtt": "csqtt"}
 
 
 def _p2p_runs(nodes, describe, nid, arrivals=False):
-    """Whether node `nid` lets P2P out: its policy is not Block, and it does not REPORT running Block — a Route the panel could
-    not lower (no mesh link, the exit gone) runs as Block (fail closed), and a Route whose way out is down carries nothing.
-    `arrivals`: for P2P another node sends here, which this node judges by its own policy and drops under a Route of its own
-    (P2P-POLICY §2: P2P never goes back into the mesh), so only Direct and per-interface let it on."""
     cfg = nodes.get(nid)
     if not isinstance(cfg, dict):
         return False
     pol = p2p_policy(cfg)
     rep = (describe.get(nid) or {}).get("p2p") or {}
-    # `route` down is the NODE-WIDE route's (exit/dev); under iface it is one interface's, judged per record below (S11 F4)
     if pol == "block" or rep.get("mode") == "block" or (rep.get("route") == "down" and pol in ("exit", "dev")):
         return False
     return pol in ("direct", "iface") if arrivals else True
 
 
 def _p2p_route_dev(node, p2p):
-    """The device a record's own torrent route leaves by — the panel's `p2p_route_dev`, twinned (the node names these in
-    its report's `down`): an exit's device, or the mesh link to the node it routes through. "" when it has none (a disabled exit's too)."""
     a = (p2p or {}).get("action") if isinstance(p2p, dict) else None
-    if a == "dev":                                            # resolve_exit's reading: a disabled exit routes nothing, a name stripped
+    if a == "dev":
         x = next((x for x in ((node or {}).get("exits") or []) if isinstance(x, dict) and str(x.get("id")) == str(p2p.get("exit_id"))), None)
         return str(x.get("device") or "").strip() if x and x.get("enabled") is not False else ""
     if a == "exit":
@@ -644,13 +518,6 @@ def _p2p_route_dev(node, p2p):
 
 
 def torrents_allowed(nodes, describe, t):
-    """Whether torrents may leave by deployment `t` — the nodes' own rule, strictest wins (P2P-POLICY §2.2): the record `t`
-    lands on (its interface, WDTT or csqtt server) does not block "torrents", its node lets P2P out, and where the policy hands
-    it to ANOTHER node — a Route to a node, or a per-interface policy on an interface forwarded whole to one — that node lets
-    arrivals' P2P out too; under per-interface, the record's own choice decides first (a route through a node needs a link
-    and that node's arrivals let out, a route through an exit needs it there and on, Direct is the node's own WAN). One hop, as the policy routes: a smart interface's catch-all is cascade_plan's to resolve, not this
-    page's (a known limit). A "torrents" category switched off in Settings still reads as blocked here (Settings is not this
-    process's to read), so the hint can be missing where torrents run."""
     nid = t.get("node")
     cfg = nodes.get(nid)
     if not _p2p_runs(nodes, describe, nid):
@@ -662,33 +529,28 @@ def torrents_allowed(nodes, describe, t):
     if any(str(b).strip() == "torrents" for b in (blk if isinstance(blk, list) else ())):
         return False
     pol = p2p_policy(cfg)
-    if pol == "exit":                                  # every client subnet's P2P goes to that node
+    if pol == "exit":
         return _p2p_runs(nodes, describe, (cfg.get("p2p") or {}).get("node"), arrivals=True)
     _rp = rec.get("p2p") if pol == "iface" and isinstance(rec.get("p2p"), dict) else {}
     _rep = (describe.get(nid) or {}).get("p2p") or {}
     if _rp.get("action") in ("exit", "dev") and _rep.get("route") == "down":
-        # the node names the devices down (`down`): only an interface whose own route leaves by one is not allowed (S11
-        # backlog F48); a node that names none — fail closed (pick F2)
-        _dv = _p2p_route_dev(cfg, _rp)                 # no device to leave by — a disabled exit, a blank device, no link —
-        if not isinstance(_rep.get("down"), list) or not _dv or _dv in _rep["down"]:   # is no way out either (review F11)
+        _dv = _p2p_route_dev(cfg, _rp)
+        if not isinstance(_rep.get("down"), list) or not _dv or _dv in _rep["down"]:
             return False
-    if _rp.get("action") == "exit":                    # its own route through a node (IFACE-P2P-PICK): a link there, and that
-        _q = _rp.get("node")                           # node lets arrivals' P2P out
+    if _rp.get("action") == "exit":
+        _q = _rp.get("node")
         return isinstance(cfg.get("links"), dict) and _q in cfg["links"] and _p2p_runs(nodes, describe, _q, arrivals=True)
-    if _rp.get("action") == "dev":                     # …through one of this node's exits, there and switched on
+    if _rp.get("action") == "dev":
         return any(isinstance(x, dict) and str(x.get("id")) == str(_rp.get("exit_id")) and x.get("enabled") is not False
                    for x in (cfg.get("exits") if isinstance(cfg.get("exits"), list) else ()))
-    if _rp.get("action") == "direct":                  # out this node's own address, whatever the interface's egress
+    if _rp.get("action") == "direct":
         return True
-    if pol == "iface" and rec.get("egress_mode") == "forward":   # follows the interface: forwarded whole to that node
+    if pol == "iface" and rec.get("egress_mode") == "forward":
         return _p2p_runs(nodes, describe, rec.get("egress_node"), arrivals=True)
     return True
 
 
 def _p2p_fwd_of(p, tg, describe):
-    """{p2p_port, p2p_addr} — the device's incoming torrent port on this deployment — only where its node reports
-    forwarding this interface (swg-noded `p2p_fwd`), the port is not taken there, and this is the one target on that node
-    the panel forwards: its primary, else the first by interface name (the panel's p2p_fwd_for_node, twinned). {} else."""
     port, fw = p.get("p2p_port"), (describe.get(tg.get("node")) or {}).get("p2p_fwd") or {}
     e = fw.get(tg.get("iface"))
     if type(port) is not int or not isinstance(e, dict) or port in (e.get("taken") if isinstance(e.get("taken"), list) else ()):
@@ -697,25 +559,19 @@ def _p2p_fwd_of(p, tg, describe):
                 if isinstance(t, dict) and t.get("node") == tg.get("node") and str(t.get("iface") or "") in fw), default=None)
     if not mine or mine[1] != tg.get("iface"):
         return {}
-    with contextlib.suppress(ValueError):                 # the address only where the swarm sees it: a node behind 1:1 NAT
-        if ipaddress.ip_address(str(e.get("addr") or "")).is_global:   # holds a private one (its forward works all the same)
+    with contextlib.suppress(ValueError):
+        if ipaddress.ip_address(str(e.get("addr") or "")).is_global:
             return {"p2p_port": port, "p2p_addr": str(e["addr"])}
     return {"p2p_port": port}
 
 
 def _role_of(t):
-    """The operator's label for one deployment: "primary", "backup", or "" — literal, never derived.
-
-    The only such field: the page both prints this word and orders by it (primary, then unmarked, then
-    backups). A peer nobody has labelled prints nothing at all, rather than calling its first deployment
-    primary and every other one a backup of it."""
     v = (t or {}).get("primary")
     r = v.strip().lower() if isinstance(v, str) else ("primary" if v else "")
-    return r if r in ("primary", "backup") else ""   # `True` is what pre-backup rosters carry
+    return r if r in ("primary", "backup") else ""
 
 
 def _port_of(hostport):
-    """Trailing :port of a host:port string → int, else None (mirrors the SPA's portOf)."""
     s = str(hostport or "")
     i = s.rfind(":")
     if i < 0:
@@ -727,14 +583,6 @@ def _port_of(hostport):
 
 
 def _bind_ip_of(listen):
-    """The concrete IP an instance binds, from its `host:port` listen string — "" for a wildcard or a bare port.
-
-    A node can carry several public addresses, and a WDTT/csqtt server binds ONE of them. That bind is the only
-    address that will answer, so it beats the node-wide fallback; a wildcard bind answers on all of them, and there
-    the operator's endpoint choice is the right one. This mirrors the operator app's own resolution order
-    (js/peer-ui.js) — which the subscription page had simply never learned, so on a multi-address node it handed
-    the holder a different IP from the one the operator picked, with the right port. Nothing listens there.
-    """
     s = str(listen or "").strip()
     i = s.rfind(":")
     host = s[:i] if i > 0 else ""
@@ -744,7 +592,6 @@ def _bind_ip_of(listen):
 
 
 def token_lookup(users, token):
-    """Raw token → user_id via constant-time sha256 match; None if unknown or disabled."""
     if not token:
         return None
     sha = hashlib.sha256(token.encode()).hexdigest()
@@ -755,8 +602,6 @@ def token_lookup(users, token):
 
 
 def token_lookup_rec(users, token):
-    """Like token_lookup but matches a SUSPENDED user too (enabled False) → (uid, rec). A blocked user keeps
-    its token_sha so the page can show a "Subscription disabled" screen instead of a bare 404. None if unknown."""
     if not token:
         return None
     sha = hashlib.sha256(token.encode()).hexdigest()
@@ -788,17 +633,17 @@ def _shared_read(state):
 
 
 _TRUST_XFF = bool(os.environ.get("SWG_SUB_TRUST_XFF"))
-_RL_CAP = 120           # burst allowance per client
-_RL_RATE = 20.0         # sustained refill (tokens/sec)
-_RL_MAX = 8192          # cap the tracking table so a spoofed/rotating-IP flood can't grow memory
+_RL_CAP = 120
+_RL_RATE = 20.0
+_RL_MAX = 8192
 _rl_lock = threading.Lock()
-_RL = {}                # ident -> [tokens, last_monotonic]
+_RL = {}
 
 def _rate_ok(ident):
     now = time.monotonic()
     with _rl_lock:
         if len(_RL) > _RL_MAX:
-            _RL.clear()                                # crude but bounded: a many-IP flood resets the table, not RAM
+            _RL.clear()
         b = _RL.get(ident)
         if b is None:
             _RL[ident] = [_RL_CAP - 1.0, now]
@@ -812,21 +657,11 @@ def _rate_ok(ident):
 
 
 def is_expired(rec, nowv):
-    """True if rec (a user or a peer) has an expiry date that has already passed. 0/absent = never expires.
-    Evaluated live on every request — no scheduler; a peer/sub reappears the instant the date is extended."""
     exp = (rec or {}).get("expiry") or 0
     return bool(exp) and nowv >= int(exp)
 
 
 def read_data(state, token):
-    """The public page's data for a token: the user's CURRENT peers, each target's NON-SECRET
-    params + the encrypted secret blob. Never returns a plaintext key. None if subscriptions are
-    off or the token is invalid.
-
-    READ-ONLY: unlike the panel's sub_read_data (which prunes stale blobs on read), this filters
-    the blob set against the live roster purely in memory — a peer no longer assigned to the user
-    is simply skipped, so a stale blob can never surface even though we never delete it. The
-    roster is authoritative; the blob store is a subordinate cache the panel keeps in sync."""
     if not state.enabled():
         return None
     roster, describe, users, nodes = _shared_read(state)
@@ -840,22 +675,17 @@ def read_data(state, token):
     theme = {"theme_color": subs.get("theme_color") or "", "theme_color_light": subs.get("theme_color_light") or "",
              "langs": {"enabled": langs.get("enabled") or ["en"], "default": langs.get("default") or "en"}}
     nowv = int(time.time())
-    # BLOCKED user (subscription suspended, or the roster flag set): resolve the token to show the name +
-    # theme, but serve NO peers or secrets. The page renders the centered "Subscription disabled" screen.
     if not rec.get("enabled") or user.get("disabled"):
         return {"disabled": True, "user": {"name": user.get("name") or ""}, **theme}
-    # EXPIRED subscription: same treatment as blocked, but the page shows "Subscription expired". Expiry is a live
-    # date test (the sub record stays enabled), so it's evaluated here on every request rather than at set-time.
     if is_expired(user, nowv):
         return {"expired": True, "user": {"name": user.get("name") or ""}, **theme}
     live = {pid: p for pid, p in (roster.get("peers") or {}).items()
             if isinstance(p, dict) and p.get("user_id") == uid}
-    blobs = state.sub_blobs(uid)                        # per-user file — small, read fresh so a new peer shows at once
+    blobs = state.sub_blobs(uid)
     peers_out = []
     for pid, p in live.items():
-        sec = (blobs.get(pid) or {}).get("sec")        # None until the admin browser provisions it
+        sec = (blobs.get(pid) or {}).get("sec")
         tgts_in = p.get("targets") or []
-        # Which deployment is the PRIMARY one
         tgts = []
         _hide = set(x for x in (p.get("sub_hide") or []) if isinstance(x, str))
         for i, t in enumerate(tgts_in):
@@ -866,8 +696,6 @@ def read_data(state, token):
                 continue
             nd = describe.get(t.get("node")) or {}
             if (t.get("type") or "") == "wdtt":
-                # WDTT peer: keyless. Its client link carries only the WRAP password (roster) + the node's public
-                # host + the instance's DTLS/WG ports (from the node store, NOT a snapshot). No WG meta / no `sec`.
                 node_cfg = nodes.get(t.get("node")) or {}
                 inst = ((node_cfg.get("wdtt")) or {}).get(t.get("iface")) or {}
                 dtls = ((inst.get("listen") or "").rsplit(":", 1)[-1]) or "56000"
@@ -876,13 +704,13 @@ def read_data(state, token):
                     "node_name": node_cfg.get("name") or t.get("node"),
                     "type": "wdtt",
                     "wdtt": {"password": p.get("wdtt_password") or "",
-                             "fork": inst.get("fork") or "amurcanov",   # which WDTT fork → resolve the right per-OS client + encoder
+                             "fork": inst.get("fork") or "amurcanov",
                              "version": (nd.get("tver") or {}).get(t.get("iface")) or "",
 
                              "endpoint_host": (_bind_ip_of(inst.get("listen")) or node_cfg.get("endpoint_host")
                                                or (describe.get(t.get("node")) or {}).get("pub_host") or ""),
                              "dtls_port": dtls, "wg_port": str(inst.get("wg_port") or 56001), "tun_port": "9000",
-                             "raw_port": str(inst.get("raw_port") or ""),   # RAW-IP mode, when this server accepts it
+                             "raw_port": str(inst.get("raw_port") or ""),
                              "vk_hash": (p.get("vk_hash") or "").strip()},
                     "primary": _role_of(t),
                 })
@@ -908,18 +736,16 @@ def read_data(state, token):
             meta = (nd.get("ifaces") or {}).get(t.get("iface")) or {}
             awg = meta.get("awg_params") or {}
             lp = meta.get("listen_port")
-            # turn-proxies forwarding to THIS interface (same test as the admin's turnProxiesFor: the proxy
-            # connects to the iface's listen port). Only non-secret client-config material rides along.
             turn = [{"service": tp.get("service"), "listen": tp.get("listen"), "wrap_key": tp.get("wrap_key"), "version": str(tp.get("version") or "").strip()}
                     for tp in (nd.get("turn") or []) if isinstance(tp, dict) and lp and _port_of(tp.get("connect")) == lp]
             _wgty = "awg" if awg else (t.get("type") or "wg")
             eff = effective_client_params(p, t, meta)
             if "turn" in _hide:
-                turn = []                       # keep the direct config, drop its proxy variants
+                turn = []
             if _wgty in _hide:
                 if not turn:
-                    continue                    # nothing left to publish for this deployment
-                _direct_off = True              # publish ONLY its turn variants (below)
+                    continue
+                _direct_off = True
             else:
                 _direct_off = False
             tgts.append({
@@ -935,58 +761,53 @@ def read_data(state, token):
                 "keepalive": eff["keepalive"],
                 "awg": awg,
                 "turn": turn,
-                **({} if not _direct_off else {"direct": False}),   # its own kind is hidden: only the proxy variants publish
+                **({} if not _direct_off else {"direct": False}),
                 "primary": _role_of(t),
             })
         _exp = is_expired(p, nowv)
         if not (p.get("disabled") or _exp):
-            for tg in tgts:   # torrents may leave by it → the page's client-setting line; absent otherwise (old pages ignore it)
+            for tg in tgts:
                 if torrents_allowed(nodes, describe, tg):
                     tg["p2p"] = True
                     tg.update(_p2p_fwd_of(p, tg, describe))
         peers_out.append({"peer_id": pid, "title": p.get("title") or "", "sec": sec, "targets": tgts,
                           "disabled": bool(p.get("disabled")), "expired": _exp})
-    # active peers first (A-Z by title, untitled by IP), then blocked/expired at the bottom (also A-Z). The sub page
-    # renders live-then-dead within this order, so a single title sort here gives both groups their A-Z ordering.
     def _peer_key(po):
         t = (po.get("title") or "").strip().lower()
         ip = ((po.get("targets") or [{}])[0] or {}).get("ip") or ""
-        return (bool(po.get("disabled") or po.get("expired")), t == "", t, ip)   # active-first · titled-first · A-Z · then IP
+        return (bool(po.get("disabled") or po.get("expired")), t == "", t, ip)
     peers_out.sort(key=_peer_key)
     subs = state.subscriptions()
     langs = subs.get("languages") if isinstance(subs.get("languages"), dict) else {}
     return {"user": {"name": user.get("name") or ""}, "peers": peers_out,
-            "networks": sub_networks(roster, uid, describe, nodes, nowv),   # what their devices reach beyond the internet (§18)
-            # PER-USER VK link only — subscriptions NEVER fall back to the panel-wide vk_link (that one is for
-            # the admin's own testing + unassigned peers). Empty here → the sub page shows a "create one" warning.
+            "networks": sub_networks(roster, uid, describe, nodes, nowv),
             "turn_enabled": bool(subs.get("turn_enabled")), "vk_link": (user.get("vk_link") or ""),
-            "vk_links": (user.get("vk_links") if isinstance(user.get("vk_links"), list) else ([user.get("vk_link")] if user.get("vk_link") else [])),   # all of the user's VK links (primary first); every client that takes a list embeds all
+            "vk_links": (user.get("vk_links") if isinstance(user.get("vk_links"), list) else ([user.get("vk_link")] if user.get("vk_link") else [])),
 
             "theme_color": subs.get("theme_color") or "", "theme_color_light": subs.get("theme_color_light") or "",
             "turn_fork_colors": subs.get("turn_fork_colors") or {},
-            "turn_client_default": subs.get("turn_client_default") or {},   # admin's END-USER default app per (fork, OS) → the page hands out THIS app instead of the compat-ranked top one
-            "turn_client_settings": subs.get("turn_client_settings") or {},   # SETTINGS SPLIT: admin's per-fork client (app) values → the sub page generates configs with them (encoder fills any unset with defaults)
-            "turn_catalog": _own_pins(subs.get("turn_catalog") or {}, peers_out),   # AXIS-3: server→client/app/scheme/store metadata so the page can offer "Get the app" install links (public app links only, no secrets)
-            "wg_catalog": subs.get("wg_catalog") or {},   # WG/AWG client apps + per-OS resolved installer (download bubble): body → downloads page, icon → direct file
-            "node_colors": subs.get("node_colors") or {},   # per-node colour so each server name renders in its panel colour
+            "turn_client_default": subs.get("turn_client_default") or {},
+            "turn_client_settings": subs.get("turn_client_settings") or {},
+            "turn_catalog": _own_pins(subs.get("turn_catalog") or {}, peers_out),
+            "wg_catalog": subs.get("wg_catalog") or {},
+            "node_colors": subs.get("node_colors") or {},
             "langs": {"enabled": langs.get("enabled") or ["en"], "default": langs.get("default") or "en"}}
 
 
-# ── HTTP ──
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "swg-sub"
     protocol_version = "HTTP/1.1"
     timeout = 60
     state = None
-    _meta_warned = False        # link-preview metadata failure is reported once, not once per visit
-    _tb, _tb_lock = [float("-inf"), 0], threading.Lock()   # do_GET: when it last wrote a traceback, and how many it held since
+    _meta_warned = False
+    _tb, _tb_lock = [float("-inf"), 0], threading.Lock()
 
     def log_message(self, *a):
-        pass                                            # no request logging — the page is public, keep it quiet
+        pass
 
     def _headers(self, code, ctype, length, cache="no-store", extra=None):
-        self._replied = True                              # so the do_GET guard never writes a second response
+        self._replied = True
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(length))
@@ -1009,12 +830,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send(code, json.dumps(obj).encode(), "application/json; charset=utf-8")
 
     def _notfound(self):
-        # Uniform 404 for everything that isn't a live surface: an off master switch, an unknown
-        # or disabled token, a stray path. Reveals nothing about which tokens exist.
         self._send(404, "not found\n")
 
-    # Strict CSP for the buildless page: same-origin scripts/styles, data: only for the QR images
-    # this page draws into <img>. No connect-src to anywhere but self; no framing.
     _CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; "
             "base-uri 'self'; frame-ancestors 'none'")
@@ -1035,8 +852,6 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, data, CTYPES.get(ext, "application/octet-stream"), cache="no-cache")
 
     def _page(self):
-        # The single-page shell for every token. It carries no user data itself — the browser reads
-        # its token from the path and the unlock key from the fragment, then fetches /api/<token>.
         full = os.path.join(WEB_DIR, "sub.html")
         try:
             with open(full, "rb") as f:
@@ -1044,8 +859,7 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             return self._send(500, "subscription page missing\n")
         if VERSION:
-            # a "+sha" dev build must be %2B in the query — a literal "+" makes a CDN/WAF (Cloudflare) reject the URL.
-            q = ("?v=" + VERSION.replace("+", "%2B")).encode()   # asset refs are RELATIVE (no leading /) so they resolve under any reverse-proxy mount
+            q = ("?v=" + VERSION.replace("+", "%2B")).encode()
             data = (data.replace(b'href="_a/sub.css"', b'href="_a/sub.css' + q + b'"')
                         .replace(b'src="_a/sub.js"', b'src="_a/sub.js' + q + b'"')
                         .replace(b'src="_a/qrcode.js"', b'src="_a/qrcode.js' + q + b'"')
@@ -1079,8 +893,6 @@ class Handler(BaseHTTPRequestHandler):
         except (ConnectionError, TimeoutError, socket.timeout, ssl.SSLError) as e:
             log(LOG_DEBUG, "sub: a client went away before its reply was written (%s)", e.__class__.__name__)
         except Exception:
-            # A real fault keeps its traceback — at most one a minute, with how many were held back: the page answers
-            # every visitor, and a fault on it would otherwise write one per request.
             with Handler._tb_lock:
                 now, (last, held) = time.monotonic(), Handler._tb
                 due = now - last >= 60
@@ -1089,11 +901,11 @@ class Handler(BaseHTTPRequestHandler):
                 log(LOG_ERR, traceback.format_exc().rstrip("\n")
                     + ("\n(%d more since the last one were not written)" % held if held else ""))
             if not getattr(self, "_replied", False):
-                with contextlib.suppress(Exception):     # the peer may be gone; never raise out of the handler
+                with contextlib.suppress(Exception):
                     self._send(500, "server error\n")
 
     def _route(self):
-        path = strip_base(self.path.split("?", 1)[0].split("#", 1)[0])   # drop the reverse-proxy mount prefix, if any
+        path = strip_base(self.path.split("?", 1)[0].split("#", 1)[0])
         st = Handler.state
 
         if path == "/healthz":
@@ -1120,19 +932,19 @@ class Handler(BaseHTTPRequestHandler):
         token = path[1:]
         if "/" in token or not TOKEN_RE.match(token):
             return self._notfound()
-        if not st.enabled():                            # surface off ⇒ nothing here, not even the shell
+        if not st.enabled():
             return self._notfound()
         return self._page()
 
 
 class _QuietServer(ThreadingHTTPServer):
     def handle_error(self, request, client_address):
-        pass                                            # failed handshake / scanner / vanished client — routine noise
+        pass
 
     max_conns = 256
 
     def verify_request(self, request, client_address):
-        return threading.active_count() <= self.max_conns     # the serve loop's own thread + one per connection
+        return threading.active_count() <= self.max_conns
 
 
 LOG_REREAD = 5
@@ -1156,7 +968,7 @@ def _log_follow():
 _log_write_lines = log
 
 
-def log(prio, msg, *args):            # noqa: F811 — the shared helper's log(), after following the fleet's level
+def log(prio, msg, *args):
     _log_follow()
     _log_write_lines(prio, msg, *args)
 
@@ -1183,11 +995,11 @@ def main():
             if os.path.exists(_LOG_SERVE["path"]):
                 break
 
-    global SUB_BASE, SUB_BASE_ALT                            # SWG_SUB_BASE wins (infra), else the panel's serve.base (from the sub public URL path)
+    global SUB_BASE, SUB_BASE_ALT
     def _read_bases():
         sv = (state.subscriptions().get("serve") or {})
         b = _norm_base(os.environ.get("SWG_SUB_BASE") or sv.get("base"))
-        ba = _norm_base(sv.get("base_alt"))                 # a transitional OLD base the panel keeps live during a grace
+        ba = _norm_base(sv.get("base_alt"))
         return b, (ba if ba and ba != b else "")
     SUB_BASE, SUB_BASE_ALT = _read_bases()
 

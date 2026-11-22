@@ -1,10 +1,10 @@
 const B = 36, TMIN = 1, TMAX = 26, SKEW = 38, DAMP = 700, INITIAL_BIAS = 72, INITIAL_N = 128;
 const MAXINT = 0x7fffffff;
 
-const digitOf = cp => {                          // one basic code point → its digit value, or -1
-  if (cp >= 0x30 && cp <= 0x39) return cp - 0x16;          // '0'-'9' → 26..35
-  if (cp >= 0x41 && cp <= 0x5a) return cp - 0x41;          // 'A'-'Z' → 0..25
-  if (cp >= 0x61 && cp <= 0x7a) return cp - 0x61;          // 'a'-'z' → 0..25
+const digitOf = cp => {
+  if (cp >= 0x30 && cp <= 0x39) return cp - 0x16;
+  if (cp >= 0x41 && cp <= 0x5a) return cp - 0x41;
+  if (cp >= 0x61 && cp <= 0x7a) return cp - 0x61;
   return -1;
 };
 
@@ -20,10 +20,10 @@ export function punyDecode(input) {
   if (!input) return null;
   const out = [];
   let n = INITIAL_N, i = 0, bias = INITIAL_BIAS;
-  const delim = input.lastIndexOf("-");                     // the LAST hyphen separates basic from extended
+  const delim = input.lastIndexOf("-");
   for (let j = 0; j < Math.max(delim, 0); j++) {
     const c = input.charCodeAt(j);
-    if (c > 0x7f) return null;                              // a basic code point is ASCII by definition
+    if (c > 0x7f) return null;
     out.push(c);
   }
   for (let idx = delim >= 0 ? delim + 1 : 0; idx < input.length;) {
@@ -47,8 +47,6 @@ export function punyDecode(input) {
   try { return String.fromCodePoint(...out); } catch { return null; }
 }
 
-// Which script a letter belongs to, coarsely — enough to answer "is this label written in one alphabet".
-// Anything that is not a letter (digits, hyphen, combining marks) is script-neutral and answers "".
 const SCRIPTS = [["latin", /\p{Script=Latin}/u], ["cyrillic", /\p{Script=Cyrillic}/u],
                  ["greek", /\p{Script=Greek}/u], ["han", /\p{Script=Han}/u],
                  ["arabic", /\p{Script=Arabic}/u], ["hebrew", /\p{Script=Hebrew}/u],
@@ -66,29 +64,23 @@ const SCRIPTS = [["latin", /\p{Script=Latin}/u], ["cyrillic", /\p{Script=Cyrilli
                  ["ethiopic", /\p{Script=Ethiopic}/u], ["syriac", /\p{Script=Syriac}/u]];
 const scriptOf = ch => { for (const [name, re] of SCRIPTS) if (re.test(ch)) return name;
   return /\p{L}/u.test(ch) ? "unknown" : ""; };
-/** True when every letter in the label comes from one script. A label mixing two is the homograph shape and
- *  is left as punycode — Japanese, which legitimately mixes three, is admitted as the one known exception. */
 export function singleScript(s) {
   const seen = new Set();
   for (const ch of s) { const k = scriptOf(ch); if (k) seen.add(k); }
-  if (seen.has("unknown")) return false;      // cannot tell two unlisted scripts apart → never render it
+  if (seen.has("unknown")) return false;
   if (seen.size <= 1) return true;
   return [...seen].every(k => k === "han" || k === "hiragana" || k === "katakana");
 }
 
-/** One label as it should be READ. `xn--p1ai` → `рф`; anything that does not decode, does not re-encode to
- *  itself, or mixes scripts comes back exactly as it went in. */
 export function idnLabel(label) {
   const s = String(label || "");
   if (!/^xn--/i.test(s)) return s;
   const u = punyDecode(s.slice(4).toLowerCase());
   if (!u || !singleScript(u)) return s;
-  let back = null;                                          // the platform's own IDNA encoder is the referee
+  let back = null;
   try { back = new URL("http://" + u + ".test").hostname; } catch { return s; }
   return back === s.toLowerCase() + ".test" ? u : s;
 }
 
-/** A whole host name as it should be READ, label by label. `xn--80aswg.xn--p1ai` → `сайт.рф`. */
 export const idnHost = name => String(name || "").split(".").map(idnLabel).join(".");
-/** True when reading it changes it — the caller then has two forms and should show both somewhere. */
 export const idnDiffers = name => idnHost(name) !== String(name || "");

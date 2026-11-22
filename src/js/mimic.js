@@ -1,6 +1,5 @@
-export const MIMIC_KEYS = ["I1", "I2", "I3", "I4", "I5"];   // i18n-keys: conf key names, as the conf spells them
+export const MIMIC_KEYS = ["I1", "I2", "I3", "I4", "I5"];
 
-// rand(n) → an integer in [0, n). Fresh draws come from the browser's CSPRNG; the gate passes its own.
 export const mimicRand = n => crypto.getRandomValues(new Uint32Array(1))[0] % n;
 
 const hex = (v, bytes) => v.toString(16).padStart(bytes * 2, "0");
@@ -9,20 +8,18 @@ const set = I1 => ({ I1, I2: "", I3: "", I4: "", I5: "" });
 const QUIC_DCID = [8, 20], QUIC_MIN = 1200, QUIC_MAX = 1232;
 function renderQuic(rand) {
   const dcid = QUIC_DCID[rand(QUIC_DCID.length)], total = QUIC_MIN + rand(QUIC_MAX - QUIC_MIN + 1), nib = rand(16);
-  const len = total - (1 + 4 + 1 + dcid + 1 + 1 + 2);   // what follows the Length field
+  const len = total - (1 + 4 + 1 + dcid + 1 + 1 + 2);
   return set(`<b 0x${hex(0xc0 | nib, 1)}00000001${hex(dcid, 1)}><r ${dcid}><b 0x0000${hex(0x4000 | len, 2)}><r 1000><r ${len - 1000}>`);
 }
 
 export const DNS_NAMES = ["www.google.com", "www.apple.com", "www.microsoft.com", "www.cloudflare.com", "www.wikipedia.org",
-  "www.yandex.ru", "www.amazon.com", "www.samsung.com"];   // i18n-keys: host names
-const DNS_HEAD = "01000001000000000001", DNS_TAIL = "00010001" + "0000291000000000000000";   // after the <r 2> ID: RD, one question, one additional · A IN · the OPT record
+  "www.yandex.ru", "www.amazon.com", "www.samsung.com"];
+const DNS_HEAD = "01000001000000000001", DNS_TAIL = "00010001" + "0000291000000000000000";
 const qname = name => name.split(".").map(l => hex(l.length, 1) + [...l].map(c => hex(c.charCodeAt(0), 1)).join("")).join("") + "00";
 function renderDns(rand) {
   return set(`<r 2><b 0x${DNS_HEAD}${qname(DNS_NAMES[rand(DNS_NAMES.length)])}${DNS_TAIL}>`);
 }
 
-// What every swgPanel generator writes for a new interface (F2): the same five strings on every server. Offered as a pick
-// too — the way back to the set an interface was made with.
 export const MIMIC_BUILTIN = { I1: "<b 0xc000000001><r 64><t>", I2: "<r 24><t>", I3: "<r 32>", I4: "<b 0xc000000001><r 32><t>", I5: "<t><r 48>" };
 
 const dnsBytes = name => 2 + DNS_HEAD.length / 2 + qname(name).length / 2 + DNS_TAIL.length / 2;
@@ -34,11 +31,11 @@ export const MIMIC_PRESETS = {
 };
 export const mimicRender = (id, rand = mimicRand) => MIMIC_PRESETS[id].render(rand);
 
-const val = (awg, k) => { const v = String((awg || {})[k] ?? "").trim(); return v === "-" ? "" : v; };   // "-" = no such line
+const val = (awg, k) => { const v = String((awg || {})[k] ?? "").trim(); return v === "-" ? "" : v; };
 
 const RE_QUIC = /^<b 0xc[0-9a-f]00000001(08|14)><r (8|20)><b 0x00004([0-9a-f]{3})><r 1000><r (\d+)>$/i;
 const RE_DNS = new RegExp(`^<r 2><b 0x${DNS_HEAD}((?:[0-9a-f]{2})+)${DNS_TAIL}>$`, "i");
-const isQname = h => {   // labels of 1–63 bytes, ending in the root label
+const isQname = h => {
   for (let i = 0; i < h.length;) { const n = parseInt(h.slice(i, i + 2), 16); if (n === 0) return i + 2 === h.length;
     if (n > 63 || i + 2 + n * 2 > h.length) return false; i += 2 + n * 2; }
   return false;
@@ -58,7 +55,6 @@ export const mimicFill = (I, rec) => Object.fromEntries(MIMIC_KEYS.map(k => [k, 
 export const mimicAfter = (draft, rec) => Object.fromEntries(MIMIC_KEYS.map(k => {
   const d = String((draft || {})[k] ?? "").trim(); return [k, d === "-" ? "" : d || val(rec, k)]; }));
 
-/* Which preset these five strings are: "off" | "quic" | "dns" | "builtin" | "custom". Blank and "-" are both no line. */
 export function mimicOf(awg) {
   const v = MIMIC_KEYS.map(k => val(awg, k));
   if (v.every(x => !x)) return "off";
@@ -76,8 +72,6 @@ export function mimicCheck(s) {
   if (s === "" || s === "-") return { ok: true, bytes: 0 };
   if (s.length > MIMIC_LINE_MAX) return { ok: false, why: "long" };
   let bytes = 0, t = 0;
-  // spaces between tags and <r 0> are read by every build (measured 2026-10-08: amneziawg-go 0.2.15, 3.1.20260828, the pinned
-  // 0.0.20250522); odd hex is refused by 3.x and the pinned build, two <t> by 0.2.15, <c> by 3.x and the pinned build
   for (let rest = s; (rest = rest.replace(/^ +/, ""));) {
     const m = /^<([a-z]+)(?: ([^<>]*))?>/.exec(rest);
     if (!m) return { ok: false, why: "tag", tag: (rest.match(/^<[^>]*>?/) || [rest.slice(0, 16)])[0] };
@@ -95,10 +89,7 @@ export function mimicCheck(s) {
   return bytes > MIMIC_UDP_MAX ? { ok: false, why: "huge" } : { ok: true, bytes };
 }
 
-/* Any AmneziaWG field the Edit sheet changes: an I line by mimicCheck, every other field printable ASCII only (twin of the
-   panel's awg_value_refusal) — so the sheet holds Save instead of closing on a save the panel refuses. */
 export function awgFieldCheck(k, v) {
   return MIMIC_KEYS.includes(k) ? mimicCheck(v) : AWG_BAD_CHAR.test(awgTrim(v)) ? { ok: false, why: "ctl" } : { ok: true, bytes: 0 };
 }
-// the built-in set's packets and bytes, for the picker's row (fixed — computed once, not on every poll's render)
 export const MIMIC_BUILTIN_SIZE = MIMIC_KEYS.reduce(([n, b], k) => { const x = mimicCheck(MIMIC_BUILTIN[k]).bytes; return x ? [n + 1, b + x] : [n, b]; }, [0, 0]);

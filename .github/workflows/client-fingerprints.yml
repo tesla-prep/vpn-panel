@@ -1,17 +1,16 @@
 name: client-fingerprints
 
-# Общая проверка схем клиентов публикует один файл в ветке fingerprints.
 
 on:
   schedule:
-    - cron: '17 4 * * *'      # daily; drift detection does not need to be live
+    - cron: '17 4 * * *'
   workflow_dispatch:
   push:
     branches: [main]
     paths: ['src/swg-panel-server']
 
 permissions:
-  contents: write             # to push the fingerprints branch
+  contents: write
 
 concurrency:
   group: client-fingerprints
@@ -31,7 +30,6 @@ jobs:
           import importlib.machinery, importlib.util, json, os, sys, time
           import urllib.error, urllib.parse, urllib.request
 
-          # Список проверяемых файлов берём из панели.
           spec = importlib.util.spec_from_loader(
               "sp", importlib.machinery.SourceFileLoader("sp", "src/swg-panel-server"))
           sp = importlib.util.module_from_spec(spec)
@@ -63,14 +61,13 @@ jobs:
                   key = "%s/%s@%s:%s" % (s["owner"], s["repo"], s["branch"], s["path"])
                   try:
                       res = latest(s["owner"], s["repo"], s["branch"], s["path"])
-                  except Exception as e:                    # a repo that vanished or was renamed
+                  except Exception as e:
                       failed.append("%s :: %s" % (key, str(e)[:120])); continue
                   if res:
                       files[key] = res
               if files:
                   out[cid] = files
 
-          # При неполной проверке сохраняем предыдущий опубликованный файл.
           if failed:
               print("::error::could not read %d source(s):" % len(failed))
               for f in failed:
@@ -90,7 +87,6 @@ jobs:
           set -e
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Ветка хранит отпечатки. Ошибка checkout останавливает публикацию.
           if git fetch origin fingerprints:fingerprints 2>/dev/null; then
             git checkout fingerprints
           else
@@ -105,8 +101,6 @@ jobs:
             echo "no upstream movement — nothing to publish"
             exit 0
           fi
-          # The diff IS the alert: what changed here is a client whose format may have moved, and the
-          # panel's own roster will start reporting it within a day.
           git diff --cached --stat
           git commit -m "client fingerprints $(date -u +%Y-%m-%dT%H:%MZ)"
           git push origin fingerprints

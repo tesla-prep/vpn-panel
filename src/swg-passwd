@@ -1,20 +1,4 @@
 #!/usr/bin/env python3
-"""swg-passwd — reset the swgPanel admin login, like the system `passwd`.
-
-Run on the PANEL host as root:
-
-    sudo swg-passwd            # reset the current admin's username / password
-    sudo swg-passwd <newuser>  # pre-fill a new username
-
-Prompts (each skippable with Enter) for a new username and a new password, writes the pbkdf2 hash to the
-panel's auth file (SWG_PANEL_AUTH, default /etc/swg-panel/auth) and restarts the panel so it takes effect now.
-
-Changing the PASSWORD leaves the Encryption Vault (the browser-held key that protects stored configs,
-subscription links and interface-key escrow) COMPLETELY UNTOUCHED — this tool has no way to re-wrap it (the key
-only ever exists in the admin browser), and destroying it here would take every stored config and escrowed
-interface key with it. It only drops a marker, so the panel asks at the next sign-in for the OLD panel password
-or the encryption key shown when encryption was set up, and re-connects the vault to the new password from there.
-"""
 import sys, os, hashlib, base64, getpass, subprocess, contextlib
 
 AUTH  = os.environ.get("SWG_PANEL_AUTH")  or "/etc/swg-panel/auth"
@@ -24,12 +8,11 @@ ITER  = 200000
 
 _TTY = sys.stdout.isatty()
 def _c(s, codes):   return ("\033[" + codes + "m" + s + "\033[0m") if _TTY else s
-def B(s):     return _c(s, "1")       # bold
-def BBLUE(s): return _c(s, "1;34")    # bold blue
+def B(s):     return _c(s, "1")
+def BBLUE(s): return _c(s, "1;34")
 
 
 def _read_auth():
-    """(user, 'pbkdf2_sha256$…' hash) from the auth file, or ('', '')."""
     with contextlib.suppress(OSError):
         with open(AUTH) as f:
             u, _, h = f.readline().strip().partition(":")
@@ -51,8 +34,8 @@ def _write_auth(user, hashval):
         os.chmod(tmp, 0o640)
         with contextlib.suppress(Exception):
             import grp
-            os.chown(tmp, 0, grp.getgrnam("swg").gr_gid)   # root:swg, like the installer
-        os.replace(tmp, AUTH)                              # atomic swap
+            os.chown(tmp, 0, grp.getgrnam("swg").gr_gid)
+        os.replace(tmp, AUTH)
     except OSError as e:
         with contextlib.suppress(OSError):
             os.remove(tmp)
@@ -60,13 +43,6 @@ def _write_auth(user, hashval):
 
 
 def _flag_vault():
-    """Leave a marker saying the panel password was changed OUT OF BAND, so the SPA can ask to re-connect the
-    Encryption Vault at the next sign-in.
-
-    Deliberately destroys NOTHING. This tool cannot re-wrap the vault, because the key it would need lives only
-    in the admin browser — but the operator holds that key (shown once at setup, revealable from Settings), so the
-    vault is recoverable from the browser alone. Removing vault.json/escrow.json here would permanently orphan
-    every stored config, subscription link and escrowed interface key; the marker costs nothing and keeps them."""
     with contextlib.suppress(Exception):
         os.makedirs(SUBS, exist_ok=True)
     with contextlib.suppress(OSError):
@@ -79,15 +55,6 @@ def _flag_vault():
 
 
 def _revoke_sessions():
-    """End every signed-in session: a NEW session-signing secret, written into the panel's existing session.key.
-
-    The in-panel password change has always done this (swg-panel-server rotate_session_secret: "a captured cookie
-    dies"), and this tool — the one reached for when a password is lost or leaked — did not: it restarted the panel,
-    which reloaded the same secret, so every cookie signed before the reset stayed valid for its full week. Measured
-    (1.8.7 qualification PART 4, A2): a browser session opened before `swg-passwd` still answered 200 after it.
-
-    Written IN PLACE, never replaced: the file belongs to the panel's own user with mode 0600, and a root-owned copy
-    would leave the panel unable to read its secret. A missing file is fine — the panel mints one when it starts."""
     path = os.path.join(STATE, "session.key")
     if not os.path.exists(path):
         return "none"
@@ -112,7 +79,6 @@ def _restart_panel():
 
 
 def _docker_panel_dir():
-    """This box runs the panel in a CONTAINER (its auth lives inside it, not at $AUTH)."""
     for d in ("/opt/swg-panel-docker", os.environ.get("SWG_DOCKER_DIR") or ""):
         if d and os.path.isfile(os.path.join(d, "docker-compose.yml")):
             return d
@@ -162,15 +128,14 @@ def main():
         print("Nothing to change — same username, password kept.")
         return
 
-    new_hash = _hash(pw) if pw else (cur_hash or _hash(""))   # keep the existing hash when only the username changes
+    new_hash = _hash(pw) if pw else (cur_hash or _hash(""))
     _write_auth(user, new_hash)
     revoked = ""
     if pw:
         _flag_vault()
-        revoked = _revoke_sessions()          # BEFORE the restart, which is what loads the new secret
+        revoked = _revoke_sessions()
     applied = _restart_panel()
 
-    # ── summary ──
     print("Summary of changes:")
     if user_changed:
         print("  • Username:  %s → %s" % (cur_user, B(user)))

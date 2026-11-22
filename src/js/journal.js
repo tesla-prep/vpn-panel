@@ -11,63 +11,48 @@ import htm from "htm";
 const html = htm.bind(h);
 
 const POLL_MS = 1500, BUF = 5000, BLOCK = 64, ROW_H = 21;
-export const LOG_PANEL = "panel";                   // the panel's own entry among the servers (the panel's id for it)
+export const LOG_PANEL = "panel";
 const PANEL_KINDS = ["panel", "sub", "netctl", "update"];
 const LEVELS = ["err", "warn", "info", "debug"];
 const levelLabel = k => ({ err: T("log|Errors"), warn: T("log|Warnings"), info: T("log|Info"), debug: T("log|Debug") })[k];
-// …and a line's own level, in its 5-character column: the journalctl word in English, its short form in Russian (OE, 1.8.9)
 const levelShort = k => ({ err: T("lvl|err"), warn: T("lvl|warn"), info: T("lvl|info"), debug: T("lvl|debug") })[k];
 const lvOf = p => p <= 3 ? "err" : p === 4 ? "warn" : p <= 6 ? "info" : "debug";
-// a node's chip colour: a stable pick from the panel's own status/brand hues, so 200 chips still read apart
 const CHIP = ["--brand", "--online", "--ready", "--pending", "--relay-2", "--smart", "--tport-os", "--partial", "--tport-dock", "--awg3"];
 const chipOf = id => { let x = 0; for (const c of String(id)) x = (x * 31 + c.charCodeAt(0)) >>> 0; return "var(" + CHIP[x % CHIP.length] + ")"; };
 
-// The viewer's state, kept across re-renders (see the header).
 const LV = {
-  nodes: null, src: null,                             // the facets; null = the defaults (see facetDefaults)
+  nodes: null, src: null,
   levels: { err: true, warn: true, info: true, debug: true }, q: "", wrap: false, overlay: false,
-  live: false, card: false,                           // asked for (Start, the header button, a deep link); off once no viewer is up
-  req: null, seq: 0, h: "", states: {}, iv: 1, err: "", ver: 0,   // the panel's request and what it last said
-  lines: [], frozen: null, missed: 0, uid: 0,         // the merged lines; Paused: the list as it was, and what came since
-  held: {},                                           // a reopen: the newest line each server already has here
-  floor: {},                                          // …or had, before a Clear: a reopen's backfill does not bring those back
-  // gen counts the facet choices; openGen is the one the open request was made for, streamGen the one the lines on screen
-  // are — so a change during an open, or a failed open after a change, is never taken for a mere reopen
+  live: false, card: false,
+  req: null, seq: 0, h: "", states: {}, iv: 1, err: "", ver: 0,
+  lines: [], frozen: null, missed: 0, uid: 0,
+  held: {},
+  floor: {},
   gen: 1, openGen: 0, streamGen: 0, refusedGen: 0, refusedAt: 0, busy: false, timer: null, mounted: 0,
 };
 const _subs = new Set();
 const bump = () => { LV.ver++; _subs.forEach(f => f(LV.ver)); };
 const STORE_KEY = "swg-logview";
 const migrate = src => [...new Set(src.flatMap(x => x === "iface:*" ? ["iface:*", "mesh:*"] : x.startsWith("iface:swg_") ? ["mesh:" + x.slice(6)] : [x]))];
-try { const s = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); if (s && Array.isArray(s.nodes) && Array.isArray(s.src)) Object.assign(LV, { nodes: s.nodes, src: s.v === 2 ? s.src : migrate(s.src), wrap: !!s.wrap }); } catch (_) { /* private mode */ }
-// A deep link's servers and sources are a pending filter (LOGS-PLAN §5): the operator's own choice is kept here while it is up —
-// what is remembered — and comes back when it closes (q189 SPA-9: one click on a node page's logs icon replaced it for good).
+try { const s = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); if (s && Array.isArray(s.nodes) && Array.isArray(s.src)) Object.assign(LV, { nodes: s.nodes, src: s.v === 2 ? s.src : migrate(s.src), wrap: !!s.wrap }); } catch (_) {   }
 let _own = null;
 const remember = () => { const f = _own || LV;
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: 2, nodes: f.nodes, src: f.src, wrap: LV.wrap })); } catch (_) { /* private mode */ } };
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ v: 2, nodes: f.nodes, src: f.src, wrap: LV.wrap })); } catch (_) {   } };
 
-// the Panel's sources beyond its own service: read from its journal on bare metal and on NixOS (no root helper there, but the
-// main journal answers sub / update — q189 DN-14); a Docker panel has only its own file
 const panelBare = () => !((Store.panelSettings || {}).log_panel || {}).docker;
 function facetDefaults() {
   const ns = Store.nodes || [];
   return { nodes: [LOG_PANEL, ...(ns.length <= 5 ? ns.map(n => n.id) : [])],
            src: [...(panelBare() ? PANEL_KINDS : ["panel"]), ...NODE_SOURCES] };
 }
-const chosenNodes = () => LV.nodes || facetDefaults().nodes;   // as chosen (and remembered): never trimmed
-// what a request asks for: the chosen servers that still exist (a deleted node would only make the panel refuse it) —
-// while the node list is known at all
+const chosenNodes = () => LV.nodes || facetDefaults().nodes;
 const nodesOf = () => { const have = new Set((Store.nodes || []).map(n => n.id));
   return have.size ? chosenNodes().filter(id => id === LOG_PANEL || have.has(id)) : chosenNodes(); };
 const srcOf = () => LV.src || facetDefaults().src;
-// the most sources the panel follows in one request (live_open, range_open cut the rest): more are said, never sent to be cut
-// (q189 SPA-8 — untick one mesh link of a 12-node mesh and the others are 65 sources of their own)
 const SRC_MAX = 64;
 
-// what a node's own page opens the viewer with: everything of that node's, the kernel aside (it is the whole kernel log)
 export const NODE_SOURCES = ["noded", "dns", "sni", "relay:*", "mesh:*", "turn:*", "iface:*", "p2p"];
-export const TURN_SOURCES = ["turn:*"];             // a node's turn proxies, WDTT and csqtt — every instance
-/* Open the viewer from elsewhere (the node page, a failing turn proxy): full screen over that page, with these facets. */
+export const TURN_SOURCES = ["turn:*"];
 export function openLogs({ nodes, src } = {}) {
   if (!_own) _own = { nodes: LV.nodes, src: LV.src };
   if (nodes) LV.nodes = nodes;
@@ -78,44 +63,38 @@ export function openLogs({ nodes, src } = {}) {
 
 const nodeName = id => id === LOG_PANEL ? T("Panel") : ((Store.nodes || []).find(n => n.id === id) || {}).name || id;
 
-// ── talking to the panel ──────────────────────────────────────────────────────────────────────────────────────────
 function addLines(raw) {
   if (!raw || !raw.length) return;
   const off = id => ((LV.states[id] || {}).off || 0) * 1e6;
-  // a reopened request backfills again: what each server already has on screen is not added twice
-  // id: the row's key — seq starts again with each request, and a reopen keeps the old lines on screen
   const add = raw.map(([seq, nid, t, src, prio, text]) => ({ id: ++LV.uid, k: t - off(nid), seq, nid, src, prio, text }))
     .filter(x => x.src[0] === "!" || !(x.k <= (LV.held[x.nid] || -Infinity)));
-  for (const r of raw) delete LV.held[r[1]];          // only a server's first batch after a reopen is its backfill
+  for (const r of raw) delete LV.held[r[1]];
   if (!add.length) return;
   const L = LV.lines;
   let prev = L.length ? L[L.length - 1].k : -Infinity, inOrder = true;
   for (const x of add) { if (x.k < prev) { inOrder = false; break; } prev = x.k; }
   L.push(...add);
-  if (!inOrder) L.sort((a, b) => a.k - b.k || a.id - b.id);   // a late line (a slower node) goes where it belongs
+  if (!inOrder) L.sort((a, b) => a.k - b.k || a.id - b.id);
   if (L.length > BUF) L.splice(0, L.length - BUF);
   if (LV.frozen) LV.missed += add.length;
 }
 
 async function tick() {
   if (LV.busy || !LV.mounted || !LV.live || document.hidden) return;
-  if (srcOf().length > SRC_MAX) return closeReq();   // said in the viewer (SRC_MAX)
-  // refused (no server of these can be watched — maybe a node not synced yet): said, and asked again every 10 s
+  if (srcOf().length > SRC_MAX) return closeReq();
   if (LV.err === "refused" && LV.refusedGen === LV.gen && Date.now() - LV.refusedAt < 10000) return;
   LV.busy = true;
   try {
     if (!LV.req || LV.gen !== LV.openGen) {
-      // New facets are a new stream. A reopen — the tab back in view, the panel restarted — goes on with the same one:
-      // what is on screen and a Paused view stay, and the backfill's repeats are skipped (addLines).
       const gen = LV.gen;
       const r = await api.post("/api/logs/live", { nodes: nodesOf(), src: srcOf(), ...(LV.req ? { replace: LV.req } : {}) });
       if (!r || !r.ok) {
         LV.req = null;
         LV.err = r && r.code === "bad_request" ? "refused" : (r && r.code) || "error";
         if (LV.err === "refused") Object.assign(LV, { refusedGen: gen, refusedAt: Date.now() });
-      } else if (!LV.mounted || !LV.live || document.hidden) api.post("/api/logs/live/close", { id: r.data.id }).catch(() => {});   // left (or stopped) meanwhile
+      } else if (!LV.mounted || !LV.live || document.hidden) api.post("/api/logs/live/close", { id: r.data.id }).catch(() => {});
       else {
-        Object.assign(LV, { req: r.data.id, seq: 0, h: "", states: {}, iv: r.data.iv, err: "", openGen: gen });   // a change since: replaced next tick
+        Object.assign(LV, { req: r.data.id, seq: 0, h: "", states: {}, iv: r.data.iv, err: "", openGen: gen });
         if (gen !== LV.streamGen) Object.assign(LV, { lines: [], frozen: null, missed: 0, held: {}, floor: {}, streamGen: gen });
         else { LV.held = { ...LV.floor }; for (const l of LV.lines) if (l.src[0] !== "!" && !(l.k <= (LV.held[l.nid] || -Infinity))) LV.held[l.nid] = l.k; }
       }
@@ -136,18 +115,16 @@ async function tick() {
 function closeReq() {
   if (LV.req) { const id = LV.req; LV.req = null; api.post("/api/logs/live/close", { id }).catch(() => {}); }
 }
-function onVisibility() { if (document.hidden) closeReq(); else tick(); }   // hidden: the nodes stop now, not in 20 s
+function onVisibility() { if (document.hidden) closeReq(); else tick(); }
 
 const TURN_KINDS = [["vk", "VK TURN"], ["wdtt", "WDTT"], ["csqtt", "csqtt"]];
 const MESH_PRE = "swg_";
 
-// 7. built once per poll, not per render: the closed dropdowns need only their counts, and a stream batch re-renders
-// the viewer many times a second
 let _lists = { key: null, val: null };
 function sourceListsMemo(nodeIds) {
   const key = nodeIds.join(",");
   if (_lists.key !== key || _lists.stats !== Store.stats || _lists.describe !== Store.describe || _lists.nodes !== Store.nodes
-      || _lists.ps !== Store.panelSettings)                 // the Panel list follows the panel's kind (panelBare)
+      || _lists.ps !== Store.panelSettings)
     _lists = { key, stats: Store.stats, describe: Store.describe, nodes: Store.nodes, ps: Store.panelSettings, val: sourceLists(nodeIds) };
   return _lists.val;
 }
@@ -158,8 +135,7 @@ function sourceLists(nodeIds) {
     const s = st[id] || {};
     for (const n of new Set([...Object.keys(s.interfaces || {}), ...Store.ifacesOf(id)])) {
       const meta = Store.ifaceMeta(id, n) || {};
-      if (n.startsWith(MESH_PRE)) {                   // the reader's own rule (LIVE_MESH_PRE): a custom prefix stays an interface
-        // a mesh link by what it joins, not by its generated name: "msk-main ↔ hel-flux"
+      if (n.startsWith(MESH_PRE)) {
         const pair = meta.link_node ? [Store.nodeName(id) || id, Store.nodeName(meta.link_node) || meta.link_node].sort() : null;
         if (!mesh.has(n)) mesh.set(n, pair ? pair.join(" ↔ ") : n);
       } else ifc.add(n);
@@ -184,7 +160,6 @@ function sourceLists(nodeIds) {
     out.turn = { label: T("Turn proxies"), wild: "turn:*", groups: TURN_KINDS.map(([k, l]) => ({ id: k, label: l, items: items("turn", turn[k], k === "vk") })).filter(g => g.items.length) };
     out.iface = { label: T("Interfaces"), wild: "iface:*", groups: [{ id: "iface", items: items("iface", ifc) }] };
   }
-  // a whole group (or list) the servers report nothing of yet is still choosable: its wildcard stands in for it
   for (const dd of Object.values(out)) {
     dd.groups = dd.groups.map(g => g.wild && !g.items.length ? { ...g, items: [{ id: g.wild, label: T("All of them (none reported yet)") }] } : g);
     if (dd.wild && !dd.groups.some(g => g.items.length)) dd.groups = [{ id: "all", items: [{ id: dd.wild, label: T("All of them (none reported yet)") }] }];
@@ -198,8 +173,6 @@ function srcLabel(id) {
   return n == null ? base : n === "*" ? base : n;
 }
 
-// ── a multi-select dropdown: the shared Dropdown's look (one popup, group headings), a tick per row ─────────────────
-// A choice is a SET of ids; a group (or the whole list) that is entirely on is written back as its wildcard (mpWrite).
 const ddItems = dd => dd.groups.flatMap(g => g.items);
 function mpOn(dd, sel) {
   const on = new Set();
@@ -220,10 +193,8 @@ function mpWrite(dd, sel, on) {
 const tickOf = (n, of) => !n ? "" : n === of ? " on" : " mix";
 
 function MultiPick({ icon, label, dd, sel, onChange, value, search }) {
-  // the arrows walk the search box and every tick (heads included); the list is kept inside the window
-  // the search box (in a list over 8) takes the focus at every open and the keys typed on a tick
-  const P = usePopup({ rows: "input,button:not(:disabled)", minBelow: 260, clampW: 300, search: ".lv-mpq input" }), [q, setQ] = useState("");   // i18n-keys: CSS selectors
-  useEffect(() => { if (P.open) setQ(""); }, [P.open]);   // every open starts unfiltered (click or keyboard)
+  const P = usePopup({ rows: "input,button:not(:disabled)", minBelow: 260, clampW: 300, search: ".lv-mpq input" }), [q, setQ] = useState("");
+  useEffect(() => { if (P.open) setQ(""); }, [P.open]);
   const on = mpOn(dd, sel), all = ddItems(dd), nOn = all.filter(i => on.has(i.id)).length;
   const shown = value || (!all.length ? "—" : nOn === all.length ? T("All") : !nOn ? T("None")
     : nOn === 1 ? all.find(i => on.has(i.id)).label : T("{v1} of {v2}", { v1: fmtNum(nOn), v2: fmtNum(all.length) }));
@@ -257,7 +228,6 @@ function MultiPick({ icon, label, dd, sel, onChange, value, search }) {
   </div>`;
 }
 
-// a button with a small menu of actions under it (the bar's Download)
 function MenuButton({ icon, label, title, items }) {
   const P = usePopup({ rows: "button:not(:disabled)", minBelow: 260 });
   return html`<div class="lv-mp" ref=${P.ref}>
@@ -271,7 +241,6 @@ function MenuButton({ icon, label, title, items }) {
   </div>`;
 }
 
-// ── the facet editors ─────────────────────────────────────────────────────────────────────────────────────────────
 function setFacets(nodes, src) {
   if (nodes) LV.nodes = nodes;
   if (src) LV.src = src;
@@ -284,7 +253,7 @@ const serversLabel = ids => ids.length === 1 ? nodeName(ids[0]) : ids.includes(L
 function Facets() {
   const ids = nodesOf(), srcs = srcOf(), sel = new Set(srcs);
   if (_servers.nodes !== Store.nodes) {
-    const all = [...(Store.nodes || [])].sort((a, b) => Store.byNode(a.id, b.id));   // the panel's order, as everywhere
+    const all = [...(Store.nodes || [])].sort((a, b) => Store.byNode(a.id, b.id));
     _servers = { nodes: Store.nodes, val: { allLabel: T("All servers"), groups: [{ id: "p", items: [{ id: LOG_PANEL, label: T("Panel"), chip: true }] },
       ...(all.length ? [{ id: "n", label: T("All nodes"), items: all.map(n => ({ id: n.id, label: n.name || n.id, chip: true })) }] : [])] } };
   }
@@ -300,7 +269,6 @@ function Facets() {
   </div>`;
 }
 
-// ── what the servers said (a few numbers, the names in a bubble — 2 or 200 servers alike) ───────────────────────────
 function stateSummary() {
   const out = [], ids = nodesOf(), S = LV.states || {};
   const by = {}, unav = new Set();
@@ -324,7 +292,7 @@ function stateSummary() {
   for (const [key, list] of Object.entries(by)) {
     const u = uniq(list);
     let txt, tip, tone;
-    if (key === "unavail") {                          // one chip for docker, whatever it lacks: the bubble names the sources
+    if (key === "unavail") {
       const names = { iface: T("Interfaces"), mesh: T("Mesh links"), kernel: T("Kernel"), p2p: T("P2P guard") };
       txt = T("Not on docker");
       tip = T("A docker node has no host journal to read these from: {v1}.", { v1: [...unav].map(k => names[k] || k).join(", ") }); tone = "faint";
@@ -333,7 +301,6 @@ function stateSummary() {
   }
   return out;
 }
-// what a server's state reads as, chip and bubble — the live viewer's, and (stateSay(true)) a range download's
 function stateSay(range) {
   const s = {
     waiting: [T("Starting"), T("Asked: a server starts sending within a sync or two."), "faint"],
@@ -352,11 +319,10 @@ function stateSay(range) {
     skipped: [T("Left out"), T("The file was made before it finished."), "faint"],
     old: [T("Update the node"), T("This node's build is too old for range downloads. Update it to include its logs."), "warn"],
     failed: [T("Failed"), T("It stopped answering while it read, or ran past the 10-minute limit."), "bad"],
-    off: [T("Logging is off"), T("Logging is off, so nothing is stored to read."), "warn"],   // a past range: no level brings it back
+    off: [T("Logging is off"), T("Logging is off, so nothing is stored to read."), "warn"],
     cut: [T("Newest part only"), T("Its share of the 50 MB was full, so the file has the end of its range. Narrow the range or the servers for the rest."), "warn"],
   } : s;
 }
-// one state as a chip with its count, and the servers' names in a bubble (24 of them, then "and N more")
 function NamesChip({ txt, tip, tone, ids, extra }) {
   return html`<${Popover} cls="lv-stw" popCls="lv-stpop" trigger=${html`<span class=${"lv-st t-" + tone}>${txt} <b>${fmtNum(ids.length)}</b></span>`}>
     <div class="lv-stpop-t">${tip}</div>
@@ -371,10 +337,8 @@ function StateChips() {
   return html`<div class="lv-states">${items.map(it => html`<${NamesChip} key=${it.key} txt=${it.txt} tip=${it.tip} tone=${it.tone} ids=${it.ids}
     extra=${it.key === "skew" ? id => " " + skewText((LV.states[id] || {}).off) : null}/>`)}</div>`;
 }
-// in the panel's units, in the operator's language (q189 SPA-14: "+3 min" stayed English on a Russian panel)
 const skewText = s => !s ? "" : (s > 0 ? "+" : "−") + (Math.abs(s) >= 120 ? T("{v1} min", { v1: Math.round(Math.abs(s) / 60) }) : T("{v1} s", { v1: Math.abs(s) }));
 
-// ── the stream ────────────────────────────────────────────────────────────────────────────────────────────────────
 const pad = (n, w = 2) => String(n).padStart(w, "0");
 const tzLabel = () => { const m = -new Date().getTimezoneOffset(); return "UTC" + (m >= 0 ? "+" : "−") + pad(Math.floor(Math.abs(m) / 60)) + ":" + pad(Math.abs(m) % 60); };
 const hms = k => { const d = new Date(k / 1000); return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()) + "." + pad(d.getMilliseconds(), 3); };
@@ -395,7 +359,6 @@ function Hi({ text, q }) {
   return out;
 }
 
-// a line's source as the stream shows it: a mesh link by the node at its other end, not by its generated name
 let _shown = { d: null, m: new Map() };
 let _vk = { c: null, m: new Map() };
 const vkShown = n => {
@@ -408,7 +371,7 @@ const vkShown = n => {
   return _vk.m.get(n); };
 const srcShown = l => { if (l.src.startsWith("turn:")) return "turn:" + vkShown(l.src.slice(5));
   if (!l.src.startsWith("mesh:")) return l.src;
-  if (_shown.d !== Store.describe) _shown = { d: Store.describe, m: new Map() };      // once per link per poll
+  if (_shown.d !== Store.describe) _shown = { d: Store.describe, m: new Map() };
   const k = l.nid + "|" + l.src;
   if (!_shown.m.has(k)) { const peer = (Store.ifaceMeta(l.nid, l.src.slice(5)) || {}).link_node;
     _shown.m.set(k, peer ? "↔ " + (Store.nodeName(peer) || peer) : l.src); }
@@ -420,7 +383,7 @@ function Row({ l, q }) {
     <span class="lv-markt">${l.src === "!skip" ? T("{v1} lines skipped — narrow the sources or raise the filter", { v1: fmtNum(Number(l.text)) })
       : T("Resumed — some lines before this may be missing")}</span>
   </div>`;
-  const lv = lvOf(l.prio);                            // its colour by the journalctl name; its label in the operator's language
+  const lv = lvOf(l.prio);
   return html`<div class=${"lv-row lv-" + lv}>
     <span class="lv-t" title=${ymd(l.k)}>${hms(l.k)}</span>
     <span class="lv-chip" style=${"--lvc:" + chipOf(l.nid)}>${nodeName(l.nid)}</span>
@@ -460,7 +423,6 @@ function Stream({ lines, follow, onUserScroll }) {
   const blocks = [];
   for (let i = first; i >= 0 && i <= last; i++) blocks.push(html`<div class="lv-blk" data-i=${i} key=${i}>
     ${lines.slice(i * BLOCK, (i + 1) * BLOCK).map(l => html`<${Row} key=${l.id} l=${l} q=${q}/>`)}</div>`);
-  // one column width for every row (each row is its own grid): the longest server name and source shown, in characters
   let cw = 4, sw = 4;
   for (const l of lines) { const n = srcShown(l).length; if (n > sw) sw = n; }
   for (const id of nodesOf()) { const n = nodeName(id).length; if (n > cw) cw = n; }
@@ -493,7 +455,7 @@ const dtShow = sec => { const d = new Date(sec * 1000); return d.toLocaleString(
 const levelsOn = () => LEVELS.filter(k => LV.levels[k]);
 
 function rangeOpen() {
-  if (RG.id) return;                                  // a download in progress keeps its panel until it is closed
+  if (RG.id) return;
   if (!RG.from) { const now = Date.now(); RG.from = dtLocal(now - 3600e3); RG.to = dtLocal(now); }
   RG.open = true; RG.err = ""; bump();
 }
@@ -529,9 +491,7 @@ async function rangePoll() {
   } catch (_) { RG.err = "error"; }
   const ph = RG.v && RG.v.phase;
   if (ph === "ready" && !RG.saved) { RG.saved = true; rangeSave(); }
-  // polled while reading even in a hidden tab: a long read is what one leaves a tab for, and the panel drops a request
-  // nobody polls for two minutes
-  if (RG.id && ph !== "ready" && ph !== "failed") RG.timer = setTimeout(rangePoll, 1500);   // i18n-keys: the panel's phase ids
+  if (RG.id && ph !== "ready" && ph !== "failed") RG.timer = setTimeout(rangePoll, 1500);
   bump();
 }
 function rangeSave() {
@@ -549,15 +509,14 @@ function rangeMakeNow() {
   if (RG.id) api.post("/api/logs/range/make", { id: RG.id }).then(() => rangePoll()).catch(() => {});
 }
 
-// one server's state as the progress bar files it, and how each reads
-const RCAT = { done: "done", reading: "reading", sending: "reading", waiting: "waiting", failed: "failed", timeout: "failed",   // i18n-keys: state ids
+const RCAT = { done: "done", reading: "reading", sending: "reading", waiting: "waiting", failed: "failed", timeout: "failed",
                offline: "offline", old: "old", noanswer: "noanswer", skipped: "skipped" };
-const RORDER = ["done", "reading", "waiting", "skipped", "noanswer", "old", "offline", "failed"];   // i18n-keys: state ids
+const RORDER = ["done", "reading", "waiting", "skipped", "noanswer", "old", "offline", "failed"];
 function rangeGroups(v) {
   const cat = {}, extra = {};
   const add = (o, k, id) => (o[k] = o[k] || []).push(id);
   for (const [id, ns] of Object.entries(v.nodes || {})) {
-    add(cat, RCAT[ns.state] || "waiting", id);   // i18n-keys: a state id
+    add(cat, RCAT[ns.state] || "waiting", id);
     if (ns.cut) add(extra, "cut", id);
     const st = Object.values(ns.st || {});
     if (st.includes("off")) add(extra, "off", id);
@@ -603,12 +562,12 @@ function RangePanel() {
     </div>`;
   }
   const g = v ? rangeGroups(v) : { cat: {}, extra: {} }, say = stateSay(true);
-  const total = v ? Object.keys(v.nodes || {}).length : ids.length, done = Object.entries(g.cat).filter(([k]) => k !== "reading" && k !== "waiting").reduce((a, [, l]) => a + l.length, 0);   // i18n-keys: state ids
+  const total = v ? Object.keys(v.nodes || {}).length : ids.length, done = Object.entries(g.cat).filter(([k]) => k !== "reading" && k !== "waiting").reduce((a, [, l]) => a + l.length, 0);
   const ph = v ? v.phase : "reading";
   const head = ph === "ready" ? T("Ready: {v1} lines, {v2}.", { v1: fmtNum(v.lines), v2: fmtBytes(v.raw) })
     : ph === "failed" ? T("The file could not be made: {v1}", { v1: v.err || "?" })
     : ph === "making" ? T("Making the file…")
-    : T("Reading {v1}: waiting on {v2} of {v3}.", { v1: v ? dtShow(v.since) + " – " + dtShow(v.until) : "…", v2: fmtNum(total - done), v3: plural(total, "gen|server") });   // «из 1 сервера» (q189 SPA-15)
+    : T("Reading {v1}: waiting on {v2} of {v3}.", { v1: v ? dtShow(v.since) + " – " + dtShow(v.until) : "…", v2: fmtNum(total - done), v3: plural(total, "gen|server") });
   const partial = ph === "ready" && (Object.keys(g.cat).some(k => k !== "done") || g.extra.cut);
   return html`<div class="lv-pick lv-rng" role="group" aria-label=${T("Download a time range")}>
     <div class="lv-rng-row"><span class=${"lv-rng-head" + (ph === "failed" ? " bad" : "")} aria-live="polite">${head}</span><span class="grow"></span>
@@ -631,22 +590,18 @@ function RangePanel() {
 }
 
 let _back = null;
-// card: opened from the Settings card's icon — Exit only leaves full screen (the card streams on); else Exit stops it
 const showOverlay = card => { if (!LV.overlay) _back = document.activeElement; LV.overlay = LV.live = true; LV.card = card; bump(); };
 export const openLogOverlay = () => showOverlay(false);
-// …and that Stop stops even with the Settings card open underneath, which keeps a viewer mounted — so it cannot wait for the
-// last unmount (q189 SPA-1: the card streamed on, polling every 1.5 s, after the operator pressed Stop)
 const closeLogOverlay = () => { if (!LV.card) { closeReq(); LV.live = false; }
-  LV.overlay = false; if (_own) { Object.assign(LV, _own); _own = null; LV.gen++; }   // a deep link's choice goes with it
+  LV.overlay = false; if (_own) { Object.assign(LV, _own); _own = null; LV.gen++; }
   bump(); const b = _back; _back = null;
-  setTimeout(() => { const el = b && b.isConnected ? b : document.querySelector(".lv-fs"); if (el) el.focus(); }, 0); };   // the card's icon is drawn anew
+  setTimeout(() => { const el = b && b.isConnected ? b : document.querySelector(".lv-fs"); if (el) el.focus(); }, 0); };
 export function LogOverlay() {
   const [, setV] = useState(0);
   useEffect(() => { _subs.add(setV); return () => { _subs.delete(setV); }; }, []);
   return LV.overlay ? html`<${LogViewer} overlay/>` : null;
 }
 
-// ── the viewer ────────────────────────────────────────────────────────────────────────────────────────────────────
 export function LogViewer({ overlay } = {}) {
   useStore();
   const [, setV] = useState(0);
@@ -660,15 +615,12 @@ export function LogViewer({ overlay } = {}) {
   const card = useRef(null);
   useEffect(() => {
     if (!overlay) return;
-    const k = e => { if (e.key === "Escape" && !e.defaultPrevented) closeLogOverlay(); };   // a dropdown's Escape is its own
-    // the page under it is out of reach: focus that lands there (Tab, a click through) comes back to the viewer — but a
-    // sheet or confirm opened over it (a vault unlock, say), a dropdown's list or a bubble keeps it
+    const k = e => { if (e.key === "Escape" && !e.defaultPrevented) closeLogOverlay(); };
     const f = e => { if (!e.target.closest || e.target.closest(".lv-full,.overlay,.ddpop,.deppop,.qr-overlay,.toasts")) return;
       const x = card.current && card.current.querySelector(".lv-x"); if (x) x.focus(); };
     document.addEventListener("keydown", k); document.addEventListener("focusin", f);
     return () => { document.removeEventListener("keydown", k); document.removeEventListener("focusin", f); };
   }, []);
-  // the Settings card while the header's overlay is up: one viewer on screen, the card says where it is
   if (!overlay && LV.overlay) return html`<div class="card lv lv-ph"><div class="lv-empty">${T("Shown full screen — Esc returns it here.")}</div></div>`;
   const lines = shownLines();
   const counts = { err: 0, warn: 0, info: 0, debug: 0 };
@@ -678,7 +630,6 @@ export function LogViewer({ overlay } = {}) {
   const paused = !!LV.frozen;
   const pause = () => { if (!LV.frozen) { LV.frozen = LV.lines.slice(); LV.missed = 0; bump(); } };
   const resume = () => { LV.frozen = null; LV.missed = 0; bump(); };
-  // the head says what the stream is doing, in a word: live, held, or why not
   const live = !ids.length || !srcs.length || srcs.length > SRC_MAX || !LV.live ? null : paused ? ["held", T("Paused")] : LV.err ? ["err", T("Not connected")]
     : LV.req ? ["on", T("Live")] : ["wait", T("Connecting…")];
   const empty = !ids.length || !srcs.length ? T("Pick at least one server and one source.")
@@ -687,7 +638,7 @@ export function LogViewer({ overlay } = {}) {
     : LV.err === "busy" ? T("Four log viewers are open already. Close one, or wait a few seconds for a closed tab's to lapse.")
     : LV.err === "refused" ? T("None of the chosen servers can be watched. Pick again.")
     : !LV.req ? T("Connecting…")
-    : !(LV.frozen || LV.lines).length ? (off ? T("Logging is off, so nothing is stored to read.") : T("Waiting for lines…"))   // Off: the system journal's (interfaces, kernel) still come
+    : !(LV.frozen || LV.lines).length ? (off ? T("Logging is off, so nothing is stored to read.") : T("Waiting for lines…"))
     : !lines.length ? T("Nothing matches the filter.") : "";
   const view = html`<div class=${"card lv" + (overlay ? " lv-full" : "")} ref=${card} role=${overlay ? "dialog" : null} aria-modal=${overlay ? "true" : null} aria-label=${T("Live logs")}>
     <div class="lv-head">
@@ -717,7 +668,7 @@ export function LogViewer({ overlay } = {}) {
       <button class=${"btn btn-mini ico" + (LV.wrap ? " on" : "")} aria-pressed=${LV.wrap} title=${T("Wrap long lines")} aria-label=${T("Wrap long lines")}
         onClick=${() => { LV.wrap = !LV.wrap; remember(); bump(); }}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h13a3 3 0 0 1 0 6h-4m2-2-2 2 2 2M4 18h5"/></svg></button>
       <button class="btn btn-mini ico" title=${T("Clear the list")} aria-label=${T("Clear the list")}
-        onClick=${() => { for (const l of LV.lines) if (l.src[0] !== "!" && !(l.k <= (LV.floor[l.nid] || -Infinity))) LV.floor[l.nid] = l.k;   // q189 SPA-5
+        onClick=${() => { for (const l of LV.lines) if (l.src[0] !== "!" && !(l.k <= (LV.floor[l.nid] || -Infinity))) LV.floor[l.nid] = l.k;
           LV.lines = []; LV.frozen = LV.frozen ? [] : null; LV.missed = 0; bump(); }}><${Ic} i="trash"/></button>
       <${MenuButton} icon="download" title=${T("Download")} items=${[
         { key: "shown", label: T("The lines shown"), hint: T("{v1} lines, as a text file — at once; keys and tokens are not masked", { v1: fmtNum(lines.length) }), disabled: !lines.length, onClick: () => download(lines) },

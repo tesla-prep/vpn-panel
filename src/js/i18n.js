@@ -1,15 +1,11 @@
 import { h } from "preact";
 
 const LOCALES = {
-  // A literal map, deliberately: the panel stamps cache keys onto import specifiers with a static regex,
-  // and `import("./lang/" + code + ".js")` cannot be rewritten — it would ship unversioned and go stale.
   ru: () => import("./lang/ru.js"),
 };
 
 export const LANGS = [["en", "English", "EN"], ["ru", "Русский", "РУ"]];
 
-/* The language a click on the switch would take you to. With two languages that is simply the other one;
-   with three it walks the list, which is what the button already did. */
 export function nextLang() {
   const codes = LANGS.map(([c]) => c);
   return codes[(codes.indexOf(LANG) + 1) % codes.length];
@@ -20,22 +16,20 @@ function pick() {
   try {
     const saved = localStorage.getItem(STORE_KEY);
     if (saved && (saved === "en" || LOCALES[saved])) return saved;
-  } catch (_) { /* private mode */ }
+  } catch (_) {   }
   try {
     const nav = (navigator.language || "").slice(0, 2).toLowerCase();
     if (LOCALES[nav]) return nav;
-  } catch (_) { /* no navigator */ }
+  } catch (_) {   }
   return "en";
 }
 
 let LANG = pick();
-let STR = {};          // English text -> translation
-let PLURALS = {};      // English singular noun -> that language's forms
+let STR = {};
+let PLURALS = {};
 
 export const lang = () => LANG;
 
-/* Load the active language's catalog. Awaited once at boot, BEFORE the first render — T() is synchronous
-   everywhere else, and a late catalog would paint English and then flip. English needs no catalog. */
 export async function loadLang() {
   STR = {}; PLURALS = {};
   const get = LOCALES[LANG];
@@ -45,20 +39,20 @@ export async function loadLang() {
     STR = m.STR || {};
     PLURALS = m.PLURALS || {};
   } catch (e) {
-    console.error("i18n: could not load", LANG, e);   // fall through to English rather than a blank panel
+    console.error("i18n: could not load", LANG, e);
   }
 }
 
 export function setLang(code) {
-  try { localStorage.setItem(STORE_KEY, code); } catch (_) { /* ignore */ }
-  location.reload();   // simplest correct answer: every module read T() at render time
+  try { localStorage.setItem(STORE_KEY, code); } catch (_) {   }
+  location.reload();
 }
 
 const stripCtx = k => { const i = k.indexOf("|"); return i > 0 ? k.slice(i + 1) : k; };
 
 export function T(key, vars) {
   let out = STR[key];
-  if (out == null) out = stripCtx(key);          // untranslated -> the English text itself
+  if (out == null) out = stripCtx(key);
   if (vars) for (const k in vars) out = out.split("{" + k + "}").join(vars[k]);
   return out;
 }
@@ -95,8 +89,6 @@ export function Trich(key, vars) {
   return out;
 }
 
-/* Just the noun in the form `n` requires, without the number — for the layouts that style the count
-   separately ("12" in one span, "peers" in the next). Same table, same rules; only the number is dropped. */
 export function pluralWord(n, noun) {
   const out = plural(n, noun), sp = out.indexOf(" ");
   return sp < 0 ? out : out.slice(sp + 1);
@@ -114,7 +106,6 @@ export function srvVars(vars) {
   const out = {};
   for (const k in vars) {
     const v = vars[k];
-    // …and a PHRASE the panel nested as a sentence of its own (`perr("traffic cascaded in")`) is translated before it goes in
     out[k] = (v && typeof v === "object" && "error_key" in v) ? srvText(v)
       : (v && typeof v === "object" && "n" in v) ? plural(v.n, v.noun) : v;
   }
@@ -135,7 +126,6 @@ const LEGACY_DETAIL = {
   "Updated panel settings": [[/^(.+)$/, m => m[1].split(", ").map(x => T(x)).join(", ")]],
   "Updated user": [[/^([a-z_]+(?:, [a-z_]+)*)$/, m => m[1].split(", ").map(f => (USER_FIELDS[f] ? T(USER_FIELDS[f]) : f)).join(", ")]],
 };
-// …and the reclaimed-server rows, whose verb carried the family (see LEGACY_VERB)
 const RECLAIMED = [[/^(\d+) user\(s\) kept$/, m => T("{count} kept", { count: plural(+m[1], "user") })],
                    [/^no users in its store$/, () => T("no users in its store")]];
 for (const v of ["Reclaimed a WDTT server", "Reclaimed a csqtt server", "Reclaimed a wdtt server"]) LEGACY_DETAIL[v] = RECLAIMED;
@@ -143,9 +133,7 @@ for (const v of ["Reclaimed a WDTT server", "Reclaimed a csqtt server", "Reclaim
 export function srvName(e) {
   const n = (e && e.name) || "";
   if (e && e.verb === "Update requested" && n === "with the panel") return T("with the panel");
-  // A peer with no title and no owner is logged under this stand-in (peer_label), not under a name of its own.
   if (e && e.kind === "peer" && n === "unassigned peer") return T("unassigned peer");
-  // the settings sections a Save touched: the SPA's own labels, written in English (OE, 1.8.9: «Subscriptions» on a Russian screen)
   if (e && e.verb === "Updated panel settings") return n.split(", ").map(x => T(x)).join(", ");
   const m = e && e.verb === "Starting interface" && /^(.+) \(automatic, attempt (\d+) of (\d+)\)$/.exec(n);
   if (m) return `${m[1]} (${T("automatic, attempt {v1} of {v2}", { v1: m[2], v2: m[3] })})`;
@@ -167,15 +155,11 @@ const LEGACY_VERB = [
 ];
 export const srvVerb = v => {
   if (!v) return "";
-  // A verb whose English is also a BUTTON's: the catalog holds the button's imperative («Сбросить выученные IP»),
-  // and the log needs what happened — its own context key, for the rows already on disk too.
   if (v === "Reset learned IPs") return T("act|Reset learned IPs");
   if (STR[v] == null) for (const [re, f] of LEGACY_VERB) { const m = re.exec(v); if (m) return f(m); }
   return T(v);
 };
 
-// English has no catalog, so its plurals are DERIVED — right for regular nouns, wrong for the few that are not.
-// "Reaches the devices of 2 persons" reached a user's row before anyone noticed: the word is "people".
 const EN_IRREGULAR = { person: "people", child: "children", man: "men", woman: "women" };
 function enPlural(w) {
   const at = w.lastIndexOf(" ") + 1, head = w.slice(at);
@@ -198,7 +182,5 @@ export function plural(n, noun) {
   return n + " " + (n === 1 ? forms[0] : forms[1]);
 }
 
-/* Dates and numbers follow the picker, not the browser: an operator who chose Russian in a panel opened
-   from an en-US machine should not get American dates. */
 export const locale = () => (LANG === "en" ? "en-GB" : LANG);
 export const fmtNum = n => { try { return Number(n).toLocaleString(locale()); } catch (_) { return String(n); } };

@@ -46,10 +46,10 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
     <tbody>
       ${rows.length ? rows.map(({ p, t }) => {
         const u = p.user_id ? Store.user(p.user_id) : null;
-        const hidden = p.targets.filter(d => !(shownByPeer[p.id] || new Set()).has(tkey(d.node, d.iface)));   // this peer's deployments not shown in the grid
-        const fresh = Store.recentlyCreated[p.id] && (Date.now() - Store.recentlyCreated[p.id] < 2500);   // just-created → one-shot glow
-        const re = rowError("peer:" + p.id);   // pinned action failure → shown on the status hover bubble, not inline
-        const gw = (p.routes || []).length ? gwTag(p, t) : null;   // beside the interface tag, wherever this layout puts it
+        const hidden = p.targets.filter(d => !(shownByPeer[p.id] || new Set()).has(tkey(d.node, d.iface)));
+        const fresh = Store.recentlyCreated[p.id] && (Date.now() - Store.recentlyCreated[p.id] < 2500);
+        const re = rowError("peer:" + p.id);
+        const gw = (p.routes || []).length ? gwTag(p, t) : null;
         return html`<tr key=${p.id + "|" + tkey(t.node, t.iface)} data-peer=${p.id} class=${"clk" + (fresh ? " pcreate" : "")} title=${T("Double-click for QR / configs")} onMouseDown=${rowNoSelect} onClick=${e => rowSingle(e, () => openPeerView(p.id, t.node, t.iface))} onDblClick=${e => rowDouble(e, () => openPeerConfigs(p))}>
           <td data-label=${T("col|Status")} class="c-status">${gridStatusBadge(t, p, re)}${loc ? gridIfaceTag(t) : null}${loc ? gw : null}</td>
           ${(() => {
@@ -57,11 +57,9 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
               const nm = p.title ? html`<b>${p.title}</b>` : html`<span class="faint">${T("Untitled")}</span>`;
               const priv = p.private ? html`<span class="tg tg-priv" title=${T("Only this user's own devices reach it and the networks behind it")}>${T("tag|private")}</span>` : null;
               const rtr = p.router ? html`<span class="tg tg-router" title=${T("Several devices share this address — the torrent guard never cuts it as a whole")}>${T("tag|router")}</span>` : null;
-              // No interface column in this layout, so the networks chip stays by the title too.
               const chip = !loc && !agg && gw ? gw : null;
               return priv || rtr || chip ? html`<span class="namewrap">${nm}${priv}${rtr}${chip}</span>` : nm;
             })()}</td>`;
-            // c-addr and the actions' data-lbl are what the phone's card layout reads (m/m.css); nothing styles them on a desktop
             const addrCell = html`<td data-label=${T("col|Address")} class="c-addr"><span class="addr">${t.ip || "—"}</span>${hidden.length ? html`<${DepBadge} others=${hidden}/>` : null}</td>`;
             const nodeCell = html`<td data-label=${T("col|Node")} class="c-node"><div class="srvcell"><span class="srv-name" style=${"color:" + (Store.nodeColor(t.node) || "var(--ink)")}>${Store.nodeName(t.node)}</span></div></td>`;
             const userCell = hideUser ? null : html`<td data-label=${T("col|User")} class=${"usercell" + (u ? " linked" : "")}
@@ -102,8 +100,6 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
     </tbody></table></div>`;
 }
 
-// The sortable header line above a users list — same grid columns as .urow-head so the titles (which the rows no
-// longer repeat inline) sit over their columns.
 export function UsersHeader({ sort, dir, onSort }) {
   const arrow = c => sort === c ? (dir < 0 ? "↓ " : "↑ ") : "";
   const th = (c, label, cls) => html`<span class=${"clk" + (cls ? " " + cls : "")} onClick=${() => onSort(c)}>${arrow(c)}${label}</span>`;
@@ -123,8 +119,6 @@ export function FilterSheet({ controls }) {
     <div class="mfilters">${(_fsCtl || controls)(() => redraw(x => x + 1))}</div>
   <//>`;
 }
-// …and the list's ORDER there too: a phone draws no column headers to click (operator, 2026-10-29). `view[sk]` / `view[dk]` are
-// the same sort and direction the headers set on a desktop; `cols` = [[key, label]].
 export function sortField(view, sk, dk, cols, defdir, reset) {
   return html`<div class="msort"><span class="msort-l">${T("Sort by")}</span>
     <${Dropdown} className="selwrap" ariaLabel=${T("Sort by")} value=${view[sk]} options=${cols.map(([value, label]) => ({ value, label }))}
@@ -153,8 +147,6 @@ export function EmbeddedPeers({ peers, view, onNew, newLabel, hideUser, hideTool
   const multiServer = nodes.length > 1;
   if (view.node && view.node !== "*" && !nodeSet.has(view.node)) view.node = "";
   if (!view.node) view.node = multiServer ? "*" : (nodes[0] || "*");
-  // with no toolbar (a user's expanded grid) there's no way to change the filter, so always show ALL the
-  // set's peers — never let a stale single-server view hide peers on another node.
   const node = hideToolbar ? "*" : view.node;
   const ifaceOpts = node === "*"
     ? [...new Set(Object.values(ifByNode).flatMap(s => [...s]))].sort()
@@ -169,15 +161,14 @@ export function EmbeddedPeers({ peers, view, onNew, newLabel, hideUser, hideTool
   let rows = [];
   const shownByPeer = {};
   if (collapse) {
-    // one row PER PEER (a representative deployment); the peer's other interfaces surface as a +N badge
     for (const p of peers) {
       let ts = p.targets.filter(t => (node === "*" || t.node === node) && ifaceMatch(t.iface, iface, t));
-      if (onlineOnly) ts = ts.filter(t => t.online);   // Online filter → only the peer's online deployments
+      if (onlineOnly) ts = ts.filter(t => t.online);
       if (!ts.length) continue;
       if (!searchMatch((p.title || "") + " " + (p.name || "") + " " + p.targets.map(t => (t.ip || "") + " " + Store.nodeName(t.node) + " " + t.iface).join(" "), q)) continue;
-      const rep = ts.slice().sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0))[0];   // prefer an online deployment
-      rows.push({ p, t: rep, o: owner });   // `o`: PEER_SORT.rtotal reads what the device carried while it was the owner's
-      shownByPeer[p.id] = new Set([tkey(rep.node, rep.iface)]);   // only the rep is "shown" → the rest become +N
+      const rep = ts.slice().sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0))[0];
+      rows.push({ p, t: rep, o: owner });
+      shownByPeer[p.id] = new Set([tkey(rep.node, rep.iface)]);
     }
   } else {
     for (const p of peers) for (const t of p.targets) {
@@ -190,7 +181,6 @@ export function EmbeddedPeers({ peers, view, onNew, newLabel, hideUser, hideTool
     for (const { p, t } of rows) (shownByPeer[p.id] = shownByPeer[p.id] || new Set()).add(tkey(t.node, t.iface));
   }
   if (!view.sort) { view.sort = "status"; view.dir = -1; }
-  // freeze the order so an edit/rotate (a status change) doesn't make the row jump out of view
   rows = sortPeerRows(rows, view.sort, view.dir, freezeKey ? freezeKey + "|" + node + "|" + iface : null);
 
   const pageSize = view.pageSize || 20;
@@ -208,7 +198,6 @@ export function EmbeddedPeers({ peers, view, onNew, newLabel, hideUser, hideTool
       ${ifaceOpts.length > 1 ? html`<${Dropdown} className="selwrap" ariaLabel=${T("All interfaces")} value=${iface}
         onChange=${v => { view.iface = v; view.page = 1; bump(); if (r) r(); }}
         options=${[{ value: "*", label: T("All interfaces") }, ...ifaceOptGroups(ifaceOpts)]}/>` : null}`;
-        // a phone: the search, and the filters (and the order) behind the Filters button, as on every list there
         return isMobile() ? filterBtn(node !== (multiServer ? "*" : (nodes[0] || "*")) || iface !== ifaceDefault(), r => html`${dd(r)}${sortField(view, "sort", "dir", PEER_SORT(), PEER_DEFDIR, () => { view.page = 1; bump(); r(); })}`, view) : dd(); })()}
       ${onNew ? html`<span class="grow"></span><button class="btn btn-primary btn-mini" onClick=${onNew}><${Ic} i="plus"/> ${newLabel || T("New peer")}</button>` : null}
     </div>`}
@@ -232,10 +221,8 @@ export function NodesRailPanel({ nav, active }) {
       const down = Store.recon.nodeStatus[n.id] !== "live";
       const on = nav ? (n.id === active) : dashNodeOn(n.id);
       const cls = "railmenu-b node" + (on ? " on" : (nav ? "" : " off")) + (down ? " down" : "");
-      const styl = "--c:" + Store.nodeColor(n.id);   // on the button so BOTH the dot glow and the selected name can use the node colour
+      const styl = "--c:" + Store.nodeColor(n.id);
       const inner = html`<span class="railmenu-ic"><span class="railnode-dot"></span></span><span class="railmenu-t">${n.name}</span>`;
-      // The node NAME is interpolated, not concatenated: "Hide msk-1" and "Скрыть msk-1" put it in the
-      // same place, but the two prefixes are not interchangeable words — a language may need a case ending.
       const notRep = down ? " · " + T("not reporting") : "";
       if (!nav)
         return html`<button key=${n.id} class=${cls} style=${styl} onClick=${() => dashToggleNode(n.id)} title=${(on ? T("Hide {v1}", { v1: n.name }) : T("Show {v1}", { v1: n.name })) + notRep}>${inner}</button>`;
@@ -247,9 +234,7 @@ export function NodesRailPanel({ nav, active }) {
 }
 
 export function NodeRail({ active }) {
-  if ((Store.nodes || []).length < 2 || isMobile()) return null;   // a phone has no room for a rail: the Nodes tab is the way (MOBILE-PLAN hook 4)
-  // Render at <body> (Portal) so the fixed rail escapes the .screen "rise" transform — otherwise a fixed child of a
-  // transformed ancestor is positioned relative to THAT ancestor and rides the 0.32s enter animation into place.
+  if ((Store.nodes || []).length < 2 || isMobile()) return null;
   return html`<${Portal}><div class="dashrail noderail"><div class="dashrail-stack">
     <${NodesRailPanel} nav=${true} active=${active}/>
   </div></div><//>`;

@@ -1,22 +1,4 @@
 #!/usr/bin/env python3
-"""swg-relay — a TPROXY TCP-terminating relay. ONE event loop, no thread per connection.
-
-⚠️ THE PROTOTYPE THIS REPLACES USED 2 OS THREADS PER CONNECTION and died under a single speedtest with
-"RuntimeError: can't start new thread". On the same box, rw-core carried 1,668 connections on 14 threads.
-Thread-per-connection is not a tuning problem, it is the wrong shape: one selector loop multiplexes
-everything, and splice keeps the payload out of userspace entirely.
-
-⚠️ A DIVERT THAT MATCHES BUT IS NOT SERVED IS A BLACKHOLE. tproxy removes the packet from the forwarding
-path; if this process is not accepting, the traffic is simply gone. Anything that arms a divert must prove
-`accepted` rises before it walks away. (Conversely: with NO listener, tproxy passes packets through
-untouched — so a "successful" test against a dead relay is indistinguishable from a working one.)
-
-⚠️ EVERY TUNABLE HERE IS SILENTLY OVERRIDABLE BY THE KERNEL, so each one is read back and reported rather
-than assumed. F_SETPIPE_SZ returns the size it actually granted (rounded, capped by fs.pipe-max-size, and
-refused outright once fs.pipe-user-pages-soft is exhausted); TCP_CONGESTION silently keeps the system
-default if the module is absent. A build that only catches OSError cannot tell a working tunable from an
-ignored one — which is exactly how the pipe fix went two rounds without ever being validly tested.
-"""
 import argparse, array, contextlib, errno, fcntl, json, os, resource, selectors, socket, stat, struct, sys, time
 
 LOG_OFF, LOG_ERR, LOG_WARNING, LOG_NOTICE, LOG_INFO, LOG_DEBUG = -1, 3, 4, 5, 6, 7
@@ -35,7 +17,6 @@ def log_reread():
 
 
 def _log_to_journal():
-    """True when stderr IS the journal stream (JOURNAL_STREAM names its device:inode), not merely inherited."""
     try:
         dev, ino = (int(x) for x in os.environ.get("JOURNAL_STREAM", "").split(":"))
         st = os.fstat(sys.stderr.fileno())
@@ -61,7 +42,6 @@ def log(prio, msg, *args):
 
 
 def _log_excepthook(et, ev, tb):
-    """A crash's traceback at `err`: printed bare it is filed as info, which a LogLevelMax below Info drops."""
     if et is None or issubclass(et, SystemExit):
         return
     import traceback
@@ -74,8 +54,6 @@ IP_TRANSPARENT, SO_MARK, TCP_CONGESTION, TCP_MAXSEG = 19, 36, 13, 2
 F_SETPIPE_SZ, F_GETPIPE_SZ = 1031, 1032
 SPLICE_MOVE, SPLICE_NONBLOCK = 1, 2
 CHUNK = 1 << 16
-# Cap inflight per direction so one fat flow cannot hog memory. NOT a throughput knob — measured flat from
-# 64 KiB to 4 MiB (see Dir.__init__). Pick it against the connection cap and the pipe-page budget instead.
 PIPE_CAP = 1 << 20
 
 ST = {"accepted": 0, "connected": 0, "failed": 0, "closed": 0, "up": 0, "down": 0, "live": 0, "peak": 0,
@@ -87,13 +65,6 @@ IFREQ_SZ = 32 if struct.calcsize("P") == 4 else 40
 
 
 def local_addrs():
-    """Every IPv4 address configured on this host, read straight from the kernel — or None if it could not
-    be read, which is a different answer from "this host has no addresses" and must stay different.
-
-    ⚠️ NO SUBPROCESS AND NO DEPENDENCY. This is consulted on the accept path, so shelling out to `ip` was
-    not an option; SIOCGIFCONF is the stdlib way and `fcntl` is already imported for the pipe sizing.
-    Addresses change under a running relay (an interface comes up, a mesh leg is rebuilt), so the caller
-    re-reads on a timer rather than caching this for the life of the process."""
     out, n = set(), 64
     while True:
         buf = array.array("B", b"\x00" * (n * IFREQ_SZ))
@@ -101,16 +72,14 @@ def local_addrs():
             raw = fcntl.ioctl(_IOCTL_SOCK.fileno(), SIOCGIFCONF,
                               struct.pack("iL", len(buf), buf.buffer_info()[0]))
         except OSError:
-            return None                      # NOT an empty set — see is_local_addr
+            return None
         size = struct.unpack("iL", raw)[0]
-        if size >= len(buf):                 # the list was truncated — ask for room and read it again
+        if size >= len(buf):
             n *= 2
             continue
         b = buf.tobytes()
         for i in range(0, size, IFREQ_SZ):
             out.add(socket.inet_ntoa(b[i + 20:i + 24]))
-        # A host with a loopback and nothing else is possible; a host with NOTHING is not, and a wrong
-        # stride reads as exactly that. Treat an empty result as a failed read rather than as the truth.
         return out or None
 
 
@@ -119,27 +88,19 @@ _LOCAL = {"at": 0.0, "set": frozenset()}
 
 
 def is_local_addr(ip, ttl=30.0):
-    """Is `ip` an address of this host? Cached for `ttl` so the accept path stays cheap.
-
-    ⚠️ FAILS CLOSED, AND DOES NOT CACHE A FAILURE. Both halves matter. If the address list cannot be read
-    we answer "yes, local", which costs at most a refused connection to a REMOTE host that happens to use
-    our port — against the alternative, which is the unbounded self-dial loop this guard exists to stop.
-    And the clock is only stamped on a successful read, so a transient failure is retried on the next
-    connection instead of disabling the guard for a whole TTL."""
     now = time.time()
     if now - _LOCAL["at"] > ttl:
         got = local_addrs()
         if got is None:
             if _LOCAL["set"]:
-                return ip in _LOCAL["set"]   # cache time untouched, so the next call retries the read
-            return True                      # nothing ever read => treat as ours => refuse
+                return ip in _LOCAL["set"]
+            return True
         _LOCAL["set"] = frozenset(got) | {"127.0.0.1", "0.0.0.0"}
         _LOCAL["at"] = now
     return ip in _LOCAL["set"]
 
 
 class Dir:
-    """One direction of one connection: src -> pipe -> dst."""
     __slots__ = ("src", "dst", "r", "w", "cap", "inflight", "src_eof", "done", "label")
 
     def __init__(self, src, dst, label, want_cap):
@@ -150,7 +111,7 @@ class Dir:
         try:
             granted = fcntl.fcntl(self.w, F_SETPIPE_SZ, want_cap)
         except OSError:
-            pass                                     # over pipe-max-size / out of budget: keep the default
+            pass
         if granted <= 0:
             try: granted = fcntl.fcntl(self.w, F_GETPIPE_SZ)
             except OSError: granted = 65536
@@ -186,7 +147,6 @@ class Relay:
         self.mss = mss
         self.conns = {}
 
-    # ── plumbing ──
     def _want(self, sock, events, conn):
         try:
             self.sel.modify(sock, events, conn)
@@ -195,7 +155,6 @@ class Relay:
                 self.sel.register(sock, events, conn)
 
     def _events(self, c):
-        """Recompute interest for both sockets from the two directions' state."""
         cli = up = 0
         for d in (c.a, c.b):
             if d is None or d.done:
@@ -211,7 +170,6 @@ class Relay:
         if not cli and not up:
             self.reap(c)
 
-    # ── data movement ──
     def _pump(self, d, c):
         moved = 0
         while not d.src_eof and d.inflight < d.cap:
@@ -237,7 +195,7 @@ class Relay:
             ST["up" if d.label == "up" else "down"] += n
         if d.src_eof and not d.inflight and not d.done:
             d.done = True
-            try: d.dst.shutdown(socket.SHUT_WR)      # half-close, not a full close: the other way may still flow
+            try: d.dst.shutdown(socket.SHUT_WR)
             except OSError: pass
         return moved
 
@@ -255,7 +213,6 @@ class Relay:
         self.conns.pop(id(c), None)
         ST["closed"] += 1; ST["live"] -= 1
 
-    # ── lifecycle ──
     def start(self, cli, dst):
         ST["accepted"] += 1
         up = None
@@ -278,9 +235,9 @@ class Relay:
                 up.setsockopt(socket.SOL_SOCKET, SO_MARK, self.mark)
             if self.cc:
                 try: up.setsockopt(socket.IPPROTO_TCP, TCP_CONGESTION, self.cc.encode())
-                except OSError: pass          # kernel without that CC: carry on rather than drop the connection
+                except OSError: pass
             if not ST.get("cc_seen"):
-                ST["cc_seen"] = sock_cc(up) or "?"    # what the kernel ACTUALLY gave the first upstream
+                ST["cc_seen"] = sock_cc(up) or "?"
             try:
                 up.connect(dst)
             except BlockingIOError:
@@ -308,7 +265,7 @@ class Relay:
                 ST["failed"] += 1; self.reap(c); return
             c.connecting = False
             ST["connected"] += 1
-            c.a = Dir(c.cli, c.up, "up", self.pipe_cap)   # os.pipe() here can EMFILE; on_ready's guard reaps
+            c.a = Dir(c.cli, c.up, "up", self.pipe_cap)
             c.b = Dir(c.up, c.cli, "down", self.pipe_cap)
             self._events(c); return
         for d in (c.a, c.b):
@@ -321,7 +278,6 @@ class Relay:
 
 
 def sock_cc(s):
-    """The congestion control the kernel actually chose for this socket, not the one we asked for."""
     try:
         return s.getsockopt(socket.IPPROTO_TCP, TCP_CONGESTION, 16).split(b"\0")[0].decode() or None
     except OSError:
@@ -336,17 +292,13 @@ def _read(path):
 
 
 def probe(want_cap, cc):
-    """Report what the kernel will actually grant, BEFORE any measurement is taken.
-
-    ⚠️ Without this the whole tuning exercise is unreadable: a pipe that came back at the 64 KB default and
-    a CC request that was silently ignored both look exactly like success."""
     r, w = os.pipe()
     try:
         try:
             fcntl.fcntl(w, F_SETPIPE_SZ, want_cap)
         except OSError as e:
             log(LOG_WARNING, "relay: F_SETPIPE_SZ refused: %s", e)
-        granted = fcntl.fcntl(w, F_GETPIPE_SZ)   # never trust the request: ask the pipe what it holds
+        granted = fcntl.fcntl(w, F_GETPIPE_SZ)
     finally:
         os.close(r); os.close(w)
 
@@ -379,20 +331,13 @@ def probe(want_cap, cc):
     return granted
 
 
-STATUS = object()        # selector sentinel: the status listener, distinct from the TPROXY listener (None)
+STATUS = object()
 
 
 def status_listener(path):
-    """A unix socket that answers one JSON line per connect, SERVED BY THE SAME EVENT LOOP as the traffic.
-
-    ⚠️ THIS IS THE WHOLE POINT OF PUTTING IT IN THE LOOP. A watchdog that only checks "is the process
-    alive" cannot tell a serving relay from a wedged one, and a divert in front of a wedged relay is a
-    blackhole exactly like a divert in front of a dead one. Because this accept is dispatched by the same
-    `select()`, a loop that has stopped turning stops answering, and `loops` in the reply rises only while
-    it really is turning — so the watchdog gets liveness evidence, not a liveness assertion."""
     with contextlib.suppress(OSError):
         if stat.S_ISSOCK(os.stat(path).st_mode):
-            os.unlink(path)                      # a stale socket from a killed run would make bind() fail
+            os.unlink(path)
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.bind(path)
     os.chmod(path, 0o600)
@@ -428,8 +373,8 @@ def main():
                          "Lets throughput be measured without arming a divert on a live interface.")
     ap.add_argument("--report", type=int, default=0)
     a = ap.parse_args()
-    if a.dst:                                    # TEST ONLY, run by hand: it prints all it measures (the probe, --report's
-        _LOG["level"] = LOG_DEBUG                # counters) whatever the node's level, as before levels (1.8.9 qual. HE-10)
+    if a.dst:
+        _LOG["level"] = LOG_DEBUG
     else:
         log_reread()
 
@@ -445,11 +390,7 @@ def main():
     try:
         srv.setsockopt(socket.SOL_IP, IP_TRANSPARENT, 1)
     except OSError as e:
-        # Needs CAP_NET_ADMIN. Fatal for a real divert, but --dst mode is a plain proxy and must stay
-        # runnable de-privileged — that is the only way to observe the fs.pipe-user-pages-soft cliff.
         log(LOG_ERR, "relay: IP_TRANSPARENT unavailable (%s) — TPROXY divert will NOT work", e)
-    # Six fds per connection against a 1024 default is ~170 connections. Ask for the hard limit, the same
-    # thing the panel does at startup, and report what we actually got rather than assuming it worked.
     try:
         _soft, _hard = resource.getrlimit(resource.RLIMIT_NOFILE)
         _want = min(_hard if _hard > 0 else 65536, 65536)
@@ -497,7 +438,7 @@ def main():
                     dst = fixed
                     if dst is None:
                         try:
-                            dst = cli.getsockname()      # with TPROXY this IS the original destination
+                            dst = cli.getsockname()
                         except OSError:
                             cli.close(); continue
                         if is_local_addr(dst[0]):
@@ -508,12 +449,12 @@ def main():
                 try:
                     R.on_ready(key.fileobj, mask, key.data)
                 except Exception:
-                    R.reap(key.data)                 # one bad connection must never stop the loop
+                    R.reap(key.data)
         if a.report and time.time() - last >= a.report:
             last = time.time()
             if not a.dst:
-                log_reread()                     # the level may have moved since the last report
-            if _LOG["level"] >= LOG_DEBUG:       # a counter dump every few minutes: Debug, and built only then
+                log_reread()
+            if _LOG["level"] >= LOG_DEBUG:
                 log(LOG_DEBUG, "relay: " + " ".join("%s=%s" % kv for kv in sorted(ST.items())))
 
 

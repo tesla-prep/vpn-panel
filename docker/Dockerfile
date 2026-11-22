@@ -11,11 +11,8 @@ COPY src/swg-panel-server src/app.css src/app.js src/index.html src/reconcile.js
 COPY src/swg-sub src/sub.html src/sub.js src/sub.css ./
 COPY src/swg-passwd /usr/local/bin/swg-passwd
 COPY src/vendor/ ./vendor/
-# m/ = the phone UI (docs/MOBILE-PLAN.md): m.css, the app manifest and its icons
 COPY src/m/ ./m/
-# js/ = the SPA's ES modules (docs/APP-JS-SPLIT-PLAN.md) — copied as a DIRECTORY, like vendor/, so adding a module never touches this loop
 COPY src/js/ ./js/
-# Проверяем наличие локальных модулей SPA в собранном образе.
 RUN python3 - ./js ./app.js <<'PYJS'
 import os, re, sys
 jsdir, entry = sys.argv[1], sys.argv[2]
@@ -28,7 +25,7 @@ for f in files:
     src = open(f, encoding="utf-8").read()
     for m in spec.finditer(src):
         target = m.group(1) or m.group(2)
-        if not target.startswith("."):          # preact / htm — resolved by the importmap, not on disk
+        if not target.startswith("."):
             continue
         edges += 1
         p = os.path.normpath(os.path.join(os.path.dirname(f), target))

@@ -3,12 +3,8 @@ import { panelNow } from "./util.js";
 
 export const trafficView = { range: "all", from: "", to: "" };
 const DAY_RANGES = ["all", "today", "7d", "30d", "month"];
-// The peer, user and group windows keep a window of their own: a graph over all time can hold years of columns, so they
-// open on Week and offer Day · Week · Month · Custom. Held for the page's life, like the grids' window.
 export const trafficModalView = { range: "7d", from: "", to: "" };
 
-// The panel's own today (YYYY-MM-DD) — days are counted in ITS zone (Settings → Display), not the browser's. A custom
-// window is capped here: a browser ahead of the panel's zone would otherwise ask for a day the panel has not reached.
 export function panelToday(nowMs) {
   const tz = (Store.panelSettings || {}).time_zone_now || {};
   const off = typeof tz.offset === "number" ? tz.offset : -new Date().getTimezoneOffset() * 60;
@@ -29,15 +25,12 @@ export function customWindow(from, to, today, min) {
   if (min && from < min) return { ok: false, why: "early" };
   return { ok: true, from, to: t };
 }
-// The first day a custom chart window can start on: the panel's today and the 32 days before it — what the coarsest ring
-// holds (swg-panel-server RANGE_CUSTOM_DAYS). The server refuses an earlier one; this keeps the picker from offering it.
 export const CHART_DAYS = 33;
 export function chartsFirstDay(today) {
   const d = new Date((today || panelToday()) + "T00:00:00Z");
   d.setUTCDate(d.getUTCDate() - (CHART_DAYS - 1));
   return d.toISOString().slice(0, 10);
 }
-// A window that ended before the panel's today never changes: fetched once, kept.
 export function trafficImmutable(v, today) {
   v = v || trafficView;
   return v.range === "custom" && !!v.from && !!v.to && v.to < (today || panelToday());
@@ -61,7 +54,7 @@ export function foldTotals(rows) {
     add(peer, r.id, r).owners++;
     if (uid) {
       add(user, uid, r).devices++;
-      add(slot, uid + "|" + r.id, r, { name: r.name || "", until: r.until || null });   // one row per (peer, owner)
+      add(slot, uid + "|" + r.id, r, { name: r.name || "", until: r.until || null });
       if (!byUser.has(uid)) byUser.set(uid, []);
       byUser.get(uid).push(r);
     } else add(free, r.id, r);
@@ -88,10 +81,9 @@ export function talkerGroups(d, inScope) {
   return out.filter(g => g.rx + g.tx > 0).sort((a, b) => (b.rx + b.tx) - (a.rx + a.tx));
 }
 
-// ── the totals cache ────────────────────────────────────────────────────────────────────────────────────────────
 const TTL_MS = 60000;
-const BUSY_MS = 3000;     // a 503 `busy` (the ledger's writer is in the way — a slow disk) is asked again after this, not a minute
-const _tot = new Map();   // query → { at, busy, data, off, err }
+const BUSY_MS = 3000;
+const _tot = new Map();
 let _gen = 0;
 
 function _fetchTotals(q, e) {
@@ -103,15 +95,14 @@ function _fetchTotals(q, e) {
         since: r.data.since, until: r.data.until, asked: r.data.asked || 0, gaps: r.data.gaps || {} };
       e.off = null; e.err = null;
     } else {
-      e.off = r && r.code === "ledger_off" ? r : null;   // the whole reply: srvText() translates its sentence
+      e.off = r && r.code === "ledger_off" ? r : null;
       e.err = e.off ? null : (r || { error: "error" });
-      if (r && r.code === "busy") e.at = Date.now() - TTL_MS + BUSY_MS;   // the history is being written: ask again soon
+      if (r && r.code === "busy") e.at = Date.now() - TTL_MS + BUSY_MS;
     }
     bus.emit();
   }).catch(err => { e.busy = false; e.at = Date.now(); e.err = String(err && err.message || err); bus.emit(); });
 }
 
-// The current window's totals, or null until they land. Safe to call on every render.
 export function trafficTotals(v, nowMs) {
   const q = trafficQuery(v);
   let e = _tot.get(q);
@@ -127,9 +118,8 @@ export function trafficFreezeTag(v) {
   return trafficQuery(v) + (e && e.data ? ":in" : ":wait");
 }
 
-// ── series (the peer and user graphs) ───────────────────────────────────────────────────────────────────────────
-const _ser = new Map();   // by|id|query → { at, busy, data, err }
-export function trafficSeries(by, id, v, keyExtra) {   // keyExtra: what else the answer depends on (a group's members)
+const _ser = new Map();
+export function trafficSeries(by, id, v, keyExtra) {
   const q = trafficQuery(v), k = by + "|" + id + "|" + q + (keyExtra ? "|" + keyExtra : "");
   let e = _ser.get(k);
   if (e && (e.busy || Date.now() - e.at <= TTL_MS || (e.data && trafficImmutable(v)))) return e;
@@ -147,8 +137,6 @@ export function trafficSeries(by, id, v, keyExtra) {   // keyExtra: what else th
 export function volumeColumns(points, since, until, max) {
   max = max || 120;
   const pts = points || [];
-  // A day point's step is 23 or 25 hours on a DST day: day points are days (86400), placed by their NEAREST day —
-  // taking the 23-hour step as the width, the columns drifted off midnight and two days fell into one.
   const byDay = !pts.length || pts.every(p => (p[1] || 86400) >= 82800);
   const step0 = byDay ? 86400 : Math.min(...pts.map(p => p[1] || 86400));
   const span = Math.max(1, (until || since + step0) - since);
@@ -162,7 +150,6 @@ export function volumeColumns(points, since, until, max) {
   return cols;
 }
 
-// ── usage (Settings → Display → Data) ───────────────────────────────────────────────────────────────────────────
 const _use = { at: 0, busy: false, data: null, err: null };
 export function statsUsage(force) {
   if (!_use.busy && (force || !_use.data || Date.now() - _use.at > TTL_MS)) {
@@ -175,5 +162,4 @@ export function statsUsage(force) {
   }
   return _use;
 }
-// After a settings save: the next read is fresh (a new window's totals, the sweep's effect on the read-out).
 export function trafficInvalidate() { _tot.clear(); _ser.clear(); _use.at = 0; }

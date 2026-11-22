@@ -1,5 +1,4 @@
 export const STR = {
-  // what a save could not keep (§5.4)
   "Saved — {v1} not kept: {v2}": "Сохранено. Пропущено ({v1}): {v2}",
   "{v1} couldn't be read": "{v1} — не удалось разобрать",
   "{v1} is no longer published by {v2}": "{v1} больше не публикуется источником {v2}",
@@ -7,7 +6,6 @@ export const STR = {
   "…and {v1} more": "…и ещё {v1}",
 
   "Networks behind this device": "Сети за этим устройством",
-  // NETWORKS P5 — who can reach a network behind a device
   "A date is the last day they can reach these networks; leave it empty for no end.": "Дата — последний день доступа к этим сетям; оставьте пустой, чтобы без срока.",
   "{name}: {devices} on a turn server whose build can't prove who is sending — they can't reach it.": "{name}: {devices} за turn-сервером, сборка которого не подтверждает отправителя, — доступа нет.",
   "{name}: {devices} not connected yet — they reach it once connected.": "{name}: {devices} — подключения ещё не было, доступ появится после него.",
@@ -25,7 +23,6 @@ export const STR = {
   "Networks": "Сети",
   "Networks · {n}": "Сети · {n}",
   "Networks · {name}": "Сети · {name}",
-  // NETWORKS §18 — the gaps a use-case walk found: what cuts a gateway off, old nodes, the device's own routing, home ranges
   "This device": "Это устройство",
   "{device} carries {nets} — everyone who reaches them through it loses access.": "{device} проводит {nets} — все, кто попадает туда через него, потеряют доступ.",
   "{device} carries {nets} — everyone who reaches them through it loses access until it's unblocked.": "{device} проводит {nets} — все, кто попадает туда через него, потеряют доступ до разблокировки.",
@@ -35,23 +32,18 @@ export const STR = {
     "Через устройства этого пользователя проходят сети ({devices}) — все, кто попадает в них через эти устройства, потеряют доступ до разблокировки пользователя.",
   "{device} stops carrying {nets} on {where} — everyone who reaches them there loses access.": "{device} перестанет проводить {nets} на {where} — все, кто попадал туда там, потеряют доступ.",
   "{device} carries {nets}. On a node you add, they're carried there too — for the same people as now.": "{device} проводит {nets}. На добавленной ноде они тоже будут проводиться — для тех же людей, что и сейчас.",
-  // budget-ok: notice, wraps
   "{device} carries {nets}. On a node you add, they're carried there too, and every device on that node can reach them. Open Networks to limit who.":
     "{device} проводит {nets}. На добавленной ноде они тоже будут проводиться, и туда сможет попасть любое устройство на этой ноде. Ограничить доступ можно в окне «Сети».",
-  // budget-ok: notice, wraps
   "{nodes} runs an older version that can't limit who reaches a network, so with this choice nobody reaches them there — {name} included. Update {nodes}, or choose “{everyone}”.":
     "{nodes} работает на старой версии, которая не умеет ограничивать доступ к сети, поэтому с таким выбором туда никто не попадёт — и {name} тоже. Обновите {nodes} или выберите «{everyone}».",
-  // budget-ok: notice, wraps
   "{nodes} runs an older version that can't limit who reaches a network, so with this choice nobody reaches them there. Update {nodes}, or choose “{everyone}”.":
     "{nodes} работает на старой версии, которая не умеет ограничивать доступ к сети, поэтому с таким выбором туда никто не попадёт. Обновите {nodes} или выберите «{everyone}».",
   "Saving with no networks removes them — you'll be asked first.": "Если сохранить пустое поле, сети будут удалены — сначала появится подтверждение.",
   "Someone changed these networks while this window was open. Cancel and open it again to see the latest.":
     "Пока окно было открыто, кто-то изменил эти сети. Нажмите «Отмена» и откройте окно снова, чтобы увидеть актуальное.",
-  // budget-ok: notice, wraps
   "Many home routers use {list}. Anyone whose home network uses the same addresses can't reach it from home — their own network wins — though it still works on mobile data. If you can, renumber this network to something rarer, like 10.57.20.0/24.":
     "Диапазон {list} используют многие домашние роутеры. У кого дома сеть с такими же адресами, тот не попадёт в неё из дома — побеждает домашняя сеть, — хотя через мобильный интернет всё работает. Если можете, перенумеруйте эту сеть во что-то более редкое, например 10.57.20.0/24.",
   "Checking these networks…": "Проверяем эти сети…",
-  // budget-ok: notice, wraps
   "This device's config for {node} doesn't route {subnet}, so its answers to clients leave through its own internet connection and never arrive. Add {subnet} to its routing with the gear above and re-import its config.":
     "Конфиг этого устройства для {node} не маршрутизирует {subnet}, поэтому его ответы клиентам уходят через его собственный интернет и не доходят. Добавьте {subnet} в маршруты шестерёнкой выше и заново импортируйте конфиг.",
   "waiting for {node}": "ждёт {node}",
@@ -63,7 +55,6 @@ export const STR = {
     "Сети, для которых это устройство служит шлюзом, например офисная сеть за роутером. Клиенты на той же ноде попадают туда через него.",
   "Only {name}": "Только {name}",
   "People you choose": "Выбранные люди",
-  // the People window and the per-node counts (NETWORKS §18.2) — sized for 2 people or 200
   "Shared with {users}": "Доступ: {users}",
   "Choose people": "Выбрать людей",
   "{name} always has access, as the owner, and so do the people you choose.": "Владелец, {name}, имеет доступ всегда — как и выбранные люди.",
@@ -101,8 +92,6 @@ export const STR = {
   "{users} with no device here": "Без устройств здесь: {users}",
   "Groups": "Группы",
   "Add to a group": "Добавить в группу",
-  // The field's own one-line note, in the shape the other labels use («ДОСТУП ИСТЕКАЕТ — вся подписка…»): what a group DOES,
-  // short enough to sit under the label instead of a paragraph under the control.
   "— members reach each other's devices, and a network can be shared with the group": "— участники видят устройства друг друга, а сеть можно открыть всей группе",
   "{name} is no longer in {group}.": "{name} — больше не в группе «{group}».",
   "They lose the networks shared with this group, unless they're shared with them another way: {devices}.": "Он потеряет сети, открытые этой группе, — если они не открыты ему другим способом: {devices}.",
@@ -154,7 +143,6 @@ export const STR = {
   "Delete group": "Удалить группу",
   "Delete group · {name}": "Удалить группу · {name}",
   "Its members stay as users; only the group is deleted.": "Участники останутся пользователями — удаляется только группа.",
-  // budget-ok: confirm body, wraps
   "Networks shared with it stop being reachable for its members, unless they're shared with them another way: {devices}.":
     "Сети, открытые этой группе, станут недоступны её участникам, если доступ не открыт им иначе: {devices}.",
   "Group deleted.": "Группа удалена.",
@@ -169,12 +157,10 @@ export const STR = {
   "Group created.": "Группа создана.",
   "Remove {name} from the group": "Убрать {name} из группы",
   "No members yet — add people with the search above.": "Участников пока нет — добавьте людей через поиск выше.",
-  // budget-ok: hint, wraps
   "Networks shared with this group: {devices}. Everyone you add reaches them; anyone you remove loses them, unless they're shared with them another way.":
     "Этой группе открыты сети: {devices}. Каждый, кого вы добавите, получит к ним доступ; каждый, кого уберёте, потеряет его, если доступ не открыт ему иначе.",
   "{names} and {n} more": "{names} и ещё {n}",
   "Not in any group.": "Не состоит ни в одной группе.",
-  // the panel's own words for a group (activity verbs, refusals) — stored in English, translated on display
   "Created group": "Создана группа",
   "Renamed group": "Переименована группа",
   "Changed group members": "Изменён состав группы",
@@ -182,7 +168,6 @@ export const STR = {
   "{count}": "{count}",
   "a group with this name already exists": "группа с таким названием уже есть",
   "the access level must be everyone, user or none": "уровень доступа должен быть everyone, user или none",
-  // DEVICE ACCESS (docs/DEVICE-ACCESS-PLAN.md §10.6)
   "Who can open connections to devices here": "Кто может открывать соединения к устройствам здесь",
   "Everyone on this node": "Все на этой ноде",
   "Same user and their groups": "Тот же пользователь и его группы",
@@ -250,10 +235,8 @@ export const STR = {
   "Connection test": "Проверка связи",
   "Saved. The device uses the new settings once its config is re-imported.": "Сохранено. Устройство применит новые настройки после повторного импорта конфига.",
   "Settings weren't saved.": "Настройки не сохранены.",
-  // budget-ok: hover bubble, wraps
   "This device's config doesn't route {subnet}, so its answers to clients leave through its own internet connection and never arrive. Add {subnet} with the gear, then re-import its config.":
     "Конфиг этого устройства не маршрутизирует {subnet}, поэтому его ответы клиентам уходят через его собственный интернет и не доходят. Добавьте {subnet} через шестерёнку, затем заново импортируйте конфиг.",
-  // budget-ok: hover bubble, wraps
   "This device's config sends all its traffic into the tunnel — the usual setup for a phone or laptop. On a router it means every device behind it browses the internet through {node} too; to carry only its networks, set the routing to {subnet}.":
     "Конфиг этого устройства отправляет в туннель весь трафик — обычная настройка для телефона или ноутбука. На роутере это значит, что и все устройства за ним выходят в интернет через {node}; чтобы проводить только его сети, укажите маршрут {subnet}.",
   "This device's config sends only {allowed} into the tunnel; everything else uses its own internet connection.":
@@ -275,48 +258,35 @@ export const STR = {
   "Narrowed routing, can't reach it: {peers}": "Сужена маршрутизация, доступа нет: {peers}",
   "Edit routing": "Изменить маршруты",
   "Set up the device's side": "Настройка на стороне устройства",
-  // The far side, per kind of device (NETWORKS §18). Keenetic's own Russian UI labels are quoted as the router shows them.
   "OpenWrt router": "Роутер OpenWrt",
   "Linux computer": "Компьютер с Linux",
   "Where the tunnel runs": "Где работает туннель",
   "The node sends traffic to this device; the device has to pass it on to its network and send the answers back. Where does the tunnel run?":
     "Нода отправляет трафик на это устройство, а оно должно передать его в свою сеть и вернуть ответы. Где работает туннель?",
-  // budget-ok: disclosure body, wraps
   "Every client arrives from {subnet} — the node gives clients of its other interfaces its own address there — so the device only needs to send {subnet} back.":
     "Все клиенты приходят из {subnet} — клиентам других своих интерфейсов нода даёт здесь свой адрес, — поэтому устройству достаточно отправлять обратно только {subnet}.",
-  // budget-ok: disclosure body, wraps
   "On the OpenWrt router itself (22.03 or newer). Put the peer section that “{cmd}” prints in place of <peer-section>, and the tunnel's interface name in place of <wg-interface>. Nothing needs translating — the router is already its network's gateway.":
     "На самом роутере OpenWrt (22.03 или новее). Вместо <peer-section> подставьте секцию пира, которую выводит «{cmd}», а вместо <wg-interface> — имя интерфейса туннеля. Транслировать ничего не нужно — роутер и так шлюз своей сети.",
-  // budget-ok: disclosure body, wraps
   "Saved to the router's memory, so it survives a reboot, and safe to run again. The tunnel must be in no other firewall zone, wan or lan — “{cmd}” should name only swg.":
     "Настройки сохраняются в память роутера и переживают перезагрузку, а команды можно запускать повторно. Туннель не должен входить ни в какую другую зону файрвола, ни в wan, ни в lan, — «{cmd}» должна называть только swg.",
-  // budget-ok: disclosure body, wraps
   "On the MikroTik itself (RouterOS 7), with its WireGuard interface in place of <wg-interface>. Nothing needs translating, and RouterOS saves changes as you make them.":
     "На самом MikroTik (RouterOS 7), подставив его интерфейс WireGuard вместо <wg-interface>. Транслировать ничего не нужно, а RouterOS сохраняет изменения сразу.",
-  // budget-ok: disclosure body, wraps
   "Keep the tunnel out of the WAN interface list. The stock firewall then lets it reach the network; if yours isn't the stock one, allow forwarding from <wg-interface> to the LAN.":
     "Не добавляйте туннель в список интерфейсов WAN — тогда стандартный файрвол пропускает его в сеть. Если файрвол у вас не стандартный, разрешите пересылку из <wg-interface> в LAN.",
   "In the Keenetic web interface (KeeneticOS 5), no commands:": "В веб-интерфейсе Keenetic (KeeneticOS 5), без команд:",
-  // budget-ok: disclosure body, wraps
   "Internet → Other connections → open this WireGuard connection. Check that “Use for accessing the Internet” is off, and in the peer's settings set “Allowed v4 IPs” to {subnet}. Save.":
     "Интернет → Другие подключения → откройте это подключение WireGuard. Проверьте, что «Использовать для выхода в интернет» выключено, и в настройке пира укажите в «Разрешенные IPv4-подсети» {subnet}. Сохраните.",
-  // budget-ok: disclosure body, wraps
   "Network Rules → Routing → IPv4 routes → Create: “Route to network”, destination network address {addr}, subnet mask {mask}, Interface: this WireGuard connection, “Add automatically” ticked. Save.":
     "Сетевые правила → Маршрутизация → IPv4-маршруты → Добавить: «Маршрут до сети», адрес сети назначения {addr}, маска подсети {mask}, «Интерфейс» — это подключение WireGuard, «Добавлять автоматически» отмечено. Сохраните.",
-  // budget-ok: disclosure body, wraps
   "Network Rules → Firewall → IPv4 → Add rule: Interface: this WireGuard connection, Action “Permit”, Source and Destination “Any”, Protocol “IPV4”. Save. The tunnel blocks incoming traffic until it has this rule.":
     "Сетевые правила → Межсетевой экран → IPv4 → Добавить правило: «Интерфейс» — это подключение WireGuard, «Действие» — «Разрешить», источник и назначение — «Любой», «Протокол» — «IPV4». Сохраните. Пока этого правила нет, туннель блокирует входящий трафик.",
-  // budget-ok: disclosure body, wraps
   "On a Linux computer on that network that runs the tunnel with wg-quick — a Raspberry Pi, a NAS, a server; NetworkManager ignores these lines. Add them to its tunnel config, with its network card (the name after “dev” in “ip route show default”) in place of <lan-device>:":
     "На компьютере с Linux в этой сети, где туннель поднят через wg-quick, — Raspberry Pi, NAS, сервер; NetworkManager эти строки игнорирует. Добавьте их в конфиг туннеля, подставив вместо <lan-device> сетевую карту (имя после «dev» в выводе «ip route show default»):",
   "Then run this once, as root, with the tunnel's name in place of <wg-interface>:": "Затем один раз выполните это от root, подставив имя туннеля вместо <wg-interface>:",
-  // budget-ok: disclosure body, wraps
   "The rules come back every time the tunnel starts, and the tunnel starts at boot; the computer's own internet stays off the tunnel. If it runs ufw, also run “ufw allow in on <wg-interface>”.":
     "Правила восстанавливаются при каждом запуске туннеля, а туннель запускается при загрузке; собственный интернет компьютера идёт мимо туннеля. Если на нём работает ufw, выполните ещё «ufw allow in on <wg-interface>».",
-  // budget-ok: disclosure body, wraps
   "Devices on the network see these connections come from {subnet}. Some answer only their own network — Windows file sharing and ping, for example — and a computer running its own VPN may send its answers into that VPN. If one doesn't answer, allow {subnet} in its firewall, or route {subnet} to the router on it.":
     "Устройства в сети видят эти подключения из {subnet}. Некоторые отвечают только своей сети — например, общие папки Windows и ping, — а компьютер со своим VPN может отправлять ответы в этот VPN. Если устройство не отвечает, разрешите {subnet} в его файрволе или направьте на нём {subnet} на роутер.",
-  // budget-ok: disclosure body, wraps
   "Windows and macOS can be set up as the gateway, but not with a few lines that survive a restart — use a router or a Linux computer.":
     "Windows и macOS можно настроить шлюзом, но не несколькими строками, которые переживут перезагрузку, — используйте роутер или компьютер с Linux.",
   "an unnamed peer": "пир без имени",
@@ -350,7 +320,6 @@ export const STR = {
   "{node} installed the route and took it straight back out — it moved the path to {a}.": "{node}: маршрут поставлен и сразу снят — он менял путь до {a}.",
   "{node} already routes {p} through {a}, and leaves that route alone.": "{node}: {p} уже маршрутизируется через {a}, этот маршрут не трогаем.",
   "{node} couldn't check the route to {p} safely, so it didn't install it.": "{node}: не удалось безопасно проверить маршрут до {p}, он не поставлен.",
-  // P3 evidence — the gateway as its node sees it, and the one thing operators don't know needs nothing
   "Devices on the same node already reach each other at their tunnel addresses — that needs nothing here.": "Устройства на одной ноде и так видят друг друга по туннельным адресам — для этого здесь ничего не нужно.",
   "{node} doesn't list this device yet.": "{node}: этого устройства пока нет в списке ноды.",
   "Networks this user can reach": "Сети, доступные этому пользователю",
@@ -363,7 +332,6 @@ export const STR = {
   "Worked out when this sheet opens. A device whose routing leaves a network out can be widened from its own settings.": "Рассчитано при открытии. Если сети нет в маршрутах устройства, её можно добавить в его собственных настройках.",
   "The device is connected — traffic through it:": "Устройство подключено, трафик через него:",
   "The device is offline, so nothing reaches these networks until it reconnects.": "Устройство не в сети — до переподключения в эти сети ничего не попадёт.",
-  // P4 — the reachability test: the node sends one probe into the network through the device and says what came back
   "Test that the network answers — {node} sends it through this device:": "Проверка, что сеть отвечает: {node} отправит запрос через это устройство:",
   "an address on {p}": "адрес в {p}",
   "Address to test": "Адрес для проверки",
@@ -394,8 +362,6 @@ export const STR = {
   "A port is a number from 1 to 65535.": "Порт — это число от 1 до 65535.",
   "This device isn't on {node}.": "Этого устройства нет на {node}.",
   "{node} isn't syncing, so it can't run a test right now.": "{node} не синхронизируется, проверку сейчас не запустить.",
-  // the networks endpoints' own errors — the SPA words every refusal token itself, so these reach a person only
-  // through an API call the sheet does not make, or a token newer than the sheet
   "test refused: {v1}": "проверка отклонена: {v1}",
   "a test is already running on this node": "на этой ноде уже идёт проверка",
   "no such test": "такой проверки нет",
@@ -408,9 +374,7 @@ export const STR = {
   "Couldn't start the test.": "Не удалось запустить проверку.",
   "The panel no longer has that test — run it again.": "Этой проверки в панели уже нет — запустите её снова.",
   "Tested a network": "Проверена доступность сети",
-  // budget-ok: notice, wraps
   "This device's config for {node} sends no keepalive, so {node} loses its session when the device goes quiet — and these networks with it. Set a keepalive on that deployment.": "Конфиг этого устройства для {node} не шлёт keepalive: когда устройство затихает, {node} теряет сессию, а с ней и эти сети. Задайте keepalive для этого развёртывания.",
-  // the node's own local network (P2) — a disclosure on the node page, with the switch that closes it
   "Local network": "Локальная сеть",
   "Clients can reach it": "Клиентам доступна",
   "Keep this node's clients off its local network": "Закрыть локальную сеть ноды от её клиентов",
@@ -422,30 +386,22 @@ export const STR = {
   "Closed on the node.": "Закрыто на ноде.",
   "The node couldn't read its own addresses, so it left the block as it was.": "Нода не смогла прочитать свои адреса и оставила блокировку как была.",
   "The node couldn't close it, so its clients still reach it: {why}": "Нода не смогла её закрыть, клиенты по-прежнему в неё попадают: {why}",
-  // budget-ok: panel body, wraps
   "Clients of this node can reach the private network it sits on — every device on it, not only this node — and so can clients of other nodes whose traffic leaves through this one. A client whose traffic this node sends on to another node reaches that node's network instead. Nobody set this up: it is what routing does when the node's local network is also its way out.":
     "Клиенты этой ноды попадают в частную сеть, в которой она стоит, — на любое устройство в ней, а не только на саму ноду, — как и клиенты других нод, чей трафик выходит через эту. Клиент, чей трафик эта нода отправляет дальше на другую ноду, попадает в сеть той ноды. Этого никто не настраивал: так работает маршрутизация, когда локальная сеть ноды — это и её выход в интернет.",
   "Clients of this node, and of other nodes whose traffic leaves through it, are kept off the private network it sits on. They still reach the internet and this node itself.":
     "Клиенты этой ноды и других нод, чей трафик выходит через неё, не попадают в частную сеть, в которой она стоит. Интернет и сама нода им по-прежнему доступны.",
 
-  // geo providers: what turning one off actually costs (§6.4)
   "used by {v1} on {v2}": "используется в {v1} на {v2}",
   "Rules on your interfaces that route one of this provider's lists":
     "Правила на ваших интерфейсах, которые маршрутизируют один из списков этого источника",
   "Turn off {v1}?": "Выключить {v1}?",
   "Turn it off": "Выключить",
-  // «перестанут маршрутизировать», not «отключатся»: the rules are still there and still say what they said —
-  // the node simply stops being given the list they name, which is the thing the operator has to picture.
   "*{v1}* is used by {v2} on {v3}. Turning it off hides its lists and stops those rules routing on every node — the rules themselves stay, and start working again when you turn it back on. Nothing reaches the fleet until you save.":
     "*{v1}* используется в {v2} на {v3}. После выключения его списки скрываются, и на всех нодах эти правила перестают маршрутизировать — сами правила остаются и снова заработают, когда вы включите источник обратно. До сохранения на ноды ничего не уходит.",
-  // ── geo providers: a download you can get out of (§6.3) ──
-  // budget-ok: toast, wraps
   "Couldn't cancel": "Не удалось отменить",
   "Fetching this provider's catalog — cancel to stop waiting": "Каталог источника скачивается — нажмите «Отмена», чтобы не ждать",
   "Reading this provider's file list from GitHub. Its lists become searchable when it lands; nothing is routed yet.":
     "Панель читает список файлов этого источника с GitHub. Как только он придёт, его списки появятся в поиске; маршрутизировать пока нечего.",
-  // The number is the point: GitHub answers 60 requests an hour without an account, and once you are over it a
-  // single fetch can sit for minutes. Saying so is what makes Cancel look like a sane thing to press.
   "GitHub allows 60 requests an hour without an account, and a fetch inside that window can sit for a couple of minutes. Cancelling stops the wait and turns the provider off — the request itself finishes on its own and its result is thrown away.":
     "GitHub без учётной записи отвечает на 60 запросов в час, и запрос, попавший в исчерпанное окно, может висеть пару минут. Отмена прекращает ожидание и выключает источник: сам запрос дойдёт до конца сам по себе, а его результат будет отброшен.",
   "kind|site": "сайт",
@@ -466,8 +422,6 @@ export const STR = {
   "One address": "Один адрес",
   "{v1} addresses": "Адресов: {v1}",
   "All IP ranges announced by {v1}": "Все IP-диапазоны, анонсируемые {v1}",
-  // A bare label is never guessed for the operator — the whole point is that «ru» and «*.ru» differ by six
-  // orders of magnitude. The sentence shows the syntax instead of applying it.
   "Did you mean the whole .{v1} zone? Write *.{v1}.": "Имеется в виду вся зона .{v1}? Тогда пишите *.{v1}.",
   "That isn't a valid IP address or range.": "Это не IP-адрес и не диапазон.",
   "That isn't a valid web address.": "Это не веб-адрес.",
@@ -476,8 +430,6 @@ export const STR = {
   "Put one name between the stars, not a dotted address.": "Между звёздочками ставится одно имя, а не адрес с точками.",
   "A partial-word match can't be written in non-Latin letters — names travel already encoded.":
     "Совпадение по части слова нельзя записать не латиницей — имена передаются уже в кодированном виде.",
-  // Не «слишком короткий фрагмент», а что из этого выйдет: «*ru*» читается как «российские сайты», а
-  // ловит ruble.com и truecaller.com. Показываем последствие, а не правило.
   "Too short to match on — under {v1} characters this catches names that have nothing to do with what you meant.":
     "Слишком короткий фрагмент: меньше {v1} символов — и под него попадут имена, не имеющие отношения к тому, что вы имели в виду.",
   "Only {v1} long — a short fragment turns up inside names that have nothing to do with it.":
@@ -501,17 +453,14 @@ export const STR = {
   "The panel hasn't fetched this list yet. The rule saves either way and routes as soon as it lands — click to ask again.":
     "Панель ещё не скачала этот список. Правило всё равно сохранится и заработает сразу после загрузки — нажмите, чтобы запросить снова.",
   "not ready": "не готов",
-  // budget-ok: title, no layout
   "On this node it is matched as text anywhere in the name.": "На этой ноде сопоставляется как текст в любом месте имени.",
   "Custom": "Свой",
   "Switch this node to {v1}": "Переключить эту ноду на {v1}",
-  // budget-ok: aria-live, never rendered
   "Added {v1}": "Добавлено: {v1}",
   "Already in this rule.": "Уже есть в этом правиле.",
   "{v1} was not added": "{v1} не добавлено",
   "Removed {v1}": "Удалено: {v1}",
   "Your lists": "Ваши списки",
-  // budget-ok: aria-live, never rendered
   "{v1} added, {v2} left to fix": "Добавлено: {v1}, осталось исправить: {v2}",
   "+{v1} more": "ещё {v1}",
   "show fewer": "свернуть",
@@ -522,19 +471,14 @@ export const STR = {
   "Try a service name like *YouTube*, or type an address, IP range or AS number.":
     "Впишите название сервиса, например *YouTube*, либо адрес, диапазон IP или номер AS.",
   "Use what you typed": "Взять то, что вписано",
-  // budget-ok: centred in a full-width popover
   "Keep typing to search the provider catalog.": "Продолжайте вводить — поиск пойдёт по каталогу источников.",
   "Type a service name, an address, an IP range or an AS number.": "Впишите название сервиса, адрес, диапазон IP или номер AS.",
-  // the same two invitations in a CUSTOM LIST, which has no catalog to search — offering to find a
-  // service there points at something that is not on the screen
   "Type an address, IP range, AS number or pattern.": "Впишите адрес, диапазон IP, номер AS или шаблон.",
   "Address, IP range, AS number or pattern…": "Адрес, диапазон IP, номер AS или шаблон…",
   "Switch {v1} to {v2}?": "Переключить {v1} на {v2}?",
-  // budget-ok: sheet-footer button, sizes to content
   "Switch mode": "Переключить режим",
   "This reprovisions the node so it can match by hostname. IP rules keep working, and the rule changes you have open stay open — save them afterwards.":
     "Нода будет перенастроена, чтобы сопоставлять по именам. Правила по IP продолжат работать, а открытые правки правил никуда не денутся — сохраните их после этого.",
-  // budget-ok: toast, wraps
   "Switched to {v1} — save to apply your rules.": "Переключено на {v1} — сохраните, чтобы применить правила.",
   "Nothing on any node has ever read a stored TLD rule. It is kept exactly as written until the migration converts it.":
     "Сохранённое правило по TLD не читала ещё ни одна нода. Оно хранится ровно так, как записано, пока миграция его не преобразует.",
@@ -548,11 +492,8 @@ export const STR = {
     "Правил пока нет. Добавьте правило, чтобы отправить часть назначений через другую ноду, или укажите в *Всё остальное*, куда идёт весь трафик.",
   "No rules yet. Add a rule to send some destinations out a device on this node or block them, or set *Everything else* to say where the rest goes.":
     "Правил пока нет. Добавьте правило, чтобы выпустить часть назначений через устройство на этой ноде или заблокировать их, или укажите в *Всё остальное*, куда идёт остальной трафик.",
-  // The egress option used to be named after the mechanism ("умная маршрутизация"); this names the outcome.
   "Routing (smart cascade)": "Маршрутизация (умный каскад)",
   "A rule needs at least one service, address or IP range.": "В правиле нужен хотя бы один сервис, адрес или диапазон IP.",
-  // Type-to-confirm tokens. Localised on purpose: the friction is meant to be a phrase the operator reads
-  // and retypes, which a Latin string on a Russian panel is not. Uppercase, and distinct from each other.
   "token|RESET LEARNED": "СБРОС ОБУЧЕННЫХ",
   "token|RESET ALL": "СБРОС ВСЕГО",
   "Ports blocked": "Блок по портам",
@@ -563,13 +504,11 @@ export const STR = {
   "Spam / SMTP": "Спам / SMTP",
   "Mining": "Майнинг",
   "Each row is a round trip measured from that node, so both cross the link in both directions — a difference between them is two samples of the same link, not a direction.": "Каждая строка — это круговая задержка, измеренная с этой ноды, поэтому обе проходят связь в обе стороны: разница между ними — это два замера одной и той же связи, а не две стороны.",
-  // ── datapath (relay) ──
   "This leg is losing *{v1}%* right now — that is the case for Relay.": "Связь сейчас теряет *{v1}%* — это как раз случай для Релея.",
   "This leg is clean right now — *Forward* is the cheaper choice.": "Связь сейчас чистая — *Транзит* дешевле.",
   "Phrase copied": "Фраза скопирована",
   "csqtt server": "Сервер csqtt",
   "Endpoint & listen port are edited from the csqtt-proxy modal.": "Эндпоинт и порт прослушивания правятся в окне csqtt-прокси.",
-  // ── shared VK call-link pool ──
   "Remove every link in the pool?": "Удалить все ссылки из пула?",
   "REMOVE ALL": "УДАЛИТЬ ВСЁ",
   "Remove them all": "Удалить все",
@@ -631,14 +570,10 @@ export const STR = {
   "The same link is in the pool twice.": "Эта ссылка добавлена в пул дважды.",
   "No live links left — anyone who held a pool link has lost it. A working link you add goes to new users; give it to the others with Add from pool in their Manage view.": "Живых ссылок не осталось — все, у кого была ссылка из пула, её лишились. Добавленную рабочую ссылку получат новые пользователи; остальным выдайте её кнопкой «Добавить из пула» в их окне «Править».",
   "No live links left — anyone who held a pool link has lost it. Once you add a working link, give it to them with Add from pool in their Manage view.": "Живых ссылок не осталось — все, у кого была ссылка из пула, её лишились. Когда добавите рабочую ссылку, выдайте её кнопкой «Добавить из пула» в их окне «Править».",
-  // ── time ──────────────────────────────────────────────────────────────────────────────────────
-  // "just now" is a moment, not a duration: "только что" is the natural form.
   "just now": "только что",
   "{n}m ago": "{n} мин назад",
   "{n}h ago": "{n} ч назад",
   "{n}d ago": "{n} д назад",
-  // Compact unit suffixes that sit tight against a number in dense tables (5s, 12m). Russian keeps the
-  // same one-letter density: с/м/ч/д. Context-prefixed because bare "s"/"m" mean other things elsewhere.
   "{v1} active": "активных: {v1}",
   " · mean {v1}%": " · среднее {v1}%",
   "unit|s": "с",
@@ -646,14 +581,12 @@ export const STR = {
   "unit|h": "ч",
   "unit|d": "д",
 
-  // ── connectivity-field validation ──────────────────────────────────────────────────────────────
   "Comma-separated CIDRs, e.g. 0.0.0.0/0, ::/0": "CIDR через запятую, например 0.0.0.0/0, ::/0",
   "Required (use 0.0.0.0/0, ::/0 for full tunnel).": "Обязательно (полный туннель: 0.0.0.0/0, ::/0).",
   "Each DNS must be a valid IP.": "Каждый DNS — корректный IP.",
   "MTU must be a number 1280–9200.": "MTU — число от 1280 до 9200.",
   "Keepalive must be 0–65535.": "Keepalive — от 0 до 65535.",
 
-  // ── ports and interfaces (js/model.js) ─────────────────────────────────────────────────────────
   "Port must be a number.": "Порт — это число.",
   "Port must be between 1 and 65535.": "Порт — от 1 до 65535.",
   "Port {port} is already used by {holder} on this node.": "Порт {port} на этой ноде уже занят: {holder}.",
@@ -669,9 +602,7 @@ export const STR = {
   " (WDTT, starting)": " (WDTT, запускается)",
   " (WDTT internal WG, starting)": " (внутр. WG WDTT, запуск)",
 
-  // ── charts (js/charts.js) ──────────────────────────────────────────────────────────────────────
   "Throughput": "Трафик",
-  // the Overview's Traffic card: whose rate the number is — the nodes picked in the fleet list, or all of them
   "sum|selected": "по выбранным",
   "sum|aggregate": "всего",
   "no data": "нет данных",
@@ -680,8 +611,6 @@ export const STR = {
   "This node isn't reporting right now — showing the last data it sent.":
     "Нода сейчас не отвечает — показаны последние данные.",
 
-  // ── filters and status (js/views.js) ───────────────────────────────────────────────────────────
-  // Dropdown options sit in a fixed-width <select>: these must stay at or under the English width.
   "All nodes": "Все ноды",
   "No nodes": "Нет нод",
   "All interfaces": "Все интерфейсы",
@@ -691,7 +620,6 @@ export const STR = {
   "Click to switch users / peers": "Переключить: пользователи / пиры",
   "Online peers": "Пиры онлайн",
 
-  // ── activity feed item labels (js/views.js EV_ITEMS stays canonical; these are its display forms) ──
   "event|Peer": "Пир",
   "event|User": "Пользователь",
   "event|Node": "Нода",
@@ -702,7 +630,6 @@ export const STR = {
   "event|Update": "Обновление",
   "All items": "Все объекты",
 
-  // the status vocabulary (js/ui.js STATUS_WORDS)
   "status|Online": "Онлайн",
   "status|Ready": "Готов",
   "status|Pending": "Ожидает",
@@ -727,8 +654,6 @@ export const STR = {
   "No peers": "Нет пиров",
   "Offline": "Офлайн",
 
-  // ── why a peer is in that state (js/ui.js STATUS_REASONS) ──────────────────────────────────────
-  // Hover prose, not chips — these wrap freely, so they are translated in full.
   "reaching the server but the handshake never completes — likely DPI / MTU / wrong {proto} params":
     "доходит до сервера, но хендшейк не завершается — вероятно DPI / MTU / неверные параметры {proto}",
   "WireGuard or AmneziaWG": "WireGuard или AmneziaWG",
@@ -742,7 +667,6 @@ export const STR = {
     "срок доступа подходит к концу — по истечении будет снят со всех серверов",
   "Interface {iface} is down — {why}": "Интерфейс {iface} не поднят — {why}",
 
-  // interface op lifecycle (js/ui.js ifopBusy/ifopDone/ifopFail)
   "state|Default": "По умолчанию",
   "A subscription or peer with an expiry date shows an orange *about to expire* warning this many days ahead.":
     "Подписка или пир со сроком действия предупреждает об истечении за столько дней.",
@@ -767,7 +691,6 @@ export const STR = {
   "ifop|couldn\u2019t ignore": "не удалось скрыть",
   "ifop|couldn\u2019t restore": "не удалось вернуть",
   "ifop|failed": "ошибка",
-  // turn-proxy request verbs (js/turn.js turnPendLabel) — same lowercase mid-phrase register as above
   "ifop|installing": "установка",
   "ifop|rotating": "смена ключей",
   "ifop|deleting": "удаление",
@@ -781,7 +704,6 @@ export const STR = {
   "the change failed on the node": "изменение не применилось на ноде",
   "Save failed on the node": "Не сохранилось на ноде",
 
-  // ── node/panel install lifecycle (js/ui.js procLabel) ──────────────────────────────────────────
   "re-installing": "переустановка",
   "converting to bare-metal": "конвертация в bare-metal",
   "converting to docker": "конвертация в docker",
@@ -938,12 +860,10 @@ export const STR = {
   "Set csqtt instance": "Настроен экземпляр csqtt",
   "Moved RAW-IP": "RAW-IP перенесён",
   "tag|ignored": "скрыт",
-  // a turn client's catalogue badges (js/turn.js ClientEntryBadges)
   "tag|plain": "без маскировки",
   "tag|Native": "нативный",
   "tag|crossplatform": "кроссплатформенный",
   "tag|app": "приложение",
-  // the flow map's bubble: what the number is — a range's total, or a live rate
   "fm|volume": "объём",
   "fm|throughput": "скорость",
   "Another program owns this interface — it runs in its own container":
@@ -985,7 +905,6 @@ export const STR = {
   "uninstall failed": "ошибка удаления",
   "take-over failed": "не удалось перенять сервер",
   "proc|failed": "ошибка",
-  // a node that never enrolled: its "re-install" is really a first install
   "installing": "установка",
   "installed": "установлен",
   "installed and updated": "установлен и обновлён",
@@ -995,7 +914,6 @@ export const STR = {
   "Couldn't dismiss.": "Не удалось скрыть.",
   "Command failed on the node": "Команда не выполнилась на ноде",
 
-  // ── modal and sheet chrome (js/ui.js) ──────────────────────────────────────────────────────────
   "Back": "Назад",
   "Cancel": "Отмена",
   "Close": "Закрыть",
@@ -1005,25 +923,20 @@ export const STR = {
   "Discard": "Отменить",
   "Keep editing": "Продолжить",
   "Discard unsaved changes?": "Отменить несохранённое?",
-  // The typed word lands LAST in Russian and first in English — which is exactly why the sentence is one
-  // key with a {name} marker the renderer splits on, rather than two fragments around a <b>.
   "Confirm by typing {name}": "Подтвердите вводом {name}",
   "Error": "Ошибка",
   "Copy": "Копировать",
   "Command copied": "Команда в буфере",
 
-  // ── lifecycle and turn-proxy hints (js/ui.js) ──────────────────────────────────────────────────
   "Access expired": "Доступ истёк",
   "About to expire": "Скоро истечёт",
   "Connected via": "Подключён через",
   "Last connected via": "Был подключён через",
 
-  // ── app bar (js/ui.js) ─────────────────────────────────────────────────────────────────────────
   "Theme: Auto (follows your system) — click for Light": "Тема: авто (как в системе) — нажмите для светлой",
   "Theme: Light — click for Dark": "Тема: светлая — нажмите для тёмной",
   "Theme: Dark — click for Auto": "Тема: тёмная — нажмите для авто",
 
-  // ── config-storage banner (js/ui.js StoreOffBanner) ────────────────────────────────────────────
   "This panel is managed declaratively, so its config-storage setting comes from its configuration. Set this and rebuild (existing peers then need a one-time Rotate-keys to capture a config):":
     "Эта панель управляется декларативно, поэтому настройка хранения конфигов задаётся её конфигурацией. Задайте это и пересоберите (существующим пирам затем нужна разовая смена ключей, чтобы конфиг сохранился):",
   "Config storage is off.": "Хранение конфигов выключено.",
@@ -1032,7 +945,6 @@ export const STR = {
   "Docker host": "хосте Docker",
   "panel host": "хосте панели",
 
-  // peer-grid columns (js/grids.js)
   "col|Status": "Статус",
   "col|User": "Пользователь",
   "col|Title": "Название",
@@ -1047,7 +959,6 @@ export const STR = {
   "col|Total": "Всего",
   "Untitled": "Без имени",
 
-  // ── peer-grid rows, actions and pager (js/grids.js) ────────────────────────────────────────────
   "Double-click for QR / configs": "Двойной клик — QR и конфиги",
   "Click to open this user's details": "Открыть карточку пользователя",
   "Assign this peer to a user": "Назначить пира пользователю",
@@ -1067,19 +978,14 @@ export const STR = {
   "{from}–{to} of {total}": "{from}–{to} из {total}",
   "Older release": "Предыдущий релиз",
   "Newer release": "Следующий релиз",
-  // budget-ok: the changelog nav pair is centred in a 644px header and measures 193px together —
-  // measured, nothing clipped
   "‹ Prev": "‹ Предыдущая",
-  // budget-ok: see "‹ Prev" — same centred group
   "Next ›": "Следующая ›",
 
-  // peer + user actions (js/peer-actions.js)
   "This user has no peers to rotate.": "У этого пользователя нет пиров для смены ключей.",
   "Rotate all keys · {name}": "Смена всех ключей · {name}",
   "Rotate all keys": "Сменить ключи",
   "Rotate the keys for all {what} of {name}. Every existing config, QR and link stops working — each device must re-import. This can't be undone.":
     "Смена ключей у пользователя {name}. Затронуто: {what}. Все существующие конфиги, QR и ссылки перестанут работать — каждое устройство придётся импортировать заново. Отменить нельзя.",
-  // budget-ok: toast, wraps
   "Rotated keys for {count} — every device must re-import.": "Ключи сменены: {count} — каждое устройство нужно импортировать заново.",
   "Unassign peer · {name}": "Отвязать пира · {name}",
   "Unassign": "Отвязать",
@@ -1092,7 +998,6 @@ export const STR = {
   "This is irreversible — the peer's key is removed from every interface it's deployed on.":
     "Действие необратимо — ключ пира удаляется со всех интерфейсов, где он развёрнут.",
 
-  // ── restoring a missing interface / fixing an out-of-subnet address ─────────────────────────────
   "more than {count}": "больше {count}",
   "This isn't a brief hiccup or a peer still being created — the interface has stayed missing for {dur}.":
     "Это не кратковременный сбой и не пир в процессе создания — интерфейс отсутствует уже {dur}.",
@@ -1106,11 +1011,9 @@ export const STR = {
     "Сначала попросим разблокировать хранилище, чтобы выдать депонированный ключ. ",
   "Recreate the missing interface {iface} on {node} with its saved settings. This restores the INTERFACE, not a single peer. The original server key can't be recovered, so the interface gets a NEW key — every client on {iface} must re-import a fresh QR / config. {gate}":
     "Пересоздать пропавший интерфейс {iface} на {node} с сохранёнными настройками. Восстанавливается ИНТЕРФЕЙС, а не один пир. Исходный ключ сервера восстановить нельзя, поэтому интерфейс получит НОВЫЙ ключ — каждому клиенту на {iface} придётся импортировать свежий QR или конфиг. {gate}",
-  // budget-ok: sheet title, 620px wide
   "Restore interface · {where}": "Восстановление интерфейса · {where}",
   "Restore interface": "Восстановить интерфейс",
   "Rebuild interface · {where}": "Пересборка интерфейса · {where}",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Rebuild interface": "Пересобрать интерфейс",
   "The device is gone from the node — rebuild it from the saved config with its original server key":
     "Устройство исчезло с ноды — пересоберите интерфейс из сохранённой конфигурации с его исходным ключом сервера",
@@ -1122,7 +1025,6 @@ export const STR = {
     "Пересобрать лежащий интерфейс {iface} на {node} с ИСХОДНЫМ ключом сервера (из {src}) и сохранёнными настройками. Устройство исчезло с ноды, перезапускать нечего — интерфейс будет создан заново. Все пиры на {iface} сойдутся за несколько синхронизаций, а уже розданные клиентам конфиги продолжат работать (перевыпускать QR не нужно). {unlock}{gate}",
   "Rebuild the down interface {iface} on {node} with its saved settings. The device is gone from the node, so there is nothing left to restart. Its original server key can't be recovered, so the interface comes back with a NEW key — every client on {iface} must re-import a fresh QR / config. {gate}":
     "Пересобрать лежащий интерфейс {iface} на {node} с сохранёнными настройками. Устройство исчезло с ноды, перезапускать нечего. Исходный ключ сервера восстановить неоткуда, поэтому интерфейс вернётся с НОВЫМ ключом — каждому клиенту на {iface} придётся заново импортировать конфиг или QR. {gate}",
-  // budget-ok: toast, wraps
   "Vault restore failed: {err}": "Не удалось восстановить из хранилища: {err}",
   "Restoring interface {iface} on {node} — its peers re-converge over the next syncs.":
     "Восстанавливаем интерфейс {iface} на {node} — его пиры сойдутся за следующие синхронизации.",
@@ -1130,18 +1032,16 @@ export const STR = {
     "Интерфейс {iface} вернулся — меняем ключи: {count}; раздайте свежие конфиги.",
   "No interfaces to restore yet — a missing interface must persist a couple of minutes first.":
     "Восстанавливать пока нечего — интерфейс должен отсутствовать хотя бы пару минут.",
-  // budget-ok: modal body, wraps
   " Existing clients keep working — no re-distribution.": " Существующие клиенты продолжат работать — раздавать заново не нужно.",
   " One has no recoverable key, so it gets a new one and those clients must re-import.":
     " У одного ключ восстановить нельзя — он получит новый, и его клиентам нужен повторный импорт.",
   " {n} have no recoverable key, so they get a new one and those clients must re-import.":
     " У {n} ключ восстановить нельзя — они получат новые, и их клиентам нужен повторный импорт.",
   "Restore {count} · {node}": "Восстановить {count} · {node}",
-  // budget-ok: confirm button, foot has a grow spacer
   "Restore {n}": "Восстановить {n}",
   "Recreate {count} missing on {node} with their saved settings and, where recoverable, their ORIGINAL server keys — every peer re-converges.{vault}{newkey} This is the node-rebuild recovery: after re-installing the box, one press brings its interfaces back.":
     "Пересоздать пропавшие ({count}) на {node} с сохранёнными настройками и, где возможно, с ИСХОДНЫМИ ключами сервера — все пиры сойдутся.{vault}{newkey} Это восстановление после пересборки ноды: переустановили сервер — одно нажатие возвращает его интерфейсы.",
-  " You'll unlock the vault once to release the escrowed keys.":   // budget-ok: modal body, wraps
+  " You'll unlock the vault once to release the escrowed keys.":
     " Хранилище нужно будет разблокировать один раз, чтобы выдать депонированные ключи.",
   "new key": "новый ключ",
   "(from vault)": "(из хранилища)",
@@ -1153,7 +1053,6 @@ export const STR = {
   "kind|user": "пользователь",
   "This isn't a transient state — the address has stayed out of range for {dur}.":
     "Это не временное состояние — адрес вне диапазона уже {dur}.",
-  // budget-ok: sheet title, 620px wide
   "Fix {who} · {where}": "Исправить {who} · {where}",
   "Fix address": "Исправить адрес",
   "This peer's address {ip} is outside {iface}'s subnet on {node}, so the node can't add it. Fix reassigns the peer the LOWEST free address in {iface}'s subnet — the next one not already taken by another peer on that interface — then the node re-converges. If this peer runs on {iface} across several nodes, they all move to the one new address. Keys and PSK stay the same. {gate}":
@@ -1161,7 +1060,6 @@ export const STR = {
   "Address fixed{to}.": "Адрес исправлен{to}.",
   "Nothing to restore yet — a missing interface must persist a couple of minutes before it's offered.":
     "Восстанавливать пока нечего — интерфейс должен отсутствовать пару минут, прежде чем это предложат.",
-  // budget-ok: sheet title, 620px wide
   "Restore {count} missing": "Восстановить пропавшие ({count})",
   "Recreate {count} missing with saved settings and, where recoverable, the ORIGINAL server key — every dangling peer on {them} re-converges.{dirty} Only interfaces missing long enough to be a real outage are included.":
     "Пересоздать пропавшие ({count}) с сохранёнными настройками и, где возможно, с ИСХОДНЫМ ключом сервера — все потерянные пиры на {them} сойдутся.{dirty} Включены только интерфейсы, отсутствующие достаточно долго, чтобы это был настоящий сбой.",
@@ -1171,16 +1069,12 @@ export const STR = {
     "Восстанавливаем {count} — пиры сойдутся за следующие синхронизации.",
   "Nothing to fix yet — a broken address must persist a couple of minutes before it's offered.":
     "Исправлять пока нечего — неверный адрес должен продержаться пару минут, прежде чем это предложат.",
-  // budget-ok: sheet title, 620px wide
   "Fix {count}": "Исправить {count}",
-  // budget-ok: confirm button, foot has a grow spacer
   "Fix {n}": "Исправить {n}",
   "Reassign each of these {count} the LOWEST free address in its interface's subnet (the next one not already taken on that interface), then let the nodes re-converge. Keys and PSK are unchanged. Only records wrong long enough to be a real mismatch are included.":
     "Выдать каждому из этих пиров ({count}) САМЫЙ МЛАДШИЙ свободный адрес в подсети его интерфейса (первый не занятый на этом интерфейсе), после чего ноды сойдутся. Ключи и PSK не меняются. Включены только записи, неверные достаточно долго, чтобы это было настоящим расхождением.",
-  // budget-ok: toast, wraps
   "Fixed {count}.": "Исправлено: {count}.",
 
-  // ── block / unblock (js/peer-actions.js) ───────────────────────────────────────────────────────
   "Block access": "Закрыть доступ",
   "Block access · {name}": "Закрыть доступ · {name}",
   "Unblock access": "Открыть доступ",
@@ -1197,19 +1091,13 @@ export const STR = {
     "Возвращаются все пиры и включается страница подписки. Соединения восстановятся, как только серверы сойдутся.",
   "Blocked because the user is blocked — unblock the user": "Закрыт вместе с пользователем — откройте доступ пользователю",
 
-  // ── the user picker (js/peer-actions.js UserCombo) ─────────────────────────────────────────────
   "— unassigned —": "— не назначен —",
-  // budget-ok: input placeholder, hint only
   "Assign to a user…": "Назначить пользователю…",
-  // budget-ok: combo popover, sizes to content
   "no match": "нет совпадений",
   "{v1} more — type to narrow": "ещё {v1} — уточните поиском",
-  // budget-ok: combo popover, sizes to content
   "no users yet": "пользователей пока нет",
 
-  // panel settings (js/screen-settings.js)
   "Account": "Учётная запись",
-  // budget-ok: <h3>, own line
   "Admin login": "Вход администратора",
   "Change the panel username and password. Takes effect immediately — you'll be asked to sign in again. Changing the password also reconnects your *Encryption Vault* to it — the encryption key itself is unchanged, so stored configs and subscription links keep working (no re-issue).":
     "Смена логина и пароля панели. Действует сразу — вас попросят войти заново. Смена пароля также заново привязывает к нему ваше *хранилище шифрования* — сам ключ шифрования не меняется, поэтому сохранённые конфиги и ссылки на подписки продолжают работать (перевыпуск не нужен).",
@@ -1218,12 +1106,10 @@ export const STR = {
   "New password": "Новый пароль",
   "leave blank to keep current": "оставьте пустым, чтобы не менять",
   "Confirm new password": "Повторите новый пароль",
-  // budget-ok: toast, wraps
   "Enter a valid http(s) URL.": "Введите корректный http(s)-адрес.",
   "Webhook saved. This is its *signing secret* — shown once. Every delivery carries an `X-SWG-Signature: sha256=HMAC(secret, body)` header so you can verify it's from this panel.":
     "Вебхук сохранён. Это его *секрет подписи* — показывается один раз. В каждой доставке идёт заголовок `X-SWG-Signature: sha256=HMAC(secret, body)`, по которому можно убедиться, что запрос от этой панели.",
   "Secret": "Секрет",
-  // budget-ok: field <label>, own line
   "Payload URL": "URL для полезной нагрузки",
   "The panel POSTs a JSON body here on each selected event. A signing secret is generated on save.":
     "Панель шлёт сюда POST с JSON на каждое выбранное событие. Секрет подписи генерируется при сохранении.",
@@ -1245,12 +1131,9 @@ export const STR = {
   "Token": "Токен",
   "No tokens yet — create one to let an external system read the fleet.": "Токенов пока нет — создайте, чтобы внешняя система могла читать состояние флота.",
   "Webhooks": "Вебхуки",
-  // budget-ok: button tooltip, no box
   "Send a test ping": "Отправить тестовый пинг",
-  // budget-ok: button in a webhook row, row wraps
   "Test": "Проверить",
   "Endpoints": "Эндпоинты",
-  // budget-ok: endpoint description cell, wraps
   "liveness + counts (no auth)": "живость и счётчики (без авторизации)",
   "Prometheus exposition": "экспозиция Prometheus",
   "nodes with status + counts": "ноды со статусом и счётчиками",
@@ -1277,12 +1160,10 @@ export const STR = {
   "*Switching to a reverse proxy — a coordinated cutover.* The panel will serve *plain HTTP* on *{addr}* for your proxy to front. Behind a proxy the listen address is its own setting — an *Internal port* field appears below; set it and the Listen IP to `127.0.0.1`, and leave the Public URL as the address your proxy serves. Stand up nginx/Caddy to terminate TLS and `proxy_pass` to that address (sample below), then confirm — the panel keeps serving its current direct-TLS address until you do.":
     "*Переход на обратный прокси — согласованная пересадка.* Панель будет отдавать *обычный HTTP* на *{addr}*, а ваш прокси встанет перед ней. За прокси адрес прослушивания — отдельная настройка: ниже появится поле *Внутренний порт*; задайте его и IP прослушивания `127.0.0.1`, а публичный URL оставьте тем адресом, который отдаёт ваш прокси. Поднимите nginx/Caddy, чтобы он терминировал TLS и делал `proxy_pass` на этот адрес (пример ниже), затем подтвердите — до подтверждения панель продолжает отдавать свой нынешний адрес с прямым TLS.",
   "Cloudflare IP ranges": "Диапазоны IP Cloudflare",
-  // budget-ok: button under a wrapping notice
   "Copy Cloudflare IP ranges": "Скопировать диапазоны IP Cloudflare",
   "Change cancelled — kept the current address.": "Изменение отменено — адрес остался прежним.",
   "Couldn't cancel the change.": "Не удалось отменить изменение.",
   "Old port dropped — panel is on the new port.": "Старый порт отключён — панель на новом порту.",
-  // budget-ok: toast, wraps
   "Couldn't confirm.": "Не удалось подтвердить.",
   "The old internal port *{old}* *stops serving* — your proxy must already forward to *{new}*.":
     "Старый внутренний порт *{old}* *перестанет отвечать* — ваш прокси уже должен пересылать на *{new}*.",
@@ -1290,7 +1171,6 @@ export const STR = {
     "Я открою *{url}* в новой вкладке — адрес примется *только если он там откроется* и достучится до этой панели. После этого на него перейдут ноды.",
   "Finish the reverse-proxy switch?": "Завершить переход на обратный прокси?",
   "Not yet": "Ещё нет",
-  // budget-ok: lead-in line above a list
   "On Proceed:": "При продолжении:",
   "*⚠️ You can lose access to the panel.* If your web server (nginx / Caddy / Traefik / …) isn't already routing the new address to this panel — wrong upstream port, missing `server_name`, or missing `location` — the old address stops and the new one won't answer.":
     "*⚠️ Вы можете потерять доступ к панели.* Если ваш веб-сервер (nginx / Caddy / Traefik / …) ещё не направляет новый адрес на эту панель — неверный upstream-порт, нет `server_name` или нет `location` — старый адрес отключится, а новый не ответит.",
@@ -1306,14 +1186,12 @@ export const STR = {
   "*Make sure the new address already opens this panel* (proxy upstream / `server_name` / `location`). If it doesn't, the confirm simply won't take — the old address keeps serving, so you can't be locked out.":
     "*Убедитесь, что новый адрес уже открывает эту панель* (upstream прокси / `server_name` / `location`). Если нет, подтверждение просто не сработает — старый адрес продолжит отвечать, так что запереть себя снаружи невозможно.",
   "Take a moment to open the new address and check your proxy first": "Не спешите: сперва откройте новый адрес и проверьте прокси",
-  // budget-ok: button in a notice, row wraps
   "Confirm — drop the old port": "Подтвердить — отключить старый порт",
   "Revert": "Откатить",
   "The nodes are still learning the new address": "Ноды ещё узнают новый адрес",
   "Waiting for the container to restart": "Ждём перезапуска контейнера",
   "Discard my edits & refresh": "Отбросить мои правки и обновить",
   "Certificate": "Сертификат",
-  // budget-ok: field <label>, own line
   "Account email": "Email учётной записи",
   "admin@example.com": "admin@example.com",
   "Cloudflare API token": "API-токен Cloudflare",
@@ -1322,8 +1200,6 @@ export const STR = {
   "Cloudflare Origin CA token": "Токен Cloudflare Origin CA",
   "Requests a 15-year Cloudflare Origin certificate — valid *only* behind Cloudflare's proxy. Stored on the panel only. Enter \"-\" to clear.":
     "Запрашивает сертификат Cloudflare Origin на 15 лет — действителен *только* за прокси Cloudflare. Хранится только на панели. Введите «-», чтобы очистить.",
-  // Private panel access (D28): the panel served on loopback, reached over an SSH tunnel. "Консоль"
-  // is deliberately gone — the screen no longer uses that word in either language.
   "Panel access": "Доступ к панели",
   "Public panel address": "Публичный адрес панели",
   "Private panel access": "Приватный доступ к панели",
@@ -1371,7 +1247,6 @@ export const STR = {
   "Public URL": "Публичный URL",
   "https://panel.example.com  or  https://example.com/swgpanel": "https://panel.example.com  или  https://example.com/swgpanel",
   "Subscription address": "Адрес подписок",
-  // Operator console door
   "If you don't, everything goes back on its own in *{n}s* — you cannot be locked out by not finishing.":
     "Если не подтвердите, через *{n} с* всё вернётся само — не доведя дело до конца, запереть себя снаружи невозможно.",
   "The console is served at {v1} again, and the panel's own address answers everything once more.":
@@ -1451,10 +1326,8 @@ export const STR = {
   "Hide": "Скрыть",
   "Hide mesh (node-to-node relay) traffic": "Скрыть меш-трафик (между нодами)",
   "Show mesh (node-to-node relay) traffic": "Показать меш-трафик (между нодами)",
-  // budget-ok: button in a notice, row wraps
   "Confirm & restart": "Подтвердить и перезапустить",
   "Disabling…": "Отключаю…",
-  // budget-ok: button in a sheet foot with a grow spacer
   "Re-check": "Проверить снова",
   "Reset encryption": "Сбросить шифрование",
   "Reset encryption…": "Сбросить шифрование…",
@@ -1462,18 +1335,14 @@ export const STR = {
   "Set up the encryption key above first.": "Сначала настройте ключ шифрования выше.",
   "Enter your panel password to unlock the encryption key.": "Введите пароль панели, чтобы открыть ключ шифрования.",
   "Panel password (unlocks the encryption key)": "Пароль панели (открывает ключ шифрования)",
-  // budget-ok: switch label, own line
   "Unlock to enable escrow": "Откройте хранилище, чтобы включить депонирование",
   "No changes to save.": "Сохранять нечего.",
   "Remove": "Удалить",
-  // §1.4: the × on a provider-list row can only ever drop a PIN — a rule is what keeps a list, and the button
-  // is disabled while one names it. «Открепить», not «убрать»: nothing is deleted, it just stops being held.
   "Unpin list from the fleet": "Открепить список от флота",
   "Unpin": "Открепить",
   "Stop keeping *{v1}* {v2} on *every node*? No rule uses it, so each node drops it on the next sync. You can pin it again from the catalog any time.":
     "Перестать держать *{v1}* {v2} на *всех нодах*? Он не используется ни одним правилом, поэтому каждая нода уберёт его при следующей синхронизации. Закрепить снова можно в любой момент из каталога.",
   "*Panel settings*": "*Настройки панели*",
-  // budget-ok: tab label, tabs size to content
   "Routing": "Маршрутизация",
   "Blocking": "Блокировки",
   "Provider lists": "Списки провайдера",
@@ -1483,7 +1352,6 @@ export const STR = {
     "Эта нода сопоставляет не более {v1} шаблона — здесь {v2}, остальное будет отброшено.",
   "Custom lists": "Свои списки",
   "Delete this list": "Удалить этот список",
-  // budget-ok: empty state, own block
   "Could not load the block-list catalog.": "Не удалось загрузить списки блокировок.",
   "The panel returned an invalid response (HTTP {v1}).": "Панель вернула некорректный ответ (HTTP {v1}).",
   "Add a node to configure its routing mode.": "Добавьте ноду, чтобы настроить режим маршрутизации.",
@@ -1521,9 +1389,7 @@ export const STR = {
   "At (panel time)": "В (время панели)",
   "At (node-local time)": "В (местное время ноды)",
   "Check for updates": "Проверить обновления",
-  // budget-ok: button in a toolbar with a grow spacer
   "Check client rosters": "Проверить реестры клиентов",
-  // budget-ok: field <label>, own line
   "Fallback VK call link": "Запасная ссылка на звонок VK",
   "https://vk.com/call/join/…": "https://vk.com/call/join/…",
   "Enable a provider to find its lists in the rule editor. When you turn a provider off, its lists are hidden and its rules stop matching.":
@@ -1533,20 +1399,16 @@ export const STR = {
   "Custom-list tag colour": "Цвет тега своих списков",
   "The block-list feeds that fill the *Blocking* tab's content categories (ads, malware, adult, and so on). Core feeds are on by default; turn on any extra feed to add its lists to the Blocking picker. Turning one off hides its lists and *deactivates* anything already filtering from it until you re-enable it. Each feed keeps its own tag colour.":
     "Источники списков блокировок, которые наполняют контент-категории вкладки *Блокировки* (реклама, вредоносное, взрослое и так далее). Основные источники включены по умолчанию; включите любой дополнительный, чтобы его списки появились в выборе блокировок. Выключение прячет его списки и *деактивирует* всё, что уже по ним фильтруется, пока вы не включите его снова. У каждого источника свой цвет тега.",
-  // budget-ok: section heading, own line
   "Update schedule": "Расписание обновления",
   "When each node re-fetches its lists. Refreshing briefly reloads the node's match sets, which clients can feel — so schedule it for a *quiet hour*. (A failed fetch retries on the next sync; existing lists keep working meanwhile.)":
     "Когда каждая нода заново скачивает свои списки. Обновление ненадолго перезагружает наборы сопоставления на ноде, и клиенты могут это почувствовать — поэтому ставьте его на *тихий час*. (Неудачная загрузка повторится на следующей синхронизации; пока что работают прежние списки.)",
   "Continuous (rolling ": "Непрерывно (скользящее ",
   "Reset": "Сбросить",
   "Peer health detection": "Определение состояния пиров",
-  // budget-ok: section heading, own line
   "Defaults": "Значения по умолчанию",
   "https://8.8.8.8/dns-query, 1.1.1.1": "https://8.8.8.8/dns-query, 1.1.1.1",
-  // budget-ok: section heading, own line
   "Key escrow & recovery": "Депонирование ключей и восстановление",
   "Authentication": "Вход в панель",
-  // Settings section names — the rail is a narrow left column, so these stay short.
   "Routing & Blocking": "Маршрутизация",
   "Geo data providers": "Провайдеры гео-данных",
   "Integrations": "Интеграции",
@@ -1575,7 +1437,6 @@ export const STR = {
     "Плюс каждое изменение состояния: интерфейс поднялся, пир добавлен, маршрут установлен. По умолчанию.",
   "Everything, including each routing pass and every site your users open.":
     "Всё, включая каждый проход маршрутизации и каждый сайт, который открывают ваши пользователи.",
-  // what Off deletes and what it cannot, per kind of server (q189 DN-2 / NLH-2)
   "swg's own logs are deleted, and nothing more is kept in them. A server's system journal keeps what it already holds — the kernel's P2P guard lines, with users' addresses, among them.":
     "Собственные логи swg удаляются, и больше в них ничего не сохраняется. Системный журнал сервера хранит то, что в нём уже есть, — в том числе строки защиты от P2P из ядра с адресами пользователей.",
   "On bare metal, a turn proxy, relay or WDTT / csqtt server not restarted since the update still writes there.":
@@ -1595,7 +1456,6 @@ export const STR = {
   "Then logging goes back to {v1}.": "Затем уровень вернётся к «{v1}».",
   "Turn proxies, WireGuard interfaces and other third-party services pick up a change the next time they restart.":
     "Turn-прокси, интерфейсы WireGuard и другие сторонние службы подхватят изменение при следующем перезапуске.",
-  // Settings → Logs, the disk budget table
   "Disk budget": "Место на диске",
   "How much disk swg's logs may take on each server. When the budget is full, the oldest lines go first.":
     "Сколько места на диске могут занимать логи swg на каждом сервере. Когда лимит заполнен, первыми удаляются самые старые строки.",
@@ -1640,7 +1500,6 @@ export const STR = {
     "В docker лимит распространяется на файлы логов swg и на контейнеры, которые запускает нода; собственный docker-лог каждого контейнера (10 МБ × 3) не учитывается.",
   "log budget → {v1} MB": "лимит логов → {v1} МБ",
 
-  // ── Settings → Logs, the live viewer (docs/LOGS-PLAN.md §5) ──
   "Live logs": "Логи онлайн",
   "Start live log": "Запустить логи",
   "Servers": "Серверы",
@@ -1698,7 +1557,6 @@ export const STR = {
   "{v1} of the last {v2} lines": "{v1} из последних {v2} строк",
   "Shown full screen — Esc returns it here.": "Открыто во весь экран — Esc вернёт сюда.",
 
-  // ── Settings → Logs, the source dropdowns and the bar ──
   "Nodes": "Ноды",
   "All": "Все",
   "All servers": "Все серверы",
@@ -1722,7 +1580,6 @@ export const STR = {
     "Выбрано источников: {v1}, а просмотр следит не больше чем за {v2}. Выберите меньше или отметьте группу целиком — она считается за один.",
   "A time range…": "За период…",
 
-  // ── Settings → Logs, a time range downloaded as one file (docs/LOGS-PLAN.md §26) ──
   "Every line of a time range from these servers, as one file": "Все строки за период с этих серверов — одним файлом",
   "Download a time range": "Скачать логи за период",
   "Time range": "Период",
@@ -1739,8 +1596,6 @@ export const STR = {
   "This download is gone: made files are kept for {n} min. Make it again.": "Этого файла уже нет: готовые файлы хранятся {n} мин. Соберите его заново.",
   "Pick at least one server, one source and one level.": "Выберите хотя бы один сервер, один источник и один уровень.",
   "The panel did not answer. Try again.": "Панель не ответила. Попробуйте ещё раз.",
-  // the panel's own answers on the log routes — read by the viewer's code and by swg-noded, shown on no screen of the
-  // SPA (the viewer words its own sentences by `code`); translated so a srvText() of them never prints English
   "{v1} log viewers are open already": "уже открыто просмотров логов: {v1}",
   "{v1} downloads are being made already": "уже собирается файлов: {v1}",
   "cannot spool the download: {v1}": "не удалось сохранить файл для скачивания: {v1}",
@@ -1763,7 +1618,6 @@ export const STR = {
   "the panel cannot spool it": "панель не может сохранить эту часть",
   "log_level must be off, error, warning or info": "log_level: off, error, warning или info",
   "log_debug must be 0, 3600, 86400 or -1": "log_debug: 0, 3600, 86400 или -1",
-  // {v3} is "N servers" through PLURALS gen|server: «из 1 сервера», «из 21 сервера», «из 5 серверов»
   "Reading {v1}: waiting on {v2} of {v3}.": "Читаем {v1}: ждём {v2} из {v3}.",
   "Waiting on {v2} of {v3}": "Ждём {v2} из {v3}",
   "Making the file…": "Собираем файл…",
@@ -1799,9 +1653,7 @@ export const STR = {
   "required to confirm a change": "нужен для подтверждения изменения",
   "Client configs": "Конфиги клиентов",
   "Store client configs": "Хранить конфиги клиентов",
-  // budget-ok: <select> option, sizes to content
   "Keep encrypted configs — QRs re-viewable anytime": "Хранить зашифрованные конфиги — QR можно открыть в любой момент",
-  // budget-ok: <select> option, sizes to content
   "Keep nothing — QR shown once": "Ничего не хранить — QR показывается один раз",
   "Subscriptions": "Подписки",
   "Encryption": "Шифрование",
@@ -1809,16 +1661,13 @@ export const STR = {
     "Отдельная страница для каждого пользователя с его QR кодами и конфигами, которой можно поделиться. Приватные ключи завёрнуты во *фрагменте* URL и никогда не уходят на панель — на сервере не хранится ничего читаемого. Относитесь к ссылке каждого пользователя как к учётным данным (у кого ссылка, у того и конфиги). Страницу отдаёт отдельная служба *swg-sub*; настройте её здесь и установите на хосте панели.",
   "Enable subscriptions": "Включить подписки",
   "Off — the subscription page is blocked entirely": "Выкл — страница подписки полностью закрыта",
-  // budget-ok: <select> option, sizes to content
   "On — per-user subscription URLs are served": "Вкл — ссылки подписок выдаются для каждого пользователя",
   "Off returns 404 for every subscription URL, regardless of the rest.": "В положении «выкл» любая ссылка подписки отвечает 404, независимо от остального.",
   "When you create a user, mint their subscription link automatically, in the background (user creation stays instant). Needs the encryption key unlocked at that moment; otherwise the link is created the next time you open that user with the key unlocked.":
     "При создании пользователя сразу выпускать его ссылку на подписку в фоне (создание пользователя остаётся мгновенным). В этот момент нужен открытый ключ шифрования; иначе ссылка создастся, когда вы в следующий раз откроете этого пользователя с открытым ключом.",
   "Access expiry": "Срок доступа",
-  // budget-ok: field <label>, own line
   "Warn before expiry (days)": "Предупреждать до истечения (дней)",
 
-  // budget-ok: field hint, wraps
   "Default: 3 (0 = warn only once expired)": "По умолчанию 3 (0 = предупреждать только после истечения)",
   "Address & certificate": "Адрес и сертификат",
   "Languages": "Языки",
@@ -1855,13 +1704,11 @@ export const STR = {
   "since and window must be integers": "since и window должны быть целыми числами",
   "The traffic history is being written; try again in a moment": "История трафика сейчас записывается; повторите через мгновение",
   "The charts keep {v1} days: a custom window can start on {v2} at the earliest": "Графики хранят {v1} дня: свой период может начинаться не раньше {v2}",
-  // Custom on the Overview (P3): the rail's date window, Top talkers on the traffic ledger.
   "The charts go back to {v1}.": "Графики начинаются с {v1}",
   "each on all their servers": "каждый — на всех своих серверах",
   "handed on": "передано",
   "The traffic totals could not be loaded.": "Не удалось загрузить итоги трафика.",
   "since {v1}": "с {v1}",
-  // Traffic totals (P2): the window control, the Total cell's bubble, the peer and user views, Settings → Display → Data.
   "This month": "Этот месяц",
   "Last 30 days": "Последние 30 дней",
   "range|Custom": "Свой период",
@@ -1952,8 +1799,6 @@ export const STR = {
   "shared by {v1}": "доступ открыт пользователем {v1}",
   "shared by {v1} until {date}": "доступ открыт пользователем {v1} до {date}",
   "via": "через",
-  // ⚠️ "prep|on", not "on": the catalog already carries "on" meaning ENABLED ("вкл"), later in the file, and a duplicate
-  // key in an object literal silently wins — the bubble's "X on <node>" rendered as "вкл" until this was disambiguated.
   "prep|on": "на",
   "filter|All": "Все",
   "Can be reached by": "Кому доступны",
@@ -2026,7 +1871,6 @@ export const STR = {
   "Not a valid IPv4 address or range: {v1}": "Неверный IPv4-адрес или диапазон: {v1}",
   "Too broad for a never-flag list (use /16 or narrower): {v1}": "Слишком широкий диапазон для списка исключений (используйте /16 или уже): {v1}",
   "Too many trusted sources — {v1} over the limit of 256.": "Слишком много доверенных источников — на {v1} больше лимита в 256.",
-  // ── the Never-block list (docs/NEVER-BLOCK-AND-PORT-RULES-PLAN.md A.5) ──
   "Never block": "Не блокировать",
   "Never blocked by any block list, on every interface and node — and still routed by your routing rules. Your own Block rules and the abuse protections are not affected. Addresses come out of every address list; site names out of the site lists, in Hybrid SNI mode. A name and an address are separate: a site name does not unblock an address an address list holds, and an address stays blocked by a site list while a blocked site resolves to it — list both when you need both. One site name, IP or range a line.":
     "Никакой список блокировок не блокирует их — ни на одном интерфейсе и ни на одной ноде, — а маршрутизируются они по вашим правилам, как прежде. Ваши собственные правила «Заблокировать» и защита от злоупотреблений не затрагиваются. Адреса убираются из всех списков адресов, имена сайтов — из списков сайтов в режиме Hybrid SNI. Имя и адрес — разные записи: имя сайта не разблокирует адрес, который держит список адресов, а адрес остаётся заблокированным списком сайтов, пока в него разрешается заблокированный сайт, — если нужно и то и другое, добавьте оба. Одно имя, IP или диапазон на строку.",
@@ -2057,30 +1901,24 @@ export const STR = {
   "Mesh links — {v1}": "Связи в меше — {v1}",
   "Node local networks — hidden, and closed on every node": "Локальные сети нод — скрыты и закрыты на всех нодах",
   "Status timing": "Тайминги статусов",
-  // budget-ok: field <label>, own line
   "Node stale after (s)": "Нода считается молчащей через (с)",
-  // budget-ok: field hint, wraps
   "No sync for this long → the node shows stale.": "Нет синхронизации столько времени → нода показывается как молчащая.",
   "Peer grace window (s)": "Окно ожидания для пира (с)",
   "A peer stays \"online\" this long after its last handshake.": "Пир считается «онлайн» столько времени после последнего хендшейка.",
   "Overview lists": "Списки на обзоре",
-  // budget-ok: field hint, wraps
   "Number of peers in the Top talkers list (max 50).": "Сколько пиров показывать в списке самых активных (не больше 50).",
   "Number of categories in the Top destinations list (max 50).": "Сколько категорий показывать в списке направлений (не больше 50).",
   "Title": "Название",
   "e.g. Streaming": "например, Стриминг",
-  // the field takes six kinds now; enumerating them in a label is a list that grows with every one
   "Addresses, domains and patterns": "Адреса, домены и шаблоны",
   "Domains match their subdomains too; IPs / CIDRs directly; an *AS number* (e.g. AS62041) resolves to that provider's IP ranges. Patterns work here exactly as they do in a rule.":
     "Домены совпадают вместе со своими поддоменами; IP и CIDR — напрямую; *номер AS* (например AS62041) разворачивается в диапазоны IP этого провайдера. Шаблоны работают здесь так же, как в правиле.",
   "Mesh subnet": "Подсеть меша",
   "Mesh port": "Порт меша",
   "Interface name prefix": "Префикс имени интерфейса",
-  // budget-ok: button beside a wide input
   "Generate a set": "Сгенерировать набор",
   "Clear (auto)": "Очистить (авто)",
   "Two-factor authentication disabled.": "Двухфакторная аутентификация отключена.",
-  // budget-ok: toast, wraps
   "Recovery codes copied.": "Коды восстановления скопированы.",
   "Disable two-factor": "Отключить второй фактор",
   "TOTP QR code": "QR-код TOTP",
@@ -2088,7 +1926,6 @@ export const STR = {
   "Code from the app": "Код из приложения",
   "*Two-factor is on.* Save these recovery codes now — each works once if you lose your authenticator. *They won't be shown again.*":
     "*Второй фактор включён.* Сохраните коды восстановления сейчас — каждый срабатывает один раз, если вы потеряете аутентификатор. *Больше они не покажутся.*",
-  // budget-ok: button under a wrapping notice
   "Copy codes": "Скопировать коды",
   "Authentication code (or recovery code)": "Код подтверждения (или код восстановления)",
 
@@ -2100,8 +1937,6 @@ export const STR = {
     "*{v1}*На этом интерфейсе пока ничего не настроено. Примите его, чтобы добавлять пиров из панели.",
   "Ports recovered from its password store — its clients already dial these. The *subnet* is never written to disk, so set that below.":
     "Порты восстановлены из его хранилища паролей — клиенты уже звонят именно на них. *Подсеть* на диск не пишется, поэтому задайте её ниже.",
-  // budget-ok: disclosure summary, own line
-  // the collapsed routing summary. TWO sentences, one per engine arbitration — see rulesSummary().
   "Delete interface": "Удалить интерфейс",
   "Reassigning to {v1} rotates the peer's keys. The current user loses access immediately and permanently — assigning them back later would still be a brand-new credential.":
     "Переназначение на {v1} перевыпускает ключи пира. Текущий пользователь теряет доступ немедленно и безвозвратно — даже если вернуть пира ему позже, это будут совершенно новые учётные данные.",
@@ -2110,10 +1945,8 @@ export const STR = {
   "This only turns off this user's subscription LINK — the page stops resolving. It does NOT disconnect their peers: existing connections keep working, and a config already scanned keeps working until you rekey or remove the peer. To actually cut this user's access, use Block instead. Re-enabling later issues a fresh link over the same configs.":
     "Это отключает только ССЫЛКУ подписки этого пользователя — страница перестаёт открываться. Пиры при этом НЕ отключаются: существующие соединения продолжают работать, и уже отсканированный конфиг тоже, пока вы не смените ключи или не удалите пира. Чтобы действительно закрыть доступ, используйте «Закрыть доступ». Повторное включение выпустит новую ссылку поверх тех же конфигов.",
   "Rebuilding this node's mesh link — it reconnects in a few seconds": "Пересобираем меш-линк этой ноды — она переподключится через несколько секунд",
-  // budget-ok: button tooltip, no box
   "Interface defaults in Settings → Interfaces": "Значения по умолчанию для интерфейсов — в «Настройки → Интерфейсы»",
   "Open the interface (read-only) — peers, saved config, and Restore": "Открыть интерфейс (только чтение) — пиры, сохранённый конфиг и восстановление",
-  // budget-ok: card tooltip, no box
   "Open the interface (read-only) — recreate & rekey": "Открыть интерфейс (только чтение) — пересоздать и сменить ключи",
   "Open the WDTT server (read-only) — details and Restore": "Открыть сервер WDTT (только чтение) — детали и восстановление",
   "Cancel removal — keep this node": "Отменить удаление — оставить ноду",
@@ -2124,7 +1957,6 @@ export const STR = {
   "Pulse": "Пульс",
   "Flow": "Поток",
   "Off": "Выкл",
-  // budget-ok: confirm sheet title, 620px wide
   "Stop sending events to *{v1}*?": "Прекратить отправку событий на *{v1}*?",
   "*Confirm the internal-port change.* The public address doesn't change, so the nodes aren't affected — but the panel will restart onto a new internal port, so your *reverse proxy must be re-pointed* to it. When you Confirm, the panel dry-runs the new port (checks it's free), restarts onto it, then waits for you to re-point the proxy. If it stays unreachable it *rolls back to the current port automatically*.":
     "*Подтвердите смену внутреннего порта.* Публичный адрес не меняется, поэтому ноды не затрагиваются — но панель перезапустится на новом внутреннем порту, и ваш *обратный прокси придётся перенаправить* на него. При подтверждении панель сначала прогонит новый порт вхолостую (проверит, что он свободен), перезапустится на него и будет ждать, пока вы перенастроите прокси. Если он так и останется недоступен, панель *автоматически откатится на текущий порт*.",
@@ -2134,8 +1966,6 @@ export const STR = {
   " As with the panel, *the URL carries the port*.": " Как и у панели, *порт берётся из URL*.",
   "*{v1} in plaintext still on the panel.* Encrypt them so the server can no longer read a client private key. Safe and resumable — the plaintext is deleted only after its encrypted copy exists.":
     "*{v1} на панели всё ещё в открытом виде.* Зашифруйте их, чтобы сервер больше не мог прочитать приватный ключ клиента. Безопасно и с возобновлением — открытая копия удаляется только после того, как появилась зашифрованная.",
-  // the migration toast — two whole sentences, because only one of them mentions the purge
-  // budget-ok: toast, wraps — and the phrasing matches the report line above it on purpose
   "Encrypted {v1} · purged {v2} plaintext.": "Зашифровано {v1} · вычищено {v2} в открытом виде.",
   "Encrypted {v1}.": "Зашифровано {v1}.",
   "*All stored configs are encrypted.*": "*Все сохранённые конфиги зашифрованы.*",
@@ -2145,12 +1975,9 @@ export const STR = {
   "This interface is gone from the node — uncheck to remove this deployment from the peer":
     "Этот интерфейс пропал с ноды — снимите галочку, чтобы убрать это развёртывание у пира",
   "from server, or e.g. 1.1.1.1": "с сервера или, например, 1.1.1.1",
-  // budget-ok: toast, wraps
   "Node force-removed.": "Нода удалена принудительно.",
-  // budget-ok: icon-button tooltip, no box
   "Force remove": "Удалить принудительно",
   "Remove node": "Удалить ноду",
-  // budget-ok: icon-button tooltip, no box
   "Force remove node": "Удалить ноду принудительно",
   "Flag for removal": "Пометить на удаление",
   "Removes swg-noded / swg-agent and tells the panel it's gone. Force remove is for when the server is unreachable.":
@@ -2196,7 +2023,6 @@ export const STR = {
   "Turn-proxy management is *off* on this node — no Docker socket was mounted at install (*TURN_MANAGE=manual*), so these are read-only here. Add, edit or restart them on the box directly.":
     "Управление turn-прокси на этой ноде *выключено* — при установке не был примонтирован сокет Docker (*TURN_MANAGE=manual*), поэтому здесь они только для чтения. Добавляйте, правьте и перезапускайте их прямо на ноде.",
 
-  // Collected VK IPs
   "Collected IPs": "Собранные IP",
   "Collected VK IPs": "Собранные IP VK",
   "No connections seen yet.": "Соединений пока не видели.",
@@ -2209,32 +2035,25 @@ export const STR = {
     "Очистить собранную историю IP turn-прокси по всему флоту? Активные сейчас IP сохранятся.",
   "Unique VK server IPs the nodes collected via turn-proxies.": "Уникальные IP серверов VK, собранные нодами через turn-прокси.",
   "Turn IP": "IP turn",
-  // budget-ok: grid header, column sizes to content
   "Last": "Последний раз",
   "Collected by": "Собрал",
   "Flush turn-proxies history": "Очистить историю turn-прокси",
   "No turn-proxy connections collected yet.": "Соединений turn-прокси пока не собрано.",
 
-  // Service lifecycle
   "Turn-proxy {verb} requested — applies on the node's next sync.":
     "Запрошено: {verb} turn-прокси — применится на следующей синхронизации ноды.",
   "Turn-proxy update requested — applies on the node's next sync.":
     "Обновление turn-прокси запрошено — применится на следующей синхронизации ноды.",
   "Pending turn-proxy request cancelled.": "Ожидающий запрос turn-прокси отменён.",
-  // budget-ok: toast, wraps
   "Restart requested — applies on the node's next sync.": "Перезапуск запрошен — применится на следующей синхронизации ноды.",
-  // budget-ok: toast, wraps
   "Stop requested — applies on the node's next sync.": "Остановка запрошена — применится на следующей синхронизации ноды.",
-  // budget-ok: toast, wraps
   "Start requested — applies on the node's next sync.": "Запуск запрошен — применится на следующей синхронизации ноды.",
   "Turn-proxy adopt requested — the node reads it on its next sync.":
     "Приём turn-прокси запрошен — нода прочитает его на следующей синхронизации.",
   "Turn-proxy install requested — the node downloads + starts it on its next sync.":
     "Установка turn-прокси запрошена — нода скачает и запустит его на следующей синхронизации.",
   "No changes.": "Изменений нет.",
-  // budget-ok: toast, wraps
   "Title saved — the proxy keeps running.": "Название сохранено — прокси продолжает работать.",
-  // budget-ok: toast, wraps
   "Title saved.": "Название сохранено.",
   "Start the service on the node": "Запустить службу на ноде",
   "Stop the service on the node (stays down until started)": "Остановить службу на ноде (останется остановленной до запуска)",
@@ -2243,12 +2062,10 @@ export const STR = {
   "Installing…": "Устанавливаю…",
   "Reinstall service": "Переустановить службу",
 
-  // ExecStart editor
   "Changing any field rewrites the unit's ExecStart on the node and restarts it.":
     "Изменение любого поля перезаписывает ExecStart юнита на ноде и перезапускает его.",
   "The parameters below are placed verbatim after `-connect` — wrap key, wrap mode, any flags the fork supports.":
     "Параметры ниже подставляются дословно после `-connect` — ключ обёртки, режим обёртки, любые флаги, которые поддерживает форк.",
-  // budget-ok: field <label>, own line
   "Listen IP": "Внешний IP",
   "Forward to": "Куда перенаправлять",
   "no obfuscation": "без обфускации",
@@ -2256,13 +2073,10 @@ export const STR = {
   "Custom IP:Port…": "Свой IP:порт…",
   "Server parameters": "Параметры сервера",
   "Obfuscation": "Обфускация",
-  // budget-ok: inline button beside a wide input
   "Generate key": "Сгенерировать ключ",
-  // budget-ok: link-button beside a wide input
   "Generate": "Сгенерировать",
   "Not generated yet": "Ещё не сгенерирован",
   "ExecStart parameters": "Параметры ExecStart",
-  // budget-ok: textarea placeholder, wide field
   "extra flags — appended verbatim, e.g. -debug": "дополнительные флаги — подставляются дословно, например -debug",
   "64 hex chars — blank = a fresh key per proxy": "64 hex-символа — пусто = свежий ключ на каждый прокси",
   "Bridge node: the proxy binds `0.0.0.0` inside the container and this port is published, so enter the node's *public* IP/host (what clients dial) here.":
@@ -2278,42 +2092,32 @@ export const STR = {
   "The top line is this proxy's actual command — the *listen* address and *interface* you set above, plus the obfuscation here. Whatever you type below is appended verbatim.":
     "Верхняя строка — настоящая команда этого прокси: заданные выше *внешний адрес* и *интерфейс* плюс обфускация берётся из панели. Всё, что вы наберёте ниже, добавится к строке запуска.",
 
-  // Client app picker
-  // budget-ok: picker heading, own line
   "Select an app for each OS": "Выберите приложение для каждой ОС",
   "not offered": "не предлагается",
   "no client": "нет клиента",
   "Not offered": "Не предлагается",
-  // budget-ok: hover bubble, wraps
   " — {os} users get no card for this server": " — пользователи {os} не увидят карточку этого сервера",
   "Don't offer": "Не предлагать",
   " for {os}": " для {os}",
-  // budget-ok: faint hint under a picker option, wraps
   "no card on their page": "карточки на их странице не будет",
-  // budget-ok: hint block, wraps
   "Pick a client app above first.": "Сначала выберите клиентское приложение выше.",
 
-  // Client rosters (schema diffs)
   "Client rosters": "Реестры клиентов",
   "Each client app's config schema vs upstream on GitHub.": "Схема конфигурации каждого клиента против апстрима на GitHub.",
   "new adoptable fields ·": "новых полей к принятию ·",
   "new values ·": "новых значений ·",
-  // budget-ok: inside wrapping hint prose
   "new items that need a panel update (encoder wiring) before they work.":
     "новых пунктов, которым нужно обновление панели (поддержка в кодировщике), чтобы заработать.",
   "Set version": "Задать версию",
   "rolls a client back to a previous app version.": "откатывает клиент на предыдущую версию приложения.",
   "Review": "Разобрать",
-  // budget-ok: sheet title, 740px wide
   "Review changes": "Разобрать изменения",
   "Rate-limited by GitHub (60/hour unauthenticated); set `SWG_GH_TOKEN` to lift it. A field tagged \"needs wiring\" becomes usable after a panel update.":
     "GitHub ограничивает частоту (60/час без авторизации); задайте `SWG_GH_TOKEN`, чтобы снять лимит. Поле с пометкой «нужна поддержка» станет доступным после обновления панели.",
   "new adoptable fields": "новые поля к принятию",
   "new values for existing settings": "новые значения существующих настроек",
   "new fields/values — need a panel update to use": "новые поля и значения — нужны обновления панели",
-  // budget-ok: <select> option, sizes to content
   "↻ Track latest": "↻ Следить за последней",
-  // budget-ok: link text in a version cell, wraps
   "couldn't fetch": "не удалось получить",
   "Preserve current": "Оставить как есть",
   "adopting…": "принимаю…",
@@ -2335,9 +2139,7 @@ export const STR = {
   "source changed": "исходник изменился",
   "Best-effort parse (Python/Go source)": "Разбор по мере сил (исходник Python/Go)",
 
-  // Versions
   "Installed": "Установлено",
-  // budget-ok: <select> option, sizes to content
   "Use latest version": "Использовать последнюю версию",
   "Version & rollback": "Версия и откат",
   "Pinned to *{held}* but the node is still running *{inst}* — the version swap failed on the node (often a checksum mismatch). Check the proxy's status, then re-try or pick a different version.":
@@ -2345,7 +2147,6 @@ export const STR = {
   "{fork} servers share one binary per node, so the version is per node — every {fork} instance on a node moves together. Pinning an older version *holds* it (no auto-update); *Use latest* follows new releases.":
     "Серверы {fork} используют один бинарник на ноду, поэтому версия задаётся на ноду — все экземпляры {fork} на ноде переезжают вместе. Закрепление старой версии *удерживает* её (без автообновления); *Использовать последнюю* следует за новыми релизами.",
 
-  // Setup sheet
   "Source": "Источник",
   "Install a fork": "Установить форк",
   "Adopt existing service": "Принять существующую службу",
@@ -2360,15 +2161,12 @@ export const STR = {
     "Слушает на всех адресах (0.0.0.0), а клиентам некуда подключаться — задайте адрес входа ноды в {v1}.",
   "Not an address of this node, so it listens on all addresses (0.0.0.0).": "Это не адрес этой ноды, поэтому сервер слушает на всех адресах (0.0.0.0).",
 
-  // WDTT server
   "WDTT server requested — the node installs it on its next sync. Add users from Peers.":
     "Сервер WDTT запрошен — нода установит его на следующей синхронизации. Пользователей добавляйте из «Пиров».",
-  // budget-ok: field <label>, own line
   "Serves": "Обслуживает",
   "Built-in userspace WireGuard": "Встроенный WireGuard в userspace",
   "WDTT owns its own WireGuard interface — users attach to it directly (no forwards-to). WDTT mints each user's key + IP on connect; you add + manage users from Peers.":
     "У WDTT собственный интерфейс WireGuard — пользователи подключаются прямо к нему (никуда вести не нужно). WDTT выпускает ключ и IP каждого пользователя при подключении; добавлять и вести пользователей — из «Пиров».",
-  // budget-ok: disclosure title, own line
   "Advanced — built-in interface": "Дополнительно — встроенный интерфейс",
   "Internal subnet": "Внутренняя подсеть",
   "Auto-assigned to avoid collisions with this node's other WDTT servers, interfaces, and ports.":
@@ -2429,11 +2227,9 @@ export const STR = {
   "not running": "не запущен",
   "Type": "Тип",
   "chosen when you adopt": "выбирается при приёме",
-  // budget-ok: card row label, own cell
   "Server identity": "Идентичность сервера",
   "Server address": "Адрес сервера",
   "Server name": "Имя сервера",
-  // budget-ok: Panel heading, own line
   "Users on this server": "Пользователи этого сервера",
   "Peers on this interface": "Пиры на этом интерфейсе",
   "LAST SEEN": "БЫЛ",
@@ -2463,7 +2259,6 @@ export const STR = {
   "Start managing this interface on {node}. The panel doesn't know its type — {choose}":
     "Начать управлять этим интерфейсом на {node}. Панель не знает его тип — {choose}",
   "choose it below": "выберите его ниже",
-  // budget-ok: continues the intro sentence, wraps
   ". Preselected {type} because {why}": ". Предварительно выбран {type}, потому что {why}",
   "Interface type": "Тип интерфейса",
   "Server fork": "Форк сервера",
@@ -2479,12 +2274,9 @@ export const STR = {
   "What clients dial — config-facing only": "Куда звонят клиенты — только для конфигов",
   "Tunnel subnet (CIDR)": "Подсеть туннеля (CIDR)",
   "Tunnel subnet": "Подсеть туннеля",
-  // budget-ok: field <label>, own line
   "Listen port (DTLS)": "Внешний порт (DTLS)",
-  // budget-ok: field <label> / card row label, own line
   "Listen port": "Внешний порт",
   "Internal WG port": "Внутренний порт WG",
-  // budget-ok: field hint, wraps
   "The server's own tunnel port": "Собственный туннельный порт сервера",
   "The server's own tunnel port — not dialled by clients": "Собственный туннельный порт сервера — клиенты на него не звонят",
   "DTLS listen (outside)": "Приём DTLS (снаружи)",
@@ -2495,16 +2287,13 @@ export const STR = {
     "Трафик на этом плече идёт со стороны *{peer}*, поэтому путь данных выбирается там — откройте эту связь со страницы {peer}.",
   "The panel hasn't worked out this link's routes yet, so there is nothing to accelerate here. The choice appears after *{node}*'s next sync.":
     "Панель ещё не рассчитала маршруты этой связи, так что ускорять здесь пока нечего. Выбор появится после следующей синхронизации *{node}*.",
-  // Under a whole-interface cascade "accelerated" reads as "this interface"; under a smart one it does not.
   "Only the destinations *{ifaces}* routes over this link are relayed — the rest of that traffic is untouched. And the relay terminates TCP, so UDP keeps forwarding either way.":
     "В релей уходят только те назначения, которые *{ifaces}* маршрутизирует через эту связь, — остальной трафик не затрагивается. И релей терминирует TCP, поэтому UDP в любом случае остаётся на пересылке.",
   "Nothing sends its whole traffic through this link yet. Set an interface's egress to *Forward to {peer}* and the datapath choice appears here.":
     "Пока ни один интерфейс не отправляет через эту связь весь свой трафик. Задайте в выходе интерфейса *Переслать на {peer}* — и выбор пути данных появится здесь.",
   "Existing peers": "Существующие пиры",
-  // budget-ok: card row label, own cell
   "Config file": "Файл конфигурации",
   "Config directory": "Каталог конфигурации",
-  // budget-ok: field <label>, own line
   "Config path": "Путь к конфигурации",
   "Protocol": "Протокол",
   "recoverable": "восстановим",
@@ -2520,13 +2309,11 @@ export const STR = {
     "нода больше не сообщает об установке WDTT по этому пути — возможно, её запустили (ищите как интерфейс) или удалили.",
   "This node runs in a container, so it can only read paths inside it — a config elsewhere on the host is invisible from here. *The interface must be running*: the node then adopts it from the live device (keys, peers, ports and AmneziaWG parameters, all fresher than any file). A stopped interface whose config the node can't read cannot be adopted.":
     "Эта нода работает в контейнере, поэтому видит только пути внутри него — конфиг где-то ещё на хосте отсюда не виден. *Интерфейс должен быть запущен*: тогда нода примет его прямо с живого устройства (ключи, пиры, порты и параметры AmneziaWG — всё свежее любого файла). Остановленный интерфейс, чей конфиг нода прочитать не может, принять нельзя.",
-  // budget-ok: toolbar button, row has a grow spacer
   "Adopt existing": "Принять существующий",
   "Taking over an interface already on the node — its keys and peers are kept.":
     "Берём под управление интерфейс, который уже есть на ноде — его ключи и пиры сохраняются.",
   "If the node has discovered this server it is quicker to adopt it from its *orphan card* on the node screen — the node has already read its fork, ports and identity. Point at the directory here when it hasn't: an install that was moved, renamed, or is stopped.":
     "Если нода уже обнаружила этот интерфейс, лучше принять его с *карточки* на странице ноды — нода уже прочитала его форк, порты и идентичность. Используйте этот функционал только если нода не смогла обнаружить самостоятельно: установка перенесена, переименована или остановлена.",
-  // budget-ok: field hint, wraps
   "Fixed — must match the peers that reference it.": "Фиксировано — должно совпадать с пирами, которые на него ссылаются.",
   "Subnet already used by {iface} on {node} — interface subnets must be unique across the fleet.":
     "Подсеть уже занята интерфейсом {iface} на {node} — подсети интерфейсов должны быть уникальны по всему флоту.",
@@ -2535,7 +2322,6 @@ export const STR = {
     "Подставляются в конфиги и QR. Оставьте пустым, чтобы сохранить текущие значения интерфейса.",
   "Pushed to the node's interface and rendered into configs/QRs. Existing devices must re-import after a change, except a change of disguise: each side sends its own.":
     "Отправляются на интерфейс ноды и подставляются в конфиги и QR. После изменения существующим устройствам нужен повторный импорт — кроме смены маскировки: каждая сторона отправляет свою.",
-  // AmneziaWG "Disguise as" — the picker over I1–I5 in the Edit sheet (docs/AWG-MIMICRY-PLAN.md §3.1, §5)
   "Disguise as": "Маскировка под",
   "mimic|Off": "Нет",
   "DNS query": "DNS-запрос",
@@ -2560,13 +2346,10 @@ export const STR = {
   "Configs issued from now on carry no disguise.": "Новые конфиги будут без маскировки.",
   "Configs issued from now on are disguised as {v1}.": "Новые конфиги будут маскироваться под {v1}.",
   "Configs issued from now on carry the I1–I5 below.": "Новые конфиги получат I1–I5, заданные ниже.",
-  // budget-ok: a hint line under the picker, wraps
   "On Save, devices keep working. Configs issued or re-imported from now on carry no disguise. Devices on this interface keep their current one until re-imported ({v1}).":
     "После сохранения устройства продолжат работать. Конфиги, выданные или переимпортированные с этого момента, будут без маскировки. Устройства на этом интерфейсе сохранят прежнюю до переимпорта ({v1}).",
-  // budget-ok: a hint line under the picker, wraps
   "On Save, devices keep working. Configs issued or re-imported from now on are disguised as {v1}. Devices on this interface keep their current disguise until re-imported ({v2}).":
     "После сохранения устройства продолжат работать. Конфиги, выданные или переимпортированные с этого момента, будут маскироваться под {v1}. Устройства на этом интерфейсе сохранят прежнюю маскировку до переимпорта ({v2}).",
-  // budget-ok: a hint line under the picker, wraps
   "On Save, devices keep working. Configs issued or re-imported from now on carry the I1–I5 below. Devices on this interface keep their current ones until re-imported ({v1}).":
     "После сохранения устройства продолжат работать. Конфиги, выданные или переимпортированные с этого момента, получат I1–I5, заданные ниже. Устройства на этом интерфейсе сохранят прежние до переимпорта ({v1}).",
   "The interface restarts; connected devices reconnect in about 15 seconds.": "Интерфейс перезапустится; подключённые устройства переподключатся примерно через 15 секунд.",
@@ -2577,22 +2360,16 @@ export const STR = {
   "{v1}: more than one UDP packet can carry (65,507 bytes).": "{v1}: больше, чем вмещает один UDP-пакет (65 507 байт).",
   "{v1}: longer than 4096 characters.": "{v1}: длиннее 4096 символов.",
   "{v1}: apps cannot read {v2} — use <b 0x…>, <r N>, <rc N>, <rd N> or <t>.": "{v1}: приложения не прочитают {v2} — используйте <b 0x…>, <r N>, <rc N>, <rd N> или <t>.",
-  // budget-ok: disclosure title, own line
   "Filters & abuse": "Фильтры и ограничения",
   "Advanced settings": "Дополнительно",
   "MTU · keepalive · DNS": "MTU · keepalive · DNS",
   "Blank = 1280": "Пусто = 1280",
   "0 disables · blank = 25": "0 отключает · пусто = 25",
   "Comma-separated": "Через запятую",
-  // budget-ok: field hint, wraps
   "Default for new peers": "По умолчанию для новых пиров",
-  // budget-ok: field <label>, own line
   "Host tunnel IP": "IP туннеля на хосте",
-  // budget-ok: popover row tooltip, wraps
   "Leg measured from this node: {v1} of {v2} probe packets lost.": "Замер с этой ноды: потеряно {v1} из {v2} проб.",
-  // budget-ok: popover row tooltip, wraps
   "Leg measured from {v3}: {v1} of {v2} probe packets lost.": "Замер с {v3}: потеряно {v1} из {v2} проб.",
-  // budget-ok: popover row tooltip, wraps
   "Round-trip latency to {v3}. Loss this way is measured by {v3}, which has not reported it.": "Круговая задержка до {v3}. Потери в эту сторону меряет {v3} — она их пока не сообщила.",
   "col|Drops": "Отброшено",
   "Drops": "Отброшено",
@@ -2603,25 +2380,15 @@ export const STR = {
   "min {v1} · max {v2}": "мин {v1} · макс {v2}",
   "Jitter": "Джиттер",
   "Worst probe": "Худшая проба",
-  // budget-ok: bubble micro-label in a max-content column, measured 103px, no wrap or clip
   "Last loss": "Последняя потеря",
-  // budget-ok: bubble hint, wraps
   "That is a single lost packet — the smallest amount this probe can measure. One is normal; watch whether it keeps happening.": "Это один потерянный пакет — минимум, который эта проба вообще может измерить. Один — норма; смотрите, повторяется ли.",
-  // budget-ok: bubble footer, wraps
   "measured by pinging the far end of this link": "измеряется пингом дальнего конца этого канала",
-  // budget-ok: appended to a popover row tooltip, wraps
   "Worst probe {v1}%.": "Худшая проба {v1}%.",
-  // budget-ok: appended to a popover row tooltip, wraps
   "Last loss {v1} ago.": "Последняя потеря {v1} назад.",
-  // budget-ok: appended to a popover row tooltip, wraps
   "Jitter {v1}ms.": "Джиттер {v1}мс.",
-  // budget-ok: settings description, wraps
   "The client's packets reach the server but no handshake has ever completed — blocked at the door (likely DPI / MTU / wrong WireGuard or AmneziaWG params).": "Пакеты клиента доходят до сервера, но рукопожатие ни разу не завершилось — блокировка на входе (вероятно DPI / MTU / неверные параметры WireGuard или AmneziaWG).",
-  // budget-ok: settings description, wraps
   "The tunnel keeps collapsing and being rebuilt: handshakes far more often than the 120s a healthy session renews at, from an endpoint that isn't moving. A peer that simply has nothing to send is not flagged.": "Туннель постоянно рвётся и пересобирается: рукопожатия намного чаще, чем раз в 120 с, как обновляется здоровая сессия, и при этом адрес не меняется. Пир, которому просто нечего передавать, не помечается.",
-  // budget-ok: status reason sentence, wraps
   "the tunnel keeps collapsing and being rebuilt — the session won't hold, which is what a filtered or DPI'd connection looks like": "туннель постоянно рвётся и пересобирается — сессия не держится, так выглядит фильтруемое или DPI-подавленное соединение",
-  // budget-ok: settings intro, wraps
   "Two ways a peer can be under a filter, each independently switchable. Both raise the same {v1} badge — one is blocked at the door, the other gets in and can't stay. A peer that simply has nothing to send is never flagged.": "Два способа обнаружить фильтрацию пира, каждый включается отдельно. Оба поднимают один и тот же значок {v1}: в одном случае пира не пускают на входе, в другом он входит, но не может удержаться. Пир, которому просто нечего передавать, не помечается никогда.",
   "Drops · {v1}": "Отброшено · {v1}",
   "{v1} of {v2} packets": "{v1} из {v2} пакетов",
@@ -2633,11 +2400,9 @@ export const STR = {
   "refused": "отклонено",
   "overflow": "переполнение",
   "Not counted": "Не учтено",
-  // budget-ok: bubble footer, wraps
   "Loss over the last {v1} ({v2} probes of {v3} packets, {v4}-byte). Latency and jitter are from the newest probe.": "Потери за последние {v1} ({v2} проб по {v3} пакетов, {v4} байт). Задержка и джиттер — из последней пробы.",
   "Worst sample": "Худший замер",
   "dropped": "отброшено",
-  // budget-ok: bubble micro-label in a max-content column, measured 103px, no wrap or clip
   "Last drop": "Последняя потеря",
   "Since boot": "С загрузки",
   "unit|/min": "/мин",
@@ -2648,36 +2413,27 @@ export const STR = {
   "Backlog": "В очереди",
   "waiting": "ждут",
   "Since it started": "С запуска",
-  // budget-ok: bubble footer, wraps
   "Packets that reached this server and were discarded because the proxy wasn't reading its socket fast enough. They never reach an interface, so no interface counter can show them.": "Пакеты дошли до сервера и были отброшены, потому что прокси не успевал читать свой сокет. До интерфейса они не доходят, поэтому счётчики интерфейсов их не видят.",
   "Since reset": "С обнуления",
   "Reset ✓": "Сброшено ✓",
   "Resetting…": "Сброс…",
-  // budget-ok: button tooltip, wraps
   "Zero the counters and start measuring again from now": "Обнулить счётчики и начать измерять заново с этого момента",
   "Couldn't reset the counters.": "Не удалось сбросить счётчики.",
   "Clear this leg's probe window at both ends and start measuring again from now": "Очистить окно замеров на обоих концах и начать измерять заново с этого момента",
   "Couldn't reset the probe window.": "Не удалось очистить окно замеров.",
   "measured over the last {v1}": "замер за последние {v1}",
   "this node's own queues and datapath, not the path to the client": "собственные очереди и тракт узла, а не путь до клиента",
-  // budget-ok: bubble hint, wraps
   "Packets held for the other server were discarded because the link had no working session — it was down.": "Пакеты, ждавшие отправки другому серверу, отброшены: у канала не было рабочей сессии — он лежал.",
-  // budget-ok: bubble hint, wraps
   "The program serving this interface didn't read its queue in time — local load, or it was restarting.": "Программа, обслуживающая интерфейс, не успевала читать свою очередь — локальная нагрузка или перезапуск.",
-  // budget-ok: bubble hint, wraps
   "Packets waiting to go out were discarded before they could be sent.": "Пакеты, ждавшие отправки, отброшены, не успев уйти.",
-  // budget-ok: bubble hint, wraps
   "Not counted: packets for clients that weren't connected, traffic to addresses no client owns, and traffic one client sent from outside its range. None of it is something a connected client lost.": "Не учтено: пакеты для клиентов, которые не были подключены, трафик на адреса, не принадлежащие ни одному клиенту, и трафик, который клиент отправил не со своего адреса. Подключённые клиенты ничего из этого не потеряли.",
   "Sends failed outright — no route out, or a peer whose endpoint this node doesn't know yet.": "Отправка не удалась совсем: нет маршрута наружу или пир, чей адрес узлу ещё неизвестен.",
-  // budget-ok: bubble hint, wraps
   "Packets arrived faster than this node could take them in — local load, not the path.": "Пакеты приходили быстрее, чем узел успевал их принять, — локальная нагрузка, а не путь.",
-  // budget-ok: bubble hint, wraps
   "Packets came from a source outside the sender's allowed range, or were malformed — usually one misconfigured sender.": "Пакеты пришли с адреса вне разрешённого диапазона отправителя или были повреждены — обычно это один неверно настроенный отправитель.",
   "This node hasn't reported drop counters for this interface yet.": "Узел ещё не прислал счётчики потерь по этому интерфейсу.",
   "unit|ms": "мс",
   "(set at creation — delete & recreate to change)": "(задаётся при создании — меняется пересозданием)",
 
-  // Interface detail: down / gone / lost
   "This interface is *down* on the node — its config below is read from the *.conf* (not live). The node reported: {reason}. Use *Start interface* — if the bring-up fails, the exact reason (port clash, a left-over kernel interface of the same name, an unsupported AmneziaWG parameter, …) shows here.":
     "Этот интерфейс *не поднят* на ноде — конфиг ниже прочитан из *.conf* (не живой). Нода сообщила: {reason}. Нажмите *Запустить интерфейс* — если поднять не удастся, точная причина (конфликт порта, оставшийся интерфейс ядра с тем же именем, неподдерживаемый параметр AmneziaWG, …) появится здесь.",
   "This interface is *down* on the node. Change the *Listen port* to a free one and *Save* — the panel will write the new port and restart the interface to bring it up.":
@@ -2701,7 +2457,6 @@ export const STR = {
   "This interface hasn't been reported in a snapshot yet.": "Этот интерфейс ещё не появлялся в снапшоте.",
   "Action failed on the node": "Действие не удалось на ноде",
 
-  // Service controls
   "Stopped by you — Start it whenever you're ready": "Остановлен вами — запустите, когда будете готовы",
   "Start service": "Запустить",
   "Stop service": "Остановить",
@@ -2715,7 +2470,6 @@ export const STR = {
   "Stop + remove this csqtt server and disconnect its users": "Остановить и удалить этот сервер csqtt, отключив его пользователей",
   "Reachable via turn-proxy": "Доступен через turn-прокси",
   "Reachable via": "Доступен через",
-  // budget-ok: Panel heading, own line
   "Unmanaged on this interface": "Не под управлением на этом интерфейсе",
   "Adopt all": "Принять все",
   "The node applies the take-over on its next sync": "Нода применит приём на следующей синхронизации",
@@ -2738,7 +2492,6 @@ export const STR = {
     "Все клиенты этого интерфейса перестанут подключаться со своими текущими конфигами. Придётся перевыпустить и раздать каждый QR и конфиг. Исходный ключ отбрасывается.",
   "Key": "Ключ",
 
-  // Docker bridge publishing
   "Creation requested — it applies on the node's next sync. This node runs on `bridge` networking, so this interface's UDP port isn't reachable from outside until you publish it on the host (otherwise peers won't handshake — rx stays 0).":
     "Создание запрошено — применится на следующей синхронизации ноды. Эта нода работает в режиме сети `bridge`, поэтому UDP-порт этого интерфейса недоступен снаружи, пока вы не опубликуете его на хосте (иначе пиры не сделают хендшейк — rx останется 0).",
   "1. Add under {key} in the node's docker-compose.yml": "1. Добавьте в {key} в docker-compose.yml ноды",
@@ -2747,24 +2500,18 @@ export const STR = {
     "Переустановка ноды с сетью host избавляет от публикации портов вовсе.",
   "This docker node uses `bridge` networking — after creating you must publish this port in the node's `docker-compose.yml` ({ports}) and `up -d`, or clients can't reach it. (A host-networking node needs none of this.)":
     "Эта docker-нода работает в режиме сети `bridge` — после создания порт нужно опубликовать в `docker-compose.yml` ноды ({ports}) и выполнить `up -d`, иначе клиенты до него не достучатся. (Ноде с сетью host всё это не нужно.)",
-  // budget-ok: confirm sheet title, 480px wide
   "Unlock to capture the rekeyed configs": "Откройте хранилище, чтобы сохранить перевыпущенные конфиги",
 
-  // Delete
   "Interface deletion requested — the node tears it down on its next sync.":
     "Удаление интерфейса запрошено — нода снесёт его на следующей синхронизации.",
   "This permanently tears down *{iface}* on the node: the interface goes *down*, its *.conf and server key are removed*, and *every peer on this interface is destroyed*. Peers deployed only here are deleted from the panel and their configs/QRs stop working. This can't be undone.":
     "Это навсегда сносит *{iface}* на ноде: интерфейс *опускается*, его *.conf и ключ сервера удаляются*, и *все пиры на этом интерфейсе уничтожаются*. Пиры, развёрнутые только здесь, удаляются из панели, и их конфиги и QR перестают работать. Отменить нельзя.",
 
-  // Mesh link details
-  // budget-ok: field <label>, own line
   "Dial source IP": "IP источника для звонка",
-  // budget-ok: field <label>, own line
   "Dial endpoint IP": "IP эндпоинта для звонка",
   "— {node}'s IP": "— IP ноды {node}",
   "These interfaces' client traffic exits the fleet through *{node}*{smart}.":
     "Клиентский трафик этих интерфейсов выходит из флота через *{node}*{smart}.",
-  // budget-ok: clause inside wrapping prose
   " — smart-routed by destination": " — с умной маршрутизацией по назначению",
   "This is a panel-managed mesh link to *{node}*. It's created and torn down automatically as nodes are added or removed. To route a user interface's traffic out through this node, set that interface's egress to *Forward to {node}*.":
     "Это меш-линк до *{node}*, которым управляет панель. Он создаётся и сносится автоматически по мере добавления и удаления нод. Чтобы направить трафик пользовательского интерфейса через эту ноду, задайте её в выходе того интерфейса: *Переслать на {node}*.",
@@ -2772,7 +2519,6 @@ export const STR = {
   "Changing the *endpoint* or *port* will break the existing clients' connections; you will need to re-distribute the configs / QR codes.":
     "Смена *эндпоинта* или *порта* разорвёт соединения существующих клиентов; конфиги и QR придётся раздать заново.",
 
-  // Server-key drift
   "*New server key adopted.* Re-issue and re-distribute the QR codes / configs — *subscribed users update automatically*.":
     "*Новый ключ сервера принят.* Перевыпустите и раздайте QR и конфиги — *у подписчиков всё обновится само*.",
   "*Restoring the original key…* The node reverts to its backed-up key on its next sync — existing clients keep working, no re-distribution.":
@@ -2783,11 +2529,9 @@ export const STR = {
   "The node is reverting this interface to its backed-up original server key on its next sync. Existing clients keep working — no re-distribution needed.":
     "Нода вернёт этот интерфейс к резервной копии исходного ключа сервера на следующей синхронизации. Существующие клиенты продолжат работать — раздавать заново ничего не нужно.",
   "Restore original key": "Вернуть исходный ключ",
-  // budget-ok: faint hint under a button, wraps
   "Reverts to the backed-up key — existing clients keep working, no re-distribution.":
     "Возврат к резервной копии ключа — существующие клиенты продолжат работать, раздавать заново ничего не нужно.",
   "Adopt the new server key?": "Принять новый ключ сервера?",
-  // budget-ok: drift button, row wraps
   "Adopt new key": "Принять новый ключ",
   "New server key adopted": "Новый ключ сервера принят",
   "*Restore failed.* The node couldn't revert to its backed-up key: {err} — try again, or adopt the new key instead.":
@@ -2804,22 +2548,17 @@ export const STR = {
   "Restoring the panel value on the next sync.": "Значение панели вернётся на следующей синхронизации.",
   "Restore panel value": "Вернуть значение панели",
 
-  // routing & blocking policy (js/routing.js)
   "Host": "Хост",
   "cap|IP": "IP",
   "Matchable by domain — needs Force-DNS or SNI mode": "Совпадает по домену — нужен режим Force-DNS или SNI",
   "Matchable by IP range — works in every mode": "Совпадает по диапазону IP — работает в любом режиме",
-  // budget-ok: hover caption
   "Large list — noticeable memory / reload on any node that routes it":
     "Большой список — заметная память и перезагрузка на любой ноде, которая его маршрутизирует",
   "View this list on GitHub": "Открыть этот список на GitHub",
 
-  // The four routing modes (MODE_META)
-  // budget-ok: mode-card title, own line
   "Default routing": "Обычная маршрутизация",
   "IP only": "Только IP",
   "no host layer": "без слоя хостов",
-  // budget-ok: mode-card line, wraps
   "Just the always-on IP layer — no domain matching added": "Только всегда включённый слой IP — совпадений по доменам не добавляется",
   "Simplest & most robust · never touches DNS · carries all traffic (calls, UDP, QUIC)":
     "Проще и надёжнее всего · не трогает DNS · несёт весь трафик (звонки, UDP, QUIC)",
@@ -2842,7 +2581,6 @@ export const STR = {
     "Применяет доменные списки блокировки через DNS — ещё до первого соединения",
   "A blocked site that shares its address with an allowed one stays reachable":
     "Заблокированный сайт на одном адресе с разрешённым остаётся доступным",
-  // budget-ok: mode-card bullet, wraps
   "Long block lists cost CPU per DNS query — keep them small (≈100k domains)":
     "Длинные списки блокировки дорогие для CPU на каждый DNS-запрос — держите их небольшими (≈100 тыс. доменов)",
   "Kernel SNI": "Kernel SNI",
@@ -2851,14 +2589,12 @@ export const STR = {
   "Scans the TLS SNI in-kernel — client DNS stays private": "Читает SNI из TLS в ядре — DNS клиента остаётся приватным",
   "Daemonless & parallel per-CPU · lightest at high connection rates":
     "Без демона, параллельно по ядрам · лучший при большом числе соединений",
-  // budget-ok: mode-card bullet, wraps
   "Wins stability and high-connection-rate CPU over Hybrid":
     "Выигрывает у Hybrid по стабильности и по CPU при большом числе соединений",
   "Can also match a longer name that carries the site inside it · needs xt_string + ipset on the node":
     "Может совпасть и с более длинным именем, внутри которого есть этот сайт · нужны xt_string и ipset на ноде",
   "Blocks a site by name: each connection to it is refused, never its address":
     "Блокирует сайт по имени: отказ получает каждое соединение с ним, но не его адрес",
-  // budget-ok: mode-card bullet, wraps
   "Domain block lists are too long for the kernel — use Force-DNS or Hybrid for them":
     "Доменные списки блокировки слишком длинные для ядра — для них выбирайте Force-DNS или Hybrid",
   "Hybrid SNI": "Hybrid SNI",
@@ -2876,37 +2612,29 @@ export const STR = {
   "Routes by hostname by parsing the SNI from each TLS handshake in a small userspace helper, so your clients' DNS — DoH, DoT or plain — is never touched, observed or downgraded: the connection stays encrypted end-to-end. Parses the real SNI field (precise, fine with very large lists). Learns each destination on its first connection (a brand-new host routes on the next one). A blocked name is refused on every connection and its address stays open to other sites. QUIC / HTTP3 is dropped, so browsers use TLS over TCP, which is read; names hidden by ECH fall back to IP rules.":
     "Маршрутизирует по имени хоста, разбирая SNI из каждого TLS-рукопожатия в маленьком помощнике в userspace, поэтому DNS клиентов — DoH, DoT или обычный — не трогается, не просматривается и не понижается: соединение остаётся зашифрованным от края до края. Разбирает настоящее поле SNI (точно, спокойно к очень большим спискам). Узнаёт каждое назначение на первом соединении (совсем новый хост маршрутизируется со следующего). Заблокированное имя получает отказ на каждом соединении, а его адрес остаётся открыт для других сайтов. QUIC / HTTP3 отбрасывается, поэтому браузеры переходят на TLS поверх TCP, который читается; имена, скрытые ECH, маршрутизируются по правилам для IP.",
 
-  // The IP-learning explainer (Trich: *emphasis* travels inside the string)
   "A host's name is only visible once its connection starts, so the *first* connection to a brand-new host has already left on the default path before it can be routed. The engine learns that host's IP and *resets that one connection* so the client instantly reconnects on the correct route — that's the *new hosts rerouted* count; every later connection matches by IP and is never reset.":
     "Имя хоста видно только после начала соединения, поэтому *первое* соединение с совершенно новым хостом уже ушло по маршруту по умолчанию, прежде чем его можно было направить. Движок узнаёт IP этого хоста и *сбрасывает именно это соединение*, чтобы клиент мгновенно переподключился по верному маршруту — это и есть счётчик *новых хостов перенаправлено*; каждое следующее соединение совпадает по IP и уже не сбрасывается.",
   "The *records* toggle (the database icon) controls *IP learning*. Each IP is remembered by *category* (not by domain), so it stays valid even if you later change that category's lists or custom domains. Nothing is kept forever: *On* (default) holds a learned IP for about *1 hour*, so repeat connections route instantly. *Off* keeps the node *fresh* — an IP is held only about *2 minutes*, so a host whose address rotates is never routed on a stale IP (at a little extra CPU, as more connections are re-scanned). Once it expires, the IP is simply re-learned on the next connection.":
     "Переключатель *записей* (иконка базы) управляет *обучением по IP*. Каждый IP запоминается по *категории* (а не по домену), поэтому остаётся верным, даже если вы потом поменяете списки этой категории или свои домены. Ничто не хранится вечно: *Вкл* (по умолчанию) держит выученный IP около *часа*, чтобы повторные соединения шли мгновенно. *Выкл* держит ноду *свежей* — IP живёт всего около *2 минут*, поэтому хост с меняющимся адресом никогда не маршрутизируется по устаревшему IP (ценой небольшого расхода CPU: больше соединений пересканируется). Когда срок истекает, IP просто выучивается заново на следующем соединении.",
 
-  // Reset dialog
   "Reset learned IPs": "Сбросить выученные IP",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Reset all routing": "Сбросить всю маршрутизацию",
   "*Reset learned IPs* clears only the IPs this node has learned from SNI so far — its tables and lists stay in place and it re-learns as traffic flows. *Reset all routing* wipes the smart-routing tables, learned IPs and cached lists, then rebuilds from scratch and re-pulls every list from the panel; routing may blip for a few seconds.":
     "*Сбросить выученные IP* очищает только те IP, которые нода успела выучить из SNI — её таблицы и списки остаются на месте, и она снова учится по мере трафика. *Сбросить всю маршрутизацию* стирает таблицы умной маршрутизации, выученные IP и кэш списков, затем пересобирает всё с нуля и заново тянет каждый список с панели; маршрутизация может моргнуть на несколько секунд.",
   "Type {learn} or {all} to confirm your action": "Введите {learn} или {all} для подтверждения",
   "Enabled on": "Включено на",
 
-  // Blocking catalog
   "Loading block catalog…": "Загружаю каталог блокировок…",
   "Content filtering": "Контент-фильтрация",
-  // budget-ok: group heading on its own line
   "Traffic & abuse": "Трафик и ограничения",
   "— built-in": "— встроенные",
   "No content-filter categories are enabled on this node yet — turn them on in {where}.":
     "На этой ноде пока не включена ни одна категория контент-фильтрации — включите их в {where}.",
-  // budget-ok: inline link inside wrapping prose
   "Settings ▸ Routing & Blocking": "Настройки ▸ Маршрутизация",
   "No IP list in this category — domain lists can't match in {mode}. Use Force-DNS / Hybrid-SNI, or add an IP list.":
     "В этой категории нет списка IP — доменные списки не совпадают в режиме «{mode}». Используйте Force-DNS / Hybrid-SNI или добавьте список IP.",
-  // budget-ok: toolbar button, row has a grow spacer
   "Add list": "Добавить список",
   "Search lists…": "Поиск по спискам…",
-  // budget-ok: sheet title, 520px wide
   "A block category needs a name.": "Укажите название категории блокировок.",
   "No block categories yet. Create a category and add the lists it should use.": "Категорий блокировок пока нет. Создайте категорию и добавьте в неё списки.",
   "Nodes stop applying this category after you save and they sync.": "Ноды перестанут применять эту категорию после сохранения и следующей синхронизации.",
@@ -2916,7 +2644,6 @@ export const STR = {
   "blist|All-in-one: ads, malware, phishing & tracking": "Реклама, вредоносное ПО, фишинг и трекеры.",
   "blist|Compact list of malware, phishing & C2 domains": "Компактный список доменов вредоносного ПО, фишинга и C2.",
   "New block category": "Новая категория блокировки",
-  // budget-ok: input placeholder in a 520px sheet
   "e.g. Corporate block": "например, Корпоративная блокировка",
   "Add lists next — the category matches by domain or IP depending on the lists you pick.":
     "Дальше добавьте списки — категория совпадает по домену или по IP в зависимости от выбранных списков.",
@@ -2929,28 +2656,19 @@ export const STR = {
   "Community list: sites RKN does not block that refuse visitors from Russia": "Список сообщества: сайты, которые РКН не блокирует, но которые не пускают посетителей из России",
   "Community list: networks RKN does not block that refuse addresses from Russia": "Список сообщества: сети, которые РКН не блокирует, но которые не пускают адреса из России",
   "Discord's networks": "Сети Discord",
-  // budget-ok: toast, wraps
 
-  // Routing rules
-  // budget-ok: field <label> / disclosure title, own line
   "Routing rules": "Правила маршрутизации",
-  // budget-ok: label suffix, wraps with the label
-  // the rule-list label, picked by the node's engine — IP-only and Kernel-SNI arbitrate by ROW ORDER
   "— the most specific rule wins": "— выигрывает самое точное правило",
   "— the first matching rule wins": "— выигрывает первое совпадение",
   "Node default ({v1})": "Как у ноды ({v1})",
   "Direct (this node)": "Напрямую (эта нода)",
   "Remove rule": "Удалить правило",
-  // budget-ok: confirm body, wraps
   "This rule routes {v1}. Removing it here is not written to the node until you save the interface.":
     "Это правило маршрутизирует {v1}. Удаление здесь попадёт на ноду только после сохранения интерфейса.",
-  // budget-ok: toolbar button, row has a grow spacer
   "Add rule": "Добавить правило",
   "Everything else": "Всё остальное",
   "“Everything else → Block” stops each new connection before its site name is read, so the rules above that match by site name never take effect: those sites are blocked too. Route them by address (an IP range or a network) instead, or block by name only what you don't want.":
     "«Всё остальное → Заблокировать» останавливает каждое новое соединение раньше, чем прочитано имя сайта, поэтому правила выше, срабатывающие по имени сайта, не действуют: эти сайты тоже блокируются. Направьте их по адресу (диапазон IP или сеть) или блокируйте по имени только то, что не нужно.",
-  // A rule whose destination has been removed from the panel. «Указывает в никуда» is the plain reading of
-  // a control that renders blank while a real choice sits in the store.
   "{v1} pointing nowhere": "указывают в никуда: {v1}",
   "This node itself": "Сама эта нода",
   "This interface is set to forward everything to the node it is already on, which cannot work — the traffic would leave by this node's own address anyway. Choose another destination.":
@@ -2966,27 +2684,19 @@ export const STR = {
   "Matched by domain — needs Force-DNS or Hybrid-SNI mode": "Совпадает по домену — нужен режим Force-DNS или Hybrid-SNI",
   "Domain list — needs Force-DNS or Hybrid-SNI mode": "Список доменов — нужен режим Force-DNS или Hybrid-SNI",
   "IP list — works in every mode": "Список IP — работает в любом режиме",
-  // budget-ok: inline lint under a rule row, wraps
   "can't exit via itself": "не может выходить через себя",
   "add at least one address, domain or pattern": "добавьте хотя бы один адрес, домен или шаблон",
-  // budget-ok: a foot lint under a field, wraps
   "This text hasn't been applied yet — press </> to apply it, or Escape to discard.":
     "Этот текст ещё не применён — нажмите </>, чтобы применить, или Escape, чтобы отменить.",
   "Text typed into this rule hasn't been added yet — press Enter to add it, or clear it.":
     "Текст, набранный в правиле, ещё не добавлен — нажмите Enter, чтобы добавить его, или сотрите.",
-  // a list cannot hold a list — cascade_plan expands one, it never recurses
   "A list can't contain another list — add its addresses here instead":
     "Список не может содержать другой список — добавьте его адреса сюда",
-  // budget-ok: hover caption
 
-  // Egress
   "Outbound (egress) interface": "Интерфейс выхода (egress)",
-  // decision B1, second pass: the NAT pin is no longer in the "where does traffic go" list at all — it
-  // routes nothing, and read there it was taken twice for a milder way of leaving by a card.
   "Leave by a device": "Выход через устройство",
   "val|Network card": "Сетевая карта",
   "Extra NAT": "Дополнительный NAT",
-  // the exit's typed gateway — cards only, and blank means "use the one the node detected".
   "Gateway": "Шлюз",
   "Detected: {v1}": "Определён: {v1}",
   "This doesn't send traffic out that card. It only changes the source address of traffic that already leaves by it — use it when you route to that card yourself, outside the panel. To leave by a card, pick it under “Leave by a device”.":
@@ -2997,11 +2707,8 @@ export const STR = {
     "Уходит с адреса {v1}. Этот источник принадлежит exit'у, поэтому он общий для всех интерфейсов, которые им пользуются — изменить можно в Настройках → Сеть.",
   "Leaves as whichever address the node picks on {v1}. Pin one on the exit under Settings → Network.":
     "Уходит с того адреса, который узел сам выберет на {v1}. Закрепить конкретный можно у exit'а в Настройках → Сеть.",
-  // the Advanced section is now two named groups: the protocol's own settings, and the extra NAT.
   "WireGuard settings": "Настройки WireGuard",
   "AmneziaWG settings": "Настройки AmneziaWG",
-  // `Выключен` agrees with NAT (m.), not with `карта` (f.) — the old "Не закреплена" was gendered to a noun
-  // the heading no longer has. "pinned" was our implementation's metaphor anyway, never the operator's.
   "val|Off": "Выключен",
   "Leave by a device on this node, channel everything through another node, or route per-destination (smart).":
     "Выходить через устройство на этом узле, направить весь трафик через другой узел или маршрутизировать по назначению (smart).",
@@ -3116,7 +2823,6 @@ export const STR = {
     "Этот exit выключен — трафик уходит напрямую, интерфейс сохраняет выбор",
   "This exit's device can't be used — traffic goes out directly, and the interface keeps the selection":
     "Устройство этого exit'а использовать нельзя — трафик уходит напрямую, интерфейс сохраняет выбор",
-  // The card's three verdicts. `nic` is "we have no data", not a claim about the card.
   "This node hasn't said which of its network cards have a gateway yet. Update the node, and a card that has one can be used as an exit.":
     "Этот узел ещё не сообщил, у каких из его сетевых карт есть шлюз. Обновите узел — и карту со шлюзом можно будет использовать как exit.",
   "This node reports no gateway for {v1}, so there's no way off the box through it. Give it a default route on the node, or set the gateway on the exit under Settings → Network.":
@@ -3156,9 +2862,7 @@ export const STR = {
     "Эта нода уже поднимает это устройство для одного из своих exit'ов — выберите тот exit.",
   "WARP+ licence key": "Ключ WARP+",
   "Paste a custom config": "Вставить свой конфиг",
-  // dial-in exits (docs/LISTEN-EXIT-PLAN.md) and exit kinds by name (SOCKS5-EXIT-PLAN T6)
   "WARP & exits": "ВАРП и выходы",
-  // SOCKS5 exits (1.8.11 S10 / SOCKS5-EXIT-PLAN §6)
   "Add a SOCKS5 proxy": "Добавить прокси SOCKS5",
   "A DNS server set for an interface that leaves by this exit is not used — the proxy resolves.": "DNS-сервер, заданный для интерфейса, который выходит через этот выход, не используется — имена разрешает прокси.",
   "A residential proxy may change its exit IP between checks — that is the provider, not a fault.": "Резидентный прокси может менять IP выхода между проверками — это особенность провайдера, а не сбой.",
@@ -3260,11 +2964,9 @@ export const STR = {
   "the dial-in exit {v1}": "обратный выход {v1}",
   "{v1}: this dial-in exit listens on UDP {v2}, outside this node's declared firewall range ({v3}) — the router cannot connect until the range covers that port":
     "{v1}: этот обратный выход слушает UDP {v2} вне заявленного диапазона файрвола ноды ({v3}) — роутер не подключится, пока диапазон не покроет этот порт",
-  // dial-in exits: Generate and the router's config (S9b)
   "Router config — {v1}": "Конфиг роутера — {v1}",
   "Shown once — the router's private key is not kept anywhere. Lost it? Regenerate the router config.":
     "Показывается один раз — приватный ключ роутера нигде не хранится. Потеряли? Пересоздайте конфиг роутера.",
-  // S9c: the router's key kept with the client configs
   "Kept encrypted with your client configs — the QR button on the exit's row shows it again.":
     "Хранится зашифрованным вместе с конфигами клиентов — кнопка QR в строке выхода покажет его снова.",
   "Not kept with your client configs: {v1}.": "Не сохранён вместе с конфигами клиентов: {v1}.",
@@ -3396,13 +3098,9 @@ export const STR = {
   "Paste a WireGuard profile for the new exit, or remove it.":
     "Вставьте профиль WireGuard для нового exit'а или удалите его.",
   "Waiting for the node to set this up…": "Ожидание: нода ещё настраивает…",
-  // A WARP exit whose node minted a new account. «Адрес, который видят сайты» is the fact an operator
-  // actually notices; «ключ, который был до этого» avoids «предыдущий эскроу», which nobody says.
   "This exit registered a new account, so the address websites see has changed. The panel still holds the key it had before.":
     "Этот выход зарегистрировал новый аккаунт, поэтому адрес, который видят сайты, изменился. Ключ, который был до этого, у панели сохранён.",
   "Put the old one back": "Вернуть прежний",
-  // The two vault prompts for an exit restore. They share the WDTT prompt's shape (title / why / what
-  // skipping costs) because it is the same act: opening ciphertext only the operator can open.
   "Unlock to put the old key back": "Разблокируйте, чтобы вернуть прежний ключ",
   "This exit's original account is escrowed under your encryption key — the panel only ever held the ciphertext, and only you can open it. Unlock it to put that account back, along with any WARP+ licence on it. Cloudflare picks the exit address, so the old one usually comes back with it.":
     "Исходный аккаунт этого выхода лежит в хранилище под вашим ключом шифрования — панель хранила только шифротекст, открыть его можете только вы. Разблокируйте, чтобы вернуть этот аккаунт вместе с лицензией WARP+, если она на нём была. Адрес выхода назначает Cloudflare, так что прежний обычно возвращается вместе с аккаунтом.",
@@ -3435,7 +3133,6 @@ export const STR = {
   "Active": "Активен",
   "Kill-switch": "Kill-switch",
 
-  // ── Nodes screen: node cards, interfaces, adopt/restore, health, updates (js/screen-nodes.js) ─
   "Unknown server": "Неизвестный сервер",
   "this server isn't in the fleet.": "этого сервера нет во флоте.",
   "{ago} ago": "{ago} назад",
@@ -3452,7 +3149,6 @@ export const STR = {
   "Tunnel": "Туннель",
   "Carrying": "Несёт",
   "Listen": "Слушает",
-  // budget-ok: Panel heading on its own line
   "User interfaces": "Интерфейсы",
   "Interfaces": "Интерфейсы",
   "Turn-proxies": "Turn-прокси",
@@ -3460,17 +3156,13 @@ export const STR = {
   "Setup turn-proxy": "Поднять turn-прокси",
   "Create new interface": "Создать интерфейс",
   "Adopt": "Принять",
-  // budget-ok: card button, row wraps
   "Restore": "Восстановить",
   "Recreate": "Пересоздать",
   "Create": "Создать",
   "Install": "Установить",
   "Restore server identity": "Вернуть идентичность сервера",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Recreate & rekey": "Пересоздать и сменить ключи",
-  // budget-ok: sheet title, 620px wide
   "Recreate & rekey · {iface}": "Пересоздать и сменить ключи · {iface}",
-  // budget-ok: card button in place of Restore
   "Restoring…": "Восстанавливаю…",
   "vCPU": "vCPU",
   "Being taken over — the node applies this on its next sync": "Принимается — нода применит это на следующей синхронизации",
@@ -3479,7 +3171,6 @@ export const STR = {
   "Fork": "Форк",
   "value|unknown": "неизвестно",
   "Ports": "Порты",
-  // budget-ok: faint value in a card row, its own cell
   "set on adopt": "задаётся при приёме",
   "taking it over…": "принимаем…",
   "the node is tearing it down…": "нода сносит его…",
@@ -3495,11 +3186,8 @@ export const STR = {
   "All servers run {daemon}, which syncs to this panel over HTTPS — the node needs no inbound access.":
     "На всех серверах работает {daemon}, который синхронизируется с этой панелью по HTTPS — входящий доступ ноде не нужен.",
 
-  // Tooltips on the node/interface cards — hover captions, no box to overflow.
-  // budget-ok: hover caption
   "Recreate this node's missing interfaces with their original identities — node-rebuild recovery":
     "Пересоздать пропавшие интерфейсы этой ноды с их прежними идентичностями — восстановление после пересборки",
-  // budget-ok: hover caption
   "No turn-proxy build for this node's architecture{arch} — only amd64 and arm64 are supported.":
     "Для архитектуры этой ноды{arch} нет сборки turn-прокси — поддерживаются только amd64 и arm64.",
   "Set up the node's first turn-proxy": "Поднять первый turn-прокси на ноде",
@@ -3515,31 +3203,22 @@ export const STR = {
   "Dismissed — the panel isn't managing it": "Скрыт — панель им не управляет",
   "This interface is gone from the node": "Этот интерфейс пропал с ноды",
   "This WDTT server is gone from the node": "Этот сервер WDTT пропал с ноды",
-  // budget-ok: hover caption
   "Gone with no recoverable key — recreate fresh + rekey": "Пропал, ключ не восстановить — пересоздать заново и сменить ключи",
-  // budget-ok: hover caption
   "Recreate this interface with its original identity — recovers every peer on it":
     "Пересоздать интерфейс с прежней идентичностью — вернёт всех его пиров",
-  // budget-ok: hover caption
   "Recreate this interface with a NEW key and rekey every peer on it (clients re-import)":
     "Пересоздать интерфейс с НОВЫМ ключом и сменить ключи всем пирам (клиентам нужен повторный импорт)",
-  // budget-ok: hover caption
   "Confirming it's really gone (a couple of minutes) before Restore is offered":
     "Убеждаемся, что он действительно пропал (пара минут), прежде чем предлагать восстановление",
-  // budget-ok: hover caption
   "Confirming it's really gone (a couple of minutes) before Recreate is offered":
     "Убеждаемся, что он действительно пропал (пара минут), прежде чем предлагать пересоздание",
-  // budget-ok: hover caption on a drag grip
   "Drag to reorder": "Перетащите, чтобы изменить порядок",
   "The node is converting between bare-metal and docker": "Нода конвертируется между bare-metal и docker",
-  // budget-ok: hover caption
   "Server wiped — its identity is escrowed; open to Restore or Recreate fresh":
     "Сервер стёрт — его идентичность в хранилище; откройте, чтобы восстановить или пересоздать заново",
   "Exits directly from this node": "Выходит напрямую с этой ноды",
-  // budget-ok: hover caption
   "Stopped by you — open to Start it": "Остановлен вами — откройте, чтобы запустить",
   "Interface down on the node": "Интерфейс не поднят на ноде",
-  // budget-ok: hover caption
   "{v1}: the exit device {v2} is down — the kill-switch is holding {v3}, so nothing is leaving. Bring {v2} up to restore it.": "{v1}: устройство выхода {v2} выключено — kill-switch удерживает {v3}, наружу ничего не уходит. Поднимите {v2}, чтобы восстановить выход.",
   "{v1}: the exit device {v2} is down — {v3} is falling back to this node's own IP instead of the exit. Bring {v2} up, or turn the exit's kill-switch on to stop the traffic instead.": "{v1}: устройство выхода {v2} выключено — {v3} уходит через собственный IP этой ноды вместо exit'а. Поднимите {v2} или включите у этого exit'а kill-switch, чтобы трафик вместо этого останавливался.",
   "{v1}: the tunnel through {v2} has stopped carrying traffic — the kill-switch is holding {v3}, so nothing is leaving. Traffic resumes by itself once the exit works again.": "{v1}: туннель через {v2} перестал пропускать трафик — kill-switch удерживает {v3}, наружу ничего не уходит. Трафик возобновится сам, как только exit снова заработает.",
@@ -3563,7 +3242,6 @@ export const STR = {
   "{v1}: interface stopped": "{v1}: интерфейс остановлен",
   "{v1}: will not start after a reboot — update this node to repair it": "{v1}: не поднимется после перезагрузки — обновите ноду, чтобы это исправить",
   "{v1}: not running": "{v1}: не запущен",
-  // «перезапусков: N» — the count after a colon, so it never has to agree with a noun (3 перезапуска / 5 перезапусков)
   "{v1}: crash-looping — {v2} restarts in {v3} min": "{v1}: падает по кругу — перезапусков за {v3} мин: {v2}",
   "the address clients dial ({v1}) is no longer on this node — new turn-proxies are created with it and will fail to start": "адрес, на который подключаются клиенты ({v1}), больше не принадлежит этой ноде — новые turn-прокси создаются с ним и не смогут запуститься",
   "the address clients dial ({v1}) is not on this node — fine behind NAT that forwards it here; otherwise clients cannot reach this node": "адрес, на который подключаются клиенты ({v1}), не принадлежит этой ноде — за NAT, который пробрасывает его сюда, это нормально; иначе клиенты не могут подключиться к этой ноде",
@@ -3594,7 +3272,6 @@ export const STR = {
   "A setting was edited directly on the server — open to Adopt or Restore":
     "Настройку правили прямо на сервере — откройте, чтобы принять или вернуть",
 
-  // The "this interface is gone" explanations. The verdict is coloured, so it rides in as {verdict}.
   "The node no longer reports interface {iface} (subnet {subnet}). {verdict}, so Restore recreates it cleanly — no client changes.":
     "Нода больше не сообщает об интерфейсе {iface} (подсеть {subnet}). {verdict}, поэтому восстановление пересоздаст его чисто — у клиентов ничего не меняется.",
   "The node no longer reports interface {iface} (subnet {subnet}). {verdict}, so Restore recreates it with a new key — clients re-import.":
@@ -3611,7 +3288,6 @@ export const STR = {
     "Нода больше не сообщает о сервере WDTT {iface} (подсеть {subnet}). {verdict}, поэтому вернуть его можно только с новым ключом — импорт понадобится всем пользователям.",
   "No escrowed identity is stored": "Депонированной идентичности нет",
 
-  // Health card
   "Health": "Состояние",
   "CPU": "CPU",
   "CPU load": "Нагрузка CPU",
@@ -3620,7 +3296,6 @@ export const STR = {
   "Disk": "Диск",
   "No health data reported yet.": "Данных о состоянии пока нет.",
 
-  // Updates
   "Update available": "Есть обновление",
   "Update available — open the node to update": "Есть обновление — откройте ноду, чтобы обновить",
   "Update available — v{ver}": "Есть обновление — v{ver}",
@@ -3635,50 +3310,39 @@ export const STR = {
   "AmneziaWG on this node is running on the slower fallback datapath — its kernel module isn't loaded, or its interfaces haven't moved back to it yet. ": "AmneziaWG на этой ноде работает на более медленном резервном датапасе — модуль ядра не загружен или интерфейсы ещё не вернулись на него. ",
   "The AmneziaWG kernel module isn't built or loaded on this node — awg interfaces can't come up. ":
     "На этой ноде не собран или не загружен модуль ядра AmneziaWG — интерфейсы awg не поднимутся. ",
-  // budget-ok: hover caption fragment, wraps
   "Re-run the updater to repair.": "Запустите обновление ещё раз, чтобы починить.",
-  // budget-ok: hover caption fragment, wraps
   "Update this node to repair.": "Обновите эту ноду, чтобы починить.",
   "repair node": "починить ноду",
-  // budget-ok: hover caption
   "Rotate token (re-enroll / re-install)": "Сменить токен (переподключение / переустановка)",
-  // budget-ok: hover caption
   "Panel updated": "Панель обновлена",
   "Reload now": "Перезагрузить",
   "The panel was updated from {from} to {to}.": "Панель обновлена с {from} до {to}.",
   "To be sure every change takes effect, give the panel a hard reload — it drops the cached app so the new version loads cleanly.":
     "Чтобы все изменения точно применились, сделайте жёсткую перезагрузку — она сбросит кэш приложения и загрузит новую версию начисто.",
   "Press": "Нажмите",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Update now": "Обновить сейчас",
   "Update {name}": "Обновление {name}",
   "node's": "ноды",
   "panel's": "панели",
-  // budget-ok: confirm sheet title
   "Update this server": "Обновление этого сервера",
   "For a {what} — including third-party components (docker / wg-awg / turn-proxies) — run this on the {side} box:":
     "Для {what} — включая сторонние компоненты (docker / wg-awg / turn-прокси) — выполните это на сервере {side}:",
-  // budget-ok: bold run inside wrapping prose
   "full, controlled update": "полного управляемого обновления",
   "For an {what}, press {press} below. This also {repairs} the {side} box — reinstalls anything missing, re-enables services, and rebuilds the datapath (e.g. the AmneziaWG kernel module) — so it's worth running even when you're already up to date.":
     "Для {what} нажмите {press} ниже. Это также {repairs} сервер {side} — доустановит недостающее, включит службы и пересоберёт датапас (например, модуль ядра AmneziaWG) — так что запускать стоит, даже когда версия уже последняя.",
-  // budget-ok: bold run inside wrapping prose
   "automatic update of SWG components only": "автоматического обновления только компонентов SWG",
   "repairs": "чинит",
-  // ── the declarative pair: this host's installation comes from its configuration (NixOS) ──
   "This box's installation comes from its {what}, so an update is a rebuild of it — do that on the {side} box, however that configuration is applied.":
     "Установка этого сервера берётся из {what}, поэтому обновление — это его пересборка. Сделайте это на сервере {side} — тем способом, которым применяется эта конфигурация.",
   "This node can't be updated from the panel — run the command shown in the dialog on the box.":
     "Эту ноду нельзя обновить из панели — выполните на сервере команду из диалога.",
   "This box's installation comes from its {what}, so an update is a rebuild of it — run this on the {side} box:":
     "Установка этого сервера берётся из {what}, поэтому обновление — это его пересборка. Выполните это на сервере {side}:",
-  // budget-ok: bold run inside wrapping prose
   "own configuration": "собственной конфигурации",
   "There is no rebuild wired to this button on this host, so it can't start one — that is deliberate: a button that reported success and changed nothing would be worse. Set the module's *selfUpdate* option to wire it, or run the command above.":
     "К этой кнопке на этом хосте не подключена пересборка, поэтому запустить её она не может — и это намеренно: кнопка, которая отчиталась об успехе и ничего не изменила, была бы хуже. Включите в модуле опцию *selfUpdate*, чтобы подключить её, или выполните команду выше.",
   "*Update now* asks this host to rebuild itself from that configuration. What it lands on is whatever the configuration's lock pins, so refresh the swg input first if you want a newer version — and the rebuild's own errors come back here if it fails.":
     "*Обновить сейчас* просит хост пересобрать себя из этой конфигурации. Соберётся то, что зафиксировано в её lock-файле, поэтому сначала обновите input swg, если нужна более новая версия, — а ошибки самой пересборки вернутся сюда, если она не удастся.",
-  // budget-ok: toast, wraps
   "Update requested — applies on the node's next sync.": "Обновление запрошено — применится на следующей синхронизации ноды.",
   "{v1} skipped — turn-proxy management is off there, or their architecture has no published build.":
     "{v1} пропущено — там выключено управление turn-прокси, либо для их архитектуры нет опубликованной сборки.",
@@ -3697,7 +3361,6 @@ export const STR = {
     "Не удалось достучаться до {v1} за обновлениями — с этого сервера до него нет маршрута.",
   "Couldn't reach {v1} to check for updates — it did not answer in time.":
     "Не удалось достучаться до {v1} за обновлениями — он не ответил вовремя.",
-  // budget-ok: toast, wraps
   "Couldn't reach {v1} to check for updates — its TLS certificate could not be verified. The CA certificates on this server may be missing or out of date.":
     "Не удалось достучаться до {v1} за обновлениями — не удалось проверить его TLS-сертификат. Возможно, на этом сервере нет корневых сертификатов или они устарели.",
   "Couldn't reach {v1} to check for updates — the TLS connection failed.":
@@ -3710,10 +3373,8 @@ export const STR = {
   "{v1} answered, but not with a version.": "{v1} ответил, но не версией.",
   "Loading changelog…": "Загружаю изменения…",
   "No changelog available.": "Список изменений недоступен.",
-  // budget-ok: hover-bubble footer, wraps
   "Click to review & run the repair.": "Нажмите, чтобы посмотреть и запустить починку.",
 
-  // ── create/edit sheets: peers, targets, nodes (js/sheets-crud.js) ──────────────────────────────
   "Create peer": "Создать пира",
   "Create node": "Создать ноду",
   "Create only": "Только создать",
@@ -3725,15 +3386,11 @@ export const STR = {
   "Rotate subscription link": "Сменить ссылку подписки",
   "Disable": "Отключить",
   "Disable subscription": "Отключить подписку",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Reassign": "Переназначить",
-  // budget-ok: confirm sheet title, 620px wide
   "Reassign peer": "Переназначить пира",
   "Log out": "Выйти",
   "Are you sure you want to logout?": "Точно выйти?",
-  // budget-ok: confirm sheet title, 480px wide
   "Unlock to publish this config": "Откройте хранилище, чтобы опубликовать конфиг",
-  // budget-ok: confirm sheet title, 480px wide
   "Unlock to update this subscription": "Откройте хранилище, чтобы обновить подписку",
   "Their peers are revoked and become unassigned.": "Их пиры отзываются и остаются без пользователя.",
   "Create a shareable link to this user's QR codes. New peers appear on it automatically; the unlock secret rides in the link and never reaches the server.":
@@ -3745,7 +3402,6 @@ export const STR = {
   "Custom IP / Host…": "Свой IP / хост…",
   "Use custom…": "Задать своё…",
 
-  // ── exit-device picker (plan §11.3/§11.4). Only `bad` warns; the rest say nothing or add a caveat.
   "An interface can't exit through itself.": "Интерфейс не может выходить сам через себя.",
   "That's a mesh link — send traffic there with “Forward to node”, which sets up the return path too.":
     "Это меш-линк — отправьте туда трафик через «Переслать на ноду», там заодно настраивается обратный путь.",
@@ -3763,11 +3419,9 @@ export const STR = {
   "This device isn't set to come back after a reboot.":
     "Устройство не настроено на автозапуск после перезагрузки.",
   "Subscription certificate": "Сертификат подписки",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Add peers ▸": "Добавить пиров ▸",
   "Alex": "Алексей",
   "Friend": "Друг",
-  // budget-ok: <label> followed by a grow spacer
   "This user’s peers": "Пиры этого пользователя",
   "Create fresh peer": "Создать нового пира",
   "Backup": "Резерв",
@@ -3778,13 +3432,11 @@ export const STR = {
   "Client allowed IPs (routing)": "AllowedIPs клиента (маршрутизация)",
   "Persistent keepalive (s)": "Keepalive (с)",
   "0 disables · blank = 25.": "0 отключает · пусто = 25.",
-  // budget-ok: label suffix, wraps with the label
   "— optional, to tell devices apart": "— необязательно, чтобы различать устройства",
   "iPhone, Router, Laptop…": "iPhone, роутер, ноутбук…",
   "Targets": "Цели",
   "— one, or several for redundancy (same credential)": "— одна или несколько для резерва (тот же ключ)",
   "— check to deploy, uncheck to remove": "— отметить = развернуть, снять = убрать",
-  // A peer holding several kinds holds several independent credentials — rotating it rotates all of them.
   "Rotate credentials": "Сменить данные",
   "Rotating credentials…": "Меняем данные…",
   "This peer holds several credentials — a WireGuard keypair and an access password per turn server. All of them are replaced: every config, QR and link this peer already handed out stops working and must be re-imported.":
@@ -3795,7 +3447,6 @@ export const STR = {
   "Delete this peer?": "Удалить этого пира?",
   "Yes, delete": "Да, удалить",
   "Peer deleted.": "Пир удалён.",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Save changes": "Сохранить изменения",
   "Deploy": "Развернуть",
   "Panel address confirmed": "Адрес панели подтверждён",
@@ -3807,35 +3458,25 @@ export const STR = {
   "Peer not found": "Пир не найден",
   "It may have been removed.": "Возможно, его удалили.",
   "Edit": "Изменить",
-  // budget-ok: disabled-button tooltip, no box
   "Fix or remove the problem interface first — see the note above":
     "Сначала исправьте или уберите проблемный интерфейс — см. заметку выше",
   "Recreate & rekey interface": "Пересоздать и сменить ключи",
-  // budget-ok: button tooltip, no box
   "Recreate this interface with a NEW key and rekey every peer on it — clients re-import":
     "Пересоздать интерфейс с НОВЫМ ключом и сменить ключи всем его пирам — клиентам нужен повторный импорт",
-  // budget-ok: button tooltip, no box
   "Recreate this missing interface with its original identity — recovers every peer on it":
     "Пересоздать пропавший интерфейс с прежней идентичностью — вернёт всех его пиров",
-  // budget-ok: button tooltip, no box
   "Assign the next free in-subnet address ({ip} is out of range)":
     "Выдать следующий свободный адрес в подсети ({ip} вне диапазона)",
   "col|Interface": "Интерфейс",
   "Editing is off while a deployment sits on a missing or misconfigured interface. A peer edit (keys, AmneziaWG params, DNS, address) applies to every deployment, so it would leave this peer inconsistent. To edit it, either Restore / Fix the interface above, or open Targets and remove that interface from this peer.":
     "Редактирование выключено, пока развёртывание сидит на пропавшем или неверно настроенном интерфейсе. Правка пира (ключи, параметры AmneziaWG, DNS, адрес) применяется ко всем развёртываниям и оставила бы пира несогласованным. Чтобы изменить его, восстановите или исправьте интерфейс выше либо откройте «Цели» и уберите этот интерфейс у пира.",
-  // budget-ok: label suffix, wraps with the label
   "— optional": "— необязательно",
-  // budget-ok: input placeholder in a 620px sheet
   "e.g. iPhone, Work laptop": "например iPhone, рабочий ноутбук",
   "— this peer only; blank = {fallback}": "— только этот пир; пусто = {fallback}",
   "follows the subscription": "как у подписки",
   "never": "никогда",
-  // ONE list for every kind — a peer may hold wg/awg + WDTT + csqtt at once, so the old pair of
-  // mutually-exclusive "Servers" / "Addresses" lists (and their per-kind hints) is gone.
   "label|Deployments": "Развёртывания",
 
-  // Naming a NEW self-contained turn instance. Creation used to demand wdtt<N> / csqtt<N>; the operator
-  // picks the name now, so these are the checks that pattern was standing in for.
   "Name: letters, digits, - and _ (max 15, starting with a letter or digit).":
     "Имя: буквы, цифры, - и _ (не больше 15, начинается с буквы или цифры).",
   "Names starting with swg_ are reserved for system mesh links.":
@@ -3849,7 +3490,6 @@ export const STR = {
   "These servers assign each address on connect; the user's link per server is on their subscription. There's no client config (key/DNS/MTU) — the server owns the datapath.":
     "Эти серверы выдают адрес при подключении; ссылка на каждый сервер — на подписке пользователя. Клиентского конфига (ключ/DNS/MTU) нет — датапас у сервера.",
 
-  // Per-deployment settings (the gear on a wg/awg row) — see TargetSettingsSheet.
   "Settings — {v1}": "Настройки — {v1}",
   "These apply to this deployment only — {v1} on {v2}. The peer's other deployments keep their own.":
     "Действуют только на это развёртывание — {v1} на {v2}. У остальных развёртываний пира свои.",
@@ -3863,20 +3503,16 @@ export const STR = {
     "Параметры обфускации AmneziaWG задаются самим интерфейсом и одинаковы для всех его клиентов — меняйте их в настройках интерфейса.",
   "This is a plain WireGuard interface, so it carries no AmneziaWG obfuscation parameters.":
     "Это обычный интерфейс WireGuard, параметров обфускации AmneziaWG у него нет.",
-  // "iface: message" — prefixes a field error with the deployment it belongs to.
   "{v1}: {v2}": "{v1}: {v2}",
 
-  // Node create / recover / remove
   "Node colour": "Цвет ноды",
   "Done": "Готово",
-  // budget-ok: bold lead-in inside a notice, wraps
   "Shown once.": "Показывается один раз.",
   "This token authenticates the node to the panel — copy it now. You can rotate it later if it leaks.":
     "Этот токен подтверждает ноду перед панелью — скопируйте его сейчас. Позже его можно сменить, если он утечёт.",
   "Pick the one this node runs. Each fetches the installer and prompts for the endpoint.":
     "Выберите то, на чём работает эта нода. Каждая команда скачает установщик и спросит эндпоинт.",
   "Enrollment token": "Токен подключения",
-  // budget-ok: toast, wraps
   "Copied": "Скопировано",
       "Run on the node —": "Выполните на ноде —",
     "This recovers {name} as {method} — the method it was already running, so its turn-proxies and interfaces are kept. To switch methods, convert the node instead.":
@@ -3884,12 +3520,9 @@ export const STR = {
   "Re-provision this node's mesh links?": "Перевыпустить меш-линки этой ноды?",
   "Re-provision": "Перевыпустить",
   "Rotate key": "Сменить ключ",
-  // budget-ok: button tooltip, no box
   "Rotate this node's enrollment token (re-enroll / re-install)":
     "Сменить токен подключения этой ноды (переподключение / переустановка)",
-  // budget-ok: section label on its own line
   "Egress": "Исходящий трафик",
-  // budget-ok: field <label> on its own line
   "Default egress IP": "IP по умолчанию для выхода",
   "— direct internet exit": "— прямой выход в интернет",
   "The fallback source IP this node SNATs to when traffic exits to the internet here — applied to any interface (and traffic received from other nodes) that doesn't set its own egress IP. Interfaces with their own egress IP, and cascading traffic that exits elsewhere, are unaffected.":
@@ -3971,13 +3604,11 @@ export const STR = {
     "Отрежет {name} {now}, не дожидаясь подтверждения — {dropped}. Делайте это, только если сервер недоступен. Отменить нельзя.",
   "immediately": "немедленно",
   "{n} that live only here are dropped": "{n} только здесь — будут отброшены",
-  // budget-ok: inside notice prose, wraps
   "peers that live only here are dropped": "пиры, которые есть только здесь, будут отброшены",
   "Type {phrase} to confirm": "Подтвердите вводом {phrase}",
   "{flagged} Run the command below on the node — it'll sign off and disappear here automatically. If you've lost access to the server, use {force} to cut it off.":
     "{flagged} Выполните команду ниже на ноде — она отпишется и исчезнет отсюда сама. Если доступа к серверу нет, воспользуйтесь {force}.",
   "Flagged for removal.": "Помечена на удаление.",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Set in the node's configuration, then rebuild":
     "Задайте в конфигурации ноды и пересоберите",
   "Removing the module stops swg-noded / swg-agent but does not tell the panel — Force remove clears it here.":
@@ -3987,7 +3618,6 @@ export const STR = {
   "Force remove now": "Удалить принудительно",
   "Run on the node to uninstall + sign off": "Выполните на ноде, чтобы удалить и отписаться",
 
-  // peer view, QR carousel, subscriptions, VK links (js/peer-ui.js)
   "Previous": "Назад",
   "Unlock the Encryption Vault to see configs, QR codes and the subscription link.":
     "Откройте хранилище шифрования, чтобы увидеть конфиги, QR и ссылку на подписку.",
@@ -4000,27 +3630,18 @@ export const STR = {
   "— this user's shareable QR page": "— страница с QR этого пользователя",
   "Building link…": "Собираем ссылку…",
   "Rotate token": "Сменить токен",
-  // budget-ok: subscription row button, row wraps
   "Disable URL": "Отключить ссылку",
   "Open this peer's configs": "Открыть конфиги этого пира",
-  // budget-ok: icon-button tooltip, no box
   "Copy subscription link": "Скопировать ссылку на подписку",
-  // budget-ok: empty-state block, wraps
   "This user has no peers yet.": "У этого пользователя пока нет пиров.",
 
-  // VK call links — the room a turn proxy pulls TURN credentials from. "VK" stays as-is.
-  // budget-ok: field <label>, its own line
   "VK call link": "Ссылка на звонок VK",
-  // budget-ok: field-label suffix, wraps with the label
   "— for this user's configs that ride a VK call": "— для конфигов этого пользователя, которые идут через звонок VK",
   "Saved": "Сохранено",
   "Failed": "Ошибка",
   "Manage": "Править",
-  // budget-ok: button tooltip, no box
   "Manage all of this user's VK call links (add more, set primary)":
     "Управление всеми ссылками VK этого пользователя (добавить, назначить основную)",
-  // budget-ok: hint line above a mono example, wraps
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Add link": "Добавить ссылку",
   "Set as the primary link": "Сделать основной",
   "Remove this link": "Удалить ссылку",
@@ -4041,7 +3662,6 @@ export const STR = {
   "No VK call link on this user — the link won't authenticate until one is set.":
     "У пользователя нет ссылки на звонок VK — ссылка не пройдёт авторизацию, пока её не зададут.",
 
-  // Encryption key sheet
   "Save your encryption key": "Сохраните ключ шифрования",
   "I've saved it": "Я сохранил",
   "Config encryption is on. This key protects every stored client config and subscription link — the panel only ever stores it wrapped under your password, so {only}.":
@@ -4054,7 +3674,6 @@ export const STR = {
   "Download": "Скачать",
   "Download .txt": "Скачать .txt",
 
-  // Peer / user edit + the config cards
   "Name": "Имя",
   "Tag": "Тег",
   "Friend, Family, Work…": "Друг, Семья, Работа…",
@@ -4071,46 +3690,32 @@ export const STR = {
   "Reset expiry": "Сбросить срок",
   "Set expiry": "Срок действия",
   "Delete user": "Удалить",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Save": "Сохранить",
   "Saving…": "Сохраняю…",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Add": "Добавить",
   "Adding…": "Добавляю…",
   "Add webhook": "Добавить вебхук",
   "Edit webhook": "Изменить вебхук",
-  // budget-ok: confirm sheet title, 620px wide
   "Save settings": "Сохранить настройки",
   "Enable": "Включить",
-  // The doughnut ring labels are traffic DIRECTIONS, not the "Download" button in the vault sheet.
   "traffic|Download": "Приём",
   "traffic|Upload": "Отдача",
-  // budget-ok: confirm sheet title, 620px wide
   "Delete user · {name}": "Удалить пользователя · {name}",
-  // budget-ok: button tooltip, no box
   "Rotate the keys of every peer this user holds — all configs/links must be re-imported":
     "Сменить ключи у всех пиров этого пользователя — все конфиги и ссылки придётся импортировать заново",
   "No turn-proxy forwards to this interface.": "Ни один turn-прокси не ведёт на этот интерфейс.",
   "Device": "Устройство",
-  // .turncfg-os and .turncfg-app are flex rows at opposite ends of ONE line (margin-left:auto), so both
-  // labels share the width. The panel already calls these "client apps" — «Клиент» is accurate and fits.
   "App": "Клиент",
   "Config": "Конфиг",
   "Turn": "Turn",
   "Generate turn-proxy client configs": "Собрать клиентские конфиги turn-прокси",
-  // budget-ok: icon-button tooltip, no box
   "Copy command": "Скопировать команду",
-  // budget-ok: icon-button tooltip, no box
   "Copy link": "Скопировать ссылку",
   "QR image": "Картинка QR",
-  // budget-ok: toast, wraps
   "Link copied": "Ссылка скопирована",
   "Config copied": "Конфиг скопирован",
-  // budget-ok: toast, wraps
   "WDTT link copied": "Ссылка WDTT скопирована",
-  // budget-ok: toast, wraps
   "Wrap key copied": "Ключ обёртки скопирован",
-  // budget-ok: icon-button tooltip, no box
   "Copy wrap key": "Скопировать ключ обёртки",
   "· key": "· ключ",
   "Primary connection — click to mark it a backup":
@@ -4127,8 +3732,6 @@ export const STR = {
   "WDTT · keyless (server-minted key)": "WDTT · без ключа (ключ выдаёт сервер)",
   "— assigned on first connect": "— выдаётся при первом подключении",
 
-  // ── Overview dashboard (js/screen-overview.js) ─────────────────────────────────────────────────
-  // Section titles are terse noun phrases, matching the English. The subtitle beside each is lowercase.
   "Fleet": "Флот",
   "Fleet throughput": "Трафик флота",
   "Distribution": "Распределение",
@@ -4166,14 +3769,12 @@ export const STR = {
   "Everything's deployed and reporting. No drift across the fleet.":
     "Всё развёрнуто и отчитывается. Расхождений по флоту нет.",
   "gathering — no history yet": "собираем — истории пока нет",
-  // budget-ok: empty state inside the chart area, its own block
   "gathering — fills as it polls": "собираем — заполнится по мере опросов",
   "No servers configured in fleet.json.": "В fleet.json не настроено ни одного сервера.",
   "No nodes selected.": "Ноды не выбраны.",
   "No nodes yet": "Нод пока нет",
   "Add your first entry server to start deploying peers. The panel stays the source of truth — each node syncs to it over outbound HTTPS.":
     "Добавьте первый входной сервер, чтобы начать разворачивать пиров. Панель остаётся источником истины — каждая нода синхронизируется с ней по исходящему HTTPS.",
-  // budget-ok: sheet title and a toolbar button, both size to content
   "Add node": "Добавить ноду",
   "Traffic by node": "Трафик по нодам",
   "Deployments by node": "Подключения по нодам",
@@ -4185,7 +3786,6 @@ export const STR = {
   "↑ egress": "↑ исходящий",
   "Flow animation (saved for everyone)": "Анимация потока (сохраняется для всех)",
   "Silence": "Заглушить",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Run update": "Запустить обновление",
   "Reissue certificate": "Перевыпустить сертификат",
   "Issuing the subscription certificate…": "Выпускаем сертификат подписки…",
@@ -4194,16 +3794,12 @@ export const STR = {
   "“Run update” reinstalls anything missing and re-enables the service — the same repair the Update button runs. A service that keeps crashing needs the logs above.":
     "«Запустить обновление» доустановит недостающее и включит службу — то же самое делает кнопка обновления. Если служба падает снова и снова, смотрите логи выше.",
 
-  // The dashboard rail's jump menu. Its labels are shorter than the section headings they jump to — the rail
-  // is a narrow collapsed strip that slides its labels out on hover.
   "nav|Fleet": "Флот",
   "nav|Distribution": "Распределение",
   "nav|Traffic flow": "Потоки",
   "nav|Top charts": "Топ-графики",
   "nav|Activity log": "Журнал",
 
-  // Dashboard range picker. Two cases because the panel uses both: capitalised on the rail buttons,
-  // lowercase inside a section subtitle.
   "range|Live": "Сейчас",
   "range|Hour": "Час",
   "range|Day": "Сутки",
@@ -4215,48 +3811,32 @@ export const STR = {
   "range|week": "за неделю",
   "range|month": "за месяц",
 
-  // ── Peers / Users / Live / Activity screens (js/screen-roster.js) ──────────────────────────────
-  // Section headings are plain nouns; the panel's nav already says where you are, so they stay terse.
   "Peers": "Пиры",
   "Peers on": "Пиры на",
-  // budget-ok: measured — Overview stat cards are a fixed 235px and the label does not clip
   "Users": "Пользователи",
   "Overview": "Обзор",
   "Activity history": "История действий",
   "Unmanaged here": "Не под управлением",
-  // budget-ok: section <h2>, its own line
   "Unassigned peers": "Пиры без пользователя",
-  // budget-ok: measured — same 553px search box
   "Search title, user, address…": "Поиск по имени, пользователю, адресу…",
-  // budget-ok: measured — 368px in a 553px search box
   "Search users, tags, notes, peers…": "Поиск по пользователям, тегам, заметкам, пирам…",
-  // budget-ok: measured — same 553px search box
   "Search users, tags, peers…": "Поиск по пользователям, тегам, пирам…",
-  // budget-ok: measured — same 553px search box
   "Search peer, user, endpoint, IP…": "Поиск по пиру, пользователю, эндпоинту, IP…",
   "Search action, name, detail…": "Поиск по действию, имени, деталям…",
-  // budget-ok: measured — 191px button in a 1216px toolbar with a grow spacer, no overflow
   "New user": "Новый пользователь",
-  // budget-ok: icon-button tooltip, no box
   "Edit user": "Изменить пользователя",
-  // budget-ok: icon-button tooltip, no box
   "Add peer": "Добавить пира",
   "Delete entry": "Удалить запись",
-  // budget-ok: hover caption on a toolbar button, no box
   "Recreate every missing interface shown here with its original identity":
     "Пересоздать каждый показанный здесь пропавший интерфейс с его исходной идентичностью",
-  // budget-ok: hover caption on a toolbar button, no box
   "Assign each broken peer shown here the next free in-subnet address":
     "Выдать каждому показанному здесь неверному пиру следующий свободный адрес в подсети",
-  // budget-ok: button tooltip, no box
   "Show only online connections": "Показывать только активные соединения",
   "{n} shown · {online} online": "показано {n} · онлайн {online}",
   "Never": "Никогда",
-  // budget-ok: empty-state block, wraps
   "No peers match.": "Нет подходящих пиров.",
   "No peers yet — {add}.": "Пиров пока нет — {add}.",
   "add one": "добавьте",
-  // budget-ok: empty-state block, wraps
   "No users yet": "Пользователей пока нет",
   "Create a user, then add devices for them — or create a peer on the Peers screen and assign it later.":
     "Создайте пользователя и добавьте ему устройства — или создайте пир на экране «Пиры» и назначьте его позже.",
@@ -4264,12 +3844,9 @@ export const STR = {
   "Clear the search.": "Очистите поиск.",
   "Clear the filters.": "Сбросьте фильтры.",
   "Clear all activity?": "Очистить всю историю?",
-  // budget-ok: empty-state block, wraps
   "No users online": "Нет пользователей онлайн",
   "No connections online": "Нет активных соединений",
-  // budget-ok: button tooltip, no box
   "Hide client (peer) traffic": "Скрыть клиентский трафик (пиры)",
-  // budget-ok: button tooltip, no box
   "Show client (peer) traffic": "Показать клиентский трафик (пиры)",
   "All actions": "Все действия",
   "Clear history": "Очистить историю",
@@ -4277,12 +3854,10 @@ export const STR = {
   "No activity yet": "Действий пока нет",
   "Operator actions across the panel will show up here.": "Здесь появятся действия оператора по всей панели.",
   "Try a different search or filter.": "Попробуйте другой запрос или фильтр.",
-  // Activity feed action labels — past-tense neuter, agreeing with the implied «действие»
   "event|Added": "Добавлено",
   "event|Changed": "Изменено",
   "event|Removed": "Удалено",
 
-  // ── app shell: address move, update pill, login (app.js) ───────────────────────────────────────
   "Move cancelled — the panel stays on this address.": "Переезд отменён — панель остаётся на этом адресе.",
   "Couldn't cancel the move.": "Не удалось отменить переезд.",
   "You're on a previous panel address.": "Вы на прежнем адресе панели.",
@@ -4304,11 +3879,9 @@ export const STR = {
   "The confirmation didn’t match a pending change.": "Подтверждение не совпало ни с одним ожидающим изменением.",
   " The panel kept its current address.": " Панель осталась на текущем адресе.",
 
-  // The update pill is a narrow slot in the header — these stay as short as the English.
   "Changelog": "Изменения",
   "repairing": "починка",
   "repaired": "починено",
-  // budget-ok: measured — 97px -> 111px in the header slot
   "repair failed": "починка не удалась",
   "Dismiss": "Скрыть",
   "repairing…": "починка…",
@@ -4316,13 +3889,9 @@ export const STR = {
   "checking…": "проверка…",
   "update to": "обновить до",
   "fix {count}": "исправить {count}",
-  // budget-ok: hover caption, no box
   "This panel is on the latest version": "На этой панели последняя версия",
-  // budget-ok: hover caption on an icon button, no box
   "Check status": "Проверить состояние",
 
-  // ── sign-in and vault reconnect (app.js) ───────────────────────────────────────────────────────
-  // The heading is a NOUN, the button an IMPERATIVE — English reuses one word for both, Russian shouldn't.
   "Sign in": "Вход",
   "button|Sign in": "Войти",
   "Signing in…": "Вхожу…",
@@ -4335,14 +3904,10 @@ export const STR = {
   "Enter the 6-digit code from your authenticator app, or a recovery code.":
     "Введите 6-значный код из приложения-аутентификатора или код восстановления.",
   "Authentication code": "Код подтверждения",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Verify": "Подтвердить",
-  // budget-ok: sheet-foot button, foot has a grow spacer
   "Verify & enable": "Подтвердить и включить",
   "Verifying…": "Проверяю…",
-  // budget-ok: login-card <h2>, full width
   "Reconnect your vault": "Подключите хранилище заново",
-  // swg-passwd is a command name and stays monospace and untranslated; "untouched" is the bold reassurance.
   "Your password was changed with {cmd}, which runs on the server and can't reach your encryption key. Your stored configs, QR codes and subscription links are {safe} — the vault just needs reconnecting.":
     "Пароль был изменён командой {cmd}, которая работает на сервере и не может добраться до вашего ключа шифрования. Сохранённые конфиги, QR и ссылки на подписки {safe} — хранилище нужно просто подключить заново.",
   "untouched": "не пострадали",
@@ -4350,48 +3915,34 @@ export const STR = {
   "Password or encryption key": "Пароль или ключ шифрования",
   "The encryption key is the one shown when this panel set up encryption — you were asked to save it.":
     "Ключ шифрования — это тот, что панель показала при настройке шифрования и просила сохранить.",
-  // budget-ok: login-card button, width:100%
   "Reconnect vault": "Подключить хранилище",
   "Reconnecting…": "Подключаю…",
   "Skip for now": "Пока пропустить",
   "That didn't unlock the Encryption Vault.": "Это не открыло хранилище шифрования.",
-  // budget-ok: toast, wraps
   "Encryption Vault reconnected.": "Хранилище шифрования подключено заново.",
 
-  // encryption vault + QR (js/crypto.js)
   "Subscribed users need nothing": "Подписчикам ничего не нужно",
   " — their subscription page serves the corrected config automatically; only manually-shared QR codes / configs need re-distributing.":
     " — их страница подписки сама отдаёт исправленный конфиг; раздать заново нужно только QR и конфиги, отправленные вручную.",
-  // budget-ok: toast, wraps
   "Encryption Vault locked on this device.": "Хранилище шифрования заблокировано на этом устройстве.",
   "No Encryption Vault is set up yet — set one up in {where}, then try again.":
     "Хранилище шифрования ещё не настроено — настройте его в {where} и повторите.",
   "Settings → Client configs → Encryption": "Настройки → Конфиги клиентов → Шифрование",
-  // The QR failure text sits inside the QR square itself — two short lines, so both stay short.
   "config too large": "конфиг слишком",
   "to encode as QR": "большой для QR",
   "config too large to encode": "конфиг слишком большой для QR",
-  // budget-ok: hover caption, no box
   "Tap to enlarge for scanning": "Нажмите, чтобы увеличить для сканирования",
   "config QR": "QR конфига",
-  // budget-ok: QR overlay caption, centred under a 920px image
   "Scan in WireGuard / AmneziaWG": "Отсканируйте в WireGuard / AmneziaWG",
-  // budget-ok: toast, wraps
   "QR too large to copy as an image.": "QR слишком большой, чтобы скопировать картинкой.",
-  // budget-ok: toast, wraps
   "This browser can't copy an image.": "Этот браузер не умеет копировать картинки.",
   "{what} copied.": "{what} скопирован.",
-  // budget-ok: toast, wraps
   "Copy failed.": "Не удалось скопировать.",
   "That password didn’t unlock the Encryption Vault.": "Этот пароль не открыл хранилище шифрования.",
   "Enter your password to continue": "Введите пароль, чтобы продолжить",
-  // budget-ok: sheet-foot button, foot has a grow spacer
-  // budget-ok: sheet-foot buttons — the foot has a grow spacer, so they widen into slack
   "Skip": "Пропустить",
   "Unlocking…": "Открываю…",
-  // budget-ok: sheet-foot button, sits beside Skip
   "Unlock vault": "Открыть хранилище",
-  // budget-ok: sheet-foot button, measured against Skip
   "Unlock": "Открыть",
   "This action needs your Encryption Vault, which isn’t unlocked in this session.":
     "Для этого действия нужно хранилище шифрования, а в этой сессии оно не открыто.",
@@ -4402,14 +3953,12 @@ export const STR = {
   "If you skip:": "Если пропустить:",
   "the action completes, but anything that needed the key won’t be saved.":
     "действие выполнится, но всё, чему нужен был ключ, не сохранится.",
-  // budget-ok: grid empty state, its own block
   "No matches": "Ничего не найдено",
   "No peers here": "Здесь нет пиров",
   "Try a different search.": "Попробуйте другой запрос.",
   "Create one, or copy an existing peer onto this interface.": "Создайте пира или скопируйте существующего на этот интерфейс.",
   "No peers deployed yet.": "Пиров пока нет.",
 
-  // ── Settings: addresses, TLS, encryption, routing lists, turn, subscriptions, 2FA ──
   "The panel POSTs a signed JSON body to your endpoint when a peer is added/removed or a node goes online/offline. Use them for alerting or automation.":
     "Панель шлёт на ваш адрес подписанный JSON, когда пира добавили или убрали и когда нода ушла в офлайн. Годится для оповещений и автоматизации.",
   "Internal port {old} → {new} — point your proxy's upstream at {addr} (co-located loopback nodes follow automatically).":
@@ -4595,7 +4144,6 @@ export const STR = {
   "Confirm with your password and a current code to turn two-factor off.":
     "Чтобы выключить двухфакторный вход, подтвердите паролем и текущим кодом.",
 
-  // ── strings that were interleaved with interpolations (see i18n-extract --mixed) ──
   "peak {v1}": "пик {v1}",
   "Peer {n}": "Пир {n}",
   "tag|disabled": "выключен",
@@ -4616,7 +4164,6 @@ export const STR = {
   "Set a public base URL in {v1} to build the link.": "Задайте публичный адрес в {v1}, чтобы собрать ссылку.",
   "Which {v1} proxy": "Какой прокси {v1}",
   "Not available with {v1}": "Не работает с {v1}",
-  // budget-ok: empty-state prose in its own block — it wraps, nothing beside it to overlap
   "{v1} on this node": "{v1} на этой ноде",
   "the node is creating it…": "нода создаёт его…",
   "the node is adding it…": "нода добавляет его…",
@@ -4678,16 +4225,11 @@ export const STR = {
   "{v1} unmanaged orphan": "{v1} без владельца",
   "view all {n} connections →": "показать все подключения ({n}) →",
 
-  // ── strings that lived in plain literals (see i18n-extract --literals) ──
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "couldn't save the vault": "не удалось сохранить хранилище",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "couldn't disable escrow": "не удалось выключить депонирование",
   "Unlock the Encryption Vault first.": "Сначала откройте хранилище ключей.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "couldn't enable escrow": "не удалось включить депонирование",
   "Unlock the vault first.": "Сначала откройте хранилище.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "No interface-key vault is set up.": "Хранилище ключей интерфейсов не настроено.",
   "No escrowed key is stored for this interface.": "Для этого интерфейса ключ не сохранён.",
   "The node hasn't reported its transport key yet — try again in a few seconds.":
@@ -4715,7 +4257,6 @@ export const STR = {
   "The DTLS port is required.": "Нужен порт DTLS.",
   "The internal WG port is required.": "Нужен внутренний порт WG.",
   "The DTLS port and internal WG port must differ.": "Порты DTLS и внутренний WG должны различаться.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Adopt failed": "Не удалось принять",
   "No WDTT forks are enabled in Settings → Turn proxies":
     "В «Настройках → Turn-прокси» не включена ни одна сборка WDTT",
@@ -4777,7 +4318,6 @@ export const STR = {
   "Couldn't set the expiry": "Не удалось задать срок",
   "Expiry cleared": "Срок снят",
   "Subscription expiry": "Срок действия подписки",
-  // budget-ok: a sheet TITLE, not a label — measured at 293px of a 430px head, no clip, no wrap
   "Peer expiry": "Срок действия пира",
   "After this date the whole subscription counts as expired — its page shows “Expired” and its peers stop being served. Blank = never expires.":
     "После этой даты вся подписка считается истёкшей — на странице будет «Истекла», пиры перестанут отдаваться. Пусто — бессрочно.",
@@ -4823,11 +4363,9 @@ export const STR = {
   "Microsoft & GitHub Copilot": "Microsoft и GitHub Copilot",
   "Signal private messenger": "Защищённый мессенджер Signal",
   "couldn't load — will retry": "не загрузилось — попробуем ещё",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Reset failed.": "Сбросить не удалось.",
   "Learned IPs cleared — the node forgets them and re-learns on its next sync.":
     "Выученные адреса очищены — нода забудет их и выучит заново при следующей синхронизации.",
-  // budget-ok: a toast — its own bar, wraps
   "Routing reset queued — the node wipes, rebuilds and re-pulls on its next sync.":
     "Сброс маршрутизации поставлен в очередь — при следующей синхронизации нода всё сотрёт, соберёт и перетянет.",
   "DNS resolver": "DNS-резолвер",
@@ -4837,23 +4375,17 @@ export const STR = {
     "{v1} — здесь сопоставляется лишь часть записей, {v2} не сопоставляется",
   "{v1} past this node's limit of {v2} — no longer matched: {v3}":
     "{v1} сверх лимита ноды в {v2} — больше не сопоставляются: {v3}",
-  // The same fact from a node too old to send the sample: the count is all there is, so it is all that is said.
   "{v1} past this node's limit of {v2}":
     "{v1} сверх лимита ноды в {v2}",
-  // §12.1's per-interface cap, said when a badge is refused. «по тексту» keeps the distinction the count
-  // rests on: a zone is a pattern too and is not counted — only the three kinds matched as text are.
   "{v1} is all one interface can match by text — remove one to add another, or use a list instead.":
     "{v1} — это всё, что один интерфейс может сопоставлять по тексту: удалите один, чтобы добавить другой, или используйте список.",
   "{v1} too long for this scanner to match — over {v2} characters":
     "{v1} не помещается в этот сканер — больше {v2} символов",
   "kernel SNI scanner unavailable — running userspace SNI parser":
     "ядерный сканер SNI недоступен — работает разбор SNI в пользовательском режиме",
-  // Was a bare literal beside two translated sentences, so the Russian health line read
-  // «Сканер SNI healthy». The i18n audit cannot see a string that never reached T().
   "healthy": "работает",
   "down — host routing degraded": "не работает — домены страдают",
   "OFF — routing stays fresh, no remembered IPs": "ВЫКЛ — маршруты свежие, адреса не запоминаются",
-  // the node-wide torrent policy (Settings ▸ node ▸ Network ▸ Filters & abuse)
   "Torrents / P2P": "Торренты / P2P",
   "Torrents / P2P: {v1}": "Торренты / P2P: {v1}",
   "Torrents / P2P: {v1} — not in force on this node until it is updated": "Торренты / P2P: {v1} — на этой ноде не действует, пока её не обновят",
@@ -4872,7 +4404,6 @@ export const STR = {
     "Действует выбор «Торренты / P2P» на каждом интерфейсе — блокировать, разрешить или направить. Трафик других нод, выходящий через этот сервер, и программы на нём не проверяются.",
   "This server can't read packet contents (its kernel or nft is too old), so torrents are recognised by their connection pattern only.":
     "Этот сервер не умеет читать содержимое пакетов (слишком старое ядро или nft), поэтому торренты узнаются только по характеру соединений.",
-  // P3 — routing torrent traffic through an exit or another node
   "via {v1}": "через {v1}",
   "Route through {v1}": "Направлять через {v1}",
   "Route through node {v1}": "Направлять через ноду {v1}",
@@ -4896,7 +4427,6 @@ export const STR = {
   "torrents can only be routed to another node of this fleet": "торренты можно направить только на другую ноду этого флота",
   "torrents can only be routed through one of this node's exits": "торренты можно направить только через один из выходов этой ноды",
   "torrent policy must be one of: {v1}": "политика торрентов — одно из: {v1}",
-  // each interface's own Torrents / P2P (IFACE-P2P-PICK, 1.8.11 S11)
   "Allow — not checked": "Разрешить — не проверять",
   "As the server — {v1}": "Как на сервере — {v1}",
   "Counts only when {v1}'s Torrents / P2P setting is “Each interface decides” — Settings ▸ Network ▸ Filters & abuse.":
@@ -4918,7 +4448,6 @@ export const STR = {
     "у торрентов на {v1} нет пути наружу (маршрут недоступен) — пока он не появится, они блокируются",
   "the torrent policy needs a node update — until then torrents are blocked only on interfaces that have Torrents / P2P switched on":
     "для политики торрентов нужно обновить ноду — пока торренты блокируются только на интерфейсах, где включено «Торренты / P2P»",
-  // the node could not load its torrent rules ({v1}: nft's own first error line, left in English)
   "the torrent policy is not in force on this node — its rules failed to load ({v1}); until they load, torrents are not blocked or routed as set":
     "политика торрентов не действует на этой ноде — её правила не загрузились ({v1}); пока они не загрузятся, торренты не блокируются и не направляются так, как задано",
   "the torrent policy is not in force on this node — its rules failed to load; until they load, torrents are not blocked or routed as set":
@@ -4944,7 +4473,6 @@ export const STR = {
   "Source IP on the target node that clients egress from.":
     "Адрес на ноде назначения, с которого клиенты выходят.",
   "Source IP clients egress from.": "Адрес, с которого клиенты выходят.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "IP-only mode routes by IP only — remove the domains ({list}), or switch this node to Force-DNS.":
     "Режим «только IP» ведёт трафик по адресам — уберите домены ({list}) или переключите ноду на Force-DNS.",
   "IP-only mode routes by IP only — remove the domain ({list}), or switch this node to Force-DNS.":
@@ -4971,10 +4499,7 @@ export const STR = {
   "Found on the node — the panel doesn't manage it. Adopt to manage, or Ignore.":
     "Найден на ноде, панель им не управляет. Подключите или скройте.",
   "Failed to request update.": "Не удалось запросить обновление.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Failed to start update.": "Не удалось запустить обновление.",
-  // Last-resort text in an update row when the server answered !ok with nothing to quote.
-  // Stands alone in a narrow cell, so it stays a bare verb rather than a sentence.
   "failed": "не удалось",
   "Couldn't check for updates.": "Не удалось проверить обновления.",
   "No notes for this release.": "Описания у этого выпуска нет.",
@@ -4986,9 +4511,7 @@ export const STR = {
   "Scanners flagged": "Отмечено сканеров",
   "just created, not seen yet": "только создан, ещё не виден",
   "server stale — can't confirm": "сервер молчит — не подтвердить",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Username can't be empty.": "Имя пользователя не может быть пустым.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Username can't contain a colon.": "В имени пользователя не может быть двоеточия.",
   "Enter your current password to confirm.": "Введите текущий пароль для подтверждения.",
   "New passwords don't match.": "Новые пароли не совпадают.",
@@ -5024,7 +4547,6 @@ export const STR = {
   "The panel and subscription are swapping ports — a single host can't swap two ports at once. First move one of them to a spare free port and Save, then set both to their final ports and Save again.":
     "Панель и подписка меняются портами, а разом поменять два порта на одной машине нельзя. Переведите сначала одну на любой свободный порт и сохраните, потом задайте обоим итоговые порты и сохраните ещё раз.",
   "Saving your changes…": "Сохраняем изменения…",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Save failed.": "Сохранить не удалось.",
   "Updating the subscription server…": "Обновляем сервер подписок…",
   "The subscription server couldn't be updated.": "Сервер подписок обновить не удалось.",
@@ -5052,31 +4574,23 @@ export const STR = {
   "Zone:DNS:Edit token": "Токен Zone:DNS:Edit",
   "Zone:SSL and Certificates:Edit token": "Токен Zone:SSL and Certificates:Edit",
   "Port must be a number between 1 and 65535": "Порт должен быть числом от 1 до 65535",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Setup failed": "Настроить не удалось",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Reset failed": "Сбросить не удалось",
   "Set up encryption": "Настроить шифрование",
   "Show the key again — it never leaves your browser": "Показать ключ снова — он не покидает браузер",
   "Unlock the vault first to reveal its key": "Сначала откройте хранилище, чтобы увидеть ключ",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Unlock failed": "Открыть не удалось",
   "Migration failed": "Перенос не удался",
   "Encrypt remaining": "Зашифровать остальные",
   "Encrypt stored configs": "Зашифровать конфиги",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Couldn't start update": "Не удалось запустить обновление",
   "Enter your current password to confirm the change.": "Введите текущий пароль, чтобы подтвердить изменение.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Failed to save.": "Сохранить не удалось.",
   "Enabling interface-key escrow seals each server's interface key under your Encryption Vault key. Unlock it to apply.":
     "При включении ключ интерфейса каждого сервера запечатывается вашим ключом из хранилища. Откройте хранилище, чтобы применить.",
   "Enabling key escrow needs the Encryption Vault unlocked.": "Для включения нужно открыть хранилище ключей.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Couldn't update key escrow.": "Не удалось изменить хранение ключей.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Couldn't save block lists.": "Не удалось сохранить списки блокировок.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Couldn't update credentials.": "Не удалось изменить учётные данные.",
   "Saved. Reloading — sign in with your new credentials…": "Сохранено. Перезагружаем — войдите с новыми данными…",
   "the panel didn't respond. Nothing was lost; try again.": "панель не ответила. Ничего не потеряно, повторите.",
@@ -5129,16 +4643,13 @@ export const STR = {
   "Set default": "По умолчанию",
   "Edit list": "Правка списка",
   "New list": "Новый список",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Couldn't start setup.": "Не удалось начать настройку.",
   "That code isn't valid — try the current one.": "Код не подходит — введите текущий.",
   "Couldn't disable — check your password and code.": "Не удалось выключить — проверьте пароль и код.",
   "Set up two-factor": "Настроить вход по коду",
   "Give the user a name.": "Дайте пользователю имя.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "couldn't create user": "не удалось создать пользователя",
   "No peers assigned to this user yet.": "У этого пользователя пока нет пиров.",
-  // budget-ok: an empty-state block — nothing beside it
   "No unassigned peers to add.": "Свободных пиров для добавления нет.",
   "Unassign from this user": "Отвязать от пользователя",
   "Assign to this user (keeps its key)": "Назначить (ключ сохранится)",
@@ -5147,11 +4658,8 @@ export const STR = {
   "finding a free address…": "ищем свободный адрес…",
   "Full tunnel by default. Narrow for split tunnel.": "По умолчанию весь трафик. Сузьте для раздельного туннеля.",
   "Comma-separated IPs. Blank = no DNS line.": "Адреса через запятую. Пусто — строки DNS не будет.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Pick at least one target.": "Выберите хотя бы одно назначение.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "generating key…": "создаём ключ…",
-  // an all-keyless peer mints no keypair — its credential is the panel-owned access password
   "creating peer…": "создаём пира…",
   "A target has an invalid address.": "У одного из назначений неверный адрес.",
   "Apply these changes?": "Применить изменения?",
@@ -5164,9 +4672,7 @@ export const STR = {
   "Saved (some changes couldn't be persisted).": "Сохранено (часть изменений записать не удалось).",
   "Peer updated.": "Пир обновлён.",
   "Link rotated — the old one no longer works.": "Ссылка сменена — прежняя больше не работает.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Rotate failed.": "Сменить не удалось.",
-  // a phone's Rotate on one device: what it says when there is nothing to rotate, or only some credentials went through (review F67, F68)
   "This peer has nothing to rotate.": "У этого пира нечего менять.",
   "the csqtt link": "ссылка csqtt",
   "the WDTT link": "ссылка WDTT",
@@ -5190,7 +4696,6 @@ export const STR = {
   "New token": "Новый токен",
   "A label for this node — rename anytime, nothing else changes. The swatches set its colour per theme.":
     "Название ноды — переименование ничего больше не меняет. Образцы задают цвет для каждой темы.",
-  // budget-ok: a note under the removal steps — its own block
   "No peers reference it.": "На него не ссылается ни один пир.",
   "the panel didn't respond in time": "панель не ответила вовремя",
   "The node is setting it up": "Нода его настраивает",
@@ -5203,41 +4708,31 @@ export const STR = {
   "Random 64-hex key copied — paste it into the parameters":
     "Случайный ключ из 64 знаков скопирован — вставьте его в параметры",
   "Auto-filled for each real proxy — read-only": "Подставляется для каждого прокси — только чтение",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "This proxy's command — read-only": "Команда запуска этого прокси — только чтение",
   "Manual import — copy the link, then paste or scan it in the app":
     "Перенос вручную — скопируйте ссылку и вставьте или отсканируйте её в приложении",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Save failed": "Сохранить не удалось",
   "Version change requested — applies on each node's next sync.":
     "Смена версии запрошена — применится при следующей синхронизации.",
   "Failed to cancel.": "Отменить не удалось.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Failed to restart.": "Перезапустить не удалось.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Failed to stop.": "Остановить не удалось.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Failed to start.": "Запустить не удалось.",
   "Enter the absolute path to the .service unit.": "Укажите полный путь к файлу .service.",
   "WDTT fields aren't ready yet.": "Поля WDTT ещё не готовы.",
   "Forwards-to must be host:port.": "Пересылать нужно в виде хост:порт.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Turn-proxy install failed.": "Установить turn-прокси не удалось.",
   "No forks enabled — turn them on in Panel settings → Turn proxies.":
     "Ни одна сборка не включена — включите их в «Настройках панели → Turn-прокси».",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Subnet must be an IPv4 CIDR (e.g. 10.66.66.1/24).": "Подсеть задаётся как IPv4 CIDR, например 10.66.66.1/24.",
   "The DTLS listen port and internal WG port must differ.": "Порт DTLS и внутренний порт WG должны различаться.",
   "creating WDTT server… (the node installs it on its next sync)":
     "создаём сервер WDTT… (сервер поставит его при следующей синхронизации)",
   "The DTLS port and the internal WG port must differ.": "Порт DTLS и внутренний порт WG должны различаться.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Restore failed.": "Восстановить не удалось.",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Recreating with a fresh identity — users must re-import.":
     "Пересоздаём с новыми ключами — пользователям придётся переносить заново.",
   "This server is being adopted — wait for the node to finish": "Сервер подключается — дождитесь окончания",
-  // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Action failed.": "Действие не выполнено.",
   "Display rendered": "Показать разобранным",
   "Display raw": "Как есть",
@@ -5280,7 +4775,6 @@ export const STR = {
   "the panel won’t start again after a reboot": "после перезагрузки панель сама не поднимется",
   "the AmneziaWG kernel module isn’t built or loaded — awg interfaces can’t come up; running Update rebuilds it":
     "модуль ядра AmneziaWG не собран или не загружен — интерфейсы awg не поднимутся; «Обновить» пересоберёт его",
-  // budget-ok: a note under the removal steps — its own block, wraps
   "{v1} reference it; {n} live only here and will be dropped.":
     "На него ссылаются {v1}; из них {n} живут только здесь и пропадут.",
   "{v1} reference it.": "На него ссылаются {v1}.",
@@ -5367,7 +4861,6 @@ export const STR = {
     "Клиенты до него достучатся, но каждое падение обрывает все сессии через него. Почему он падает — видно в его журнале на ноде.",
   "no peers online": "пиров в сети нет",
   "no one online": "никого в сети",
-  // budget-ok: the app-bar tabs — measured in the real header, not estimated (see below)
   "nav|Overview": "Обзор",
   "nav|Users": "Пользователи",
   "nav|Nodes": "Ноды",
@@ -5376,7 +4869,6 @@ export const STR = {
   "Language": "Язык",
   "Theme": "Тема",
   "Panel settings": "Настройки панели",
-  // lowercase state/label tags — the vocabulary mirrors status|… and ifop|… above
   "tag|missing": "пропал",
   "tag|ghost": "призрак",
   "tag|stopped": "остановлен",
@@ -5419,87 +4911,69 @@ export const STR = {
   "tag|heavy": "тяжёлый",
   "tag|restricted": "фильтр",
   "tag|untitled": "без имени",
-  // Panel-service issue: the session-signing key could not be persisted.
   "Session key": "Ключ сессий",
   "can’t be saved": "не сохраняется",
   "the panel can't save the key it signs sign-ins with ({v1}), so everyone is signed out whenever it restarts — its state directory is owned by another user":
     "панель не может сохранить ключ, которым подписывает входы ({v1}), поэтому при каждом её перезапуске всех выкидывает из панели — каталогом её состояния владеет другой пользователь",
   "val|auto": "авто",
-  // Peers toolbar: collapse each peer's deployments into one row. Own keys — the bare words are
-  // used elsewhere as nouns; these are the switch's two states.
   "btn|Group": "Объединить",
   "btn|Grouped": "Объединено",
-  // the grouped row's IF badge: the row stands for several deployments, so it counts them
   "{n} interfaces": "{n} интерф.",
   "Other interfaces of this peer": "Другие интерфейсы этого пира",
   "Collapse each peer's deployments into one row": "Свернуть развёртывания каждого пира в одну строку",
   "One row per peer — its other deployments are behind the +N": "По строке на пира — остальные его развёртывания за +N",
-  // the address column on a self-contained turn row: its server mints the client IP on connect
   "val|auto IP": "авто IP",
   "tag|unbound": "не привязан",
 
-  // the node rail: the name is a SLOT, because "Hide msk-1" and "Скрыть msk-1" are not the same shape
   "Hide {v1}": "Скрыть {v1}",
   "Show {v1}": "Показать {v1}",
   "Go to {v1}": "Перейти к {v1}",
-  // budget-ok: title, no layout
   "Down — {v1}": "Не в сети — {v1}",
   "not reporting": "не отвечает",
 
-  // interface create/edit
   "Letters, digits, _ and -, up to 15 characters.": "Буквы, цифры, _ и -, до 15 символов.",
   "Name: 1–40 chars, letters/digits/-/_ only.": "Имя: 1–40 символов, только буквы/цифры/-/_.",
   "1–40 chars: letters, digits, - or _ only.": "1–40 символов: только буквы, цифры, - или _.",
   "Blank = 1280.": "Пусто = 1280.",
-  "val|down": "не работает",          // a datapath, after "wireguard-go · "
-  "val|disabled": "отключён",         // a webhook, after its event list
+  "val|down": "не работает",
+  "val|disabled": "отключён",
 
-  // the working states — lowercase, they follow nothing and start no sentence
   "requesting…": "запрашиваю…",
   "creating…": "создаю…",
   "applying…": "применяю…",
   "Encrypting…": "Шифрую…",
   "Starting…": "Запускаю…",
 
-  // failures that fall back when the server said nothing
   "Failed.": "Не удалось.",
   "Couldn't retry": "Повтор не удался",
   "couldn't generate": "не удалось создать",
   "Saved.": "Сохранено.",
-  // budget-ok: settings status line, a block that wraps
   "Saved & applied.": "Сохранено и применено.",
 
-  // a peer with no name, and a peer with no user
   "(peer)": "(пир)",
   "(unnamed)": "(без имени)",
-  "val|Unassigned": "Без владельца",   // NOT status|Unassigned («Свободен»), which is width-capped for the peer grid
+  "val|Unassigned": "Без владельца",
 
-  // routing categories: the four Russia sets are sentences, so they translate; the brand rows do not
   "Facebook, Instagram & WhatsApp": "Facebook, Instagram и WhatsApp",
   "Disney+ streaming": "Стриминг Disney+",
   "VKontakte": "ВКонтакте",
   "Grok (xAI) — grok.com & x.ai": "Grok (xAI) — grok.com и x.ai",
-  "val|Auto": "Авто",                  // the egress-IP picker's "no explicit IP" option
+  "val|Auto": "Авто",
 
-  // the protection tiles and their popover header
   "Blocked": "Блокировки",
   "Filtering": "Фильтрация",
 
-  // the settings footer's list of what a Save will apply
   "Interfaces — colours / defaults": "Интерфейсы — цвета / умолчания",
   "Subscriptions — enable / languages": "Подписки — включение / языки",
 
-  // turn-proxy: the verb is a NOUN in the slot — «Запрошено: переустановка turn-прокси»
   "val|update": "обновление",
   "val|reinstall": "переустановка",
 
   "*{v1}* couldn't be encrypted (unassigned, or no stored key) — *rekey* or assign it to include: {v2}.":
     "*{v1}* не удалось зашифровать (без владельца или без сохранённого ключа) — *смените ключи* или назначьте владельца, чтобы включить: {v2}.",
-  // budget-ok: prose in a hint block, wraps
   "*{v1}* couldn't be encrypted (unassigned, or no stored key) — *rekey* or assign them to include: {v2}.":
     "*{v1}* не удалось зашифровать (без владельца или без сохранённого ключа) — *смените ключи* или назначьте владельцев, чтобы включить: {v2}.",
 
-  // ── csqtt (amurcanov's Rust rewrite of WDTT — self-contained raw-TUN VK-turn server) ──
   "csqtt needs a /24 tunnel subnet, e.g. 10.66.67.0/24.": "csqtt нужна подсеть туннеля /24, например 10.66.67.0/24.",
   "Max passwords must be a number.": "Максимум паролей должен быть числом.",
   "UDP DTLS listen (outside)": "Приём UDP DTLS (снаружи)",
@@ -5552,7 +5026,6 @@ export const STR = {
     "*csqtt* владеет своим raw-IP туннелем *({iface} · {addr})* и выдаёт адрес каждому пользователю при подключении.",
   "CSQTT fork: {v1}": "Форк CSQTT: {v1}",
 
-  // ── what a peer publishes to its subscription (the clickable protocol tags) ──
   "Published to the subscription — click to hide it": "Публикуется в подписке — нажмите, чтобы скрыть",
   "Hidden from the subscription — click to publish it again": "Скрыто из подписки — нажмите, чтобы снова опубликовать",
   "This is the last kind of config this peer publishes — a subscription can't be empty.":
@@ -5628,7 +5101,6 @@ export const STR = {
   "Turn-proxy": "Turn-прокси",
   "RAW mode on": "RAW включён",
   "Extra flags": "Дополнительные флаги",
-  // Force-DNS resolver's upstream (docs/DNS-SETTINGS-PLAN.md §4)
   "Upstream DNS": "Вышестоящий DNS",
   "upstream DNS → {v1}": "вышестоящий DNS → {v1}",
   "Where this node's resolver sends the lookups it answers for Force-DNS clients. Empty = 1.1.1.1, 8.8.8.8. Up to four addresses, each optionally with #port (a local resolver like 127.0.0.1#5335 works). If none of them answers, clients on this node can't resolve names.": "Куда резолвер этой ноды отправляет запросы, на которые он отвечает клиентам Force-DNS. Пусто = 1.1.1.1, 8.8.8.8. До четырёх адресов, у каждого можно указать #порт (подойдёт и локальный резолвер, например 127.0.0.1#5335). Если ни один не отвечает, клиенты этой ноды не смогут разрешать имена.",
@@ -5639,7 +5111,6 @@ export const STR = {
   "Upstream DNS: {v1} is not an IP address (optionally with #port).": "Вышестоящий DNS: {v1} — не IP-адрес (можно с #портом).",
   "Upstream DNS: {v1} can't answer DNS queries.": "Вышестоящий DNS: {v1} не может отвечать на DNS-запросы.",
   "Upstream DNS: {v1} is the node's own Force-DNS resolver — it would ask itself.": "Вышестоящий DNS: {v1} — это сам резолвер Force-DNS этой ноды, он спрашивал бы сам себя.",
-  // client DNS of a WDTT / csqtt server (docs/DNS-SETTINGS-PLAN.md §3)
   "Client DNS": "DNS для клиентов",
   "Client DNS takes at most two addresses.": "DNS для клиентов — не больше двух адресов.",
   "Client DNS must be IPv4 addresses — {v1} is not one a phone can use.": "DNS для клиентов — только IPv4-адреса: {v1} телефон использовать не сможет.",
@@ -5653,7 +5124,6 @@ export const STR = {
   "Given to every client when it connects. Saving restarts the server.": "Передаётся каждому клиенту при подключении. Сохранение перезапускает сервер.",
   "val|none": "нет",
   "tag|advanced": "подробно",
-  // ── RAW-IP mode (qWDTT): a second listener that trades WireGuard for throughput ──────────────
   "RAW-IP mode": "Режим RAW-IP",
   "Accept RAW connections": "Принимать RAW-подключения",
   "RAW drops WireGuard's handshake: *no forward secrecy and no replay protection*. Anyone who later learns a peer's password can read traffic they recorded earlier. Turn it on for people who need the speed and accept that.": "RAW убирает рукопожатие WireGuard: *нет forward secrecy и защиты от повтора*. Тот, кто потом узнает пароль пира, прочитает записанный ранее трафик. Включайте для тех, кому нужна скорость и кого это устраивает.",
@@ -5796,19 +5266,15 @@ export const STR = {
   "egress IP → {v1}": "адрес выхода → {v1}",
   "panel IP → {v1}": "адрес панели → {v1}",
   "val|default": "по умолчанию",
-  // A bare participle, so it agrees with nothing and reads the same in a row tag and in the fleet popover.
   "in use": "используется",
-  // Impersonal «используется» agrees with the LIST, not the count, so it works for any number of nodes.
   "in use on {v1}": "используется на {v1}",
   "A routing rule on this node names this list, so the node already holds it — pinning only decides whether it stays when that rule goes.":
     "Список указан в правиле маршрутизации на этой ноде, поэтому нода его уже держит — закрепление решает только, останется ли он, когда правило уйдёт.",
-  // budget-ok: a tooltip — its own bubble, wraps
   "No IP list here — can't enforce in {v1}. Add an IP list, or use Force-DNS / Hybrid-SNI.":
     "Здесь нет списка адресов — в режиме {v1} применить нечего. Добавьте список адресов или включите Force-DNS / Hybrid-SNI.",
   "Filter on {v1}": "Фильтр на {v1}",
   "domains in this list": "доменов в списке",
   "IP ranges in this list": "диапазонов адресов в списке",
-  // budget-ok: tooltips — their own bubble, wrap
   "the last update failed ({v1}) — the previous copy is still in use": "последнее обновление не удалось ({v1}) — работает предыдущая копия",
   "The panel couldn't download this list ({v1}). It retries on its own, less often each time.":
     "Панель не смогла скачать этот список ({v1}). Она повторяет попытки сама, каждый раз реже.",
@@ -5816,7 +5282,6 @@ export const STR = {
   "not downloaded": "не скачан",
   "None of this category's lists is in use — their providers are switched off, or it has no lists yet. It blocks nothing until one is.":
     "Ни один список этой категории не используется — их источники выключены или списков ещё нет. Пока не появится хотя бы один, она ничего не блокирует.",
-  // the two-panels banner (store.js trackInstance)
   "Two different panels are answering at this address.": "По этому адресу отвечают две разные панели.",
   "Each keeps its own servers, settings and lists, and the page shows whichever one answered — so what you see can change between reloads, and changes saved on the one your servers don't sync to never reach them. Keep the one your servers report to; stop the other.":
     "У каждой свои серверы, настройки и списки, а страница показывает ту, что ответила, — поэтому картина может меняться от перезагрузки к перезагрузке, а изменения, сохранённые в панели, с которой ваши серверы не синхронизируются, до них не доходят. Оставьте ту, с которой синхронизируются ваши серверы, а другую остановите.",
@@ -5857,7 +5322,6 @@ export const STR = {
   "Changing the mesh subnet / port / prefix of {v1} rebuilds all of its node-to-node links with the new settings.":
     "Смена подсети, порта или префикса сети у {v1} пересоберёт все её связи с другими нодами по новым настройкам.",
   "Node settings · {v1}": "Настройки ноды · {v1}",
-  // restore / migrate (node rebuild)
   "Restore or migrate": "Восстановить/перенести",
   "Migrate": "Перенести",
   "tag|old box alive": "старый сервер жив",
@@ -5865,7 +5329,6 @@ export const STR = {
   "Addresses": "Адреса",
   "Run this on the box": "Выполните это на машине",
   "Preparing…": "Подготовка…",
-  // budget-ok: sheet-foot buttons, foot has a grow spacer
   "Prepare the command": "Подготовить команду",
   "Prepare the migration": "Подготовить перенос",
   "Roll back to it": "Вернуться на неё",
@@ -5886,10 +5349,8 @@ export const STR = {
     "Забыть токен старой машины — плашка исчезнет, панель останется на новой машине",
   "Migrated {v1}. The old server is still running and still serving its peers — it's locked out of this panel by a rotated token, nothing else. Roll back to it in one click, or tell the panel it's gone.":
     "Миграция {v1}. Старый сервер продолжает работать и обслуживать свои пиры — от панели его отрезал только смененный токен, больше ничего. Можно вернуться на него одним кликом или сказать панели, что его больше нет.",
-  // Tsplit sentences — the {markers} are split points, so every one of them has to survive translation.
   "This gives you a one-line command to run on the {newbox}. It pulls everything the panel holds for {name} — its interfaces with their original keys and settings, its turn-proxies, its place in the mesh — so the node comes back as itself.":
     "Панель выдаст команду в одну строку для запуска на {newbox}. Она заберёт всё, что панель хранит для {name} — интерфейсы с их исходными ключами и настройками, turn-прокси, место в меше — так что нода вернётся сама собой.",
-  // budget-ok: a bolded run INSIDE a notice paragraph (Tsplit), not a label — it wraps with the sentence
   "new box": "новой машине",
   "{name} isn't reporting. This gives you a one-line command that rebuilds it from what the panel holds — run it on the {either}. Either way the node comes back as itself, with its interfaces, keys and turn-proxies.":
     "{name} не отчитывается. Панель выдаст команду в одну строку, которая пересоберёт ноду из того, что хранит панель — выполните её на {either}. В любом случае нода вернётся сама собой: со своими интерфейсами, ключами и turn-прокси.",
@@ -6051,11 +5512,9 @@ export const STR = {
   "This node is busy or offline": "Нода занята или не на связи",
   " — turn-proxy actions are disabled until it's reporting again.": " — действия с turn-прокси недоступны, пока она не отзовётся.",
   "Internal port": "Внутренний порт",
-  // ── server messages (the panel's own English sentence is the key — see srvText in js/i18n.js) ──
   "couldn't bind {v1} — {v2}": "не удалось занять {v1} — {v2}",
   "Subscriptions need encrypted config storage — turn on 'Keep encrypted configs' first.":
     "Подпискам нужно шифрованное хранение конфигов — сначала включите «Хранить шифрованные конфиги».",
-  // ── the panel's own sentences: activity verbs (stored English, translated on display) ──
   "Added deployment": "Добавлено развёртывание",
   "Adopted from the live interface": "Принято с живого интерфейса",
   "Recorded an interface the node reports": "Интерфейс ноды взят в панель",
@@ -6101,7 +5560,6 @@ export const STR = {
   "type → {v1}": "тип → {v1}",
   "AWG params changed": "параметры AWG изменены",
   "type → {v1}, AWG params changed": "тип → {v1}, параметры AWG изменены",
-  // activity verbs for the rebuild adapter (ev_append writes English; the browser looks the sentence up)
   "Rebuild armed": "Пересборка подготовлена",
   "Rolled back to the superseded box": "Откат на прежнюю машину",
   "Superseded box discarded": "Прежняя машина забыта",
@@ -6157,7 +5615,6 @@ export const STR = {
   "The subscription URL names a port nothing listens on": "Адрес подписок указывает порт, который никто не слушает",
   "{count} unassigned": "отвязано: {count}",
   "{count} · {where}": "{count} · {where}",
-  // the panel's own sentences: validation and lookup failures
   "exits must be a list": "выходы должны быть списком",
   "each exit must be an object": "каждый выход должен быть объектом",
   "exit producer must be adopted|imported": "producer выхода должен быть adopted|imported",
@@ -6301,7 +5758,6 @@ export const STR = {
   "interface name is required (no spaces or /)": "нужно имя интерфейса (без пробелов и «/»)",
   "'{v1}' isn't a usable interface name — letters, digits, _ and -, up to 15 characters":
     "«{v1}» не годится как имя интерфейса — буквы, цифры, «_» и «-», до 15 знаков",
-  // ── the panel's own sentences: conflicts, address-change flow, WDTT adoption ──
   "Cloudflare Origin (cf15) TLS needs a Cloudflare Origin CA token — add it in Panel URL before switching.":
     "Для TLS с сертификатом Cloudflare Origin (cf15) нужен токен Origin CA — добавьте его в «Адрес панели» до переключения.",
   "Cloudflare TLS needs a Cloudflare DNS token — add it in Panel URL before switching, otherwise the panel would serve a self-signed certificate Cloudflare rejects (526).":
@@ -6342,7 +5798,6 @@ export const STR = {
     "не удалось занять {v1} — {v2}. Если порт всё ещё держит ваш обратный прокси, освободите его там: панель и прокси не могут держать один порт вдвоём.",
   "hold on {v1}s — the nodes are still learning the new address so the restart won't strand them":
     "подождите {v1} с — ноды ещё узнают новый адрес, чтобы перезапуск их не отрезал",
-  // the recreate guard's refusals — "present" alone is no longer the reason one is declined (T-8)
   "interface is already present and healthy on the node with the key its clients use — nothing to recreate":
     "интерфейс на ноде уже есть, поднят и работает с тем ключом, который используют его клиенты — пересоздавать нечего",
   "interface is up but serving a different server key — restore the key instead (Adopt/Restore on the interface), which keeps every client working":
@@ -6440,7 +5895,6 @@ export const STR = {
   "unknown node {v1}": "неизвестная нода {v1}",
   "unknown node(s): {v1}": "неизвестные ноды: {v1}",
   "{v1} is a system mesh link — not a peer interface": "{v1} — служебная связь сети, а не интерфейс для пиров",
-  // A peer may hold a mix of kinds; these three replace the flat "that's a WDTT interface" refusal.
   "{v1} is a self-contained turn server — add its users from the peer sheet, not by adopting a WireGuard key":
     "{v1} — самодостаточный turn-сервер: его пользователей добавляют из карточки пира, а не принятием ключа WireGuard",
   "{v1} needs a client key — this peer has none (rotate its keys first)":
@@ -6458,7 +5912,6 @@ export const STR = {
   "nothing is restored. The server stays down until you unlock the key, or you can Recreate fresh instead — which mints a new server key and makes every user re-import.":
     "ничего не восстановится. Сервер останется выключенным, пока вы не разблокируете ключ; либо пересоздайте заново — тогда будет выпущен новый ключ сервера и всем пользователям придётся переимпортировать ссылку.",
   "take-over failed: {e}": "не удалось взять под управление: {e}",
-  // budget-ok: a tooltip on an icon button — its own bubble
   "Switch to {name}": "Переключить на {name}",
   "request failed": "запрос не прошёл",
   "awaiting restore": "ждёт восстановления",
@@ -6667,8 +6120,6 @@ export const STR = {
   "couldn't reach that panel": "нет связи с той панелью",
   "the transfer didn't start": "передача не началась",
 
-  // The two boxes. Order matters: what STAYS is first, because it is the half nobody would think to ask
-  // about — nothing here disconnects a user, and all of it is invisible until someone needs it.
   "Peers on the panel-wide call link — the other panel resolves its own":
     "Пиры на общей ссылке панели — та панель подставит свою",
   "Never set up through this panel — nothing to hand over":
@@ -6689,8 +6140,6 @@ export const STR = {
     "Сохранённые конфиги — ссылки, которые уже есть у пользователей, продолжат их открывать",
   "Mesh links — the other panel builds its own": "Связи меша — та панель поднимет свои",
 
-  // The wait. It is not a progress bar: the node decides when it moves, and until it does this panel is
-  // still its panel — so every line here is written to make "nothing has happened yet" reassuring.
   "Waiting for {v1} to appear on {v2}. It learns the new address on its next sync, checks that panel's identity, and only then moves — so until it does, it is still fully yours.":
     "Ждём, когда {v1} появится на {v2}. Нода узнает новый адрес на ближайшей синхронизации, проверит подлинность той панели и только потом переедет — до этого она полностью ваша.",
   "The other panel isn't answering this panel right now ({v1}). The node will keep trying; nothing is lost while it can't get through.":
@@ -6707,8 +6156,6 @@ export const STR = {
   "another panel": "другая панель",
   "the other panel": "другая панель",
 
-  // The badges. Pending borrows the superseded colour — both mean "something out there this panel no
-  // longer fully owns"; done is neutral.
   "tag|transferring": "передаётся",
   "tag|transferred": "передана",
   "tag|arrived here": "пришла сюда",
@@ -6718,7 +6165,6 @@ export const STR = {
   "This node now reports to {v1}. Its record here no longer controls it — keep it for reference, or remove it.":
     "Нода теперь синхронизируется с другой панелью: {v1}. Запись здесь ею больше не управляет — оставьте для справки или удалите.",
 
-  // ── T-10, server side ───────────────────────────────────────────────────────────────────────────
   "that is a declarative (NixOS) enrolment — it writes the token to a file and carries no -key, so there is nothing here to read. On the target panel add a NEW node: its Add node screen gives a one-line command that carries both the address and the token.":
     "это декларативное (NixOS) подключение — токен пишется в файл, а -key в команде нет, так что читать здесь нечего. Добавьте на той панели НОВУЮ ноду: её экран «Добавить ноду» даёт однострочную команду с адресом и токеном.",
   "that command enrols a node on THIS panel — paste the one the OTHER panel shows under Add node":
@@ -6744,7 +6190,6 @@ export const STR = {
   "this panel already holds different records under {v1}":
     "на этой панели уже есть другие записи с идентификаторами {v1}",
 
-  // Russian leads with the predicate here — "3 обновления доступно" reads as a fragment, "Доступно 3 обновления" does not.
   "{v1} available": "Доступно {v1}",
   "Review & update": "Просмотреть и обновить",
   "Server updates": "Обновления серверов",
@@ -6753,7 +6198,7 @@ export const STR = {
   "Using the panel's fallback VK call link.": "Используется запасная VK-ссылка панели.",
   "Deployed servers on this node are behind their newest build — review and update": "Развёрнутые на этом узле серверы отстают от новейшей сборки — просмотреть и обновить",
   "Each update swaps the server's binary and *restarts it*, which briefly drops that server's clients. This one covers {v1} on {v2} — pick a quiet moment, or update them one at a time.": "Каждое обновление подменяет бинарник сервера и *перезапускает его*, из-за чего клиенты этого сервера ненадолго отключаются. Здесь это {v1} на {v2} — выберите спокойное время или обновляйте по одному.",
-  "Update {v1}": "Обновить {v1}",   // the per-fork button: {v1} is already declined ("2 ноды")
+  "Update {v1}": "Обновить {v1}",
   "Update": "Обновить",
   "Everything is on its newest build.": "Все серверы на новейшей сборке.",
   "Each update swaps the server's binary and *restarts it*, which briefly drops that server's clients. This one covers {v1} across {v2} — pick a quiet moment, or update them one at a time.":
@@ -6801,11 +6246,9 @@ export const STR = {
   "No lists yet. Worth making when the same addresses are wanted by more than one rule — otherwise type them straight into the rule.":
     "Списков пока нет. Стоит завести, когда одни и те же адреса нужны нескольким правилам — иначе впишите их прямо в правило.",
   "Edit this list": "Изменить список",
-  // §5.4: a list whose every token was unreadable is not shortened, it is GONE — its own sentence
   "the list {v1} had nothing readable in it — not saved": "в списке {v1} не оказалось ничего читаемого — не сохранён",
   "the list id {v1} already means something to a rule — the list was saved under a new id": "идентификатор списка {v1} уже что-то значит для правила — список сохранён под новым идентификатором",
   "Show as text — copy it out, paste it in, or edit every target at once": "Показать текстом — скопировать, вставить или отредактировать все адреса сразу",
-  // the labelled foot toggle (custom-list sheet) — a pair, so the label always says where you are going
   "Show text": "Текстом",
   "Show badges": "Значками",
   "Targets, one per line": "Адреса, по одному в строке",
@@ -6820,13 +6263,10 @@ export const STR = {
   "{v1} list — the panel resolves it and every node routing it pulls the same copy.": "Список {v1} — панель его разворачивает, и каждая нода, которая его маршрутизирует, тянет одну и ту же копию.",
   "Unknown list": "Неизвестный список",
   "No list with this id — its provider may be switched off in Settings, or the list was withdrawn upstream. The rule keeps it, and it matches nothing until it comes back.": "Списка с таким id нет — возможно, его источник выключен в настройках или список убрали на стороне провайдера. Правило его сохраняет, но совпадать он не будет, пока не вернётся.",
-  // A LIST badge: «список … не найден» — masculine, unlike the bare "not found" ("не найдено") used
-  // for an ASN lookup, which is why this one is namespaced rather than sharing that key.
   "list|not found": "не найден",
   "list|empty": "пусто",
   "The panel resolved this list and it holds nothing — check the id, or the source may have emptied it.": "Панель развернула этот список, и в нём ничего нет — проверьте id или источник мог его опустошить.",
   "Edit discarded — {v1} is unchanged": "Правка отменена — {v1} без изменений",
-  // ── server sentences that reached the browser in English (G7) ──
   "%s: %s needs a domain URL, not an IP address.": "%s: для %s нужен URL с доменом, а не IP-адрес.",
   "%s: port %d can't be reached behind Cloudflare — a cf15 origin cert is only valid there. Use one of: %s.": "%s: порт %d недоступен через прокси Cloudflare — сертификат cf15 действует только там. Используйте один из: %s.",
   "%s: port must be a number between 1 and 65535.": "%s: порт должен быть числом от 1 до 65535.",
@@ -6920,13 +6360,11 @@ export const STR = {
   "unknown operation": "неизвестная операция",
   "{v1} isn't a usable host or address": "{v1} не является пригодным хостом или адресом",
 
-  // ── the VK TURN Proxy import hint: four finished sentences, one per (launcher × vk-missing) ──
   "Import the {v1} core (client-android-arm64 from the {v1} releases) into the VK TURN Proxy app — it runs as a launcher for that core, then scan the QR (Profiles → Import) or paste the VKTGZ: text — the VK call link + endpoint ride inside once you add a VK link.": "Импортируйте ядро {v1} (client-android-arm64 из релизов {v1}) в приложение VK TURN Proxy — оно работает как лаунчер для этого ядра, затем отсканируйте QR (Профили → Импорт) или вставьте текст VKTGZ: — ссылка на звонок VK и эндпоинт едут внутри, как только вы добавите ссылку VK.",
   "Import the {v1} core (client-android-arm64 from the {v1} releases) into the VK TURN Proxy app — it runs as a launcher for that core, then scan the QR (Profiles → Import) or paste the VKTGZ: text — the VK call link + endpoint ride inside.": "Импортируйте ядро {v1} (client-android-arm64 из релизов {v1}) в приложение VK TURN Proxy — оно работает как лаунчер для этого ядра, затем отсканируйте QR (Профили → Импорт) или вставьте текст VKTGZ: — ссылка на звонок VK и эндпоинт едут внутри.",
   "Import the {v1} core (client-android-arm64 from the {v1} releases) into the VK TURN Proxy app, then scan the QR (Profiles → Import) or paste the VKTGZ: text — the VK call link + endpoint ride inside once you add a VK link.": "Импортируйте ядро {v1} (client-android-arm64 из релизов {v1}) в приложение VK TURN Proxy, затем отсканируйте QR (Профили → Импорт) или вставьте текст VKTGZ: — ссылка на звонок VK и эндпоинт едут внутри, как только вы добавите ссылку VK.",
   "Import the {v1} core (client-android-arm64 from the {v1} releases) into the VK TURN Proxy app, then scan the QR (Profiles → Import) or paste the VKTGZ: text — the VK call link + endpoint ride inside.": "Импортируйте ядро {v1} (client-android-arm64 из релизов {v1}) в приложение VK TURN Proxy, затем отсканируйте QR (Профили → Импорт) или вставьте текст VKTGZ: — ссылка на звонок VK и эндпоинт едут внутри.",
 
-  // ── an exit whose device is up but whose peer never answered ──
   "The device is up, but this peer has never answered. Check the endpoint and the keys — and if the server is AmneziaWG, its profile must be pasted with its obfuscation lines intact.": "Устройство поднято, но этот пир ни разу не ответил. Проверьте эндпоинт и ключи — а если сервер AmneziaWG, его профиль нужно вставлять вместе со строками обфускации.",
   "The device is up, but this peer has never answered. Check the endpoint, the keys, and that the server really is AmneziaWG with these exact obfuscation values.": "Устройство поднято, но этот пир ни разу не ответил. Проверьте эндпоинт, ключи и то, что сервер действительно AmneziaWG именно с этими параметрами обфускации.",
   "Latency": "Задержка",
@@ -6934,8 +6372,6 @@ export const STR = {
   "Show the reason": "Показать причину",
   "This exit isn't working": "Этот выход не работает",
   "The node reports: {v1}": "Нода сообщает: {v1}",
-  // Sentences swg-noded puts in an exit's `error`, shown verbatim by exitHealth. Sentence-as-key, like the
-  // panel's own server messages — T() returns any it does not know unchanged.
   "the escrowed key did not open — it may be sealed to a different vault": "запечатанный ключ не открылся — возможно, он запечатан под другое хранилище",
   "tls fingerprint mismatch": "отпечаток TLS не совпадает",
   "unusable device name": "недопустимое имя устройства",
@@ -6950,7 +6386,6 @@ export const STR = {
     "Сервер выхода не ответил на ping — возможно, он на него не отвечает, — поэтому задержку измерить нельзя.",
   "Round trip from this node to the exit's own server.": "Круговая задержка от этой ноды до собственного сервера выхода.",
   "Round trip from this node to the exit's own server. A request through the tunnel to a public site takes {v1} ms, which also includes however far that site is.": "Круговая задержка от этой ноды до собственного сервера выхода. Запрос через туннель к публичному сайту занимает {v1} мс — но туда входит и то, насколько далёк сам сайт.",
-  // ── AmneziaWG 3.1 (docs/AWG3-PLAN.md §7.7): the version switch, its window, the 3.1 badges' tooltip, the Settings preset ──
   "AmneziaWG 3.1": "AmneziaWG 3.1",
   "val|set": "задан",
   "val|new on switch": "новый при переключении",
@@ -6980,13 +6415,11 @@ export const STR = {
   "{v1} is not reporting — the switch applies when it is back. Until then its clients keep working on the old config, and new QR codes already show the new one.": "{v1} не выходит на связь — переключение применится, когда она вернётся. До тех пор её клиенты работают на старом конфиге, а новые QR-коды уже показывают новый.",
   "AmneziaWG version for new interfaces": "Версия AmneziaWG для новых интерфейсов",
   "Where the create form's switch starts. A node that cannot run 3.1 starts on 2.0, and existing interfaces keep their version.": "С какой версии начинает переключатель в форме создания. На ноде, которая не умеет 3.1, он начинает с 2.0, а существующие интерфейсы сохраняют свою версию.",
-  // …and the panel's own sentences for it (P1 + P2: the refusals and the checks a 3.1 save makes). Counts never lead a verb.
   "HeaderProtectionKey must be a 32-byte key in base64, not all zeros": "HeaderProtectionKey должен быть 32-байтовым ключом в base64, не из одних нулей",
   "RekeyAfterTime + RekeyTimeout + KeepaliveTimeout (up to {v1} s) must not exceed RejectAfterTime ({v2} s at least) — the node would drop data a client still sends": "RekeyAfterTime + RekeyTimeout + KeepaliveTimeout (до {v1} с) не должны превышать RejectAfterTime (не меньше {v2} с) — иначе нода будет отбрасывать данные, которые клиент ещё отправляет",
   "awg_gen must be \"2.0\" or \"3.1\"": "awg_gen должен быть \"2.0\" или \"3.1\"",
   "{v1} cannot run AmneziaWG 3.1 while a turn proxy whose app carries AmneziaWG 2.0 only points at its port: {v2}. Point it at a 2.0 interface, or delete it, and try again once the node has applied that": "{v1} не может работать на AmneziaWG 3.1, пока на его порт указывает turn-прокси, приложение которого понимает только AmneziaWG 2.0: {v2}. Направьте его на интерфейс 2.0 или удалите и повторите, когда нода это применит",
   "{v1} is a mesh link — its type comes from the mesh settings (Settings → Mesh), and a re-provision rebuilds it": "{v1} — меш-линк: его тип задаётся в настройках меша (Настройки → Меш), а пересоздание перестраивает линк",
-  // the mesh link type (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md Part B)
   "Mesh link type": "Тип меш-линков",
   "A pair where either node cannot run AmneziaWG 3.1 is linked at 2.0, and its node says why.": "Пара, где хотя бы одна нода не умеет AmneziaWG 3.1, связывается на 2.0, и нода объясняет почему.",
   "No obfuscation — DPI can block it across borders.": "Без обфускации — на межгосударственных каналах DPI может её заблокировать.",
@@ -7012,13 +6445,11 @@ export const STR = {
   "No nodes yet — enroll a node to link it to the others.": "Нод пока нет — подключите ноду, чтобы связать её с остальными.",
   "Link to {v1} ({v2}) is {v3}: {v4}": "Линк к {v1} ({v2}) — {v3}: {v4}",
   "the mesh MTU ({v1}) is too high for AmneziaWG 3.1 — header protection needs a link MTU of 1428 or less": "MTU меша ({v1}) слишком велик для AmneziaWG 3.1 — защите заголовков нужен MTU линка не больше 1428",
-  // a link that kept what it was made with, and how to rebuild that one link (q189 PR-4) — never "re-provision the node": that rebuilds all its links
   "made from part of a template — {v1} missing, so this link may not handshake, or runs without those lines (plain WireGuard on the wire); {v2}": "собран из части шаблона — нет {v1}, поэтому линк может не устанавливать соединение или работать без этих строк (по сети идёт обычный WireGuard); {v2}",
   "it should be {v1}, but a link keeps the type it was made with until it is rebuilt — {v2}": "должен быть {v1}, но линк остаётся того типа, с которым создан, пока его не пересоберут — {v2}",
   "to rebuild this link alone, pick {v1} as its type on its card under Node connections and Save": "чтобы пересобрать только этот линк, выберите тип {v1} на его карточке в «Связях ноды» и сохраните",
   "to rebuild this link alone, pick Default as its type on its card under Node connections and Save": "чтобы пересобрать только этот линк, выберите тип «По умолчанию» на его карточке в «Связях ноды» и сохраните",
   "to rebuild this link alone, pick Default as its type on its card under Node connections and Save, then {v1} and Save again": "чтобы пересобрать только этот линк, выберите тип «По умолчанию» на его карточке в «Связях ноды» и сохраните, затем выберите {v1} и сохраните ещё раз",
-  // an AmneziaWG field set to none ("-") — docs/AWG-OMIT-AND-MESH-GEN-PLAN.md Part A
   "{v1} cannot hold an empty AmneziaWG field yet — it is offline or needs an update": "{v1} пока не может хранить пустое поле AmneziaWG — нода не в сети или её нужно обновить",
   "{v1} would have no AmneziaWG field left — make it a WireGuard interface instead": "у {v1} не останется ни одного поля AmneziaWG — вместо этого сделайте его интерфейсом WireGuard",
   "{v1} would have no AmneziaWG 3.1 field left — switch it to AmneziaWG 2.0 instead": "у {v1} не останется ни одного поля AmneziaWG 3.1 — вместо этого переключите его на AmneziaWG 2.0",
@@ -7069,9 +6500,7 @@ export const STR = {
   "{v1}: nothing was changed — the node cannot check its other network namespaces (lsns or nsenter is missing)": "{v1}: ничего не изменено — нода не может проверить свои другие сетевые пространства имён (нет lsns или nsenter)",
   "lsns or nsenter is missing, so the other network namespaces cannot be checked": "нет lsns или nsenter, поэтому другие сетевые пространства имён проверить нельзя",
   "no amneziawg-go to fall back on if the new module would not load": "нет amneziawg-go, на который можно перейти, если новый модуль не загрузится",
-  // rules whose exit node is offline (q189 FLA-F1)
   "Routing on this node sends traffic out through {v1}, which is offline — that traffic is refused until {v1} is back": "Маршрутизация этой ноды отправляет трафик через {v1}, а она не в сети, — этот трафик отклоняется, пока {v1} не вернётся",
-  // a block list the panel could not hand a node its caps for (no provider catalog, an older node) — q189 D12-OBS-1
   "{v1}: not filtered yet on {v2} — waiting for the provider catalog, or for this node's update.": "{v1}: пока не фильтруется на {v2} — ждёт каталог провайдеров или обновление ноды.",
   "Load AmneziaWG 3.1 · {name}": "Загрузить AmneziaWG 3.1 · {name}",
   "Load now": "Загрузить сейчас",
@@ -7090,7 +6519,6 @@ export const STR = {
   "tag|switching to 3.1": "переход на 3.1",
   "tag|switching to 2.0": "переход на 2.0",
   "tag|switching": "переход",
-  // csqtt versions (docs/CSQTT-LINES-PLAN.md): which csqtt a server runs, switchable both ways while its users stay
   "Version": "Версия",
   "Stable. For the csqtt {v1} apps, iPhone included.": "Стабильная. Для приложений csqtt {v1}, включая iPhone.",
   "Needs the csqtt {v1} app on every device. No {v2} app connects to it, the iPhone app included.": "Нужно приложение csqtt {v1} на каждом устройстве. Приложения {v2}, включая приложение для iPhone, к ней не подключатся.",
@@ -7106,7 +6534,6 @@ export const STR = {
   "Switch to csqtt {v1} failed": "Переход на csqtt {v1} не удался",
   "Switching to csqtt {v1} failed: {v2}. The server is back on {v3}. Restart the service to try again, or pick {v3} to stay there.": "Переход на csqtt {v1} не удался: {v2}. Сервер снова на {v3}. Перезапустите службу, чтобы попробовать ещё раз, или выберите {v3}, чтобы остаться на ней.",
   "it did not start": "он не запустился",
-  // csqtt 2.5 App routing (docs/CSQTT-APP-ROUTING-PLAN.md): one rule per server, sent to every user's app on connect
   "App routing": "Маршрутизация приложений",
   "Apps": "Приложения",
   "Domains": "Домены",
@@ -7136,7 +6563,6 @@ export const STR = {
   "App routing: list at least one app to send through the tunnel": "Маршрутизация приложений: укажите хотя бы одно приложение для туннеля",
   "App routing: list at least one domain to send through the tunnel": "Маршрутизация приложений: укажите хотя бы один домен для туннеля",
   "App routing: list at least one address to send through the tunnel": "Маршрутизация приложений: укажите хотя бы один адрес для туннеля",
-  // App routing exceptions (docs/CSQTT-APP-ROUTING-WHO-PLAN.md)
   "Exceptions": "Исключения",
   "Own rule": "Своё правило",
   "No App routing": "Без маршрутизации приложений",
@@ -7161,13 +6587,11 @@ export const STR = {
   "csqtt {v1} isn't a version this panel offers": "csqtt {v1} — не та версия, которую предлагает эта панель",
   "this node can't run csqtt {v1} yet — update the node first (its page offers \"update node to …\")": "эта нода пока не умеет запускать csqtt {v1} — сначала обновите ноду (на её странице есть «обновить ноду до …»)",
   "The panel's QR codes show the new config at once; each device still has to import it.": "QR-коды панели сразу показывают новый конфиг; импортировать его каждому устройству всё равно нужно.",
-  // Settings → Interfaces: the AmneziaWG 3.1 defaults (the six values a 3.1 create or switch takes)
   "val|per interface": "свой у каждого",
   "Each interface gets a key of its own — one key shared by every interface would protect nothing.": "У каждого интерфейса свой ключ — один ключ на все интерфейсы ничего бы не защищал.",
   "On for every AmneziaWG 3.1 interface the panel sets up.": "Включено у каждого интерфейса AmneziaWG 3.1, который настраивает панель.",
   "Changes only through the version switch — every device has to re-import after it.": "Меняется только переключением версии — после него каждому устройству нужно заново импортировать конфиг.",
   "Used when an interface is created on 3.1 or switched to it. Blank cells use the built-in values shown here.": "Используются при создании интерфейса на 3.1 или при переключении на эту версию. Пустые поля берут показанные значения по умолчанию.",
-  // Per-person rules (ROUTING-PEERS-MESH-PLAN §7.1–7.2, §7.4): a rule for chosen people, groups and devices
   "Rule settings": "Настройки правила",
   "Leaves by": "Выход через",
   "For whom": "Для кого",
@@ -7188,13 +6612,11 @@ export const STR = {
   "{v1} chosen": "Выбрано: {v1}",
   "Remove {name}": "Убрать {name}",
   "a device that no longer exists": "устройство, которого больше нет",
-  // …and the panel's refusals and the node card's line for them
   "“For whom” must list users, groups or devices": "«Для кого» должно перечислять пользователей, группы или устройства",
   "“Everything else” applies to everyone on the interface": "«Всё остальное» действует на всех на интерфейсе",
   "A chosen user, group or device no longer exists — reload and choose again": "Выбранного пользователя, группы или устройства больше нет — перезагрузите страницу и выберите снова",
   "This browser tab is older than the panel — reload it before saving routing.": "Эта вкладка старее панели — перезагрузите её перед сохранением маршрутизации.",
   "{v1} needs an update to route per person — these rules apply to nobody there until it is.": "{v1} нужно обновить для маршрутизации по людям — до обновления эти правила там ни на кого не действуют.",
-  // Ports on a routing rule (1.8.11 S6, NEVER-BLOCK-AND-PORT-RULES B)
   "{v1} needs an update to route by port — rules with ports don't apply there until it is.": "{v1} нужно обновить для маршрутизации по портам — до обновления правила с портами там не действуют.",
   "A node's default rules can't name ports — set them on an interface's rule": "В правилах узла по умолчанию нельзя указать порты — задайте их в правиле интерфейса",
   "“Everything else” applies to every port — use a rule to 0.0.0.0/0 with ports": "«Всё остальное» действует на все порты — используйте правило на 0.0.0.0/0 с портами",
@@ -7225,7 +6647,6 @@ export const STR = {
   "Only {ports} to this destination takes the rule — the rest goes on to the rules below.": "Правило берёт только {ports} к этому назначению — остальное идёт к правилам ниже.",
   "Every port. Choose TCP or UDP, or name ports, to narrow the rule.": "Все порты. Выберите TCP или UDP или укажите порты, чтобы сузить правило.",
   "rows must be a list of selections": "rows должен быть списком выборок",
-  // The exit IP (ROUTING-PEERS-MESH-PLAN §7.1–7.2, §7.4, D6): which of the far node's addresses this interface's traffic leaves it by
   "As address": "С адреса",
   "Auto ({v1}'s default)": "Авто (по умолчанию для {v1})",
   "Every rule that sends this interface through {v1} leaves as this address.": "Все правила, которые отправляют этот интерфейс через {v1}, выходят с этого адреса.",
@@ -7234,12 +6655,9 @@ export const STR = {
   "{v1} isn't reporting this address. Traffic on this rule leaves it with a source it can't receive replies on, so it goes nowhere until the address is back or you choose another.":
     "{v1} не сообщает этот адрес. Трафик этого правила выйдет с адреса, на который узел не сможет получить ответы, и никуда не дойдёт, пока адрес не вернётся или пока вы не выберете другой.",
   "as {v1}": "с {v1}",
-  // …and the panel's refusals for it
   "the exit address must be an IPv4 address": "адрес выхода должен быть адресом IPv4",
   "the exit address must name another node in this panel": "адрес выхода должен указывать на другой узел этой панели",
   "the exit addresses must be given per node": "адреса выхода должны задаваться по узлам",
-  // The node's default made smart (ROUTING-PEERS-MESH-PLAN §7.3, §7.4, D2/D9/D11): one rule list for its own clients and the
-  // traffic other nodes cascade out through it
   "This node's own clients": "Только клиенты этого узла",
   "Traffic cascaded in from other nodes": "Только трафик с других узлов",
   "All — this node's clients and traffic cascaded in": "Все — клиенты этого узла и трафик с других узлов",
@@ -7275,7 +6693,6 @@ export const STR = {
   "a more specific rule below wins these hosts for the traffic it names: {toks}": "ниже есть более точное правило — для своего трафика эти адреса забирает оно: {toks}",
   "an exit": "выход",
   "default routing exit addresses": "адреса выхода для правил по умолчанию",
-  // …and the panel's sentences for it
   "{node} needs an update to route traffic cascaded in by destination — until then it all leaves by {catch}.":
     "{node} нужно обновить для маршрутизации входящего трафика по направлениям — до обновления он весь выходит через {catch}.",
   "{v1} ({v2}) isn't sent to {v3}: {v4}, so replies couldn't find their way back. {v5}":
@@ -7295,21 +6712,16 @@ export const STR = {
   "“Everything else” applies to both this node's clients and traffic cascaded in":
     "«Всё остальное» действует и на клиентов этого узла, и на трафик с других узлов",
 
-  // Text that was written straight into a template (1.8.8 qualification): the audits skip a lone lowercase word
-  // and never read a template's own text, so these reached the Russian panel in English.
   "on {v1}": "на {v1}",
   "looks like {v1}": "похоже на {v1}",
   "Detected *{v1}* from its files": "Определено по его файлам: *{v1}*",
-  // "[cascade] to msk-main" — the node an interface's traffic is carried to
   "fwd|to": "на",
   "Download .{v1}": "Скачать .{v1}",
   "e.g. {v1}": "например, {v1}",
-  // a list's fleet switch: "on 2/3 ▾"
   "fleet|on": "на",
   "{v1}–{v2} of {v3}": "{v1}–{v2} из {v3}",
   "up {v1}": "работает {v1}",
   "Restore {v1}": "Восстановить {v1}",
-  // the type chip of an interface still being taken over from the host
   "tag|load": "импорт",
   "sev|Critical": "критично",
   "sev|Warning": "предупреждение",
@@ -7324,19 +6736,14 @@ export const STR = {
     "Отозвать *{v1}* у пользователя {v2}? Доступ прекратится сразу, а ключ сменится — чтобы вернуть его позже, понадобится новый QR / конфиг.",
   "Revoke *{v1}* from the user? Access is cut immediately and the key changes — re-adding later needs a fresh QR / config.":
     "Отозвать *{v1}* у пользователя? Доступ прекратится сразу, а ключ сменится — чтобы вернуть его позже, понадобится новый QR / конфиг.",
-  // the colour sample's name while the name field is still empty
   "tag|node": "нода",
-  // a client-roster file with no newer commit upstream
   "file|current": "актуален",
   "WDTT-proxy": "WDTT-прокси",
   "csqtt-proxy": "csqtt-прокси",
-  // Built-in traffic controls. Operator category names are displayed verbatim.
   "bcat|Torrents / P2P": "Торренты / P2P",
   "bcat|SMTP :25 (outbound mail)": "SMTP :25 (исходящая почта)",
   "bcat|Port-scan / Brute-force": "Сканы портов / подбор паролей",
   "bcat|Cryptomining": "Криптомайнинг",
-  // the lists behind them (swg-panel-server BLOCK_PROVIDER_LISTS) — see blistText: every description, and each NAME that
-  // describes content; a provider's own edition or brand name (Pro, Light, Level 1, Spamhaus DROP…) has no line on purpose
   "blist|Adult / pornographic domains": "Домены для взрослых / порнография",
   "blist|Balanced ads + tracking blocklist": "Сбалансированный список рекламы и трекинга",
   "blist|Gambling & betting sites": "Азартные игры и ставки",
@@ -7396,7 +6803,6 @@ export const STR = {
   "This user's links changed while the sheet was open — check them and save again.": "Ссылки пользователя изменились, пока окно было открыто — проверьте их и сохраните снова.",
   "VK called most links dead — none was marked. Check one on its row to be sure.": "VK назвал мёртвыми большинство ссылок — ни одна не отмечена. Проверьте одну в её строке, чтобы убедиться.",
 
-  // ── the phone UI (docs/MOBILE-PLAN.md) ──
   "More": "Ещё",
   "Settings": "Настройки",
   "Desktop view": "Версия для компьютера",
@@ -7406,7 +6812,7 @@ export const STR = {
   "theme|Dark": "Тёмная",
   "This app opens the old address for good: open the new one in the browser and install the app from there again.": "Это приложение всегда открывает старый адрес: откройте новый в браузере и установите приложение оттуда заново.",
   "Filters": "Фильтры",
-  "rowact|Device": "Девайс",   // the swipe action's word must fit a 62 px cell ("Устройство" was cut — operator, 2026-10-29)
+  "rowact|Device": "Девайс",
   "Check": "Проверить",
   "What this switch does": "Что делает этот переключатель",
   "Fix": "Исправить",
@@ -7439,25 +6845,16 @@ export const STR = {
 };
 
 export const PLURALS = {
-  // The text view's line counter: «12 строк».
   line: ["строка", "строки", "строк"],
-  // The rule field's cost meter: "4 entries · 1.2M names · 340k networks".
   entry: ["запись", "записи", "записей"],
-  // A list's own size line, shown on every badge and every catalog row.
   host: ["домен", "домена", "доменов"],
   net: ["сеть", "сети", "сетей"],
   name: ["имя", "имени", "имён"],
   network: ["сеть", "сети", "сетей"],
-  // The Tier-2 caution: «Всего 4 символа» — the count sits in front, so nominative is right.
   character: ["символ", "символа", "символов"],
-  // §12.1's cap, and the node's truncation note. NOT `pattern` on its own: a zone is a pattern too and is
-  // not counted here — only the three kinds matched as text are, which is what the limit is about.
   "text pattern": ["текстовый шаблон", "текстовых шаблона", "текстовых шаблонов"],
-  // a LIST's own size line, which counts all six pattern kinds — not the three the cap above counts
   pattern: ["шаблон", "шаблона", "шаблонов"],
-  // Genitive — this slot sits after «у» ("у 2 пользователей"), where the nominative "пользователя" is wrong.
   "gen|user": ["пользователя", "пользователей", "пользователей"],
-  // Genitive after «из» — the range download's progress: «ждём 1 из 1 сервера», «из 21 сервера», «из 5 серверов».
   "gen|server": ["сервера", "серверов", "серверов"],
   "dead VK link": ["мёртвая ссылка", "мёртвые ссылки", "мёртвых ссылок"],
   domain: ["домен", "домена", "доменов"],
@@ -7472,8 +6869,6 @@ export const PLURALS = {
   "Auto interface": ["интерфейс на «Авто»", "интерфейса на «Авто»", "интерфейсов на «Авто»"],
   server: ["сервер", "сервера", "серверов"],
   update: ["обновление", "обновления", "обновлений"],
-  // Prepositional case — this slot sits after «на» ("на 1 ноде"), where the nominative "нода" is wrong.
-  // English has no entry, so plural() strips the prefix and still reads "1 node" / "2 nodes".
   "prep|node": ["ноде", "нодах", "нодах"],
   record: ["запись", "записи", "записей"],
   "destination": ["назначение", "назначения", "назначений"],
@@ -7483,40 +6878,34 @@ export const PLURALS = {
   "cap|Peer": ["пир", "пира", "пиров"],
   target: ["назначение", "назначения", "назначений"],
   "cap|Node": ["нода", "ноды", "нод"],
-  "WDTT server": ["сервер WDTT", "сервера WDTT", "серверов WDTT"],   // the u-pc / servbub badges: capitalised in English, ordinary in Russian
+  "WDTT server": ["сервер WDTT", "сервера WDTT", "серверов WDTT"],
   version: ["версия", "версии", "версий"],
   deployment: ["развёртывание", "развёртывания", "развёртываний"],
   change: ["изменение", "изменения", "изменений"],
   device: ["устройство", "устройства", "устройств"],
   exception: ["исключение", "исключения", "исключений"],
   packet: ["пакет", "пакета", "пакетов"],
-  // the disguise's size, counted as its packets are: «226 байт», «1 232 байта», «1 байт»
   byte: ["байт", "байта", "байт"],
   list: ["список", "списка", "списков"],
   rule: ["правило", "правила", "правил"],
   "prep|rule": ["правиле", "правилах", "правилах"],
   "prep|interface": ["интерфейсе", "интерфейсах", "интерфейсах"],
-  IP: ["IP", "IP", "IP"],   // indeclinable acronym: one form covers every count
+  IP: ["IP", "IP", "IP"],
   issue: ["проблему", "проблемы", "проблем"],
-  "nom|issue": ["проблема", "проблемы", "проблем"],   // SUBJECT ("1 проблема на этой ноде"); bare `issue` stays accusative for "исправить / можно починить"
-  group: ["группа", "группы", "групп"],   // nominative: «Доступ: 2 группы» (user groups) and the attention list's own groups
+  "nom|issue": ["проблема", "проблемы", "проблем"],
+  group: ["группа", "группы", "групп"],
   member: ["участник", "участника", "участников"],
-  "cap|Member": ["участник", "участника", "участников"],   // the groups grid's count column: capitalised in English, ordinary in Russian   // a group's members — after a colon or a name, never a verb's subject
-  person: ["человек", "человека", "человек"],        // how many PEOPLE a user's devices reach — «Доступны устройства: 2 человека»
-  minute: ["минуты", "минут", "минут"],          // reads after "больше" (genitive): больше 1 минуты / 5 минут
+  "cap|Member": ["участник", "участника", "участников"],
+  person: ["человек", "человека", "человек"],
+  minute: ["минуты", "минут", "минут"],
   address: ["адрес", "адреса", "адресов"],
-  "sub link": ["ссылка", "ссылки", "ссылок"],   // a subscription URL — NOT `link`, which is a mesh link ("связь")
+  "sub link": ["ссылка", "ссылки", "ссылок"],
   "broken address": ["неверный адрес", "неверных адреса", "неверных адресов"],
   config: ["конфиг", "конфига", "конфигов"],
-  // The blocked-categories bubble: «5 сайтов». Was reaching pluralWord with no table at all, so it
-  // rendered the English "s"-plural — invisible until the audit learned to see pluralWord() nouns.
   site: ["сайт", "сайта", "сайтов"],
-  // A borrowed acronym does not decline in Russian — «1 vCPU», «8 vCPU» — so all three forms are equal.
-  // Kept in the table anyway rather than special-cased in code: the noun table is where plural lives.
   vCPU: ["vCPU", "vCPU", "vCPU"],
   CPU: ["CPU", "CPU", "CPU"],
-  // the port-scan tile: «3 источника · за 24 ч». Was "source" + (n===1?"":"s"), an English-only plural.
-  source: ["источник", "источника", "источников"],   // T-10's transfer summary counts stored client configs
+  source: ["источник", "источника", "источников"],
 
 };
 

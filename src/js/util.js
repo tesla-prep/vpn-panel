@@ -1,28 +1,21 @@
 import { useRef } from "preact/hooks";
 import { T } from "./i18n.js";
 
-// the panel's clock
 export const clock = { skewMs: 0 };
-export const panelNow = () => Date.now() - clock.skewMs;         // ms, on the panel's clock
-export const panelNowS = () => Math.floor(panelNow() / 1000);    // epoch seconds, as the panel stamps them
+export const panelNow = () => Date.now() - clock.skewMs;
+export const panelNowS = () => Math.floor(panelNow() / 1000);
 
-// tiny helpers
 export const isMobile = () => document.documentElement.dataset.ui === "m";
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 export const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 export const b64 = u => { let s = ""; for (const x of u) s += String.fromCharCode(x); return btoa(s); };
 
-// Mount-point prefix: when served under a subpath (e.g. /swg), <base href> carries
-// it, so root-absolute API/stats paths must be prefixed to stay inside the mount.
 export const BASE = (() => { try { return new URL(document.baseURI).pathname.replace(/\/+$/, ""); } catch (_) { return ""; } })();
 export const url = p => BASE + p;
 
-export const tkey = (node, iface) => node + "|" + iface;          // session-config key for one target
-// A peer's targets ordered PRIMARY-first (the one flagged `primary`, else the first), then creation order.
+export const tkey = (node, iface) => node + "|" + iface;
 export function orderedTargets(targets) {
-  // primary first, unmarked next, backups last — the order the labels promise. Stable inside each band, so
-  // rows never reshuffle among themselves when an unrelated deployment is relabelled.
   const rank = t => { const r = targetRole(t); return r === "primary" ? 0 : r === "backup" ? 2 : 1; };
   return (targets || []).map((t, i) => [t, i])
     .sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1])
@@ -31,7 +24,7 @@ export function orderedTargets(targets) {
 export function targetRole(t) {
   const v = (t || {}).primary;
   if (v === "backup") return "backup";
-  return v ? "primary" : "";      // `true` is what rosters written before backups existed carry
+  return v ? "primary" : "";
 }
 
 export function isPrimaryTarget(targets, t) {
@@ -49,9 +42,9 @@ export function useStableOrder(targets) {
   out.forEach(t => { const k = tkey(t.node, t.iface); if (!pos.includes(k)) pos.push(k); });
   return out;
 }
-export const isWdttIface = (name) => /^wdtt\d{1,3}$/.test(String(name));   // mirrors the node's _WDTT_IFACE_RE
-export const isCsqttIface = (name) => /^csqtt\d{1,4}$/.test(String(name));   // mirrors the node's _CSQTT_NAME_RE
-export const isSelfContainedIface = (name) => isWdttIface(name) || isCsqttIface(name);   // WDTT + csqtt own their own interface (keyless, not a WG target)
+export const isWdttIface = (name) => /^wdtt\d{1,3}$/.test(String(name));
+export const isCsqttIface = (name) => /^csqtt\d{1,4}$/.test(String(name));
+export const isSelfContainedIface = (name) => isWdttIface(name) || isCsqttIface(name);
 export const SELF_CONTAINED_KINDS = ["wdtt", "csqtt"];
 export const isSelfContainedKind = (kind) => kind === "wdtt" || kind === "csqtt";
 export function ipOf(hostport) { if (!hostport) return ""; const s = String(hostport); return s[0] === "[" ? s.slice(1, s.indexOf("]")) : s.split(":")[0]; }
@@ -61,7 +54,7 @@ export function portOf(hostport) { if (!hostport) return ""; const s = String(ho
 export const ipPickerVal = (sel, custom) => sel === "__custom__" ? (custom || "").trim() : sel;
 export const ipChoices = (nrec, ...first) =>
   [...new Set([...first, ((nrec || {}).endpoint_host || "").trim(),
-               ...((nrec || {}).endpoint_hosts || []),      // the other names this node answers to
+               ...((nrec || {}).endpoint_hosts || []),
                ...((nrec || {}).ips || [])]
               .map(x => (x || "").trim()).filter(Boolean))];
 
@@ -73,7 +66,7 @@ export function agoAge(age) {
   if (d < 86400) return T("{n}h ago", { n: Math.floor(d / 3600) });
   return T("{n}d ago", { n: Math.floor(d / 86400) });
 }
-export const ago = sec => sec == null ? "—" : agoAge(panelNowS() - sec);   // `sec` was stamped by the panel → read on its clock
+export const ago = sec => sec == null ? "—" : agoAge(panelNowS() - sec);
 export function seen(age) {
   if (age == null) return "—";
   if (age < 90) return age + T("unit|s");
@@ -82,8 +75,8 @@ export function seen(age) {
   return Math.round(age / 86400) + T("unit|d");
 }
 const RATE_UNITS = {
-  bytes: { mul: 1, base: 1024, u: ["B", "KB", "MB", "GB", "TB"] },     // the default: what the node counts
-  bits:  { mul: 8, base: 1000, u: ["bit", "kbit", "Mbit", "Gbit", "Tbit"] },   // opt-in: what a speed test says
+  bytes: { mul: 1, base: 1024, u: ["B", "KB", "MB", "GB", "TB"] },
+  bits:  { mul: 8, base: 1000, u: ["bit", "kbit", "Mbit", "Gbit", "Tbit"] },
 };
 export function rateIn(bps, units) {
   const k = RATE_UNITS[units] ? units : "bytes";
@@ -104,7 +97,6 @@ export function niceScaleCeilIn(bps, units) {
   return (base * unit) / mul;
 }
 
-// ── validation for fields that affect connectivity / data-structure ──
 export const V = {
   ipv4: s => { const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(String(s).trim()); return !!m && m.slice(1).every(o => +o >= 0 && +o <= 255 && (o === "0" || o[0] !== "0")); },
   ipv6: s => { s = String(s).trim(); if (!/^[0-9a-fA-F:]+$/.test(s) || (s.match(/::/g) || []).length > 1) return false; const parts = s.split("::"); const segs = s.includes("::") ? parts.join(":").split(":").filter(Boolean) : s.split(":"); return s.includes("::") ? segs.length <= 7 : segs.length === 8 && segs.every(x => /^[0-9a-fA-F]{1,4}$/.test(x)); },
@@ -115,10 +107,9 @@ export const V = {
   nodeName: s => /^[A-Za-z0-9_-]{1,40}$/.test(String(s).trim()),
   mtu: s => /^\d+$/.test(String(s).trim()) && +s >= 1280 && +s <= 9200,
   keepalive: s => /^\d+$/.test(String(s).trim()) && +s >= 0 && +s <= 65535,
-  psk: s => /^[A-Za-z0-9+/]{43}=$/.test(String(s).trim()),               // 32-byte base64
+  psk: s => /^[A-Za-z0-9+/]{43}=$/.test(String(s).trim()),
   list: (s, f) => String(s).split(",").map(x => x.trim()).filter(Boolean).every(f),
 };
-// connectivity-config field errors (DNS / MTU / keepalive / AllowedIPs) → { field: message }
 export function configErrors(cf) {
   const e = {};
   if (cf.allowed.trim() && !V.list(cf.allowed, V.cidr)) e.allowed = T("Comma-separated CIDRs, e.g. 0.0.0.0/0, ::/0");
@@ -144,6 +135,4 @@ export function dur(sec) {
   return sec + T("unit|s");
 }
 
-// RFC1918 / loopback / link-local / CGNAT — kept selectable (valid behind cloud 1:1 NAT or on a private
-// interconnect) but tagged "(private)" so an operator knows it isn't a public address.
 export const isPrivIp = ip => /^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(ip || "");

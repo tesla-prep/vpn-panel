@@ -1,9 +1,7 @@
-// Статус рассчитывается по целям, затем по пирам и пользователям.
-// Для оценки давности используются метки времени панели. Недоступная цель считается неизвестной.
 
 import { T } from "./js/i18n.js";
 
-const DEFAULTS = { graceMs: 60000, nodeStaleMs: 30000, unblockMs: 300000, restoreGraceMs: 120000 };   // unblockMs: how long "restoring" shows after an unblock before falling back to the real status. restoreGraceMs: how long a peer must stay dangling/broken before Restore/Correct is offered (not a hiccup / mid-create)
+const DEFAULTS = { graceMs: 60000, nodeStaleMs: 30000, unblockMs: 300000, restoreGraceMs: 120000 };
 
 const RANK = { online: 8, faulty: 7, ready: 6, expiring: 6, blocked: 5, partial: 4, restoring: 3, pending: 3, creating: 3, rotating: 3, dangling: 2, broken: 2, blocking: 1, disabled: 0, expired: 0, unknown: 1 };
 
@@ -38,12 +36,11 @@ function reconcile(roster, stats, now, cfg) {
 
   const nodeStatus = {};
   for (const node of Object.keys(stats)) {
-    const seen = (cfg.nodeSeen || {})[node];   // Number.isFinite, not != null: a non-numeric would go NaN below,
-    const gen = Number.isFinite(seen) ? seen : (stats[node] && stats[node].generated_at);   // and NaN reads "stale" — fall back instead
-    nodeStatus[node] = (gen && (now - gen * 1000) <= cfg.nodeStaleMs) ? "live" : "stale";   // i18n-keys: internal states
+    const seen = (cfg.nodeSeen || {})[node];
+    const gen = Number.isFinite(seen) ? seen : (stats[node] && stats[node].generated_at);
+    nodeStatus[node] = (gen && (now - gen * 1000) <= cfg.nodeStaleMs) ? "live" : "stale";
   }
 
-  // observed peers, keyed node|iface|pubkey  (+ interfaces the node reports as DOWN, so we can say why)
   const observed = {}, ifDown = {};
   for (const node of Object.keys(stats)) {
     const ifaces = (stats[node] && stats[node].interfaces) || {};
@@ -53,14 +50,12 @@ function reconcile(roster, stats, now, cfg) {
     }
   }
 
-  const turnConnIps = {}, turnByPort = {}, turnSportSvc = {};   // node → {connectIP:true} · {wgPort:[svc]} · {wgSourcePort:svc}
+  const turnConnIps = {}, turnByPort = {}, turnSportSvc = {};
   for (const node of Object.keys(stats)) {
     const ips = {}, byPort = {}, sportSvc = {};
     for (const tp of ((stats[node] && stats[node].turn_proxies) || [])) {
       const ip = ipOf(tp && tp.connect); if (ip) ips[ip] = true;
       const port = portOf(tp && tp.connect); if (port) (byPort[port] = byPort[port] || []).push((tp && tp.service) || "turn");
-      // exact attribution: a peer whose endpoint is 127.0.0.1:<sport> came in through THIS proxy (disambiguates
-      // several proxies fronting one interface). Nodes < the wg_sports change won't send these → we fall back below.
       for (const sp of ((tp && tp.wg_sports) || [])) sportSvc[String(sp)] = (tp && tp.service) || "turn";
     }
     turnConnIps[node] = ips; turnByPort[node] = byPort; turnSportSvc[node] = sportSvc;
@@ -81,13 +76,13 @@ function reconcile(roster, stats, now, cfg) {
         const src = t.type === "csqtt" ? "csqtt" : "wdtt";
         const pass = t.type === "csqtt" ? cpass : wpass;
         const inst = ((stats[t.node] || {})[src] || []).filter(Boolean).find(w => w.iface === t.iface) || null;
-        const dev = inst ? (inst.passwords || {})[pass] : null;   // the password's read-back entry (online + server-minted IP)
+        const dev = inst ? (inst.passwords || {})[pass] : null;
         let st;
         if (nodeStatus[t.node] !== "live") st = "unknown";
-        else if (!inst) st = ((now - createdMs) <= cfg.graceMs) ? "creating" : "dangling";   // the server is gone
-        else st = !dev ? (((now - createdMs) <= cfg.graceMs) ? "creating" : "ready")   // password not shipped yet
-                       : (dev.online ? "online" : "ready");                            // shipped/provisioned = ready; recent traffic/handshake = online
-        return { node: t.node, iface: t.iface, ip: (dev && dev.ip) || "", type: t.type, primary: t.primary || false,   // "primary" | "backup" | true (pre-backup rosters) | false
+        else if (!inst) st = ((now - createdMs) <= cfg.graceMs) ? "creating" : "dangling";
+        else st = !dev ? (((now - createdMs) <= cfg.graceMs) ? "creating" : "ready")
+                       : (dev.online ? "online" : "ready");
+        return { node: t.node, iface: t.iface, ip: (dev && dev.ip) || "", type: t.type, primary: t.primary || false,
                  raw_ip: (dev && dev.raw_ip) || "",
                  status: st, online: st === "online", observed: null, via: null, viaTurn: null,
                  kwSpeed: dev ? { rx: dev.rx_speed || 0, tx: dev.tx_speed || 0 } : null,
@@ -98,7 +93,7 @@ function reconcile(roster, stats, now, cfg) {
       const key = t.node + "|" + t.iface + "|" + pubkey;
       managed[key] = true;
       const obs = observed[key] || null;
-      let st, faultKind = null;   // which RESTRICTED signature fired: "churn" (session won't hold) | "nohs" (never got in)
+      let st, faultKind = null;
       if (nodeStatus[t.node] !== "live") st = "unknown";
       else if (obs) {
         if (obs.online) {
@@ -107,7 +102,7 @@ function reconcile(roster, stats, now, cfg) {
               && obs.hs_seen >= (cfg.churnMin || 3)
               && obs.hs_gap_med <= (cfg.churnGapS || 60)
               && (obs.hs_bytes_med || 0) >= (cfg.churnBytes || 16384)
-              && !obs.ep_moves) { st = "blocked"; faultKind = "churn"; }   // a ROAMING client rehandshakes legitimately — its endpoint moved
+              && !obs.ep_moves) { st = "blocked"; faultKind = "churn"; }
         } else if (cfg.detectBlocked !== false && obs.endpoint && (obs.rx_bytes || 0) > 0
                    && obs.handshake_age == null && (now - createdMs) > cfg.graceMs) {
           st = "blocked"; faultKind = "nohs";
@@ -131,79 +126,65 @@ function reconcile(roster, stats, now, cfg) {
       const via = epIp ? ((turnConnIps[t.node] || {})[epIp] ? "turn" : "direct") : null;
       let viaTurn = null;
       if (via === "turn") {
-        // Prefer the EXACT proxy: the wg endpoint's source port maps 1:1 to the proxy that opened it (node-reported).
         const eport = portOf(obs && obs.endpoint);
         const bySport = (turnSportSvc[t.node] || {})[String(eport)];
-        // Fall back (old nodes without wg_sports): attribute to a proxy forwarding to THIS iface (connect port ==
-        // iface listen port); if several share it we can only guess the first.
         const lp = ((((((stats[t.node] || {}).interfaces || {})[t.iface] || {}).meta) || {}).listen_port);
         const svcs = (turnByPort[t.node] || {})[String(lp)] || [];
         viaTurn = bySport || (svcs.length ? svcs[0] : null);
       }
-      return { node: t.node, iface: t.iface, ip: t.ip, type: t.type, primary: t.primary || false,   // "primary" | "backup" | true (pre-backup rosters) | false
+      return { node: t.node, iface: t.iface, ip: t.ip, type: t.type, primary: t.primary || false,
                overrides: t.overrides || null,
                status: st, fault: faultKind, online: !!(obs && obs.online), observed: obs, via: via,
-               viaTurn: viaTurn,   // the SPECIFIC turn-proxy service the peer came in through (one per connection)
-               restorable: (st === "dangling") && _trip,   // this deployment's interface is gone long enough → offer Restore
-               correctable: (st === "broken") && _trip,     // this deployment's IP is out-of-subnet long enough → offer Correct
-               problemMs: _tprob ? _tms : 0,                // how long THIS deployment has been a problem (confirm-modal copy)
+               viaTurn: viaTurn,
+               restorable: (st === "dangling") && _trip,
+               correctable: (st === "broken") && _trip,
+               problemMs: _tprob ? _tms : 0,
                down: ifDown[t.node + "|" + t.iface] || null };
     });
 
     const live = targets.filter(d => nodeStatus[d.node] === "live");
-    // "present" = the peer is realised on that server. A WG target proves it by being observed on the wire; a WDTT
-    // target has no WG peer to observe, so its own read-back status (provisioned → online/ready) stands in for it.
     const present = live.filter(d => (d.type === "wdtt" || d.type === "csqtt") ? (d.status === "online" || d.status === "ready") : d.observed);
     const onlineAny = targets.some(d => d.online);
     let status;
-    if (p._creating) status = "creating";          // optimistic: the create POST is still in flight
+    if (p._creating) status = "creating";
     else if (targets.length === 0 || live.length === 0) status = "unknown";
     else if (present.length === 0) status = (live.length && live.every(d => d.status === "broken")) ? "broken"
-                                            : ((now - createdMs) <= cfg.graceMs ? "creating" : "dangling");   // broken record vs gone interface
+                                            : ((now - createdMs) <= cfg.graceMs ? "creating" : "dangling");
     else if (present.length < live.length) status = "partial";
     else { status = present[0].status; present.forEach(d => { if ((RANK[d.status] || 0) > (RANK[status] || 0)) status = d.status; }); }
 
-    // a key rotation in flight: the new key isn't on the wire yet — show "rotating", not dangling
     if (cfg.rotating && cfg.rotating.has(pid) && (status === "dangling" || status === "creating" || status === "unknown")) status = "rotating";
 
     const blocked = !!(p.disabled || (user && user.disabled));
     const nowSec = now / 1000;
     const peerExp = +p.expiry || 0, userExp = (user && +user.expiry) || 0;
-    const effExpiry = (peerExp && userExp) ? Math.min(peerExp, userExp) : (peerExp || userExp);   // the earlier binding date
+    const effExpiry = (peerExp && userExp) ? Math.min(peerExp, userExp) : (peerExp || userExp);
     const selfExpired = peerExp > 0 && nowSec >= peerExp;
     const userExpired = userExp > 0 && nowSec >= userExp;
     const expired = !blocked && (selfExpired || userExpired);
     const warnS = (cfg.expiryWarnDays != null ? cfg.expiryWarnDays : 3) * 86400;
-    const expiring = !blocked && !expired && effExpiry > 0 && nowSec >= (effExpiry - warnS);   // inside the warn window, not yet past
-    // UNBLOCK transient: `unblock_at` reads "restoring" briefly after an unblock, until the peer is back everywhere.
+    const expiring = !blocked && !expired && effExpiry > 0 && nowSec >= (effExpiry - warnS);
     const ublkAt = Math.max(p.unblock_at || 0, (user && user.unblock_at) || 0);
     const restoring = !blocked && ublkAt && (now - ublkAt * 1000) < cfg.unblockMs && !(live.length > 0 && present.length === live.length);
     const lifecycle = blocked ? "disabled" : expired ? "expired" : expiring ? "expiring" : restoring ? "restoring" : null;
-    const removedByAccess = blocked || expired;   // these DROP the peer from the interface → its off-interface state is intended
+    const removedByAccess = blocked || expired;
     const OFF_STATES = { dangling: 1, unknown: 1, creating: 1, broken: 1, partial: 1 };
-    const takesLifecycle = s => s === "ready" || (removedByAccess && OFF_STATES[s]);   // online/faulty always stand
+    const takesLifecycle = s => s === "ready" || (removedByAccess && OFF_STATES[s]);
     if (lifecycle && takesLifecycle(status)) status = lifecycle;
     targets.forEach(d => {
-      if (lifecycle && takesLifecycle(d.status)) d.status = lifecycle;   // per-target: same rule (the grid reads t.status)
-      // a blocked/expired peer is intentionally off the node — never offer Restore/Correct, even when a removed
-      // deployment reads "dangling".
+      if (lifecycle && takesLifecycle(d.status)) d.status = lifecycle;
       if (removedByAccess) { d.restorable = d.correctable = false; d.problemMs = 0; }
     });
 
-    let reason = null;   // why a peer isn't healthy — surfaced on the status badge (incl. a DOWN interface)
+    let reason = null;
     if (status === "dangling" || status === "partial" || status === "creating") {
       const dt = targets.find(d => d.down);
       reason = dt ? T("interface {v1} is down — {v2}", { v1: dt.iface, v2: dt.down })
                   : (status === "dangling" ? T("missing on every server")
                      : status === "partial" ? T("missing on some live servers") : T("created — not seen on a node yet"));
     } else if (status === "blocked") {
-      // name the datapath the peer's blocked interface(s) actually run (Wireguard vs AmneziaWG), so the "wrong
-      // params" hint points at the right knobs; mixed / unknown → name both.
       const bt = new Set(targets.filter(d => d.status === "blocked").map(d => d.type));
-      // datapath NAMES, not language — they are what the operator sees in wg/awg output   // i18n-keys
-      const proto = (bt.has("awg") && bt.has("wg")) ? "Wireguard or AmneziaWG" : bt.has("awg") ? "AmneziaWG" : bt.has("wg") ? "Wireguard" : "Wireguard or AmneziaWG";   // i18n-keys
-      // Two very different failures wear this badge, and they need different fixes: one never got in at all,
-      // the other gets in and cannot stay. Churn wins when both are present — it is the more specific finding.
+      const proto = (bt.has("awg") && bt.has("wg")) ? "Wireguard or AmneziaWG" : bt.has("awg") ? "AmneziaWG" : bt.has("wg") ? "Wireguard" : "Wireguard or AmneziaWG";
       reason = targets.some(d => d.fault === "churn")
         ? T("the tunnel keeps collapsing and being rebuilt — the session won't hold, which is what a filtered or DPI'd connection looks like")
         : T("reaching the server but the handshake never completes — likely DPI / MTU / wrong {v1} params", { v1: proto });
@@ -223,31 +204,30 @@ function reconcile(roster, stats, now, cfg) {
 
     return {
       id: pid, pubkey: pubkey, psk: p.psk || "", title: p.title || "",
-      wdtt_password: p.wdtt_password || "", csqtt_password: p.csqtt_password || "", vk_hash: p.vk_hash || "",   // self-contained credentials (panel-owned) + optional VK hash — needed to build the client link
+      wdtt_password: p.wdtt_password || "", csqtt_password: p.csqtt_password || "", vk_hash: p.vk_hash || "",
       user_id: (p.user_id != null) ? p.user_id : null,
       name: user ? (user.name || "") : "", tag: user ? (user.tag || "") : "",
       unassigned: !user,
-      sub_hide: Array.isArray(p.sub_hide) ? p.sub_hide : [],   // config kinds the operator keeps OFF this peer's subscription page
-      routes: Array.isArray(p.routes) ? p.routes : [],         // networks behind this device (docs/NETWORKS-PLAN.md §6)
-      share: (p.share && typeof p.share === "object" && !Array.isArray(p.share)) ? p.share : null,   // who may reach them (§15); null = everyone on the node
-      private: p.private === true,      // the owner keeps this device and its networks to themselves (§18.6)
-      router: p.router === true,        // a router: several devices behind this address — the torrent guard never flags it (S11b)
-      overrides: p.overrides || null,   // peer-wide render overrides (the fallback under each target's own) — see the target field
+      sub_hide: Array.isArray(p.sub_hide) ? p.sub_hide : [],
+      routes: Array.isArray(p.routes) ? p.routes : [],
+      share: (p.share && typeof p.share === "object" && !Array.isArray(p.share)) ? p.share : null,
+      private: p.private === true,
+      router: p.router === true,
+      overrides: p.overrides || null,
       targets: targets, created_at: p.created_at || null, modified_at: p.modified_at || null,
       status: status, reason: reason, online: onlineAny, lastHandshakeAge: lastAge,
       presentCount: present.length, liveCount: live.length,
-      restorable: restorable,     // any deployment dangling long enough to be a real problem, not a hiccup → offer Restore
-      correctable: correctable,   // any deployment broken long enough → offer Correct
-      problemMs: problemMs,       // longest a deployment has been a problem (for the confirm modal copy)
+      restorable: restorable,
+      correctable: correctable,
+      problemMs: problemMs,
       disabled: blocked, selfDisabled: !!p.disabled, userDisabled: !!(user && user.disabled),
-      disabledAt: p.disabled_at || 0,   // when THIS peer was blocked (for "Peer was blocked on <date>")
+      disabledAt: p.disabled_at || 0,
       expired: expired, selfExpired: selfExpired, userExpired: userExpired, expiring: expiring,
-      expiry: effExpiry,          // the binding expiry date (epoch s; peer's own, else the subscription's) — for "until <date>"
-      ownExpiry: peerExp,         // the peer's OWN expiry date (0 if it only inherits the subscription's) — for the edit field + peer status
+      expiry: effExpiry,
+      ownExpiry: peerExp,
     };
   });
 
-  // roll peers up to their user
   const byUser = {};
   peers.forEach(pr => { if (pr.user_id != null) (byUser[pr.user_id] = byUser[pr.user_id] || []).push(pr); });
   const userList = Object.keys(users).map(function (uid) {
@@ -258,8 +238,6 @@ function reconcile(roster, stats, now, cfg) {
       if (pr.online) online = true;
       if (status === "empty" || (RANK[pr.status] || 0) > (RANK[status] || 0)) status = pr.status;
     });
-    // The user's own access lifecycle overwrites ONLY a neutral rollup — "ready" (peers configured, none connected)
-    // or "empty" (no peers). A meaningful rollup (online / dangling / …) stands, the same rule as per-peer.
     const uExp = +u.expiry || 0, nowSecU = now / 1000, warnSU = (cfg.expiryWarnDays != null ? cfg.expiryWarnDays : 3) * 86400;
     const uExpired = !u.disabled && uExp > 0 && nowSecU >= uExp;
     const uExpiring = !u.disabled && !uExpired && uExp > 0 && nowSecU >= (uExp - warnSU);
@@ -270,22 +248,21 @@ function reconcile(roster, stats, now, cfg) {
     }
     return {
       id: uid, name: u.name || "", tag: u.tag || "", note: u.note || "", vk_link: u.vk_link || "",
-      vk_links: Array.isArray(u.vk_links) ? u.vk_links : (u.vk_link ? [u.vk_link] : []),   // full ordered set (primary first) — the VK-links manager reads all of these
-      vk_pool: u.vk_pool || {},   // pool-id → URL for the links that came from the shared pool, so Manage can mark them apart from personal ones
+      vk_links: Array.isArray(u.vk_links) ? u.vk_links : (u.vk_link ? [u.vk_link] : []),
+      vk_pool: u.vk_pool || {},
 
       created_at: u.created_at || null, modified_at: u.modified_at || null,
       peerIds: mine.map(pr => pr.id),
       peerCount: mine.length, onlineCount: mine.filter(pr => pr.online).length,
       status: status, online: online, disabled: !!u.disabled,
-      disabledAt: u.disabled_at || 0,   // when the subscription was blocked (for "Subscription was blocked on <date>")
+      disabledAt: u.disabled_at || 0,
       expired: uExpired, expiring: uExpiring, expiry: uExp,
     };
   });
 
-  // peers on a node that the roster doesn't own — adoptable
-  const retiring = cfg.retiring || null;   // pubkeys the panel is actively dropping (e.g. a rotated key
-  const systemIfaces = cfg.systemIfaces || null;   // node|iface mesh-link interfaces (swg_*): their peers are
-  const orphans = [];                       // managed via nodes.json links, not the roster — never orphans
+  const retiring = cfg.retiring || null;
+  const systemIfaces = cfg.systemIfaces || null;
+  const orphans = [];
   for (const key of Object.keys(observed)) {
     if (managed[key]) continue;
     const parts = key.split("|");

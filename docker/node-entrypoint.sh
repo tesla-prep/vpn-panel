@@ -51,7 +51,6 @@ Path(os.environ["SWG_AGENT_CONFIG"]).write_text(json.dumps({
 }), encoding="utf-8")
 PY
 
-# Restore the persisted deny rules before tunnels can forward traffic.
 /opt/swg-noded/swg-noded --restore-static-egress
 
 MANAGED=$(python3 -c 'import json, os; print(" ".join(json.load(open(os.environ["SWG_AGENT_CONFIG"]))["interfaces"]))')
@@ -71,10 +70,7 @@ for IFACE in $MANAGED; do
     log "leaving $IFACE down — it was stopped from the panel, and stays down until it is started there"; continue;; esac
   _q="$(iface_cmd "$dest")-quick"
   log "bringing up $IFACE via $_q"
-  # clear any leftover SAME-NAMED device first (host netns survives a container stop → plain `up` = "File exists").
   $_q down "$dest" 2>/dev/null || ip link del "$IFACE" 2>/dev/null || true
-  # one interface failing (e.g. a port still held by something) must NOT crash-loop the whole node — log
-  # it and keep going so the rest + swg-noded still come up and the panel can see the node + the gap.
   $_q up "$dest" || { log "WARNING: $_q up $IFACE failed (check the port and host kernel module) — skipping it"; continue; }
   addr_line="$(awk -F= 'tolower($1) ~ /^[[:space:]]*address[[:space:]]*$/ {print $2; exit}' "$dest" | tr -d ' ' | cut -d, -f1)"
   SUBNET="$(python3 -c "import ipaddress,sys;print(ipaddress.ip_network(sys.argv[1],strict=False))" "$addr_line" 2>/dev/null || echo "")"

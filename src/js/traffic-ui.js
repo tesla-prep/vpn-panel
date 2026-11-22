@@ -11,8 +11,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// A day in the panel's own zone (the one days are counted in), from an epoch. The formatters are built once per
-// language — constructing an Intl.DateTimeFormat costs ~50 µs, and a chart's hover asks for one per column.
 const _fmt = {};
 function panelDate(ts, withTime) {
   if (!ts) return "";
@@ -27,14 +25,12 @@ function panelDate(ts, withTime) {
 }
 const pair = (rx, tx) => { const [d, u] = dlul(rx, tx); return "↓ " + fmtBytes(d) + "  ↑ " + fmtBytes(u); };
 
-// the window control
 const RANGE_ROWS = [["all", "clock"], ["today", "daycal"], ["7d", "weekcal"], ["30d", "monthcal"]];
 const rangeName = r => ({ all: T("All time"), today: T("range|Day"), "7d": T("range|Week"), "30d": T("range|Month") })[r];
-const setRange = patch => { Object.assign(trafficView, patch); bus.emit(); };   // every grid re-reads it
+const setRange = patch => { Object.assign(trafficView, patch); bus.emit(); };
 const customStart = today => ({ range: "custom", from: trafficView.from || today.slice(0, 8) + "01",
   to: trafficView.to && trafficView.to <= today ? trafficView.to : today });
 
-// The tabs, for the peer, user and group windows — their own window (trafficModalView), with no All time.
 export function TrafficRange({ view }) {
   const [, force] = useState(0);
   const v = view || trafficModalView, today = panelToday();
@@ -74,7 +70,7 @@ export function RailCustom({ on, label, from, to, min, max, onApply }) {
 }
 
 export function DateWindow({ from, to, min, max, onApply, pending, check }) {
-  const [draft, setDraft] = useState(null);   // null: showing the window in force
+  const [draft, setDraft] = useState(null);
   const dr = draft || { from, to };
   const pick = e => { if (e.button !== 0 || typeof e.currentTarget.showPicker !== "function") return;
     e.preventDefault(); try { e.currentTarget.showPicker(); } catch (_) { e.currentTarget.focus(); } };
@@ -86,21 +82,18 @@ export function DateWindow({ from, to, min, max, onApply, pending, check }) {
   const changed = !!pending || (!!draft && (dr.from !== from || dr.to !== to));
   const apply = () => { if (w.ok) { setDraft(null); onApply(w.from, w.to); } };
   return html`<${Fragment}><span class="trange-dates" onKeyDown=${e => { if (e.key === "Enter") apply(); }}>${date("from")}<span class="faint">–</span>${date("to")}
-      ${!changed ? null : check   // `check`: a green tick in place of the word, where the dates share a line with the tabs
+      ${!changed ? null : check
         ? html`<button type="button" class="iconbtn iconbtn-ok" disabled=${!w.ok} title=${T("Apply")} aria-label=${T("Apply")} onClick=${apply}><${Ic} i="check"/></button>`
         : html`<button type="button" class="btn btn-mini" disabled=${!w.ok} onClick=${apply}>${T("Apply")}</button>`}</span>
     ${bad ? html`<span class="hint warn">${w.why === "future" ? T("The start is after today.") : w.why === "early"
       ? T("The charts go back to {v1}.", { v1: trafficRangeLabel({ range: "custom", from: min, to: min }) }) : T("The start is after the end.")}</span>` : null}<//>`;
 }
 
-// the ranged Total cell
 export function TrafficCell({ a, e, ctx, user }) {
   if (e && e.off) return html`<span class="faint" title=${T("Traffic totals are off — Settings → Display says why.")}>—</span>`;
   if (!e || !e.data) return html`<span class="faint">…</span>`;
   const rx = a ? a.rx : 0, tx = a ? a.tx : 0;
   const cell = xferCell(...dlul(rx, tx));
-  // ⚠️ THE BUBBLE IS A COMPONENT, so it is built only when it opens: Popover renders its children only while shown.
-  // Built inline it cost ~110 µs a cell on every 5 s poll — 11 ms a 100-row page — for bubbles nobody opened.
   return html`<${Popover} hoverOnly cls="tcellpop" popCls="netroute-bub tbub" trigger=${cell}><${TrafficBubble} a=${a} rx=${rx} tx=${tx} ctx=${ctx} user=${user}/><//>`;
 }
 function TrafficBubble({ a, rx, tx, ctx, user }) {
@@ -113,7 +106,7 @@ function TrafficBubble({ a, rx, tx, ctx, user }) {
     c.wire ? T("On {v1} now: {v2} — since the interface came up", { v1: c.iface, v2: pair(c.wire.rx_bytes || 0, c.wire.tx_bytes || 0) }) : null,
   ];
   const d = user ? trafficData() : null;
-  const gone = d ? goneDevices(user, d) : 0;   // the user's devices no longer theirs — walked only when the bubble opens
+  const gone = d ? goneDevices(user, d) : 0;
   return html`<${Fragment}>
     <span class="netroute-h">${trafficRangeLabel()}</span>
     <div class="tb-row"><b>${pair(rx, tx)}</b></div>
@@ -131,14 +124,12 @@ export function PeerTrafficCell({ pid, owner, ungrouped, filtered, wire, iface }
 export function UserTrafficCell({ uid }) {
   return html`<${TrafficCell} a=${userTraffic(uid)} e=${trafficTotals()} user=${uid}/>`;
 }
-// A user's devices in the window that are no longer theirs: deleted, or now another user's (or nobody's).
 export function goneDevices(uid, d) {
   let n = 0;
   for (const r of (d.rows.get(uid) || [])) { const p = Store.peer(r.id); if (!p || p.user_id !== uid) n++; }
   return n;
 }
 
-// the volume chart
 export function VolumeBars({ series, h }) {
   const [hov, setHov] = useState(null); const wref = useRef(null);
   h = h || 84;
@@ -149,8 +140,6 @@ export function VolumeBars({ series, h }) {
   const n = oriented.length;
   const onMove = ev => { const el = wref.current; if (!el) return; const r = el.getBoundingClientRect();
     const i = Math.floor((ev.clientX - r.left) / r.width * n); setHov(i >= 0 && i < n ? i : null); };
-  // a day column is named by its first day, read at NOON: the zone's offset today may differ by an hour from that day's
-  // (DST), and read at midnight an hour off names the day before
   const label = c => (c.step >= 86400 ? panelDate(c.start + 43200) : panelDate(c.start, true)) + " · ↓ " + fmtBytes(c.d) + " · ↑ " + fmtBytes(c.u);
   const any = oriented.some(c => c.d + c.u > 0);
   return html`<div class="vbars" ref=${wref} style=${"height:" + h + "px"} onMouseMove=${onMove} onMouseLeave=${() => setHov(null)}>
@@ -166,13 +155,10 @@ export function TrafficBlock({ by, id }) {
   useStore();
   const mv = trafficModalView;
   const e = trafficTotals(mv);
-  // a group's graph is its members' — keyed by them too, or a past window (fetched once, ever) would keep a changed group's old sum
   const s = trafficSeries(by, id, mv, by === "group" ? ((Store.group(id) || {}).users || []).slice().sort().join(",") : "");
   const td = e && e.data;
   const a = !td ? null : by === "peer" ? td.peer.get(id) || null : by === "user" ? td.user.get(id) || null : groupTraffic(td, id);
   const d = s.data;
-  // A gap that opens at the series' own start is the time before the first reading — nothing was missed there. Only a
-  // node that went quiet AFTER it had been seen is an outage worth a sentence.
   const gaps = d && d.gaps ? Object.keys(d.gaps).filter(k => (d.gaps[k] || []).some(g => g[0] > d.since)) : [];
   return html`<div class="tblock">
     <div class="tblock-head"><span class="lbl">${T("Traffic")}</span><span class="grow"></span><${TrafficRange} view=${mv}/></div>

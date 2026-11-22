@@ -1,23 +1,16 @@
-# local runtime / secrets — never commit
 data/
 .env
 *.pem
 id_swgpush*
 CLAUDE.md
-# previews & build cruft
 dryrun/
 __pycache__/
 *.pyc
 .DS_Store
 
-# local scratch / notes (never commit)
 scratchpad/
 tasks.txt
-# internal tooling + notes — deliberately NOT published. These lived only in .git/info/exclude, which is
-# local to one clone: a fresh clone of this repo did not have them, so a single `git add -A` there would
-# have pushed them. The rule belongs with the repo, not with one machine's config.
 .campaign/
-# Versioned guides live in docs/. Ignore other local notes in that directory.
 /docs/*
 !/docs/guide.md
 !/docs/operations.md
@@ -25,21 +18,11 @@ tasks.txt
 !/docs/THIRD-PARTY.md
 !/docs/THIRD-PARTY.ru.md
 !/docs/screenshots/
-# …and how we work ON the product is not part of it. `.claude/settings.local.json` below is ignored
-# for a different reason (one machine's config); this one is a shared, deliberate non-shipment.
-# ⚠️ NO TRAILING COMMENTS IN THIS FILE — `#` only starts a comment at line start, so a pattern with
-# one appended is read as literal text and silently matches nothing. That is how this line's first
-# version was written, and `git check-ignore` is what caught it.
 .claude/skills/
 .claude/settings.local.json
 .claude/settings.local.json.bak
 access_harness.py
-# test-harness / screenshot cruft (never commit)
 .playwright-mcp/
 *.png
-# …except the README screenshots (committed, referenced by the README files)
 !/docs/screenshots/*.png
-# …and except the client logo swg-sub SERVES. It is a shipped asset, not a screenshot: it is in
-# SUB_WEB, in the Dockerfile's COPY and in swg-sub's own allow-list. It survives today only because
-# it was tracked before the *.png rule existed.
 !amneziawg.png

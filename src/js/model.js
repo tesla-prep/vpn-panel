@@ -1,12 +1,10 @@
 import { isWdttIface, isCsqttIface, isSelfContainedIface, portOf } from "./util.js";
 import { Store } from "./store.js";
 import { T } from "./i18n.js";
-import { portsClean, portsToks, portsSpans } from "./rulerows.js";   // the port rules' grammar — the never-cut list reads it too
+import { portsClean, portsToks, portsSpans } from "./rulerows.js";
 
 export const wdttCfgClaims = (cfg, iface) =>
   !!(cfg || {})[iface] || Object.values(cfg || {}).some(c => c && c.raw_iface === iface);
-// The csqtt twin, deliberately written out rather than left inline: csqtt has no second device today, and the
-// only way that stays true on purpose is if the question has a place to be answered when it stops being true.
 export const csqttCfgClaims = (cfg, iface) => !!(cfg || {})[iface];
 
 export function wdttOn(node, iface) {
@@ -19,7 +17,6 @@ export function csqttOn(node, iface) {
   if (((Store.stats[node] || {}).csqtt || []).some(c => c && c.iface === iface)) return true;
   return csqttCfgClaims(((Store.nodes || []).find(x => x.id === node) || {}).csqtt_cfg, iface);
 }
-// NAME → kind, asked of the FLEET
 export function scKindByName(name) {
   if (!name) return null;
   for (const nid of Object.keys(Store.stats || {})) {
@@ -32,8 +29,6 @@ export function scKindByName(name) {
   }
   return isWdttIface(name) ? "wdtt" : isCsqttIface(name) ? "csqtt" : null;
 }
-// Does this roster TARGET land on a self-contained turn instance? The authoritative form of util.js's
-// isSelfContainedTarget: targetType consults the roster `type`, then the node's live set, then the name.
 export const isSelfContainedTgt = (t) => !!t && (targetType(t) === "wdtt" || targetType(t) === "csqtt");
 export const isWdttName = (name) => scKindByName(name) === "wdtt";
 export const isCsqttName = (name) => scKindByName(name) === "csqtt";
@@ -41,7 +36,7 @@ export const isSelfContainedName = (name) => !!scKindByName(name);
 
 export function kindOf(node, iface, type) {
   if (type === "wdtt" || wdttOn(node, iface) || isWdttIface(iface)) return "wdtt";
-  if (type === "csqtt" || csqttOn(node, iface) || isCsqttIface(iface)) return "csqtt";   // raw-TUN self-contained kind (not in describe; keyed by the live set, then name/type)
+  if (type === "csqtt" || csqttOn(node, iface) || isCsqttIface(iface)) return "csqtt";
   const m = (Store.describe[node] || {})[iface];
   if (m && (m.tool === "wg" || m.tool === "awg")) return m.tool;
   if (m) return (m.awg_params && Object.keys(m.awg_params).length) ? "awg" : "wg";
@@ -58,8 +53,8 @@ export function awgGen(node, iface) {
 }
 export const tip3 = (on, id) => on ? { title: T("AmneziaWG 3.1"), key: "awg3" + (id ? ":" + id : "") } : {};
 export const awg3Cls = (node, iface) => awgGen(node, iface) === "3.1" ? " awg3" : "";
-export const awg3Tip = (node, iface) => tip3(awgGen(node, iface) === "3.1", node + "|" + iface);   // keyed by the interface: badges in a list are siblings
-export function awgGenPending(node, iface) {   // (the tag that says so: awgSwitchTag in ui.js)
+export const awg3Tip = (node, iface) => tip3(awgGen(node, iface) === "3.1", node + "|" + iface);
+export function awgGenPending(node, iface) {
   const m = (Store.describe[node] || {})[iface];
   if (!m || !m.awg_reported || !m.awg_params) return null;
   const want = awgDict3(m.awg_params);
@@ -69,8 +64,6 @@ export const kindLabel = (kind, runtime) => (kind === "docker" && runtime === "p
   ? T("kind|podman")
   : (({ docker: T("kind|docker"), baremetal: T("kind|bare-metal") })[kind] || kind || "");
 
-/* The platform pill's text. Platform names are proper nouns — "NixOS" is spelt the same in every
-   language — so this is a display map, not a translation: an unknown platform renders as reported. */
 const PLATFORM_NAMES = {
   nixos: "NixOS", ubuntu: "Ubuntu", debian: "Debian", fedora: "Fedora", arch: "Arch", alpine: "Alpine",
   centos: "CentOS", rhel: "RHEL", rocky: "Rocky", almalinux: "AlmaLinux", opensuse: "openSUSE",
@@ -81,10 +74,10 @@ const PLATFORM_NAMES = {
 };
 export const platformLabel = p => PLATFORM_NAMES[p] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : "");
 
-export const iTypeOf = (node, iface) => kindOf(node, iface, null);   // by (node, iface) — the TargetPicker's one-kind lock + peer-create dispatch key off it
-export const targetType = t => t ? kindOf(t.node, t.iface, t.type) : "wg";   // by roster TARGET — every protocol tag/colour uses this
+export const iTypeOf = (node, iface) => kindOf(node, iface, null);
+export const targetType = t => t ? kindOf(t.node, t.iface, t.type) : "wg";
 export const P2P_PORTOK_DEFAULT = ["1194", "3478-3481", "4500", "5222-5223", "5349", "8801-8810", "19302-19309", "27000-27200", "51820"];
-export const PORTOK_WIDE = 1000;   // more ports than this: encrypted torrents get through on a real share of the range
+export const PORTOK_WIDE = 1000;
 export function portokRead(text) {
   const bad = portsToks(text).filter(t => portsClean("both", t).bad);
   const r = portsClean("both", text == null ? "" : String(text));
@@ -95,21 +88,17 @@ export function portokRead(text) {
 }
 export const portokSame = (a, b) => (a || []).join(",") === (b || []).join(",");
 
-// Can this device be marked a router (S11b)? Only through a wg/awg deployment — a router runs WireGuard / AmneziaWG, and a
-// keyless one (WDTT / csqtt) is an app on one device. A device already marked keeps the switch, so it can be turned off.
 export const routerCapable = p => !!p && (p.router === true || (p.targets || []).some(t => ["wg", "awg"].includes(targetType(t))));
 export const candDialPort = cd => {
   const l = ((cd || {}).wdtt || {}).listen;
   const p = l ? Number(String(l).split(":").pop()) : 0;
   return p || (cd || {}).listen_port || 0;
 };
-// interface type for the grouped dropdowns — awg if any node's interface of this name carries AmneziaWG params
 export function ifaceIsAwg(iface) {
   for (const n of Object.keys(Store.describe || {})) { const m = (Store.describe[n] || {})[iface]; if (m && Object.keys(m.awg_params || {}).length) return true; }
   return false;
 }
-// interface-filter dropdown values: "" / "*" = all · "*awg" / "*wg" / "*wdtt" = all of one type · else an exact name.
-export const ifaceIsAll = v => !v || v === "*" || v === "*awg" || v === "*wg" || v === "*wdtt" || v === "*csqtt";   // an aggregate (multi-iface) filter value
+export const ifaceIsAll = v => !v || v === "*" || v === "*awg" || v === "*wg" || v === "*wdtt" || v === "*csqtt";
 export function ifaceMatch(iface, filter, t) {
   if (!filter || filter === "*") return true;
   const sc = t ? (kind => kind === "wdtt" || kind === "csqtt" ? kind : null)(targetType(t)) : scKindByName(iface);
@@ -117,19 +106,15 @@ export function ifaceMatch(iface, filter, t) {
   if (filter === "*csqtt") return sc === "csqtt";
   const awg = t ? targetType(t) === "awg" : ifaceIsAwg(iface);
   if (filter === "*awg") return awg && !sc;
-  if (filter === "*wg") return !awg && !sc;   // WDTT/csqtt own their own iface — never lump under WireGuard
+  if (filter === "*wg") return !awg && !sc;
   return iface === filter;
 }
 
-// ── node + interface liveness ────────────────────────────────────────────────────────────────────
-// turn-proxies on a node whose connect-port matches a given iface's listen_port
 export function turnProxiesFor(node, iface) {
   const snap = Store.stats[node]; if (!snap) return [];
   const lp = String((((snap.interfaces || {})[iface] || {}).meta || {}).listen_port || "");
   return (snap.turn_proxies || []).filter(tp => lp && portOf(tp.connect) === lp);
 }
-// a node is "stale" when its last snapshot is older than the staleness window (reconcile.js) — we can't
-// trust any live state then, so cross-reference badges grey out (don't claim "active" on a node gone dark).
 export function nodeStale(node) { return Store.recon.nodeStatus[node] !== "live"; }
 
 export function nodeStatusOf(n) {
@@ -148,19 +133,15 @@ export function peerUncategorised(t) {
   const nrec = (Store.nodes || []).find(n => n.id === t.node) || {};
   return !!ip && Object.prototype.hasOwnProperty.call(nrec.doh_peers || {}, ip);
 }
-export function ifaceNotUp(node, ifn) { const s = (((Store.stats[node] || {}).interfaces) || {})[ifn] || {}; return !!s.down || !!s.stopped; }  // down OR stopped → grey chips
+export function ifaceNotUp(node, ifn) { const s = (((Store.stats[node] || {}).interfaces) || {})[ifn] || {}; return !!s.down || !!s.stopped; }
 export function turnLooping(tp) { return !!(tp && tp.flapping && !tp.stopped); }
 export function turnDown(tp) { return !!tp && (tp.running === false || turnLooping(tp)); }
-// How long a loop has gone on, in whole minutes rounded UP — a loop caught in its first seconds reads "1 min", never
-// "0 min". The node card's sentence rounds the same way; an older node that sends no duration reads 1.
 export function turnLoopMins(tp) { return Math.max(1, Math.ceil(((tp && tp.flapping_for) || 0) / 60)); }
 
-// ── ghost interfaces: lost AND keyless, so the identity cannot be restored — only recreated ──
-// Restore, so a brief blip is never called a ghost.
 export function ghostIface(node, iface) {
   const nr = (Store.nodes || []).find(n => n.id === node) || {};
   const g = (nr.ghost_ifaces || {})[iface];
-  if (g) return { cold: true, ripe: !!g.ripe, problemMs: g.problemMs || 0, subnet: null, reach: g.reach || null };   // a cold record can still hold a chosen level (§11.2 review R6)
+  if (g) return { cold: true, ripe: !!g.ripe, problemMs: g.problemMs || 0, subnet: null, reach: g.reach || null };
   const mi = (nr.missing_ifaces || {})[iface];
   if (mi && !mi.key_source) return { cold: false, ripe: !!mi.ripe, problemMs: mi.problemMs || 0,
                                      subnet: mi.subnet || null, listen_port: mi.listen_port || 0,
@@ -168,22 +149,19 @@ export function ghostIface(node, iface) {
                                      endpoint_host: mi.endpoint_host || "",
                                      dns: Array.isArray(mi.dns) ? mi.dns : null,
                                      keepalive: typeof mi.keepalive === "number" ? mi.keepalive : null,
-                                     // the device-access level: a panel-owned setting like the three above (§11.2 F1)
                                      reach: mi.reach || null };
   return null;
 }
-// the reconciled peers with a deployment on this (node, iface)
 export function ghostPeers(node, iface) {
   return (Store.recon.peers || []).filter(p => (p.targets || []).some(t => t.node === node && t.iface === iface));
 }
 
-// suggestions: the next free port, interface name and subnet
 export function pendingIf(node) {
   const pfx = node + "|", out = [];
   for (const k of Object.keys(Store.ifaceNew)) if (k.startsWith(pfx)) { const e = Store.ifaceNew[k]; out.push({ name: k.slice(pfx.length), subnet: e.subnet || "", port: e.port || "", type: e.type }); }
   return out;
 }
-export function pendingTurnPorts(node) {   // listen ports of turn-proxies still being installed (client-optimistic)
+export function pendingTurnPorts(node) {
   const pfx = node + "|", out = [];
   for (const k of Object.keys(Store.turnNew)) if (k.startsWith(pfx)) { const p = Number(portOf(Store.turnNew[k].listen)); if (p) out.push(p); }
   return out;
@@ -198,8 +176,6 @@ export function pendingWdttPorts(node) {
   }
   return out;
 }
-// Ports claimed by csqtt instances the panel already wants but the node has not reported yet (csqtt_cfg = the
-// desired set). Unlike WDTT, a csqtt server binds ONE port — the DTLS listen (raw TUN, no internal WG port).
 export function pendingCsqttPorts(node) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const out = [];
@@ -212,15 +188,12 @@ export function pendingCsqttPorts(node) {
 export function suggestPort(node, kind, extra) {
   const snap = Store.stats[node] || {};
   const ifacePorts = Object.values(snap.interfaces || {}).map(b => Number((b.meta || {}).listen_port)).filter(Boolean)
-    .concat(pendingIf(node).map(p => Number(p.port)).filter(Boolean));   // include interfaces being created
+    .concat(pendingIf(node).map(p => Number(p.port)).filter(Boolean));
   const turnPorts = ((snap.turn_proxies) || []).map(t => Number(portOf(t.listen))).filter(Boolean)
-    .concat(pendingTurnPorts(node));   // include turn-proxies being installed
-  // WDTT instances each claim TWO ports (DTLS listen + internal wg-port) and don't appear in snap.interfaces,
-  // so fold them into the used-set explicitly — else a suggestion could clash with a running WDTT server.
+    .concat(pendingTurnPorts(node));
   const wdttPorts = (snap.wdtt || []).flatMap(w => w ? [Number(String(w.listen || "").split(":").pop()), Number(w.wg_port)] : []).filter(Boolean);
-  // csqtt instances (raw TUN) each claim ONE port — the DTLS listen — and, like WDTT, don't appear in snap.interfaces.
   const csqttPorts = (snap.csqtt || []).map(c => c ? Number(String(c.listen || "").split(":").pop()) : 0).filter(Boolean);
-  const used = new Set([...ifacePorts, ...turnPorts, ...wdttPorts, ...pendingWdttPorts(node), ...csqttPorts, ...pendingCsqttPorts(node), ...dialinPorts(node).map(x => x[1]), ...(extra || []).map(Number).filter(Boolean)]);   // extra = ports picked in-modal, not yet applied
+  const used = new Set([...ifacePorts, ...turnPorts, ...wdttPorts, ...pendingWdttPorts(node), ...csqttPorts, ...pendingCsqttPorts(node), ...dialinPorts(node).map(x => x[1]), ...(extra || []).map(Number).filter(Boolean)]);
   const mine = kind === "turn" ? turnPorts : ifacePorts;
   const reserved = new Set([51820, 56000, 56001, 56003]);
   const _rsv = (Store.panelSettings || {}).reserved || {};
@@ -228,7 +201,6 @@ export function suggestPort(node, kind, extra) {
   const inMesh = q => q >= _mBase && q < _mBase + _mSpan;
   const mineUser = mine.filter(q => !inMesh(q));
   let p = mineUser.length ? Math.max(...mineUser) + 1 : (kind === "turn" ? 56002 : 51821);
-  // …and the devices' incoming torrent ports (P2P_PORT_POOL), which the server refuses for a new listener too.
   while ((used.has(p) || reserved.has(p) || inMesh(p) || (p >= 20000 && p <= 29999)) && p < 65535) p++;
   return p;
 }
@@ -253,35 +225,31 @@ export function portHolder(node, port, own) {
   }
   for (const pt of pendingIf(node)) if (Number(pt.port) === p) return (pt.name || T("a pending interface"));
   for (const [x, q] of dialinPorts(node)) if (q === p) return T("the dial-in exit {v1}", { v1: x.label || x.device || "" });
-  // WDTT instances the panel wants but the node has not started yet — named, so the inline error says which
-  // instance is taking the port instead of only failing server-side on save.
   const _nrec = (Store.nodes || []).find(n => n.id === node) || {};
   for (const [ifn, w] of Object.entries(_nrec.wdtt_cfg || {})) {
     if (!w) continue;
-    if ((snap.wdtt || []).some(x => x && x.iface === ifn)) continue;   // already reported → handled above
+    if ((snap.wdtt || []).some(x => x && x.iface === ifn)) continue;
     if (Number(String(w.listen || "").split(":").pop()) === p) return (ifn || T("a WDTT proxy")) + T(" (WDTT, starting)");
     if (Number(w.wg_port) === p) return (ifn || T("a WDTT proxy")) + T(" (WDTT internal WG, starting)");
   }
-  // csqtt instances the panel wants but the node has not started yet (csqtt_cfg not yet in snap.csqtt).
   for (const [ifn, c] of Object.entries(_nrec.csqtt_cfg || {})) {
     if (!c) continue;
-    if ((snap.csqtt || []).some(x => x && x.iface === ifn)) continue;   // already reported → handled above
+    if ((snap.csqtt || []).some(x => x && x.iface === ifn)) continue;
     if (Number(String(c.listen || "").split(":").pop()) === p) return (ifn || T("a csqtt proxy")) + T(" (CSQTT, starting)");
   }
   return null;
 }
 export function portErrMsg(node, port, own) {
   const s = String(port == null ? "" : port).trim();
-  if (!s) return null;                                   // empty handled by the field's own required-check, not here
+  if (!s) return null;
   if (!/^\d+$/.test(s)) return T("Port must be a number.");
   const n = Number(s);
   if (n < 1 || n > 65535) return T("Port must be between 1 and 65535.");
   const h = portHolder(node, n, own);
   return h ? T("Port {port} is already used by {holder} on this node.", { port: n, holder: h }) : null;
 }
-// next free interface name (<base><n>): highest numeric suffix across ALL interfaces + 1, then skip any taken (mirrors install-node.sh iface_next_index)
 export function suggestIface(node, proto) {
-  const names = Object.keys((Store.stats[node] || {}).interfaces || {}).concat(pendingIf(node).map(p => p.name));   // include the ones being created
+  const names = Object.keys((Store.stats[node] || {}).interfaces || {}).concat(pendingIf(node).map(p => p.name));
   const base = proto === "wg" ? "wg" : "awg";
   let hi = 0;
   for (const n of names) { const m = /(\d+)$/.exec(n); if (m) hi = Math.max(hi, Number(m[1])); }
@@ -310,12 +278,8 @@ export function fleetSubnets(skipNode, skipIface) {
   }
   for (const nid of Object.keys(Store.stats || {})) {
     for (const w of ((Store.stats[nid] || {}).wdtt || [])) { if (!w || !w.iface || (nid === skipNode && w.iface === skipIface)) continue; if (w.wg_addr) out.push({ node: nid, iface: w.iface, subnet: w.wg_addr }); }
-    // csqtt raw-TUN subnets participate in the same fleet-unique check (mesh routes by subnet). tun_addr is the
-    // server address (10.X.0.1/24); subnetsOverlap masks to the prefix, so passing the .1 form is fine.
     for (const c of ((Store.stats[nid] || {}).csqtt || [])) { if (!c || !c.iface || (nid === skipNode && c.iface === skipIface)) continue; if (c.tun_addr) out.push({ node: nid, iface: c.iface, subnet: c.tun_addr }); }
   }
-  // csqtt instances the panel wants but the node hasn't reported yet (csqtt_cfg not in snap) — so a subnet suggested
-  // moments after creating one, or a second back-to-back create, doesn't re-offer a subnet that's about to be taken.
   for (const nrec of (Store.nodes || [])) {
     const nid = nrec.id; if (!nid) continue;
     const reported = new Set(((Store.stats[nid] || {}).csqtt || []).map(c => c && c.iface).filter(Boolean));
@@ -337,18 +301,15 @@ export function subnetServerAddr(subnet) {
   return [(ip >>> 24) & 255, (ip >>> 16) & 255, (ip >>> 8) & 255, ip & 255].join(".") + "/" + c.pfx;
 }
 export function suggestSubnet(node) {
-  const used = new Set();   // FLEET-wide 10.X already taken (any node's user iface / WDTT) → pick the first free one
+  const used = new Set();
   for (const s of fleetSubnets(null, null)) { const m = /^10\.(\d{1,3})\./.exec(s.subnet || ""); if (m) used.add(Number(m[1])); }
   for (const p of pendingIf(node)) { const m = /^10\.(\d{1,3})\./.exec(p.subnet || ""); if (m) used.add(Number(m[1])); }
   for (let i = 8; i < 255; i++) if (i !== 255 && !used.has(i)) return "10." + i + ".0.0/24";
   return "10.8.0.0/24";
 }
 
-// ── next free WDTT interface name ────────────────────────────────────────────────────────────────
 export function nextWdttName(node) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
-  // every name space the node knows about — a WDTT instance shares the interface namespace with wg/awg, so
-  // checking only the WDTT ones could propose a name an existing interface already holds
   const used = new Set([...Object.keys(nrec.wdtt_cfg || {}),
                         ...((Store.stats[node] || {}).wdtt || []).map(w => w && w.iface),
                         ...Object.keys(Store.describe[node] || {}),
@@ -359,7 +320,6 @@ export function nextWdttName(node) {
 }
 export function nextCsqttName(node) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
-  // csqtt shares the interface namespace with wg/awg/wdtt — check them all so a suggestion never collides
   const used = new Set([...Object.keys(nrec.csqtt_cfg || {}),
                         ...((Store.stats[node] || {}).csqtt || []).map(c => c && c.iface),
                         ...Object.keys(nrec.wdtt_cfg || {}),
@@ -368,7 +328,7 @@ export function nextCsqttName(node) {
                         ...Object.keys(Store.describe[node] || {}),
                         ...Object.keys(nrec.missing_ifaces || {}), ...Object.keys(nrec.ghost_ifaces || {}),
                         ...(nrec.iface_candidates || []).map(c => c && c.name)].filter(Boolean));
-  for (let i = 1; i < 10000; i++) if (!used.has("csqtt" + i)) return "csqtt" + i;   // csqtt0-9999; start at 1
+  for (let i = 1; i < 10000; i++) if (!used.has("csqtt" + i)) return "csqtt" + i;
   return "csqtt1";
 }
 
@@ -380,12 +340,11 @@ export function turnIfaceNameError(node, name, kind) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const other = kind === "wdtt" ? "csqtt" : "wdtt";
   if ((nrec[other + "_cfg"] || {})[nm]) return T("{v1} is already a {v2} instance on this node.", { v1: nm, v2: other.toUpperCase() });
-  if ((nrec[kind + "_cfg"] || {})[nm]) return "";                     // editing one we already manage
+  if ((nrec[kind + "_cfg"] || {})[nm]) return "";
   if ((Store.describe[node] || {})[nm]) return T("{v1} is already a WireGuard interface on this node.", { v1: nm });
   return "";
 }
 
-// what a peer publishes to its subscription
 export const SUB_SOURCES = ["wg", "awg", "wdtt", "csqtt", "turn"];
 export function peerSubSources(peer) {
   const out = [];

@@ -5,25 +5,24 @@ import { reconcile } from "../reconcile.js";
 import { useState, useEffect } from "preact/hooks";
 
 export const hooks = {
-  themeColors: null,      // applyThemeColors  — re-inject the accent + per-kind colours
-  forkColors: null,       // applyForkColors   — turn-fork tints
-  dashTick: null,         // recordDashTick    — dashboard live trend series
-  alertServices: null,    // maybeAlertServices— critical panel-service modal
-  rekeyGhosts: null,      // maybeRekeyGhosts  — phase 2 of a ghost recreate
-  vaultKeyCached: null,   // subSKCached       — is the encryption vault unlocked this session?
-  vaultAutoHeal: null,    // subAutoHeal       — re-issue blobs after an unlock
-  ifaceKeyAutoRestore: null,  // ifaceKeyAutoRestore — put a migrated interface's escrowed key back (T-22)
-  escrowAutoVerify: null,     // escrowAutoVerify — prove an unstamped escrow blob opens, which only the browser can
+  themeColors: null,
+  forkColors: null,
+  dashTick: null,
+  alertServices: null,
+  rekeyGhosts: null,
+  vaultKeyCached: null,
+  vaultAutoHeal: null,
+  ifaceKeyAutoRestore: null,
+  escrowAutoVerify: null,
 };
 
-let _on401 = () => { throw new Error("unauthorized"); };   // i18n-keys: a control-flow sentinel, never displayed
+let _on401 = () => { throw new Error("unauthorized"); };
 export const setUnauthorizedHandler = fn => { _on401 = fn; };
 
-// api
 export const REQ_TIMEOUT = 90000;
 async function _fetch(u, opts, ms) {
   const ac = new AbortController();
-  const t = setTimeout(() => ac.abort(), ms || REQ_TIMEOUT);   // `ms`: the one call that legitimately outlasts it (docker-confirm)
+  const t = setTimeout(() => ac.abort(), ms || REQ_TIMEOUT);
   const o = { ...(opts || {}), signal: ac.signal, headers: { ...((opts || {}).headers || {}), "X-SWG-Lang": lang() } };
   try { return await fetch(u, o); }
   catch (e) { if (e && e.name === "AbortError") throw new Error(T("the panel didn't respond in time")); throw e; }
@@ -65,19 +64,15 @@ export const api = {
   turnSeries(node, fork, range) { return this.get("/api/turn-series?node=" + encodeURIComponent(node) + "&fork=" + encodeURIComponent(fork) + "&range=" + encodeURIComponent(range)); },
   meshSeries(node, peer, range) { return this.get("/api/mesh-series?node=" + encodeURIComponent(node) + "&peer=" + encodeURIComponent(peer) + "&range=" + encodeURIComponent(range)); },
   turnIps() { return this.get("/api/turn-ips"); },
-  turnIpsFlush(body) { return this.post("/api/turn-ips/flush", body || {}); },   // {node?, ip?, service?}: ip → delete one; service → this proxy's offline; else node/fleet inactive (keep online)
+  turnIpsFlush(body) { return this.post("/api/turn-ips/flush", body || {}); },
   catalog(search, page) { return this.get("/api/catalog?search=" + encodeURIComponent(search || "") + "&page=" + (page || 0)); },
   catalogIndex() { return this.get("/api/catalog/index"); },
   catalogRefresh() { return this.post("/api/catalog/refresh", {}); },
-  blockCatalog() { return this.get("/api/block-catalog"); },                       // block-list categories + providers + pickable lists (Routing & Blocking → Blocking tab)
-  blockCatalogSave(body) { return this.post("/api/block-catalog/save", body || {}); },   // staged commit: category deltas + provider toggles
-  // `retry` clears the panel's failure cooldown for this list — the operator pressing "not ready" is the one
-  // signal that should reach upstream sooner than the cooldown would allow.
+  blockCatalog() { return this.get("/api/block-catalog"); },
+  blockCatalogSave(body) { return this.post("/api/block-catalog/save", body || {}); },
   listInfo(cat, retry) { return this.get("/api/list-info?cat=" + encodeURIComponent(cat) + (retry ? "&retry=1" : "")); },
   geoUpdate() { return this.post("/api/geo/update", {}); },
   geoProviderRetry(provider) { return this.post("/api/geo/provider-retry", { provider }); },
-  // Cancel also turns the provider off, server-side: a cancelled download was started by enabling it, so
-  // leaving it enabled would have the next settings save start the same fetch again.
   geoProviderCancel(provider) { return this.post("/api/geo/provider-cancel", { provider }); },
   nextIp(nodes, iface) { return this.get("/api/next-ip?nodes=" + encodeURIComponent(nodes.join(",")) + "&iface=" + encodeURIComponent(iface)); },
   config(pubkey, node, iface) { return this.get("/api/config?pubkey=" + encodeURIComponent(pubkey) + "&node=" + encodeURIComponent(node) + "&iface=" + encodeURIComponent(iface)); },
@@ -86,14 +81,11 @@ export const api = {
   nodes() { return this.get("/api/nodes"); },
   nodeCreate(b) { return this.post("/api/nodes/create", b); },
   nodeUpdate(b) { return this.post("/api/nodes/update", b); },
-  turnReclaim(b) { return this.post("/api/turn/reclaim", b); },   // a wdtt/csqtt server the node holds and no panel claims
-  escrowVerified(b) { return this.post("/api/iface/escrow/verified", b); },   // the browser opened the blob: it is for THIS vault
-  resolveHost(h) { return this.get("/api/resolve?host=" + encodeURIComponent(h)); },   // does this name land on this node?
-  // is this device an exit on that node, and may it be one? (tri-state `known` + a role verdict — §11.3)
+  turnReclaim(b) { return this.post("/api/turn/reclaim", b); },
+  escrowVerified(b) { return this.post("/api/iface/escrow/verified", b); },
+  resolveHost(h) { return this.get("/api/resolve?host=" + encodeURIComponent(h)); },
   exitCheck(node, dev, iface) { return this.get("/api/exit/check?node=" + encodeURIComponent(node)
     + "&dev=" + encodeURIComponent(dev) + (iface ? "&iface=" + encodeURIComponent(iface) : "")); },
-  // decision 8: relay a vault-escrowed exit key back to its node, re-sealed by the BROWSER to the node's
-  // transport key — the panel never sees plaintext, which is the property that makes the escrow worth having.
   exitRestore(node, id, key_blob, pub) { return this.post("/api/exit/restore", { node, id, key_blob, pub }); },
   exitEscrowForget(node, id) { return this.post("/api/exit/escrow/forget", { node, id }); },
   connectionUpdate(b) { return this.post("/api/connection/update", b); },
@@ -106,107 +98,102 @@ export const api = {
   subUserRotate(b) { return this.post("/api/sub/user/rotate", b); },
   subUserDisable(b) { return this.post("/api/sub/user/disable", b); },
   subBlob(b) { return this.post("/api/sub/blob", b); },
-  subBlobGet(pid) { return this.get("/api/sub/blob?peer_id=" + encodeURIComponent(pid)); },   // read one peer's ciphertext for in-browser Show-QR decrypt
-  subExitBlob(b) { return this.post("/api/sub/exitblob", b); },   // keep a dial-in exit's router key (ciphertext)
+  subBlobGet(pid) { return this.get("/api/sub/blob?peer_id=" + encodeURIComponent(pid)); },
+  subExitBlob(b) { return this.post("/api/sub/exitblob", b); },
   subExitBlobGet(node, exit) { return this.get("/api/sub/exitblob?node=" + encodeURIComponent(node) + "&exit=" + encodeURIComponent(exit)); },
-  subEscrow(b) { return this.post("/api/sub/escrow", b); },   // ensure a user holds an encryption unlock-key (encrypted config storage, no subscription)
-  purgePlaintext(b) { return this.post("/api/config/purge-plaintext", b || {}); },   // migration: delete legacy plaintext where a blob exists
-  plaintextPeers() { return this.get("/api/config/plaintext-peers"); },   // migration: exactly which peers still hold plaintext (+ orphan count)
+  subEscrow(b) { return this.post("/api/sub/escrow", b); },
+  purgePlaintext(b) { return this.post("/api/config/purge-plaintext", b || {}); },
+  plaintextPeers() { return this.get("/api/config/plaintext-peers"); },
   refreshGeo() { return this.post("/api/panel/refresh-geo", {}); },
-  // external integration API (Settings → Integrations): read-only tokens + webhooks
   apiTokenCreate(label) { return this.post("/api/integrations/token", { label }); },
   apiTokenRevoke(id) { return this.post("/api/integrations/token/revoke", { id }); },
   apiWebhookSave(b) { return this.post("/api/integrations/webhook", b); },
   apiWebhookDelete(id) { return this.post("/api/integrations/webhook/delete", { id }); },
   apiWebhookTest(id) { return this.post("/api/integrations/webhook/test", { id }); },
-  routingReset(b) { return this.post("/api/node/routing-reset", b); },   // per-node: wipe + rebuild + re-pull all smart-routing state
-  awgLoad(b) { return this.post("/api/node/awg-load", b); },   // "Load now": swap in the AmneziaWG module an update installed
-  asnCount(n) { return this.get("/api/asn?n=" + encodeURIComponent(n)); },   // resolve an ASN → prefix count (live editor feedback)
+  routingReset(b) { return this.post("/api/node/routing-reset", b); },
+  awgLoad(b) { return this.post("/api/node/awg-load", b); },
+  asnCount(n) { return this.get("/api/asn?n=" + encodeURIComponent(n)); },
   nodeRotate(b) { return this.post("/api/nodes/rotate", b); },
-  nodeRemesh(b) { return this.post("/api/nodes/remesh", b); },   // rebuild THIS node's mesh links on demand
+  nodeRemesh(b) { return this.post("/api/nodes/remesh", b); },
   nodeFlagRemove(b) { return this.post("/api/nodes/flag-remove", b); },
   nodeUnflagRemove(b) { return this.post("/api/nodes/unflag-remove", b); },
   nodeDelete(b) { return this.post("/api/nodes/delete", b); },
-  saveOrder(b) { return this.post("/api/order", b); },   // drag-to-reorder: {kind:"node"|"iface"|"turn", node?, order:[ids]}
-  // users
+  saveOrder(b) { return this.post("/api/order", b); },
   userCreate(b) { return this.post("/api/users/create", b); },
   userUpdate(b) { return this.post("/api/users/update", b); },
   userDelete(b) { return this.post("/api/users/delete", b); },
-  // user groups (docs/GROUPS-PLAN.md) — membership travels as a delta: {id, name?, add?: [uid], remove?: [uid]}
   groupCreate(b) { return this.post("/api/groups/create", b); },
   groupUpdate(b) { return this.post("/api/groups/update", b); },
   groupDelete(b) { return this.post("/api/groups/delete", b); },
-  userBlock(b) { return this.post("/api/user/block", b); },       // revoke WG + suspend the subscription URL
-  userUnblock(b) { return this.post("/api/user/unblock", b); },   // restore both
-  // peers
+  userBlock(b) { return this.post("/api/user/block", b); },
+  userUnblock(b) { return this.post("/api/user/unblock", b); },
   peerCreate(b) { return this.post("/api/peers/create", b); },
   peerUpdate(b) { return this.post("/api/peers/update", b); },
-  peerNetworks(b) { return this.post("/api/peers/networks", b); },   // {peer_id, routes?} — routes = a draft, judged and reported, never saved
-  routingWho(b) { return this.post("/api/routing/who", b); },   // {node, iface, rows:[who]} — what each per-person selection covers there
-  userNetworks(b) { return this.post("/api/users/networks", b); },   // {user_id} — what that user's devices can reach; on demand, never per poll
-  peerNetworkProbe(b) { return this.post("/api/peers/networks/probe", b); },   // {peer_id, node, addr, port?} arms one reachability test from that node · {peer_id, id} reads it · {peer_id} lists this peer's
+  peerNetworks(b) { return this.post("/api/peers/networks", b); },
+  routingWho(b) { return this.post("/api/routing/who", b); },
+  userNetworks(b) { return this.post("/api/users/networks", b); },
+  peerNetworkProbe(b) { return this.post("/api/peers/networks/probe", b); },
   peerAddTarget(b) { return this.post("/api/peers/add-target", b); },
-  exitTest(b) { return this.post("/api/exit/test", b); },   // {node, exit_id?, socks_text, socks_pass} tests a SOCKS5 proxy from that node · {node, id} reads it
+  exitTest(b) { return this.post("/api/exit/test", b); },
   peerUpdateTarget(b) { return this.post("/api/peers/update-target", b); },
   peerRemoveTarget(b) { return this.post("/api/peers/remove-target", b); },
-  peerSetRole(b) { return this.post("/api/peers/set-role", b); },   // role: "primary" | "backup" | "" (clear)
+  peerSetRole(b) { return this.post("/api/peers/set-role", b); },
   peerDelete(b) { return this.post("/api/peers/delete", b); },
   peerUnassign(b) { return this.post("/api/peers/unassign", b); },
   peerRekey(b) { return this.post("/api/peers/rekey", b); },
-  peerBlock(b) { return this.post("/api/peers/block", b); },      // drop this peer from every node's desired set
+  peerBlock(b) { return this.post("/api/peers/block", b); },
   peerUnblock(b) { return this.post("/api/peers/unblock", b); },
   peerAdopt(b) { return this.post("/api/peers/adopt", b); },
-  peerCorrect(b) { return this.post("/api/peers/correct", b); },   // broken: reassign an in-subnet IP
+  peerCorrect(b) { return this.post("/api/peers/correct", b); },
   ifaceUpdate(b) { return this.post("/api/iface/update", b); },
   ifaceCreate(b) { return this.post("/api/iface/create", b); },
   ifaceCancel(b) { return this.post("/api/iface/cancel", b); },
   ifaceDelete(b) { return this.post("/api/iface/delete", b); },
-  ifaceRestart(b) { return this.post("/api/iface/restart", b); },   // bounce the iface service on the node
-  ifaceStop(b) { return this.post("/api/iface/stop", b); },         // stop (down + disable) the iface
-  ifaceStart(b) { return this.post("/api/iface/start", b); },       // start (up + enable) the iface
-  ifaceAdopt(b) { return this.post("/api/iface/adopt", b); },     // drift: pull the node's server-edited value
-  ifaceRestore(b) { return this.post("/api/iface/restore", b); }, // drift: re-assert the panel's value
-  ifaceRecreate(b) { return this.post("/api/iface/recreate", b); }, // restore a MISSING iface with its original identity
-  turnManage(b) { return this.post("/api/turn/manage", b); },     // edit listen/connect (+ wrap key)
-  turnTitle(b) { return this.post("/api/turn/title", b); },       // set the display title only — no restart/bounce
-  turnRotate(b) { return this.post("/api/turn/rotate", b); },     // regenerate the wrap key
-  turnDelete(b) { return this.post("/api/turn/delete", b); },         // stop + remove the service
-  turnRestart(b) { return this.post("/api/turn/restart", b); },       // restart the service
-  turnStop(b) { return this.post("/api/turn/stop", b); },             // stop the service (kept down, survives reconcile)
-  turnStart(b) { return this.post("/api/turn/start", b); },           // start a stopped service
-  turnReinstall(b) { return this.post("/api/turn/reinstall", b); },   // re-download the binary (fix a failed install / update) + (re)start
-  turnInstall(b) { return this.post("/api/turn/install", b); },       // install a new turn-proxy (download + unit)
-  turnOnboard(b) { return this.post("/api/turn/onboard", b); },       // adopt a host .service by path
+  ifaceRestart(b) { return this.post("/api/iface/restart", b); },
+  ifaceStop(b) { return this.post("/api/iface/stop", b); },
+  ifaceStart(b) { return this.post("/api/iface/start", b); },
+  ifaceAdopt(b) { return this.post("/api/iface/adopt", b); },
+  ifaceRestore(b) { return this.post("/api/iface/restore", b); },
+  ifaceRecreate(b) { return this.post("/api/iface/recreate", b); },
+  turnManage(b) { return this.post("/api/turn/manage", b); },
+  turnTitle(b) { return this.post("/api/turn/title", b); },
+  turnRotate(b) { return this.post("/api/turn/rotate", b); },
+  turnDelete(b) { return this.post("/api/turn/delete", b); },
+  turnRestart(b) { return this.post("/api/turn/restart", b); },
+  turnStop(b) { return this.post("/api/turn/stop", b); },
+  turnStart(b) { return this.post("/api/turn/start", b); },
+  turnReinstall(b) { return this.post("/api/turn/reinstall", b); },
+  turnInstall(b) { return this.post("/api/turn/install", b); },
+  turnOnboard(b) { return this.post("/api/turn/onboard", b); },
   turnCancel(b) { return this.post("/api/turn/cancel", b); },
-  turnCheckUpdates(b) { return this.post("/api/turn/check-updates", b); },   // resolve each fork's latest release tag
-  wdttSet(b) { return this.post("/api/wdtt/set", b); },                      // create/update a WDTT instance on a node (declarative)
-  wdttDelete(b) { return this.post("/api/wdtt/delete", b); },                // remove a WDTT instance
-  wdttAdopt(b) { return this.post("/api/wdtt/adopt", b); },                  // adopt a FOREIGN WDTT server (seeded create: reuses its identity + passwords)
-  wdttPeerCreate(b) { return this.post("/api/wdtt-peer/create", b); },       // keyless WDTT peer (mints the WRAP password). UNUSED by the SPA since a peer may hold any mix of kinds — peerCreate takes a keyless target set and mints the password itself. The endpoint stays for API consumers.
-  wdttPeerRotate(b) { return this.post("/api/wdtt-peer/rotate", b); },       // rotate a WDTT peer's password (revoke the old link)
-  wdttRestore(b) { return this.post("/api/wdtt/restore", b); },              // restore a WDTT server's vaulted identity (owner pw + keypair)
-  wdttRecreateFresh(b) { return this.post("/api/wdtt/recreate-fresh", b); }, // abandon the vaulted identity → mint a fresh key (users re-import)
-  wdttVersions(q) { return this.get("/api/wdtt/versions?node=" + encodeURIComponent(q.node || "") + "&iface=" + encodeURIComponent(q.iface || "") + "&fork=" + encodeURIComponent(q.fork || "")); },   // our published builds (rollback targets) + any hold
-  wdttVersion(b) { return this.post("/api/wdtt/version", b); },              // roll a WDTT instance to a build (ver) or release the hold (ver="")
-  csqttVersions(q) { return this.get("/api/csqtt/versions?node=" + encodeURIComponent(q.node || "") + (q.iface ? "&iface=" + encodeURIComponent(q.iface) : "")); },   // our published csqtt builds (rollback targets) + any hold — per (node, version): the iface names the version, none = 2.1
-  csqttVersion(b) { return this.post("/api/csqtt/version", b); },            // roll a node's csqtt to a build (ver) or release the hold (ver="")
-  csqttSet(b) { return this.post("/api/csqtt/set", b); },                    // create/update a csqtt instance on a node (declarative)
-  csqttAdopt(b) { return this.post("/api/csqtt/adopt", b); },                // adopt a FOREIGN csqtt server (its users come across)
-  csqttDelete(b) { return this.post("/api/csqtt/delete", b); },              // remove a csqtt instance
-  csqttPeerCreate(b) { return this.post("/api/csqtt-peer/create", b); },     // keyless csqtt peer (mints the access password). UNUSED by the SPA — see wdttPeerCreate above.
-  csqttPeerRotate(b) { return this.post("/api/csqtt-peer/rotate", b); },     // rotate a csqtt peer's password (revoke the old link)
-  rosterCheck() { return this.get("/api/turn/roster-check"); },              // client-app schema drift vs upstream GitHub (P1 ack-only clients)
-  rosterAck(client) { return this.post("/api/turn/roster-ack", { client }); },   // acknowledge a client's current upstream as the baseline
-  p4Report(refresh) { return this.get("/api/turn/p4/report" + (refresh ? "?refresh=1" : "")); },  // P4a versioned per-field roster (parseable forks)
-  p4Adopt(client, body) { return this.post("/api/turn/p4/adopt", { client, ...(body || {}) }); },   // adopt {add,remove,vadd,vrem}
-  p4SetVersion(client, index) { return this.post("/api/turn/p4/setversion", { client, index }); },     // rollback to an observed version (index=null → latest)
-  turnVersions(q) { return this.get("/api/turn/versions?owner=" + encodeURIComponent(q.owner || "") + "&node=" + encodeURIComponent(q.node || "") + "&service=" + encodeURIComponent(q.service || "") + "&fork=" + encodeURIComponent(q.fork || "")); },   // mirrored (rollback-able) versions + any per-(node,fork) hold
-  changelog(want) { return this.get("/api/changelog" + (want ? "?want=" + encodeURIComponent(want) : "")); },   // full panel changelog (newest-first) for the version info bubble
-  procClearNode(node) { return this.post("/api/node/proc-clear", { node }); },   // dismiss a stuck/failed re-install/convert/update tag
+  turnCheckUpdates(b) { return this.post("/api/turn/check-updates", b); },
+  wdttSet(b) { return this.post("/api/wdtt/set", b); },
+  wdttDelete(b) { return this.post("/api/wdtt/delete", b); },
+  wdttAdopt(b) { return this.post("/api/wdtt/adopt", b); },
+  wdttPeerCreate(b) { return this.post("/api/wdtt-peer/create", b); },
+  wdttPeerRotate(b) { return this.post("/api/wdtt-peer/rotate", b); },
+  wdttRestore(b) { return this.post("/api/wdtt/restore", b); },
+  wdttRecreateFresh(b) { return this.post("/api/wdtt/recreate-fresh", b); },
+  wdttVersions(q) { return this.get("/api/wdtt/versions?node=" + encodeURIComponent(q.node || "") + "&iface=" + encodeURIComponent(q.iface || "") + "&fork=" + encodeURIComponent(q.fork || "")); },
+  wdttVersion(b) { return this.post("/api/wdtt/version", b); },
+  csqttVersions(q) { return this.get("/api/csqtt/versions?node=" + encodeURIComponent(q.node || "") + (q.iface ? "&iface=" + encodeURIComponent(q.iface) : "")); },
+  csqttVersion(b) { return this.post("/api/csqtt/version", b); },
+  csqttSet(b) { return this.post("/api/csqtt/set", b); },
+  csqttAdopt(b) { return this.post("/api/csqtt/adopt", b); },
+  csqttDelete(b) { return this.post("/api/csqtt/delete", b); },
+  csqttPeerCreate(b) { return this.post("/api/csqtt-peer/create", b); },
+  csqttPeerRotate(b) { return this.post("/api/csqtt-peer/rotate", b); },
+  rosterCheck() { return this.get("/api/turn/roster-check"); },
+  rosterAck(client) { return this.post("/api/turn/roster-ack", { client }); },
+  p4Report(refresh) { return this.get("/api/turn/p4/report" + (refresh ? "?refresh=1" : "")); },
+  p4Adopt(client, body) { return this.post("/api/turn/p4/adopt", { client, ...(body || {}) }); },
+  p4SetVersion(client, index) { return this.post("/api/turn/p4/setversion", { client, index }); },
+  turnVersions(q) { return this.get("/api/turn/versions?owner=" + encodeURIComponent(q.owner || "") + "&node=" + encodeURIComponent(q.node || "") + "&service=" + encodeURIComponent(q.service || "") + "&fork=" + encodeURIComponent(q.fork || "")); },
+  changelog(want) { return this.get("/api/changelog" + (want ? "?want=" + encodeURIComponent(want) : "")); },
+  procClearNode(node) { return this.post("/api/node/proc-clear", { node }); },
   procClearHost() { return this.post("/api/host/proc-clear", {}); },
 };
 
-// ───────────────────────── store + reactive bus ─────────────────────────
 export const bus = { subs: new Set(), emit() { this.subs.forEach(f => { try { f(); } catch (e) { console.error(e); } }); }, sub(f) { this.subs.add(f); return () => this.subs.delete(f); } };
 export function useStore() { const [, set] = useState(0); useEffect(() => bus.sub(() => set(x => x + 1)), []); }
 
@@ -214,25 +201,23 @@ export const Store = {
   fleet: [], storeConfigs: false, env: {}, versions: {},
   roster: { version: 1, users: {}, peers: {} }, stats: {}, nodes: [], describe: {}, events: [],
   recon: { peers: [], users: [], orphans: [], nodeStatus: {} },
-  sessionConfigs: {},        // pubkey -> { "node|iface" -> confText }   (built at creation, in-memory)
-  configEpoch: 0,            // bumps when a config is re-issued, so QR cards re-read it
-  recentlyCreated: {},       // id -> ts (row flash)
-  rotating: {},              // peer id -> ts — key rotation in flight; grid shows "rotating" until the new key is live
-  ifaceOp: {},               // "node|iface" -> { verb:start|restart, phase:busy|ok|fail, started, until, err }
-  ifaceNew: {},              // "node|iface" -> { type } — optimistic "creating/onboarding" card shown the instant Create is clicked (until the server's own pending/meta picks it up)
-  ifaceGone: {},             // "node|iface" -> { at } — ifaceNew's mirror image: optimistic "deleting" card shown the instant Delete is confirmed (until the node stops reporting the interface)
-  ghostRekey: {},            // "node|iface" -> { peers:[id], at } — a ghost recreate staged its peers; maybeRekeyGhosts() rekeys them once the fresh interface reports its new key (phase 2)
-  turnNew: {},               // "node|service" -> { listen, connect, ... } — optimistic "installing" turn card (full entered data), shown until the node reports the real proxy
-  pending: {},               // opId -> { apply(store), done }  — optimistic overlay (Model B)
-  rowErrors: {},             // entityKey -> { msg, at }        — explained failure, shown on the row
+  sessionConfigs: {},
+  configEpoch: 0,
+  recentlyCreated: {},
+  rotating: {},
+  ifaceOp: {},
+  ifaceNew: {},
+  ifaceGone: {},
+  ghostRekey: {},
+  turnNew: {},
+  pending: {},
+  rowErrors: {},
   async init() {
     await this.poll();
     setInterval(() => { if (document.visibilityState !== "hidden") this.poll().catch(() => {}); }, 5000);
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") this.poll().catch(() => {}); });
   },
-  // One round trip: /api/state bundles roster + nodes (incl. health_history) + per-node
-  // interface meta + raw snapshots. Status is still derived in the browser via reconcile.js.
-  _server: { roster: { version: 1, users: {}, peers: {} }, nodes: [] },   // pristine, last fetched
+  _server: { roster: { version: 1, users: {}, peers: {} }, nodes: [] },
   async poll() {
     const [s, ev] = await Promise.all([api.state(), api.events().catch(() => null)]);
     const d = (s && s.data) || {};
@@ -241,41 +226,35 @@ export const Store = {
     this.stats = d.snapshots || {};
     if (Number.isFinite(d.panel_now) && d.panel_now > 0) clock.skewMs = Date.now() - d.panel_now * 1000;
     trackInstance(d.instance, d.panel_now, d.nodes || []);
-    // store_configs is now an enum: "encrypted" (blob at rest) | "off". storeConfigs stays a convenience bool
-    // meaning "the panel keeps configs" (now encrypted). configsPlaintext = legacy plaintext files awaiting migration.
     this.storeMode = (d.store_configs === "off" || d.store_configs === false) ? "off" : "encrypted";
-    // The placeholder a stored profile's PrivateKey line carries in the editor. Comes from the SERVER so the
-    // two ends can never disagree about the exact string — it is what says "keep the key you already hold".
     this.exitKeyKeep = d.exit_key_keep || "";
-    this.exitPskKeep = d.exit_psk_keep || "";   // the same sentinel trick for the peer's preshared key
-    this.exitPassKeep = d.exit_pass_keep || "";   // …and for a SOCKS5 exit's password, which the browser never sees
+    this.exitPskKeep = d.exit_psk_keep || "";
+    this.exitPassKeep = d.exit_pass_keep || "";
     this.storeConfigs = this.storeMode !== "off";
     this.configsPlaintext = d.configs_plaintext || 0;
     this.panelSettings = d.panel_settings || this.panelSettings || {};
-    this.subCert = d.sub_cert || {};              // subscription TLS health; {} behind a reverse proxy (admin's own)
-    this.panelServices = d.panel_services || {};   // THIS host's own swg units (active/enabled/present) → service-health needs-attention. {} on docker/older panels
-    // Non-empty = the panel could not persist its session-signing secret, so every operator is signed
-    // out on each restart. "" on a healthy panel and on older ones that do not report it.
+    this.subCert = d.sub_cert || {};
+    this.panelServices = d.panel_services || {};
     this.sessionEphemeral = d.session_ephemeral || "";
-    this.datapath = d.datapath || {};              // THIS host's kernel datapath health (awg module loadable?) → healable "Fix" issue
-    this.turnCatalog = d.turn_catalog || this.turnCatalog || null;   // single-source turn fork/client catalog (server-owned); turnForks() falls back to TURN_FORKS_FALLBACK when absent (mixed-version safe)
-    this.turnHolds = d.turn_holds || this.turnHolds || {};   // {node: {fork: held_version}} → fork-row "held" flag
-    this.csqttLines = d.csqtt_lines || this.csqttLines || [];   // ["2.1", "2.5"] csqtt versions on offer (docs/CSQTT-LINES-PLAN.md) — one entry = no Version control (unless a server runs another)
-    this.panelPublicUrl = d.panel_public_url || this.panelPublicUrl || "";   // CONFIRMED canonical address → flag a tab on an old panel address
-    this.accessCooldown = d.access_cooldown || { secs: 0, reason: "" };   // one-at-a-time: while a change verifies/graces, Access&TLS disables Save + shows the cooldown
-    hooks.forkColors && hooks.forkColors();   // keep every .tf-<fork> tag/badge in sync with the picker override
-    hooks.themeColors && hooks.themeColors();  // keep wg/awg/blocked/faulty colours + the --brand theme in sync with the pickers
-    this.smartCaps = d.smart_caps || this.smartCaps || {};   // per-category {ip,host} → [IP]/[Host] grouping + kernel-mode greying
-    this.catLabels = d.cat_labels || this.catLabels || {};   // custom_<hash> → custom-list title (for the destination bars)
-    this.catalogProviders = d.catalog_providers || this.catalogProviders || [];   // Geo-data provider registry [{id,label,url,tiers,enabled,error}]
-    this.catalogGen = d.catalog_gen || "";   // moves whenever the panel's catalog index changes → loadCatalogIndex refetches exactly then
-    this.catSizes = d.cat_sizes || this.catSizes || {};   // {cat:{ip,host}} resolved-list record counts → list-size display
+    this.datapath = d.datapath || {};
+    this.turnCatalog = d.turn_catalog || this.turnCatalog || null;
+    this.turnHolds = d.turn_holds || this.turnHolds || {};
+    this.csqttLines = d.csqtt_lines || this.csqttLines || [];
+    this.panelPublicUrl = d.panel_public_url || this.panelPublicUrl || "";
+    this.accessCooldown = d.access_cooldown || { secs: 0, reason: "" };
+    hooks.forkColors && hooks.forkColors();
+    hooks.themeColors && hooks.themeColors();
+    this.smartCaps = d.smart_caps || this.smartCaps || {};
+    this.catLabels = d.cat_labels || this.catLabels || {};
+    this.catalogProviders = d.catalog_providers || this.catalogProviders || [];
+    this.catalogGen = d.catalog_gen || "";
+    this.catSizes = d.cat_sizes || this.catSizes || {};
     this.env = d.env || this.env || {};
     this.versions = d.versions || this.versions;
-    this.tls = d.tls || this.tls || {};   // cert expiry + renewal health → the Access & TLS card
+    this.tls = d.tls || this.tls || {};
 
-    this.turnUpdates = d.turn_updates || this.turnUpdates || [];   // [{fork,kind,node,installed,latest,ids}] — deployed turn-family servers behind their newest build, one row per (fork, node). Held forks are already excluded server-side.
-    if (s && s.ok) { this.hostProc = d.host_proc || null; this.hostProcErr = d.host_proc_err || null; }   // only on a clean poll → the tag HOLDS through the panel's own re-install downtime
+    this.turnUpdates = d.turn_updates || this.turnUpdates || [];
+    if (s && s.ok) { this.hostProc = d.host_proc || null; this.hostProcErr = d.host_proc_err || null; }
     if (ev && Array.isArray(ev.data)) this.events = ev.data;
     this.apply();
     try {
@@ -296,7 +275,6 @@ export const Store = {
       for (const n of (this.nodes || [])) {
         const ifs = (this.describe || {})[n.id] || {};
         for (const [ifn, m] of Object.entries(ifs)) if (m && m.escrow_unverified) unver.push(n.id + "|i|" + ifn);
-        // …and the WDTT twin, which is escrowed the same way and would otherwise never wake this
         for (const ifn of Object.keys(n.wdtt_escrow_unverified || {})) unver.push(n.id + "|w|" + ifn);
       }
       const uk = unver.sort().join(",");
@@ -309,25 +287,22 @@ export const Store = {
                                                          : JSON.parse(JSON.stringify(this._server));
     this.roster = snap.roster; this.nodes = snap.nodes;
     for (const id of Object.keys(this.pending)) { try { this.pending[id].apply(this); } catch (_) {} }
-    // fleet entries carry the stable id (the connector everywhere) + the mutable name (display)
     this.fleet = this.nodes.map(n => ({ id: n.id, name: n.name, color: n.color, transport: "https" }));
-    const retiring = new Set();   // pubkeys mid-removal (rotation/delete) — keep them out of the orphans grid
+    const retiring = new Set();
     for (const n of this.nodes) for (const pk of (n.retiring || [])) retiring.add(pk);
-    const systemIfaces = new Set();   // node|iface that are panel-managed mesh links (swg_*) — their peers
-    for (const nid of Object.keys(this.describe || {}))   // are managed via nodes.json, NOT the roster: not orphans
+    const systemIfaces = new Set();
+    for (const nid of Object.keys(this.describe || {}))
       for (const ifn of Object.keys(this.describe[nid] || {}))
         if (this.describe[nid][ifn] && this.describe[nid][ifn].system) systemIfaces.add(nid + "|" + ifn);
-    const _adv = (this.panelSettings || {}).advanced || {};   // operator-tunable stale/grace thresholds
-    this._probSince = this._probSince || {};   // {pid: firstProblemMs} — persists so Restore/Correct only offers after a real, sustained problem (not a hiccup / mid-create)
-    const _sc = (this.panelSettings || {}).status_conditions || {};   // peer-health detection toggles (default on)
-    // `nodeSeen`: when the PANEL received each node's last sync (its own clock, `node_seen` → nodes_view). Paired with
-    // panelNow() this is one machine's clock at both ends of every window reconcile measures — see reconcile.js.
+    const _adv = (this.panelSettings || {}).advanced || {};
+    this._probSince = this._probSince || {};
+    const _sc = (this.panelSettings || {}).status_conditions || {};
     const nodeSeen = {}; for (const n of (this.nodes || [])) if (n && n.last_seen != null) nodeSeen[n.id] = n.last_seen;
     this.recon = reconcile(this.roster, this.stats, panelNow(), { retiring, systemIfaces, nodeSeen, rotating: new Set(Object.keys(this.rotating)),
       probSince: this._probSince,
       ...(_adv.churn_gap_s ? { churnGapS: _adv.churn_gap_s } : {}), ...(_adv.churn_min ? { churnMin: _adv.churn_min } : {}),
       detectBlocked: _sc.blocked !== false, detectChurn: _sc.faulty !== false,
-      expiryWarnDays: (this.panelSettings || {}).expiry_warn_days,   // "about to expire" warn window (days) for the derived status
+      expiryWarnDays: (this.panelSettings || {}).expiry_warn_days,
       ...(_adv.restore_grace_ms ? { restoreGraceMs: _adv.restore_grace_ms } : {}),
       ...(_adv.node_stale_ms ? { nodeStaleMs: _adv.node_stale_ms } : {}), ...(_adv.peer_grace_ms ? { graceMs: _adv.peer_grace_ms } : {}) });
     this._missIfSince = this._missIfSince || {};
@@ -337,23 +312,18 @@ export const Store = {
           if (!this._missIfSince[k]) this._missIfSince[k] = _now;
           mi[ifn].problemMs = _now - this._missIfSince[k];
           mi[ifn].ripe = mi[ifn].problemMs >= _grace; }
-        for (const ifn of Object.keys(gi)) { const k = n.id + "|g|" + ifn; _seen.add(k);   // ghosts get the SAME grace (a briefly-lost iface isn't a ghost yet)
+        for (const ifn of Object.keys(gi)) { const k = n.id + "|g|" + ifn; _seen.add(k);
           if (!this._missIfSince[k]) this._missIfSince[k] = _now;
           gi[ifn].problemMs = _now - this._missIfSince[k];
           gi[ifn].ripe = gi[ifn].problemMs >= _grace; }
-        // BROKEN (reported but down) gets the same grace for the same reason: an interface is briefly down
-        // during any restart, and a Repair button that flashes on every bounce is one nobody trusts.
         const bi = n.broken_ifaces || {};
         for (const ifn of Object.keys(bi)) { const k = n.id + "|b|" + ifn; _seen.add(k);
           if (!this._missIfSince[k]) this._missIfSince[k] = _now;
           bi[ifn].problemMs = _now - this._missIfSince[k];
           bi[ifn].ripe = bi[ifn].problemMs >= _grace; } }
       for (const k of Object.keys(this._missIfSince)) if (!_seen.has(k)) delete this._missIfSince[k]; }
-    // a rotation is "done" once the new key shows up live (or after a 45s safety cap) — drop the marker
     for (const id of Object.keys(this.rotating)) {
       const pr = this.recon.peers.find(p => p.id === id);
-      // Keep the marker for ≥4s even if the peer still reads ready — an optimistic "Rotating" (set the instant you
-      // confirm) must survive the poll that lands before the rekey has actually taken the peer not-ready.
       if ((pr && (pr.status === "online" || pr.status === "ready" || pr.status === "partial") && Date.now() - this.rotating[id] > 4000) || (Date.now() - this.rotating[id] > 45000)) delete this.rotating[id];
     }
     for (const k of Object.keys(this.rowErrors)) {
@@ -364,30 +334,28 @@ export const Store = {
                                : (pr && (pr.status === "online" || pr.status === "ready"));
       if (!pr || resolved || Date.now() - (e.at || 0) > 120000) delete this.rowErrors[k];
     }
-    try { hooks.dashTick && hooks.dashTick(); } catch (_) {}   // accumulate the dashboard's live-only trend series (online counts)
+    try { hooks.dashTick && hooks.dashTick(); } catch (_) {}
     bus.emit();
-    hooks.alertServices && hooks.alertServices();   // raise the on-load modal for an un-silenced CRITICAL panel-service issue (guarded: once per incident, never over an open modal)
-    try { hooks.rekeyGhosts && hooks.rekeyGhosts(); } catch (_) {}   // phase 2 of a ghost recreate: rekey its peers once the fresh interface is live
+    hooks.alertServices && hooks.alertServices();
+    try { hooks.rekeyGhosts && hooks.rekeyGhosts(); } catch (_) {}
   },
-  node(id) { return this.fleet.find(n => n.id === id); },              // lookup by stable id
-  nodeName(id) { const n = this.node(id); return (n && n.name) || id; }, // display title (falls back to id)
+  node(id) { return this.fleet.find(n => n.id === id); },
+  nodeName(id) { const n = this.node(id); return (n && n.name) || id; },
   nodeRank(id) { const i = this.fleet.findIndex(n => n.id === id); return i < 0 ? Number.MAX_SAFE_INTEGER : i; },
   byNode(a, b) {
     return this.nodeRank(a) - this.nodeRank(b)
         || String(this.nodeName(a) || "").localeCompare(String(this.nodeName(b) || ""));
   },
   nodeColor(id) { const n = this.node(id); return pickThemed(n && n.color, NODE_COLOR_DEFAULT.dark, NODE_COLOR_DEFAULT.light); },
-  ifacesOf(node) { return Object.keys(this.describe[node] || {}); },   // node = id (describe keyed by id)
+  ifacesOf(node) { return Object.keys(this.describe[node] || {}); },
   ifaceMeta(node, iface) { return (this.describe[node] || {})[iface] || null; },
-  // a panel-managed inter-node mesh link (swg_*): never a user-peer target / egress NIC. Authoritative
-  // signal is the backend `.system` flag; fall back to the reserved prefix for un-updated nodes.
   ifaceIsSystem(node, iface) {
     if (!iface) return false;
     const m = (this.describe[node] || {})[iface] || {};
     const pfx = (this.panelSettings || {}).reserved?.iface_prefix || "swg_";
     return !!m.system || String(iface).startsWith(pfx) || String(iface).startsWith("swg_");
   },
-  userIfacesOf(node) {   // wg/awg from describe + WDTT + csqtt ifaces (self-contained kinds own their iface, absent from describe → pulled from the readback)
+  userIfacesOf(node) {
     const base = this.ifacesOf(node).filter(i => !this.ifaceIsSystem(node, i));
     const wd = ((this.stats[node] || {}).wdtt || []).map(w => w && w.iface).filter(Boolean);
     const cs = ((this.stats[node] || {}).csqtt || []).map(c => c && c.iface).filter(Boolean);
@@ -442,24 +410,19 @@ export const Store = {
 };
 
 
-// TWO PANELS BEHIND ONE ADDRESS (see _INSTANCE in swg-panel-server)
 const INST_KEY = "swg.panelInstances:" + url(""), INST_DISMISS = "swg.panelTwinsDismissed:" + url("");
-const INST_MARGIN = 120;          // seconds of clock disagreement tolerated between two servers' clocks
-// The other one must have answered within this window to still count. Short on purpose: once the operator stops the
-// stray, the notice must go away soon, or it reads as "stopping it did not work" (code review 09-24; was 6 h).
+const INST_MARGIN = 120;
 const INST_RECENT = 30 * 60;
-// Pure: the remembered instance whose life overlaps `cur`'s and that answered recently, or null.
 export function panelTwin(list, cur) {
   return (list || []).find(o => o && cur && o.id !== cur.id
     && cur.started + INST_MARGIN < o.last && o.started + INST_MARGIN < cur.last
     && cur.last - o.last < INST_RECENT) || null;
 }
 function trackInstance(inst, now, nodes) {
-  if (!inst || !inst.id || !Number.isFinite(now)) return;   // a panel too old to say → nothing to compare
+  if (!inst || !inst.id || !Number.isFinite(now)) return;
   let list = [];
   try { list = JSON.parse(localStorage.getItem(INST_KEY) || "[]"); } catch (_) {}
   if (!Array.isArray(list)) list = [];
-  // `reporting` = servers syncing to THIS panel right now — the one to keep is the one they report to
   const cur = { id: String(inst.id), started: Number(inst.started) || now, last: now, nodes: nodes.length,
                 reporting: nodes.filter(n => n && n.status === "online").length,
                 version: inst.version || "", method: inst.method || "", state_dir: inst.state_dir || "" };

@@ -1,4 +1,4 @@
-import { T, Tsplit, plural, locale, srvText } from "./i18n.js";   // locale: dates in the panel's language, not the browser's
+import { T, Tsplit, plural, locale, srvText } from "./i18n.js";
 import { tkey, seen, targetRole } from "./util.js";
 import { Store, api, useStore } from "./store.js";
 import { targetType, iTypeOf, ghostIface, ghostPeers, peerSubSources, subHidden, subHides, isSelfContainedTgt, awgDict3 } from "./model.js";
@@ -15,17 +15,15 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// The ghost recreate needs the Load-interface sheet, which lives a layer up (js/iface.js when it lands).
-// app.js wires this at boot; until then the action simply does nothing rather than importing upward.
 let _openLoadIface = () => {};
 export const setLoadIfaceOpener = fn => { _openLoadIface = fn; };
 
 export async function rotatePeerKeys(peer) {
   const key = "peer:" + peer.id;
-  Store.rotating[peer.id] = Date.now();   // grid shows "rotating" until the new key is live
+  Store.rotating[peer.id] = Date.now();
   let keys, psk, configs;
   try {
-    keys = await genKeys(); psk = genPSK(); configs = {};   // rotate BOTH the keypair and the PSK
+    keys = await genKeys(); psk = genPSK(); configs = {};
     for (const t of (peer.targets || []).filter(t => !isSelfContainedTgt(t))) {
       const m = Store.ifaceMeta(t.node, t.iface);
       if (!m) { delete Store.rotating[peer.id]; Store.rowErrors[key] = { msg: T("{v1} hasn't reported {v2} yet", { v1: Store.nodeName(t.node), v2: t.iface }), at: Date.now(), node: t.node, iface: t.iface }; Store.apply(); return { ok: false, error: Store.rowErrors[key].msg }; }
@@ -39,20 +37,16 @@ export async function rotatePeerKeys(peer) {
   let published = null;
   const r = await mutate({
     key,
-    call: () => api.peerRekey({ peer_id: peer.id, user_id: peer.user_id, pubkey: keys.pub, psk }),   // no plaintext to the server
+    call: () => api.peerRekey({ peer_id: peer.id, user_id: peer.user_id, pubkey: keys.pub, psk }),
     onOk: () => { delete Store.sessionConfigs[peer.pubkey]; Store.sessionConfigs[keys.pub] = configs; Store.configEpoch++;
       published = subPublishOrPrompt(peer.user_id, peer.id, keys.priv, psk); },
   });
   return { ...r, published };
 }
 
-// Rotate EVERY key a user holds — each WG/AWG peer gets a fresh keypair + PSK (rotatePeerKeys), each WDTT peer a
-// fresh WRAP password (wdttPeerRotate). All old configs/links die → every device must re-import. Confirmed once.
 export function rotateAllUserKeys(user, after) {
   const peers = Store.peersOfUser(user.id);
   if (!peers.length) { toast(T("This user has no peers to rotate."), "err"); return; }
-  // The count is bold and mid-sentence, so the sentence is translated whole and split on its own marker —
-  // Russian puts the owner before the count, and two concatenated fragments could not express that.
   const [rotBefore, rotAfter] = Tsplit("Rotate the keys for all {what} of {name}. Every existing config, QR and link stops working — each device must re-import. This can't be undone.",
     "what", { name: user.name });
   openConfirm({ title: T("Rotate all keys · {name}", { name: user.name }), confirmLabel: T("Rotate all keys"), warn: true, back: after,
@@ -64,11 +58,10 @@ export function rotateAllUserKeys(user, after) {
         const oks = await Promise.all(peers.map(async p => {
           try {
             let did = false;
-            if (p.csqtt_password) { await api.csqttPeerRotate({ peer_id: p.id }); did = true; }   // new access password
-            if (p.wdtt_password)  { await api.wdttPeerRotate({ peer_id: p.id });  did = true; }   // new WRAP password
-            // LAST: this one changes the pubkey, and the two above address the peer by id, so order is safe.
+            if (p.csqtt_password) { await api.csqttPeerRotate({ peer_id: p.id }); did = true; }
+            if (p.wdtt_password)  { await api.wdttPeerRotate({ peer_id: p.id });  did = true; }
             if ((p.targets || []).some(t => !isSelfContainedTgt(t))) { await rotatePeerKeys(p); did = true; }
-            if (!did) delete Store.rotating[p.id];     // nothing to rotate → don't leave the row spinning
+            if (!did) delete Store.rotating[p.id];
             return did;
           } catch (_) { return false; }
         }));
@@ -91,7 +84,7 @@ export function rotateParts(peer) {
 export const rotateOneLabel = peer => rotateParts(peer).title;
 export function rotateOnePeerKeys(peer) {
   const { p, hasCsqtt, hasWdtt, hasKeyed, mixed, none, title } = rotateParts(peer);
-  if (none) return toast(T("This peer has nothing to rotate."), "err");   // F67: never "rotated" with no call made
+  if (none) return toast(T("This peer has nothing to rotate."), "err");
   const body = mixed ? T("This peer holds several credentials — a WireGuard keypair and an access password per turn server. All of them are replaced: every config, QR and link this peer already handed out stops working and must be re-imported.")
     : !hasKeyed ? (hasCsqtt ? T("A fresh access password is generated. The current csqtt link stops working — send the user their new link (from the subscription page) to re-import.")
                             : T("A fresh access password is generated. The current WDTT link stops working — send the user their new link (from the subscription page) to re-import."))
@@ -108,7 +101,7 @@ export function rotateOnePeerKeys(peer) {
         };
         if (hasCsqtt) await step(T("the csqtt link"), () => api.csqttPeerRotate({ peer_id: p.id }));
         if (hasWdtt) await step(T("the WDTT link"), () => api.wdttPeerRotate({ peer_id: p.id }));
-        const kr = hasKeyed ? await step(T("the keypair"), () => rotatePeerKeys(p)) : null;   // LAST: this changes the pubkey, and the two above address by id
+        const kr = hasKeyed ? await step(T("the keypair"), () => rotatePeerKeys(p)) : null;
         if (!(kr && kr.ok)) delete Store.rotating[p.id];
         if (kr && kr.published) kr.published.then(e => { if (e) toast(T("The keypair was replaced, but {why}. Its new QR is only in this tab until you reload — show it to the user from here.", { why: e.replace(/[.\s]+$/, "") }), "err", 9000); }, () => {});
         await Store.poll();
@@ -120,8 +113,6 @@ export function rotateOnePeerKeys(peer) {
     } });
 }
 
-// A device that carries networks takes them down with it, and nothing on the side of the people who used them says why — so
-// every confirm that cuts one off names what goes (docs/NETWORKS-PLAN.md §18).
 function _netsLost(peer, block) {
   const p = (peer && peer.id && Store.peer(peer.id)) || peer || {};
   const nets = p.routes || [];
@@ -136,8 +127,6 @@ function _userNetsLost(user) {
     { devices: gws.map(p => p.title || T("Untitled")).join(", ") }) : "";
 }
 
-// Confirmed unassign — revokes the holder (PSK rotates) and is irreversible (keys change).
-// `back` = where Cancel returns to (e.g. the peer view it was launched from).
 export function confirmUnassign(peer, back) {
   openConfirm({ title: peer.name ? T("Unassign peer · {name}", { name: peer.name }) : T("Unassign peer"), confirmLabel: T("Unassign"), danger: true, back,
     body: T("This revokes access immediately and is irreversible — the keys change, so re-assigning later means sending the user a brand-new QR / config to import.") + _netsLost(peer),
@@ -146,7 +135,6 @@ export function confirmUnassign(peer, back) {
       call: () => api.peerUnassign({ peer_id: peer.id }),
       onOk: () => { delete Store.sessionConfigs[peer.pubkey]; Store.configEpoch++; } }) });
 }
-// Confirmed delete (unassigned peers only). `back` = Cancel target.
 export function confirmDeletePeer(peer, back, closeOwner) {
   openConfirm({ title: T("Delete peer"), confirmLabel: T("Delete"), danger: true, back,
     body: T("This is irreversible — the peer's key is removed from every interface it's deployed on.") + _netsLost(peer),
@@ -158,18 +146,16 @@ export function confirmDeletePeer(peer, back, closeOwner) {
 function _durText(ms) { const m = Math.max(1, Math.floor((ms || 0) / 60000)); return T("more than {count}", { count: plural(m, "minute") }); }
 function _missingIface(node, iface) {
   const nr = (Store.nodes || []).find(n => n.id === node) || {};
-  // {subnet, listen_port, mtu, address, awg_params, endpoint_host, dns, keepalive, public_key, key_source}
-  // | null — `dns`/`keepalive` are null when the panel holds no opinion, and [] / 0 when it holds "off".
   return (nr.missing_ifaces || {})[iface] || null;
 }
 function _openRestoreInterface({ node, iface, mi, problemMs, rowKey, back, broken }) {
-  if (!broken && ghostIface(node, iface)) return openRecreateRekey(node, iface, back);   // lost + keyless → can't restore, redirect to recreate + rekey
+  if (!broken && ghostIface(node, iface)) return openRecreateRekey(node, iface, back);
   const where = Store.nodeName(node) + " · " + iface;
   const gate = broken
     ? T("This isn't a brief bounce — the interface has been down on the node for {dur}.", { dur: _durText(problemMs) })
     : T("This isn't a brief hiccup or a peer still being created — the interface has stayed missing for {dur}.", { dur: _durText(problemMs) });
-  const clean = !!(mi && mi.key_source);                 // "backup" | "vault" → original key recoverable
-  const vault = !!(mi && mi.key_source === "vault");     // key gone from the node → recover from the operator vault (full wipe)
+  const clean = !!(mi && mi.key_source);
+  const vault = !!(mi && mi.key_source === "vault");
   const src = vault ? T("the operator vault") : T("the node's own backup");
   const lockedVault = vault && !subSKCached();
   const vars = { iface, node: Store.nodeName(node), src, gate };
@@ -189,7 +175,7 @@ function _openRestoreInterface({ node, iface, mi, problemMs, rowKey, back, broke
     note: (mi && clean) ? html`<${SubAutoNote}/>` : null,
     onConfirm: mi ? (async () => {
       let sealed = null;
-      try { sealed = await ivkResealForNode(node, mi); }   // vault key → unseal + re-seal to the node (null for a backup/new-key restore)
+      try { sealed = await ivkResealForNode(node, mi); }
       catch (e) { toast(T("Vault restore failed: {err}", { err: (e && e.message) || e }), "err", 5000); return; }
       await mutate({ key: rowKey, call: () => api.ifaceRecreate({ node, iface, ...(sealed ? { sealed_key: sealed } : {}) }),
         onOk: () => toast(T("Restoring interface {iface} on {node} — its peers re-converge over the next syncs.", { iface, node: Store.nodeName(node) }), "ok") });
@@ -208,10 +194,9 @@ export function confirmRebuildInterface(node, iface, bi, back) {
 export function brokenIface(node, iface) {
   const nr = (Store.nodes || []).find(n => n.id === node) || {};
   const b = (nr.broken_ifaces || {})[iface];
-  return (b && b.repair === "recreate") ? b : null;   // repair:"" = no saved config, nothing to rebuild from
+  return (b && b.repair === "recreate") ? b : null;
 }
 
-// GHOST interface: lost + KEYLESS — recreate FRESH + rekey every peer
 function _subnet24(ip) { const m = String(ip || "").match(/^(\d+)\.(\d+)\.(\d+)\.\d+/); return m ? m[1] + "." + m[2] + "." + m[3] + ".0/24" : ""; }
 export function openRecreateRekey(node, iface, back) {
   const g = ghostIface(node, iface) || {};
@@ -223,16 +208,11 @@ export function openRecreateRekey(node, iface, back) {
   const pre = { iface, proto, subnet: g.subnet || _subnet24(ips[0]),
                 endpoint: g.endpoint_host || (nr.ips || [])[0] || "",
                 port: g.listen_port || 0, mtu: g.mtu || 0,
-                // `null` = the panel holds no opinion, so the sheet may use the fleet default. An empty
-                // LIST is an opinion ("no DNS line") and must reach the sheet as an empty field.
                 dns: Array.isArray(g.dns) ? g.dns.join(", ") : null,
                 keepalive: typeof g.keepalive === "number" ? g.keepalive : null,
-                // the device-access level, for the same reason: the sheet posts one unconditionally and create writes it
-                // onto the warm record, so an unseeded level resets a chosen Everyone or Nobody (DEVICE-ACCESS §11.2 F1)
                 reach: g.reach || null,
-                // …and the AmneziaWG version it had, so a Settings preset of 3.1 cannot turn a 2.0 interface into a 3.1 one
                 gen: proto === "awg" ? (awgDict3(g.awg_params) ? "3.1" : "2.0") : null };
-  const rekeyable = peers.filter(p => p.user_id).map(p => p.id);   // only ASSIGNED peers can be rekeyed (rekey needs a holder)
+  const rekeyable = peers.filter(p => p.user_id).map(p => p.id);
   _openLoadIface({ node, pre, ghost: { node, iface, peers: rekeyable, total: peers.length, warm: g.cold === false }, back });
 }
 
@@ -240,10 +220,10 @@ export function maybeRekeyGhosts() {
   const staged = Store.ghostRekey || {};
   for (const gk of Object.keys(staged)) {
     const rec = staged[gk]; const bar = gk.indexOf("|"); const node = gk.slice(0, bar), iface = gk.slice(bar + 1);
-    if (Date.now() - (rec.at || 0) > 900000) { delete staged[gk]; continue; }   // give up after 15min
+    if (Date.now() - (rec.at || 0) > 900000) { delete staged[gk]; continue; }
     const m = Store.ifaceMeta(node, iface);
-    if (!m || !m.public_key) continue;                                          // fresh interface not live yet → wait
-    delete staged[gk];                                                          // clear BEFORE rekeying so we never double-fire
+    if (!m || !m.public_key) continue;
+    delete staged[gk];
     if (m.drift && m.drift.public_key) api.ifaceAdopt({ node, iface, key: "public_key" }).catch(() => {});
     const peers = (rec.peers || []).map(id => (Store.recon.peers || []).find(p => p.id === id)).filter(p => p && p.user_id);
     peers.forEach(p => { rotatePeerKeys(p).catch(() => {}); });
@@ -256,8 +236,6 @@ export function confirmRestoreAllInterfaces(nid, back) {
   if (!miss.length) { toast(T("No interfaces to restore yet — a missing interface must persist a couple of minutes first."), "info"); return; }
   const anyVault = miss.some(([, mi]) => mi.key_source === "vault");
   const newKey = miss.filter(([, mi]) => !mi.key_source).length;
-  // "N have no recoverable key" needs subject-verb agreement English can only get from two sentences, so it
-  // IS two keys picked by the count — plural() alone would produce "1 interface have".
   const newKeyNote = !newKey ? T(" Existing clients keep working — no re-distribution.")
     : newKey === 1 ? T(" One has no recoverable key, so it gets a new one and those clients must re-import.")
     : T(" {n} have no recoverable key, so they get a new one and those clients must re-import.", { n: newKey });
@@ -332,15 +310,14 @@ export function peerBlockBtn(_peer, back) {
     : html`<button class="btn btn-danger" onClick=${() => confirmBlockPeer(peer, back)}><${Ic} i="off"/> ${T("Block")}</button>`;
 }
 export function userBlockBtn(_user, back) {
-  const user = (_user && _user.id && Store.user(_user.id)) || _user;   // live, for the reason above
+  const user = (_user && _user.id && Store.user(_user.id)) || _user;
   return user.disabled
     ? html`<button class="btn btn-ok" onClick=${() => confirmUnblockUser(user, back)}><${Ic} i="refresh"/> ${T("Unblock")}</button>`
     : html`<button class="btn btn-danger" onClick=${() => confirmBlockUser(user, back)}><${Ic} i="off"/> ${T("Block")}</button>`;
 }
 
-// What a peer publishes to its subscription
 export function pubState(peer, src) {
-  peer = (peer && Store.peer(peer.id)) || peer;          // sheets hold a snapshot from open; read the live one
+  peer = (peer && Store.peer(peer.id)) || peer;
   const hidden = subHides(peer, src);
   const only = !hidden && peerSubSources(peer).filter(s => !subHides(peer, s)).length <= 1;
   return {
@@ -351,7 +328,7 @@ export function pubState(peer, src) {
     flip: () => {
       if (only) { toast(T("A peer has to publish at least one kind of config — keep one selected."), "err", 4000); return; }
       const next = hidden ? subHidden(peer).filter(s => s !== src) : subHidden(peer).concat([src]);
-      const showing = hidden;                            // what it becomes, not what it was
+      const showing = hidden;
       mutate({
         key: "subhide:" + peer.id + ":" + src,
         patch: st => { const p2 = st.roster.peers[peer.id]; if (p2) p2.sub_hide = next; },
@@ -363,11 +340,10 @@ export function pubState(peer, src) {
     },
   };
 }
-// Classes shared by every publish switch, whatever it renders inside.
 export const pubCls = (st, extra) => "pubtg" + (st.hidden ? " off" : "") + (st.only ? " lone" : "") + (extra ? " " + extra : "");
 
-export function PubTag({ peer, src, label, kind, dim, gen3 }) {   // gen3: an AWG deployment on an AmneziaWG 3.1 interface wears its colour
-  useStore();                                            // the flag lives in the roster — re-render when a poll lands
+export function PubTag({ peer, src, label, kind, dim, gen3 }) {
+  useStore();
   const st = pubState(peer, src);
   return html`<button type="button" class=${"tg tg-" + (kind || src) + (gen3 ? " awg3" : "") + " " + pubCls(st, dim ? "dim" : "")}
     title=${st.title} aria-pressed=${!st.hidden} onClick=${e => { e.preventDefault(); e.stopPropagation(); st.flip(); }}>${label}${st.hidden ? html`<${Ic} i="off"/>` : null}</button>`;
@@ -393,9 +369,7 @@ export function peerState(peer) {
   if (exp) return { cls: "s-active", text: T("Peer is active until {v1}", { v1: fmtDate(exp) })};
   return null;
 }
-// pos: "hd" = centred in a modal title row · "center" = its own centred line (edit-user card) · "bar" = a right-
-// aligned line UNDER the header (peer modal / edit-peer). Absent = a plain inline span.
-const _statCls = pos => pos ? " substat-" + pos : "";   // i18n-keys: a CSS class fragment
+const _statCls = pos => pos ? " substat-" + pos : "";
 export function userState(user) {
   const now = now_s(), u = user || {}, exp = +(u.expiry || 0);
   if (u.disabled) return { cls: "s-blocked", text: T("User was blocked") + (u.disabledAt ? " " + fmtDate(u.disabledAt) : "") };
@@ -405,15 +379,13 @@ export function userState(user) {
 }
 export function SubStatusLine({ user, pos }) {
   useStore();
-  const rec = useSubRec(user.id);   // the subscription record — .enabled tells a live subscription from a disabled/never-enabled one
+  const rec = useSubRec(user.id);
   if (!subFeatureOn()) return null;
   const u = (Store.recon.users || []).find(x => x.id === user.id) || user;
   const st = (rec && rec.enabled) ? subState(u) : userState(u);
   if (!st) return null;
   return html`<span class=${"substat " + st.cls + _statCls(pos)}>${st.text}</span>`;
 }
-// The peer's own lifecycle sentence (null when there's nothing to say — active with no expiry). Independent of the
-// subscription feature — a peer's block/expiry applies either way.
 export function PeerStatusLine({ peer, pos }) {
   useStore();
   const rp = (Store.recon.peers || []).find(p => p.id === peer.id) || peer;
@@ -422,7 +394,6 @@ export function PeerStatusLine({ peer, pos }) {
   return html`<span class=${"substat " + st.cls + _statCls(pos)}>${st.text}</span>`;
 }
 
-// ── assigning a peer to a user, and marking a deployment PRIMARY ───────────────────────────────
 export function UserCombo({ onPick, placeholder }) {
   const [q, setQ] = useState(""); const [open, setOpen] = useState(false);
   const users = Store.recon.users.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
@@ -467,7 +438,6 @@ export function UserPicker({ value, onChange, allowUnassigned, placeholder, excl
   const pick = uid => { setOpen(false); setQ(""); setAct(-1); onChange(uid); };
   const pickGroup = gid => { setOpen(false); setQ(""); setAct(-1); onGroup(gid); };
   const pickDevice = pid => { setOpen(false); setQ(""); setAct(-1); onDevice(pid); };
-  // the rows in the order they are drawn — what the arrow keys walk
   const opts = [...(allowUnassigned ? [["u", ""]] : []), ...gshown.map(g => ["g", g.id]), ...shown.map(u => ["u", u.id]), ...dshown.map(d => ["d", d.id])];
   const at = act < opts.length ? act : -1;
   const isAct = (kind, id) => at >= 0 && opts[at][0] === kind && opts[at][1] === id;
@@ -479,7 +449,7 @@ export function UserPicker({ value, onChange, allowUnassigned, placeholder, excl
     if (r.act !== undefined) setAct(r.act);
     if (r.pick) { const [k, id] = r.pick; if (k === "g") pickGroup(id); else if (k === "d") pickDevice(id); else pick(id); }
   };
-  useEffect(() => {                                       // keep the highlighted row in view as the keys walk a long list
+  useEffect(() => {
     const el = at >= 0 && listRef.current && listRef.current.querySelector(".uc-opt.act");
     if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
   }, [at]);
@@ -501,18 +471,14 @@ export function UserPicker({ value, onChange, allowUnassigned, placeholder, excl
   </div>`;
 }
 
-// Simple assign for an UNASSIGNED peer: just record the owner (roster metadata). The key / PSK /
-// config are kept, so a config already handed out keeps working — no fresh credential, no warning.
 export function assignPeer(peer, userId) {
   if (!userId) return;
   return mutate({ key: "peer:" + peer.id,
     patch: s => { const p = s.roster.peers[peer.id]; if (p) p.user_id = userId; },
     call: () => api.peerUpdate({ peer_id: peer.id, user_id: userId }),
-    onOk: () => { revealAssignedPeer(userId, peer.id); subReconcileUser(userId); } });   // keeps its key, so publish via backfill (prompts to unlock if locked)
+    onOk: () => { revealAssignedPeer(userId, peer.id); subReconcileUser(userId); } });
 }
 
-// Reassign an ALREADY-assigned peer to a different user — this DOES rotate keys (the previous
-// holder must be revoked), so it's confirmed and the new owner needs a re-issued config.
 export function confirmReassign(peer, userId, back) {
   const to = Store.recon.users.find(u => u.id === userId);
   const toName = to ? to.name : T("the selected user");
@@ -527,7 +493,7 @@ export function confirmReassign(peer, userId, back) {
 export function RoleToggle({ peer, t, compact }) {
   useStore();
   const targets = ((Store.recon.peers.find(p => p.id === peer.id) || {}).targets) || peer.targets || [];
-  if (targets.length < 2) return null;                       // a lone deployment has nothing to be primary OVER
+  if (targets.length < 2) return null;
   const live = targets.find(x => x && x.node === t.node && x.iface === t.iface) || t;
   const role = targetRole(live);
   const next = role === "" ? "primary" : role === "primary" ? "backup" : "";
@@ -535,12 +501,10 @@ export function RoleToggle({ peer, t, compact }) {
     if (ev) ev.stopPropagation();
     mutate({
       key: "peer:" + peer.id,
-      // Patch the ROSTER, not recon: apply() layers the overlays onto a pristine roster clone and only then
-      // re-derives recon from it, so a patch written into recon is wiped by the very same pass.
       patch: (store) => {
         const p = ((store.roster && store.roster.peers) || {})[peer.id];
         const lt = p && (p.targets || []).find(x => x && x.node === t.node && x.iface === t.iface);
-        if (lt) lt.primary = next || false;                  // "" → false, i.e. unmarked
+        if (lt) lt.primary = next || false;
       },
       call: () => api.peerSetRole({ peer_id: peer.id, node: t.node, iface: t.iface, role: next }),
     });
@@ -561,7 +525,7 @@ export async function assignPeerToUser(peer, userId) {
   let keys, psk, configs;
   try {
     keys = await genKeys(); psk = genPSK(); configs = {};
-    for (const t of (peer.targets || []).filter(t => !isSelfContainedTgt(t))) {   // keyless kinds have no config — see rotatePeerKeys
+    for (const t of (peer.targets || []).filter(t => !isSelfContainedTgt(t))) {
       const m = Store.ifaceMeta(t.node, t.iface);
       if (!m) { Store.rowErrors[key] = { msg: T("{v1} hasn't reported {v2} yet", { v1: Store.nodeName(t.node), v2: t.iface }), at: Date.now(), node: t.node, iface: t.iface }; Store.apply(); return; }
       configs[tkey(t.node, t.iface)] = buildConf({ privkey: keys.priv, address: t.ip + "/32", dns: m.dns, mtu: 1280, awg_params: m.awg_params, server_pubkey: m.public_key, psk, endpoint: m.endpoint, allowed: "0.0.0.0/0, ::/0", keepalive: 25 });
@@ -569,7 +533,7 @@ export async function assignPeerToUser(peer, userId) {
   } catch (e) { Store.rowErrors[key] = { msg: String(e.message || e), at: Date.now() }; Store.apply(); return; }
   await mutate({
     key,
-    call: () => api.peerRekey({ peer_id: peer.id, user_id: userId, pubkey: keys.pub, psk }),   // no plaintext to the server
+    call: () => api.peerRekey({ peer_id: peer.id, user_id: userId, pubkey: keys.pub, psk }),
     onOk: () => { Store.sessionConfigs[keys.pub] = configs; Store.configEpoch++; revealAssignedPeer(userId, peer.id);
       subPublishOrPrompt(userId, peer.id, keys.priv, psk); },
   });

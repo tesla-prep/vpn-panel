@@ -1,7 +1,7 @@
 import { T, Trich, Tsplit, plural, srvText } from "./i18n.js";
 import { esc, tkey, dur, ago, seen, fmtBytes, ipOf, portOf, orderedTargets, isPrimaryTarget, targetRole,
          useStableOrder, isSelfContainedKind, isMobile } from "./util.js";
-import { openGroupView } from "./sheets-crud.js";   // a cycle (sheets-crud imports this module): used only on a click, after both have loaded
+import { openGroupView } from "./sheets-crud.js";
 import { Store, api, bus, useStore } from "./store.js";
 import { targetType, iTypeOf, kindOf, nodeStale, ghostIface, turnProxiesFor, tgtXfer, isSelfContainedTgt, peerUncategorised } from "./model.js";
 import { go } from "./router.js";
@@ -38,21 +38,18 @@ const html = htm.bind(h);
 
 export function openPeerConfigs(peer, opts) {
   opts = opts || {};
-  const child = !!opts.child;      // pushed onto the stack (opened from another modal) → "Back" pops to the parent
-  const hideVk = !!opts.hideVk;    // the parent (user modal) already shows the VK link — don't repeat it here
-  const cols = Math.min(peer.targets.length || 1, 3);   // up to 3 QRs per view; the modal sizes to fit (more → page with ‹ ›)
-  const wcols = Math.max(cols, 2);                       // hold 2 QRs wide even for a single deployment (roomier layout)
+  const child = !!opts.child;
+  const hideVk = !!opts.hideVk;
+  const cols = Math.min(peer.targets.length || 1, 3);
+  const wcols = Math.max(cols, 2);
   const width = wcols * QR_ITEM + (wcols - 1) * QR_GAP + 56;
   const vkUser = peer.user_id ? Store.recon.users.find(u => u.id === peer.user_id) : null;
-  // an unassigned peer always leads with "Unassigned peer", then its title — or, with no title, its internal IP
   const ipShort = (((peer.targets || [])[0] || {}).ip || "").split("/")[0];
   const parts = []; parts.push(vkUser ? vkUser.name : T("Unassigned peer"));
   if (peer.title) parts.push(peer.title);
   else if (!vkUser && ipShort) parts.push(ipShort);
   const nm = parts.join(" · ");
   const title = html`<span class="qrhd"><span class="qrhd-nm">${nm}</span></span>`;
-  // In a subscription: subscription status in the header (right), the peer's own status on a line under it.
-  // Not in a subscription: the peer's own status takes the header slot (nothing under it).
   const headExtra = vkUser ? html`<${SubStatusLine} user=${vkUser} pos="hr"/>` : html`<${PeerStatusLine} peer=${peer} pos="hr"/>`;
   (child ? pushModal : openModal)(html`<${Sheet} title=${title} width=${width} headExtra=${headExtra} noGuard=${true} onClose=${closeModal} onBack=${child && !isMobile() ? closeModal : null}
     subject=${{ kind: "peer", id: peer.id }} foot=${html`<${QRPeerFoot} pid=${peer.id}/>`}>
@@ -63,9 +60,7 @@ export function openPeerConfigs(peer, opts) {
   <//>`);
 }
 
-// A horizontal carousel of fixed-width cards. Steps ONE card at a time; the counter + ‹/› enabled-state derive
-// from live scroll metrics (not a mid-scroll index guess), so it never jumps back or gets stuck before the last.
-export const QR_ITEM = 292, QR_GAP = 14;   // card width; mirrored by `.qrrow > .deploy` in app.css
+export const QR_ITEM = 292, QR_GAP = 14;
 const _qrNavStack = [];
 function _qrNavKey(e) {
   if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
@@ -82,7 +77,7 @@ export function QRRow({ cards }) {
   const [m, setM] = useState({ l: 0, cw: 0, sw: 0, step: QR_ITEM + QR_GAP });
   useEffect(() => { const el = ref.current; if (!el) return;
     const measure = () => {
-      const first = el.firstElementChild;                                   // real card width (varies by card type)
+      const first = el.firstElementChild;
       const cardW = first ? first.getBoundingClientRect().width : QR_ITEM;
       const cs = getComputedStyle(el);
       const gap = parseFloat(cs.columnGap || cs.gap) || QR_GAP;
@@ -96,14 +91,12 @@ export function QRRow({ cards }) {
   const paged = m.sw > m.cw + 4;
   const atStart = m.l <= 2;
   const atEnd = m.sw > 0 && m.l + m.cw >= m.sw - 2;
-  const per = Math.max(1, Math.round(m.cw / step));                         // cards visible per view
-  let first = Math.max(0, Math.min(Math.round(m.l / step), n - per));       // 0-based index of the first visible card
+  const per = Math.max(1, Math.round(m.cw / step));
+  let first = Math.max(0, Math.min(Math.round(m.l / step), n - per));
   if (atEnd) first = Math.max(0, n - per);
   const last = Math.min(n - 1, first + per - 1);
   const range = first === last ? `${first + 1} of ${n}` : `${first + 1}–${last + 1} of ${n}`;
   const go = d => { const el = ref.current; if (el) el.scrollBy({ left: d * step, behavior: "smooth" }); };
-  // register this carousel as the arrow-key target while it's paged (a stable wrapper calls the freshest `go`,
-  // which closes over the current step measurement)
   const goRef = useRef(go); goRef.current = go;
   useEffect(() => {
     if (!paged) return;
@@ -123,10 +116,7 @@ export function QRRow({ cards }) {
   </div>`;
 }
 
-// ── QR-modal building blocks (shared by the peer + user views) ──────────────────────────────────
 
-// The single unlock gate. One panel, one password — unlocking reveals BOTH the stored QRs and the subscription
-// link (one encryption key gates both). Renders nothing once unlocked, or when no vault is set up.
 export function VaultUnlockPanel({ need } = {}) {
   const [exists, setExists] = useState(null);
   const [ready, setReady] = useState(!!subSKCached());
@@ -135,8 +125,6 @@ export function VaultUnlockPanel({ need } = {}) {
   useEffect(() => { if (subSKCached()) { setReady(true); return; }
     let ok = true; api.subVault().then(r => { if (ok) setExists(!!(r && r.ok && r.data && r.data.exists)); }).catch(() => { if (ok) setExists(false); });
     return () => { ok = false; }; }, []);
-  // WDTT targets are keyless (server-minted key) — their QR needs no vault. When a modal has nothing that DOES
-  // (all-WDTT peer, no WG config / sub link), the caller passes need=false so we don't claim "unlock to see QR codes".
   if (need === false || ready || subSKCached() || !exists) return null;
   const unlock = async () => {
     if (!pw || busy) return; setBusy(true);
@@ -146,10 +134,6 @@ export function VaultUnlockPanel({ need } = {}) {
   };
   return html`<div class="unlockpanel">
     <div class="unlockpanel-msg"><${Ic} i="key"/><span>${T("Unlock the Encryption Vault to see configs, QR codes and the subscription link.")}</span></div>
-    ${/* ⚠️ A FORM OF ITS OWN, so a password manager looks for this password's username INSIDE it. Loose in a sheet, Chrome took
-          the nearest text field before it — the user sheet's group search — and wrote the saved login there (measured: the
-          picker opened reading "snproto"). autocomplete=off does not stop that; a form boundary does. Enter still unlocks
-          once: keydown handles it and cancels the implicit submit. */""}
     <form class="unlockpanel-row" onSubmit=${e => e.preventDefault()}>
       <input class="subpw" type="password" autofocus autocomplete="current-password" placeholder=${T("Panel password")} value=${pw}
         onKeyDown=${e => { if (e.key === "Enter") { e.preventDefault(); unlock(); } }} onInput=${e => setPw(e.target.value)}/>
@@ -158,22 +142,20 @@ export function VaultUnlockPanel({ need } = {}) {
     <label class="vp-keep-row"><input type="checkbox" checked=${keep} onChange=${e => setKeep(e.target.checked)}/> <span>${T("Trust this device and keep it unlocked")}</span></label>
   </div>`;
 }
-// The subscription link + controls (user modal). Shown only once the vault is unlocked — the link's secret is
-// derived from the key. Enable / Rotate / Disable, each behind a confirm; the link + copy sits above them.
 export function SubLinkActions({ user }) {
   useStore();
   const rec = useSubRec(user.id);
   const [url, setUrl] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [optim, setOptim] = useState(false);   // optimistic "link building" state — enable runs in the background
+  const [optim, setOptim] = useState(false);
   const base = subBaseUrl();
   useEffect(() => { let ok = true;
     (async () => { if (rec && rec.enabled && subSKCached()) { try { const u = await subUrlFor(rec); if (ok) setUrl(u); } catch (_) { if (ok) setUrl(null); } } else if (ok) setUrl(null); })();
     return () => { ok = false; }; }, [rec && rec.enabled, Store.configEpoch]);
-  if (!subFeatureOn() || !subSKCached() || rec === undefined) return null;   // locked → the unlock panel owns it
-  const after = async () => { setOptim(false); subUsersForget(); Store.configEpoch++; bus.emit(); };   // clear the optimistic flag once the real record is (re)fetched — else a later disable stays stuck "building"
+  if (!subFeatureOn() || !subSKCached() || rec === undefined) return null;
+  const after = async () => { setOptim(false); subUsersForget(); Store.configEpoch++; bus.emit(); };
   const settingsLink = html`<a href="#/panel/settings" onClick=${() => closeAllModals()}>${T("Settings → Subscriptions")}</a>`;
-  const confirm = opts => pushModal(html`<${ConfirmSheet} ...${opts}/>`);   // stacks over the user modal; pops back on cancel/confirm
+  const confirm = opts => pushModal(html`<${ConfirmSheet} ...${opts}/>`);
   const act = fn => async () => { setBusy(true); try { await fn(); } catch (e) { toast((e && e.message) || T("Failed"), "err"); } setBusy(false); await after(); };
   const enableBg = async () => {
     try { await subEnableUser(user.id); const r2 = (await subUsersMap(true))[user.id]; if (r2 && r2.enabled && r2.unlock_by_sk) { const { unlockKey } = await subRecover(r2); await subBackfillUser(user.id, unlockKey); } }
@@ -182,7 +164,7 @@ export function SubLinkActions({ user }) {
   };
   const enable = () => confirm({ title: T("Enable subscription"), confirmLabel: T("Enable"),
     body: T("Create a shareable link to this user's QR codes. New peers appear on it automatically; the unlock secret rides in the link and never reaches the server."),
-    onConfirm: () => { setOptim(true); enableBg(); } });   // returns immediately → the confirm closes; work continues in the background
+    onConfirm: () => { setOptim(true); enableBg(); } });
   const rotate = () => confirm({ title: T("Rotate subscription link"), confirmLabel: T("Rotate"), warn: true,
     body: T("Issue a fresh link and invalidate the current one. A config already scanned keeps working until you rekey or remove the peer."),
     onConfirm: act(() => subRotateUser(user.id)) });
@@ -201,7 +183,6 @@ export function SubLinkActions({ user }) {
         ? html`<div class="hint warn">${Trich("Set a public base URL in {v1} to build the link.", { v1: settingsLink })}</div>`
         : html`<div class="hint">${T("Building link…")}</div>`}
       <span class="fieldbtns">
-        ${/* a phone: icon buttons on the link's own line (operator, 2026-10-29); their words are their names */""}
         ${isMobile() ? html`<button class="btn btn-ghost btn-mini fbtn m-icob" disabled=${busy} onClick=${rotate} title=${T("Rotate token")} aria-label=${T("Rotate token")}><${Ic} i="refresh"/></button>
           <button class="btn btn-ghost btn-mini fbtn m-icob" disabled=${busy} onClick=${disable} title=${T("Disable URL")} aria-label=${T("Disable URL")}><${Ic} i="off"/></button>`
         : html`<button class="btn btn-ghost btn-mini fbtn" disabled=${busy} onClick=${rotate}>${T("Rotate token")}</button>
@@ -211,7 +192,7 @@ export function SubLinkActions({ user }) {
   </div>`;
 }
 export function UserPeerCard({ peer, onOpen }) {
-  useStore();   // re-render on each poll so the status badge (looked up live below) tracks block/unblock, like TargetCard
+  useStore();
   const targets = peer.targets || [];
   const t = orderedTargets(targets)[0] || {};
   const kinds = [...new Set(targets.map(targetType))];
@@ -223,10 +204,8 @@ export function UserPeerCard({ peer, onOpen }) {
   const lt = ((Store.recon.peers.find(p => p.id === peer.id) || {}).targets || []).find(d => d.node === t.node && d.iface === t.iface) || t;
   const head = html`<div class="upc-head">
     <div class="upc-l1"><span class="upc-nm">${nm}</span><span class="grow"></span>${peerUncategorised(lt) && lt.status !== "blocked" && lt.status !== "faulty"
-      // This head is SHARED by every card kind in the configs modal, which is why fixing the deploy-head
-      // below did not reach it — that branch only renders when no head is passed, and one always is.
       ? uncatPop(html`<span class="badge b-uncat ic"><${Ic} i="warn"/>${statusLabel(lt.status)}</span>`)
-      : html`<${Badge} s=${lt.status}/>`}${/* a phone: how many targets, ×N beside the status (operator, 2026-10-29) */""}${isMobile() && targets.length > 1 ? html`<span class="upc-xn" title=${kinds.join(" · ")}>×${targets.length}</span>` : null}</div>
+      : html`<${Badge} s=${lt.status}/>`}${isMobile() && targets.length > 1 ? html`<span class="upc-xn" title=${kinds.join(" · ")}>×${targets.length}</span>` : null}</div>
     <div class="upc-l2"><span class="upc-srv" style=${"color:" + col}>${dnode}</span><${Tag} kind=${ltype} label=${t.iface} gen3=${tgt3(t)}/><span class="grow"></span>${targets.length > 1 && !isMobile() ? html`<span class="upc-deps" title=${kinds.join(" · ")}>${kinds.length > 1 ? kinds.join(" · ") : plural(targets.length, "deployment")}</span>` : null}</div>
   </div>`;
   if (!onOpen) return html`<div class="upc-wrap upc-static">
@@ -243,8 +222,6 @@ export function UserPeerCard({ peer, onOpen }) {
 export function userVkLink(user) {
   return userVkLinks(user)[0] || "";
 }
-// ALL of a user's VK call links (primary first) for the forks that embed several; falls back to the single link,
-// then the panel test link (panel-side only — subscriptions never fall back).
 export function userVkLinks(user) {
   let arr = (user && Array.isArray(user.vk_links) && user.vk_links.length) ? user.vk_links.slice()
           : (user && (user.vk_link || "").trim() ? [user.vk_link] : []);
@@ -261,42 +238,39 @@ export function targetsWantVk(targets) {
   return (targets || []).some(isSelfContainedTgt);
 }
 export const _VK_CALL_RE = /^https:\/\/(?:[\w.-]+\.)?vk(?:ontakte)?\.(?:com|ru)\/call\/join\/[\w-]+/i;
-// let the operator paste a VK link with or without the scheme — add https:// when it's missing — or its bare hash.
-// The browser twin of the server's _vk_link_norm (tests/cross_language_twins_selftest.py): same rule, same link.
 export const VK_JOIN_URL = "https://vk.ru/call/join/";
 export function normVkLink(s) { s = (s || "").trim(); if (/^[A-Za-z0-9_-]{16,}$/.test(s)) return VK_JOIN_URL + s;
   return s && !/^https?:\/\//i.test(s) ? "https://" + s : s; }
 export function VkLinkField({ user }) {
-  useStore();   // re-render on each poll so the count + field reflect a Manage-modal save (or an inline Add) without reopening the modal
-  const lu = (Store.recon.users || []).find(x => x.id === user.id) || user;   // live user — the modal's `user` prop is a stale snapshot
-  const primary = (lu.vk_links && lu.vk_links.length) ? lu.vk_links[0] : (lu.vk_link || "");   // the true primary = vk_links[0] (the Manage modal reorders it there); fall back to the single vk_link
-  // track the SAVED value locally: the modal holds a stale `user` snapshot, so we key off the LIVE primary.
+  useStore();
+  const lu = (Store.recon.users || []).find(x => x.id === user.id) || user;
+  const primary = (lu.vk_links && lu.vk_links.length) ? lu.vk_links[0] : (lu.vk_link || "");
   const [saved, setSaved] = useState(primary);
   const [val, setVal] = useState(primary);
   const [busy, setBusy] = useState(false);
   const [subd, setSubd] = useState(false);
-  const [saveStatus, setSaveStatus] = useState(null);   // "saved" | "failed" — shown ~5s next to the button
+  const [saveStatus, setSaveStatus] = useState(null);
   const savedTimer = useRef(null);
   const flashStatus = s => { setSaveStatus(s); if (savedTimer.current) clearTimeout(savedTimer.current); savedTimer.current = setTimeout(() => setSaveStatus(null), 5000); };
-  useEffect(() => { setVal(primary); setSaved(primary); }, [user.id, primary]);   // reset when the live primary changes (Manage save / external), but not while the user is typing (val isn't a dep)
+  useEffect(() => { setVal(primary); setSaved(primary); }, [user.id, primary]);
   useEffect(() => { let ok = true; if (subFeatureOn()) subUsersMap().then(m => { if (ok) setSubd(!!(m[user.id] && m[user.id].enabled)); }).catch(() => {}); return () => { ok = false; }; }, [user.id]);
   useEffect(() => () => { if (savedTimer.current) clearTimeout(savedTimer.current); }, []);
-  const v = normVkLink(val);                    // accept the link with or without https:// — add it when missing
+  const v = normVkLink(val);
   const invalid = !!v && !_VK_CALL_RE.test(v);
   const empty = !v;
-  const set = !empty && !invalid;               // a valid link is present → blue highlight
+  const set = !empty && !invalid;
   const dirty = v !== saved;
   const add = async () => {
     if (!dirty || invalid || empty) return;
     setBusy(true);
     const existing = (lu.vk_links && lu.vk_links.length ? lu.vk_links : (lu.vk_link ? [lu.vk_link] : []));
-    const ordered = [v, ...existing.filter(u => u !== v)];   // the typed link becomes primary; existing links are kept (dedup) → the count grows
+    const ordered = [v, ...existing.filter(u => u !== v)];
     const r = await api.userUpdate({ id: user.id, vk_links: ordered, vk_link: v });
     setBusy(false);
     if (!r || !r.ok) { flashStatus("failed"); toast(srvText(r) || T("Couldn't add the VK link"), "err"); return; }
-    setSaved(v);                                  // dirty=false → button disables; the live count reflects the new list on the next poll
+    setSaved(v);
     flashStatus("saved");
-    Store.poll(); Store.configEpoch++; bus.emit();   // turn configs re-render with the updated links
+    Store.poll(); Store.configEpoch++; bus.emit();
   };
   return html`<div class=${"field vkfield" + (invalid ? " warn" : set ? " set" : " warn")} style="margin-bottom:14px">
     <label>${T("VK call link")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— for this user's configs that ride a VK call")}</span></label>
@@ -319,14 +293,11 @@ export function VkLinkField({ user }) {
       : empty ? html`<div class="hint vk-warn">${noVkLinks()}${subd ? html` ${noVkSubbed()}` : ""}</div>` : null}
   </div>`;
 }
-// Manage ALL of a user's VK call links (grid CRUD + which is primary). The primary is the one single-link apps use;
-// FreeTurn passes them all. Reordered so the primary is first on save (vk_links[0] = primary; vk_link mirrors it).
 export function VkLinksSheet({ user }) {
   useStore();
-  const lu = (Store.recon.users || []).find(x => x.id === user.id) || user;   // live user — the modal's `user` prop is a stale snapshot
+  const lu = (Store.recon.users || []).find(x => x.id === user.id) || user;
   const start = (lu.vk_links && lu.vk_links.length ? lu.vk_links : (lu.vk_link ? [lu.vk_link] : [])).slice();
   const [rows, setRows] = useState(start.length ? start.map(u => ({ url: u })) : [{ url: "" }]);
-  // Detect edits from another open tab before saving the draft.
   const seeded = useRef(start);
   const [primary, setPrimary] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -334,7 +305,7 @@ export function VkLinksSheet({ user }) {
   const addRow = () => setRows(rs => [...rs, { url: "" }]);
   const delRow = (i) => { setRows(rs => { const n = rs.filter((_, j) => j !== i); return n.length ? n : [{ url: "" }]; });
     setPrimary(p => (i === p ? 0 : i < p ? p - 1 : p)); };
-  const norm = rows.map(r => normVkLink(r.url));                       // add https:// where missing
+  const norm = rows.map(r => normVkLink(r.url));
   const bad = norm.some(u => u && !_VK_CALL_RE.test(u));
   const dirty = JSON.stringify(norm.filter(Boolean)) !== JSON.stringify(start);
   const persist = async (close) => {
@@ -347,7 +318,7 @@ export function VkLinksSheet({ user }) {
     const clean = norm.filter(Boolean);
     if (clean.some(u => !_VK_CALL_RE.test(u))) { toast(T("One of the links isn't a VK call link or its hash."), "err"); return false; }
     const uniq = [...new Set(clean)];
-    const primUrl = norm[primary];                                    // move the chosen primary to the front
+    const primUrl = norm[primary];
     const ordered = primUrl && uniq.includes(primUrl) ? [primUrl, ...uniq.filter(u => u !== primUrl)] : uniq;
     setBusy(true);
     const r = await api.userUpdate({ id: user.id, vk_links: ordered });
@@ -355,7 +326,7 @@ export function VkLinksSheet({ user }) {
     if (!r || !r.ok) { toast(srvText(r) || T("Couldn't save the VK links"), "err"); return false; }
     seeded.current = ordered;
     if (close) closeModal();
-    Store.poll(); Store.configEpoch++; bus.emit();                    // turn configs re-render with the updated links
+    Store.poll(); Store.configEpoch++; bus.emit();
     if (close) toast(ordered.length ? T("Saved {v1}.", { v1: plural(ordered.length, "VK link") }) : T("VK links cleared."), "ok");
     return true;
   };
@@ -380,22 +351,17 @@ export function VkLinksSheet({ user }) {
         </div>`; })}
     </div>
     ${bad ? html`<div class="hint err">${T("Every link must be a VK call link or its hash, like")} <span class="mono">https://vk.ru/call/join/…</span></div>` : null}
-    ${/* Apps genuinely differ — the vkturnproxy link carries every link, the wdtt:// one takes 4 and csqtt 6,
-          and single-link apps take only the primary. So this says the ORDER matters rather than naming a cap
-          that would be wrong for half the fleet. Only shown once a user holds more than the tightest cap. */ ""}
     ${norm.filter(Boolean).length > (((typeof SWGTurn !== "undefined" && SWGTurn.vkLinkCaps) || {}).wdtt || 4)
       ? html`<div class="hint">${T("Apps differ: some use every link, some only the first few, some only the primary — the star sets which comes first.")}</div>` : null}
   </div>`;
 }
-// Quick "Set expiry" — a small date picker reachable straight from the QR modal (no trip to the edit screen).
-// A user sets the SUBSCRIPTION expiry; a peer sets its OWN expiry, capped at the user's (can't outlive it).
 export function openSetExpiry(kind, id) { pushModal(html`<${SetExpirySheet} kind=${kind} id=${id}/>`); }
 export function SetExpirySheet({ kind, id }) {
   const isUser = kind === "user";
-  const rec = isUser ? Store.user(id) : Store.peer(id);   // Store.peer already returns the RECONCILED peer (carries ownExpiry)
+  const rec = isUser ? Store.user(id) : Store.peer(id);
   const cur = isUser ? ((rec && rec.expiry) || 0) : ((rec && rec.ownExpiry) || 0);
   const owner = !isUser && rec && rec.user_id ? Store.user(rec.user_id) : null;
-  const ownerExp = owner ? (owner.expiry || 0) : 0;   // a peer can't be set to outlive its user's subscription
+  const ownerExp = owner ? (owner.expiry || 0) : 0;
   const [d, setD] = useState(expiryInputVal(cur));
   const [busy, setBusy] = useState(false);
   if (!rec) { closeModal(); return null; }
@@ -417,8 +383,6 @@ export function SetExpirySheet({ kind, id }) {
     <div class="daterow"><input type="date" class="datein" min=${expiryInputVal(now_s())} max=${ownerExp ? expiryInputVal(ownerExp) : ""} value=${d} onInput=${e => setD(e.target.value)}/>${d ? html`<button class="btn btn-ghost btn-mini" onClick=${() => setD("")}>${T("Clear")}</button>` : null}</div>
   <//>`;
 }
-// Live footer for the QR modals — re-renders on each poll (useStore), so the Block/Unblock label flips right
-// after the action without the modal being reopened. "Set expiry" sits to the LEFT of Block.
 export function QRPeerFoot({ pid }) {
   useStore();
   const p = Store.peer(pid);
@@ -437,13 +401,9 @@ export function QRUserFoot({ uid }) {
   return html`<${Fragment}><span class="qrfoot-count">${count}</span><${UserCounts} user=${u} className="qrfoot-ucounts"/><span class="grow"></span><button class=${"btn btn-exp" + (hasExp ? " on" : "")} onClick=${() => openSetExpiry("user", uid)}><${Ic} i="clock"/> ${hasExp ? T("Reset expiry") : T("Set expiry")}</button><button class="btn btn-warn" onClick=${() => rotateAllUserKeys(u)} title=${T("Rotate the keys of every peer this user holds — all configs/links must be re-imported")}><${Ic} i="key"/> ${T("Rotate all keys")}</button>${userBlockBtn(u)}<//>`;
 }
 export function openUserEdit(user) {
-  // Wider than the default sheet: this one carries the widest thing in the panel that is not a table — the user's networks, a row
-  // per network with its node and device counts — and at 640 those rows wrapped while the fields beside them sat half empty.
   openModal(html`<${Sheet} title=${T("Edit · {v1}", { v1: user.name })} width=${780} subject=${{ kind: "user", id: user.id }}><${UserEditCard} user=${user} done=${closeModal}/><//>`);
 }
 
-/* Sentences that carry a STYLED run inside them (a bold warning, a bold link target). Each is one key with
-   a marker, split around the styled element — see Tsplit in js/i18n.js for why this beats concatenation. */
 function keyOnlyCopy() {
   const [a, b] = Tsplit("Config encryption is on. This key protects every stored client config and subscription link — the panel only ever stores it wrapped under your password, so {only}.", "only");
   return html`<${Fragment}>${a}<b>${T("this is the only copy in the clear")}</b>${b}<//>`;
@@ -499,14 +459,12 @@ export function SubUrlBar({ url }) {
 
 export function openUserConfigs(user, back) {
   const peers = Store.peersOfUser(user.id);
-  // the user modal shows ONE card per peer, so size by the peer COUNT (up to 3 across), not the widest peer's
-  // deployment count — otherwise a user's modal width flip-flopped on whether any one peer had 3+ configs
   const cols = Math.min(peers.length || 1, 3);
-  const wcols = Math.max(cols, 2);                        // hold 2 cards wide even for a single peer (roomier layout)
+  const wcols = Math.max(cols, 2);
   const width = wcols * QR_ITEM + (wcols - 1) * QR_GAP + 56;
   const anyTurn = peers.some(p => targetsWantVk(p.targets));
   const title = html`<span class="qrhd"><span class="qrhd-nm">${user.name}</span>${user.tag ? html`<span class="qrhd-tag">${user.tag}</span>` : null}</span>`;
-  const headExtra = html`<${SubStatusLine} user=${user} pos="hr"/>`;   // subscription status, right-aligned (the count now sits by the name)
+  const headExtra = html`<${SubStatusLine} user=${user} pos="hr"/>`;
   openModal(html`<${Sheet} title=${title} width=${width} headExtra=${headExtra} noGuard=${true} onClose=${back || closeModal}
     subject=${{ kind: "user", id: user.id }} foot=${html`<${QRUserFoot} uid=${user.id}/>`}>
     <${VaultUnlockPanel}/>
@@ -523,35 +481,31 @@ export function openTurnConfigs(peer, t, conf) {
 }
 export function TurnConfigSheet({ peer, t, conf }) {
   const [selFork, setSelFork] = useState(0);
-  const [inst, setInst] = useState({});   // fork → chosen instance index (for redundant same-fork proxies)
-  const [selClient, setSelClient] = useState({});   // "fork|os" → chosen client-app index (servers that offer several apps on an OS)
-  const [selOs, setSelOs] = useState({});   // fork → chosen device OS (which platform's app + settings to generate for)
-  // One badge PER FORK; the peer's own fork (observed viaTurn) sorts first and is selected by default. When a
-  // fork has several proxies (redundancy), a dropdown picks which one. Only the selected proxy's config shows.
+  const [inst, setInst] = useState({});
+  const [selClient, setSelClient] = useState({});
+  const [selOs, setSelOs] = useState({});
   const lt = ((Store.recon.peers.find(p => p.id === peer.id) || {}).targets || []).find(d => d.node === t.node && d.iface === t.iface) || t;
   const all = turnProxiesFor(t.node, t.iface);
   const sorted = lt.viaTurn ? [...all].sort((a, b) => (b.service === lt.viaTurn ? 1 : 0) - (a.service === lt.viaTurn ? 1 : 0)) : all;
   const order = [], byFork = {};
   sorted.forEach(p => { const f = turnFork(p.service); if (!byFork[f]) { byFork[f] = []; order.push(f); } byFork[f].push(p); });
   const vkUser = peer.user_id ? Store.recon.users.find(u => u.id === peer.user_id) : null;
-  const vk = userVkLink(vkUser);   // this user's own link, falling back to the panel test link (subs never fall back)
-  const vkLinks = userVkLinks(vkUser);   // all of the user's links — forks that support several embed them all
+  const vk = userVkLink(vkUser);
+  const vkLinks = userVkLinks(vkUser);
   const base = (peer.title || peer.name || "peer") + "-" + Store.nodeName(t.node);
   if (!order.length) return html`<div class="hint">${T("No turn-proxy forwards to this interface.")}</div>`;
   const fi = Math.min(selFork, order.length - 1); const fork = order[fi];
   const list = byFork[fork]; const ii = Math.min(inst[fork] || 0, list.length - 1); const cur = list[ii];
   const cmap = (Store.turnCatalog && Store.turnCatalog.clients) || {};
-  // already compat-matrix-only and compat-ranked (see turnClientsFor); it drops dead pairings such as anton48 + VK-TURN-by-MYSOREZ, matching
-  // Settings and the sub page — and, on an AmneziaWG interface, an app whose own tunnel is WireGuard only (`awg: false`), as the sub page does
-  const allClients = turnClientsFor(fork).filter(c => !(targetType(t) === "awg" && (cmap[c.id] || {}).awg === false));   // the iface's real kind, not the roster's stored type
+  const allClients = turnClientsFor(fork).filter(c => !(targetType(t) === "awg" && (cmap[c.id] || {}).awg === false));
   const osOf = c => Object.keys((cmap[c.id] || {}).platforms || {});
-  const osList = _OS_TABS.map(([o]) => o).filter(o => allClients.some(c => osOf(c).includes(o)));   // OSes this fork's apps cover
+  const osList = _OS_TABS.map(([o]) => o).filter(o => allClients.some(c => osOf(c).includes(o)));
   const curOs = (selOs[fork] && osList.includes(selOs[fork])) ? selOs[fork] : (osList[0] || "");
-  const clients = allClients.filter(c => osOf(c).includes(curOs));   // apps available on the chosen OS
+  const clients = allClients.filter(c => osOf(c).includes(curOs));
   const okey = fork + "|" + curOs;
   const ci = Math.min(selClient[okey] || 0, Math.max(0, clients.length - 1));
   const client = clients[ci] || null;
-  const clientOsName = c => (((cmap[c.id] || {}).platforms || {})[curOs] || {}).name || c.name;   // per-OS app name (WINGS V vs WINGS DeX)
+  const clientOsName = c => (((cmap[c.id] || {}).platforms || {})[curOs] || {}).name || c.name;
   return html`<div class="turncfg">
     ${order.length > 1 ? html`<div class="turntabs">${order.map((f, k) => html`<button key=${f}
       class=${"snbadge turntab" + (k === fi ? " on" : "")} style=${"--c:" + turnColor(f)} onClick=${() => setSelFork(k)}>${forkLabel(f)}</button>`)}</div>` : null}
@@ -576,7 +530,7 @@ export function TurnCfgItem({ conf, tp, vk, vkLinks, base, client, os }) {
   const a = turnArtifact(conf, tp, vk, vkLinks, client ? client.encoder : undefined, os);
   const [text, setText] = useState(a.text != null ? a.text : null);
   const [err, setErr] = useState(null);
-  const [view, setView] = useState(a.qr ? "qr" : "text");   // default QR where the app scans one
+  const [view, setView] = useState(a.qr ? "qr" : "text");
   const taRef = useRef(null);
   useEffect(() => {
     if (a.text != null) { setText(a.text); return; }
@@ -584,8 +538,8 @@ export function TurnCfgItem({ conf, tp, vk, vkLinks, base, client, os }) {
     Promise.resolve().then(a.buildAsync).then(t => { if (ok) setText(t); }).catch(e => { if (ok) setErr((e && e.message) || T("couldn't generate")); });
     return () => { ok = false; };
   }, [tp.service, conf, vk, client && client.encoder, os]);
-  useEffect(() => { setView(a.qr ? "qr" : "text"); }, [tp.service, client && client.encoder]);   // reset to the default when the client changes
-  useEffect(() => { if (view === "text") autoGrow(taRef.current); }, [text, view]);   // dynamic height to fit wrapped content, no scroll
+  useEffect(() => { setView(a.qr ? "qr" : "text"); }, [tp.service, client && client.encoder]);
+  useEffect(() => { if (view === "text") autoGrow(taRef.current); }, [text, view]);
   const ready = text != null;
   const qrView = a.qr && view === "qr";
   return html`<div class="turncfg-item">
@@ -606,10 +560,7 @@ export function TurnCfgItem({ conf, tp, vk, vkLinks, base, client, os }) {
   </div>`;
 }
 
-// One user as a collapsible row: status · name · tag · note · peers · last · rate · total · controls.
-// Click the row to expand its peers (the shared EmbeddedPeers grid); click again to collapse.
 
-// Inline-editable peer title (optimistic). The operator's label to tell a user's devices apart.
 
 function UserNetworksPanel({ user }) {
   const [data, setData] = useState(null), [page, setPage] = useState(1);
@@ -619,12 +570,12 @@ function UserNetworksPanel({ user }) {
     return () => { ok = false; };
   }, [user.id]);
   const via = id => { const q = Store.peer(id); return q ? (q.title || q.name || T("Untitled")) : ""; };
-  const devName = (p, t) => {                               // the title, else where it is: its address, or its server
+  const devName = (p, t) => {
     const q = Store.peer(p.peer_id), tg = q && (q.targets || []).find(x => x.node === t.node && x.iface === t.iface);
     const where = tg && tg.ip ? String(tg.ip).split("/")[0] : t.iface;
     return p.title ? p.title + " (" + where + ")" : where;
   };
-  const rank = c => (c === true ? 2 : c === null ? 1 : 0);  // a device reaches it if ANY of its deployments there routes it
+  const rank = c => (c === true ? 2 : c === null ? 1 : 0);
   const rows = new Map();
   for (const p of ((data && data.peers) || []).filter(p => !p.blocked)) for (const t of p.targets) {
     const put = (key, seed, covered) => {
@@ -635,8 +586,6 @@ function UserNetworksPanel({ user }) {
       rows.set(key, r);
     };
     for (const n of t.networks) put(t.node + "|" + n.prefix, { prefix: n.prefix, via: n.via, restricted: !!n.restricted, until: n.until || 0 }, n.covered);
-    // ⚠️ NEVER `true`: a node's LAN is reached only where this device's own routing names it, which is the panel's answer
-    // in `lan.covered`. An answer from a panel that predates the field is unknown (null), never reachable.
     if (t.lan) put(t.node + "|lan", { prefix: t.lan.addrs.join(", "), lan: t.lan }, t.lan.covered === undefined ? null : t.lan.covered);
   }
   const list = [...rows.values()].sort((a, b) => Store.nodeName(a.node).localeCompare(Store.nodeName(b.node))
@@ -644,14 +593,11 @@ function UserNetworksPanel({ user }) {
   if (!list.length) return null;
   const pages = Math.max(1, Math.ceil(list.length / LIST_PAGE)), pg = Math.min(page, pages);
   const ownDev = r => { const p = r.via ? Store.peer(r.via) : null; return !!(p && p.user_id === user.id); };
-  // Which of their devices it sits behind — "their own device" alone left the operator to go and look it up. The address
-  // is the one that device answers on THIS node, since that is the deployment carrying the network.
   const devOf = r => {
     const p = r.via ? Store.peer(r.via) : null;
     if (!p) return "";
     return deviceNameAt(p, r.node);
   };
-  // WHO opened it, not just that it is open: "shared with this user" said nothing about whom to go to in order to change it.
   const sharerOf = r => { const p = r.via ? Store.peer(r.via) : null; const u = p && p.user_id ? Store.user(p.user_id) : null; return u ? u.name : ""; };
   const how = r => r.lan ? (r.lan.open ? T("the node's local network") : T("the node's local network, closed"))
     : ownDev(r) ? T("behind their own device {v1}", { v1: devOf(r) })
@@ -688,23 +634,16 @@ function UserNetworksPanel({ user }) {
 function GroupCombo({ groups, onPick, onCreate, disabled }) {
   const [q, setQ] = useState(""); const [open, setOpen] = useState(false);
   const hits = groups.filter(g => searchMatch(g.name, q.toLowerCase()));
-  const shown = hits.slice(0, 6);   // six, not UserPicker's eight: with the count line and "Create new group…" the list then fits unscrolled (.uc-groups)
+  const shown = hits.slice(0, 6);
   const { wrapRef, listRef, pos, popStyle } = useAnchoredList(open, setOpen, [q]);
   const done = () => { setOpen(false); setQ(""); };
   const inRef = useRef(null);
-  // the whole pill is the control — its "+" included, which opened nothing when only the field inside it listened
   const openFromPill = e => { if (disabled || e.target === inRef.current) return; setOpen(true); if (inRef.current) inRef.current.focus(); };
   return html`<div class=${"usercombo ugroup-combo" + (open ? " open" : "")} ref=${wrapRef} onClick=${openFromPill}>
     <${Ic} i="plus"/>
-    ${/* ⚠️ type=search, autocomplete=off: this sheet also holds the vault's password field, and Chrome filled the text input
-          before it with the SAVED LOGIN — the picker opened reading "snproto" (measured). A search field is not a username. */""}
-    ${/* The pill is as wide as its words, in either language, and never narrower than them while you type: the field shares a
-          grid cell with invisible copies of the label and of the query, so it takes the wider of the two (.uc-size). It was a fixed 170 px, which left
-          the English label off-centre with a gap after it (operator, 2026-09-17). */""}
     <span class="uc-size" data-l=${T("Add to a group")} data-q=${q}><input ref=${inRef} class="uc-input" type="search" size="1" autocomplete="off" value=${q} disabled=${disabled} placeholder=${T("Add to a group")} aria-label=${T("Add to a group")}
       onClick=${() => setOpen(true)} onInput=${e => { setQ(e.target.value); setOpen(true); }}
       onKeyDown=${e => { if (e.key === "Escape") { done(); return; }
-        // while the list is open Enter never saves the sheet: exactly one match picks it, anything else does nothing
         if (e.key === "Enter" && open) { e.preventDefault(); if (q && hits.length === 1) { done(); onPick(hits[0].id); } } }}/></span>
     ${open && pos ? html`<${Portal}><div class="uc-list uc-pop uc-groups" ref=${listRef} style=${popStyle}>
       ${shown.map(g => html`<button class="uc-opt uc-group" key=${g.id} onClick=${() => { done(); onPick(g.id); }}><${Ic} i="users"/><span>${g.name}</span><span class="faint">${plural(g.users.length, "member")}</span></button>`)}
@@ -715,7 +654,7 @@ function GroupCombo({ groups, onPick, onCreate, disabled }) {
   </div>`;
 }
 function UserGroupsField({ user }) {
-  const [pend, setPend] = useState({});          // gid -> "in" | "out"
+  const [pend, setPend] = useState({});
   const base = Store.groupsByUser(user.id);
   const baseIds = new Set(base.map(g => g.id));
   useEffect(() => {
@@ -733,13 +672,13 @@ function UserGroupsField({ user }) {
   const write = async (call, ok, gid, want) => {
     if (busy) return;
     setBusy(true);
-    if (gid) setPend(p => ({ ...p, [gid]: want }));       // show it at once
+    if (gid) setPend(p => ({ ...p, [gid]: want }));
     let r = null;
     try { r = await call(); } catch (e) { r = null; }
     setBusy(false);
     if (r && r.ok) { toast(ok, "ok"); Store.poll(); }
     else {
-      if (gid) setPend(p => { const n = { ...p }; delete n[gid]; return n; });   // refused → put it back
+      if (gid) setPend(p => { const n = { ...p }; delete n[gid]; return n; });
       toast(srvText(r) || T("The group wasn't saved."), "err");
     }
   };
@@ -748,8 +687,6 @@ function UserGroupsField({ user }) {
     const g = Store.group(v);
     if (g) write(() => api.groupUpdate({ id: v, add: [user.id] }), T("{name} is now in {group}.", { name: user.name, group: g.name }), v, "in");
   };
-  // ⚠️ Taking someone OUT takes away what the group grants, so a group that grants networks asks first — the same sentence the
-  // group's own delete uses, because it is the same loss. A group that grants nothing just goes.
   const drop = g => {
     const go = () => write(() => api.groupUpdate({ id: g.id, remove: [user.id] }),
       T("{name} is no longer in {group}.", { name: user.name, group: g.name }), g.id, "out");
@@ -763,14 +700,9 @@ function UserGroupsField({ user }) {
   return html`<div class="field ugroups-field">
     <label>${T("Groups")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— members reach each other's devices, and a network can be shared with the group")}</span></label>
     <div class="ugroups">
-      ${/* The badges wrap inside their OWN box: with the control as a sibling of the pills it wrapped to a line of its own the
-            moment there were more than a few, which is the opposite of sitting with them. */""}
       <div class="ugroups-list">
         ${mine.slice(0, 6).map(g => html`<span class="ugroup" key=${g.id}>
           <button type="button" class="ugroup-nm" onClick=${() => openGroup(g.id)}><${Ic} i="users"/><span>${g.name}</span></button>
-          ${/* The same × every other tag in the panel is removed by (.tfb-x, the routing rule builder's): faint until
-                hovered, then a red wash. The circled `iconbtn danger` it used to be was a control this panel uses
-                nowhere else for taking a tag off. */""}
           <button type="button" class="tfb-x ugroup-x" disabled=${busy} title=${T("Remove {name} from the group", { name: user.name })}
             aria-label=${T("Remove {name} from the group", { name: user.name })} onClick=${() => drop(g)}><${Ic} i="x"/></button>
         </span>`)}
@@ -779,8 +711,6 @@ function UserGroupsField({ user }) {
         <//>` : null}
         ${mine.length ? null : html`<span class="ugroups-none">${T("Not in any group.")}</span>`}
       </div>
-      ${/* The way in sits with the badges, at the right of their first line. With groups left to join it opens that list
-            (ending in a new one); with none, there is nothing to list — so it opens the new-group window itself. */""}
       ${others.length
         ? html`<${GroupCombo} groups=${others} disabled=${busy} onPick=${add} onCreate=${() => openCreateGroup([user.id])}/>`
         : html`<button type="button" class="ugroup-add-btn" disabled=${busy} onClick=${() => openCreateGroup([user.id])}>
@@ -789,11 +719,7 @@ function UserGroupsField({ user }) {
   </div>`;
 }
 
-// ⚠️ A BUBBLE'S BODY IS A COMPONENT, not inline markup: Popover is handed its children already built, so anything written inline
-// here would be computed for every row of the list on every poll. As a component it renders only while the bubble is open.
 
-// Who this person's devices can open connections to: each person, then their devices, online ones lit. Group NAMES used to be
-// listed here and said nothing — a group is a means, and what an operator is looking for is who ends up reaching whom.
 function ReachBody({ user }) {
   const rows = userReach(user.id);
   const anyOnline = rows.some(r => r.online);
@@ -827,8 +753,6 @@ export function ReachedByBody({ peer, blocked, down, onView }) {
   useEffect(() => { peerAudFetch(peer.id); }, [peer.id]);
   const a = peerAudience(peer);
   const until = u => (u ? html`<span class="faint">${T("until {date}", { date: fmtDate(u) })}</span>` : null);
-  // ⚠️ The NODE'S verdict outranks the roster's intent: one that cannot restrict carries a restricted network for nobody, so
-  // naming its grantees without saying this would be confidently wrong. Asked, never assumed.
   const cantShare = ((rep && rep.targets) || []).filter(t => t.can_share === false).map(t => Store.nodeName(t.node));
   return html`<${Fragment}>
     <div class="rb-head"><span class="netroute-h">${T("Can be reached by")}</span><span class="grow"></span>
@@ -852,7 +776,6 @@ export function ReachedByBody({ peer, blocked, down, onView }) {
   <//>`;
 }
 
-// The networks they reach, as the PANEL answers it — the same list their sheet shows, with the device each network sits behind.
 function NetsBody({ user }) {
   const [, force] = useState(0);
   const hit = netsCached(user.id);
@@ -861,7 +784,7 @@ function NetsBody({ user }) {
   const anyOnline = rows.some(netRowOnline);
   const [pick, setPick] = useState(null);
   const all = pick == null ? !anyOnline : pick;
-  const [shown, more] = useCapped(all ? rows : rows.filter(netRowOnline), 12);   // before the early return: a hook runs on every render
+  const [shown, more] = useCapped(all ? rows : rows.filter(netRowOnline), 12);
   if (!hit) return html`<${Fragment}><span class="netroute-h">${T("Networks")}</span>
     <div class="netbub-row sub">${T("Loading…")}</div><//>`;
   const ownerOf = r => (r.via ? Store.peer(r.via) : null);
@@ -877,7 +800,6 @@ function NetsBody({ user }) {
     : r.covered == null ? T("Routing unknown — this device's build doesn't say") : "";
   const row = r => {
     const dev = ownerOf(r);
-    // Their own device is named by its title (they can see and edit it); anyone else's is named by WHOSE it is.
     const who = mine(r) ? deviceNameAt(dev, r.node) : ownerNameAt(dev, r.node);
     return html`<div class="nb-row" key=${r.node + r.prefix}>
       <span class=${"nb-dot2 " + dot(r)} title=${dotTitle(r)}></span>
@@ -904,10 +826,8 @@ function NetsBody({ user }) {
 }
 
 export function UserCounts({ user, className }) {
-  useStore();                                     // both the batch and netsFetch() emit when an answer lands
-  useEffect(() => { wantNetsCount(user.id); });   // this row asks for its own number; the asks go out as one request
-  // The chip counts DEVICES, and says the number worth acting on: online while any are, otherwise all of them. It is lit
-  // in the same case, which is what tells you the bubble will open on the live ones.
+  useStore();
+  useEffect(() => { wantNetsCount(user.id); });
   const reach = reachTally(user.id);
   const people = reach.shown;
   const nt = netTally(user.id);
@@ -930,8 +850,6 @@ export function UserCounts({ user, className }) {
 }
 
 export function openGroup(gid) { (modalDepth() > 0 ? pushModal : openModal)(html`<${GroupSheet} gid=${gid}/>`); }
-// `seed` are the members a new group opens with — the user whose sheet asked for it. It is also wired straight to a click handler
-// ("New group" on the Groups screen), so anything that is not a list of ids is no seed at all.
 export function openCreateGroup(seed) {
   const ids = Array.isArray(seed) ? seed : [];
   (modalDepth() > 0 ? pushModal : openModal)(html`<${GroupSheet} gid=${null} seed=${ids}/>`);
@@ -944,13 +862,10 @@ export function confirmDeleteGroup(g, inSheet) {
     onConfirm: async () => {
       let r = null;
       try { r = await api.groupDelete({ id: g.id }); } catch (e) { r = null; }
-      // only a delete that happened closes the group window — a failed one keeps it, and whatever was being edited in it
       if (r && r.ok) { closeModals(inSheet ? 2 : 1); toast(T("Group deleted."), "ok"); Store.poll(); }
       else { closeModal(); toast(srvText(r) || T("The group wasn't deleted."), "err"); Store.poll(); }
     } });
 }
-// A member's devices the rest of the group can reach: the number, and the devices on hover (the users grid's reach bubble idiom).
-// ⚠️ The bubble body is a component: the member list pages 15 rows and each row would otherwise build its list on every poll.
 function GroupMemberDevices({ uid, name }) {
   const devs = reachableByGroup(uid);
   const all = Store.peersByUser(uid).filter(p => !p.unassigned).length;
@@ -978,13 +893,11 @@ function GroupSheet({ gid, seed }) {
   const g = gid ? Store.group(gid) : null;
   const base = useRef(null);
   if (base.current === null) base.current = { name: g ? g.name : "", users: g ? g.users.slice() : [] };
-  // A new group opens holding whoever asked for it (a user's sheet), as an unsaved change against an empty group — so Cancel
-  // leaves nothing behind and Create sends them as its members.
   const [name, setName] = useState(base.current.name);
   const [members, setMembers] = useState(() => (gid ? base.current.users : (seed || [])).slice());
   const [q, setQ] = useState(""), [page, setPage] = useState(1), [err, setErr] = useState(""), [busy, setBusy] = useState(false);
   const dirtyRef = useRef(false), closeRef = useRef(null), cleanRef = useRef(null);
-  const nameOf = new Map(Store.recon.users.map(u => [u.id, u.name]));      // one pass, not a search per member per comparison
+  const nameOf = new Map(Store.recon.users.map(u => [u.id, u.name]));
   const uname = id => nameOf.get(id) || "";
   const byName = (a, b) => uname(a).localeCompare(uname(b));
   const list = members.filter(id => nameOf.has(id)).sort(byName);
@@ -999,10 +912,9 @@ function GroupSheet({ gid, seed }) {
   const addOne = id => {
     if (!id || members.includes(id)) return;
     setMembers(m => [...m, id]); setQ("");
-    setPage(Math.floor([...list, id].sort(byName).indexOf(id) / LIST_PAGE) + 1);   // to the page the new member lands on
+    setPage(Math.floor([...list, id].sort(byName).indexOf(id) / LIST_PAGE) + 1);
   };
   const drop = id => setMembers(m => m.filter(x => x !== id));
-  // Sheet marks itself dirty on ANY input; the filter and the person search change nothing, so they hand the guard back (§18.1).
   const typedOnly = () => { if (cleanRef.current) cleanRef.current(); };
   const shares = gid ? groupShares(gid) : [];
   const save = async () => {
@@ -1024,7 +936,6 @@ function GroupSheet({ gid, seed }) {
     dirtyRef=${dirtyRef} closeRef=${closeRef} cleanRef=${cleanRef}
     foot=${html`<${Fragment}>
       ${gid ? html`<button class="btn btn-danger" onClick=${() => confirmDeleteGroup(g, true)}><${Ic} i="trash"/> ${T("Delete group")}</button>` : null}
-      ${/* a phone: the group's traffic from its editor, as its row's swipe offers it (operator, 2026-10-29) */""}
       ${gid && isMobile() ? html`<button class="btn btn-ghost" onClick=${() => openGroupView(gid, true)}><${Ic} i="bars"/> ${T("Traffic")}</button>` : null}
       <span class="grow"></span>
       <button class="btn btn-ghost btn-dismiss" onClick=${() => (closeRef.current ? closeRef.current() : closeModal())}>${T("Cancel")}</button>
@@ -1057,14 +968,14 @@ function GroupSheet({ gid, seed }) {
 const userExitValue = ref => ref ? ref.node_id + "/" + ref.exit_id : "";
 
 export function UserEditCard({ user, done }) {
-  useStore();          // re-render on poll, so the Block/Unblock button flips after the action without reopening
+  useStore();
   const [name, setName] = useState(user.name || "");
   const [tag, setTag] = useState(user.tag || "");
   const [note, setNote] = useState(user.note || "");
-  const [expDate, setExpDate] = useState(expiryInputVal(user.expiry || 0));   // subscription expiry (blank = never)
+  const [expDate, setExpDate] = useState(expiryInputVal(user.expiry || 0));
   const [staticExit, setStaticExit] = useState(userExitValue(user.static_exit));
   const [busy, setBusy] = useState(false), [saveErr, setSaveErr] = useState("");
-  const showVk = Store.peersOfUser(user.id).some(p => targetsWantVk(p.targets));   // a peer behind a turn-proxy, or on a WDTT server
+  const showVk = Store.peersOfUser(user.id).some(p => targetsWantVk(p.targets));
   const staticDirty = staticExit !== userExitValue(user.static_exit);
   const dirty = name !== (user.name || "") || tag !== (user.tag || "") || note !== (user.note || "") || expDate !== expiryInputVal(user.expiry || 0) || staticDirty;
   const occupied = new Map(Object.values(Store.roster.users || {}).filter(u => u.id !== user.id && u.static_exit)
@@ -1086,12 +997,8 @@ export function UserEditCard({ user, done }) {
   const save = async () => {
     if (!name.trim()) { toast(T("Name can't be empty."), "err"); return; }
     const expSec = expiryFromInput(expDate);
-    // A subscription can't expire before its longest-lived peer (the server enforces this too — check here for a
-    // clean message instead of a rejected save).
     const maxPeer = Store.peersOfUser(user.id).reduce((m, p) => Math.max(m, +(p.ownExpiry || 0)), 0);
     if (expSec && maxPeer && expSec < maxPeer) { toast(T("Subscription expiry can't be earlier than a peer's expiry ({date}).", { date: fmtDate(maxPeer) }), "err"); return; }
-    // Sent before the editor closes (q189 SPA-3): a refusal stays here, in the panel's words, with every edit kept — it used to
-    // close first and lose them. (VK links are owned by VkLinkField — saved on their own.)
     if (staticDirty && staticExit && (!choice || choice.disabled)) {
       setSaveErr(T("Choose an enabled SOCKS5 exit"));
       return;
@@ -1103,7 +1010,6 @@ export function UserEditCard({ user, done }) {
   };
   const del = () => openConfirm({ title: T("Delete user · {name}", { name: user.name }), confirmLabel: T("Delete user"), danger: true, back: done,
     body: T("Their peers are revoked and become unassigned.") + " " + T("This can't be undone.") + (() => {
-      // A gateway among them takes its networks down for everyone who used them (docs/NETWORKS-PLAN.md §18).
       const gws = Store.peersOfUser(user.id).filter(p => (p.routes || []).length);
       return gws.length ? " " + T("Their devices that carry networks ({devices}) take them down too — everyone who reaches them through those devices loses access.",
         { devices: gws.map(p => p.title || T("Untitled")).join(", ") }) : "";
@@ -1144,10 +1050,7 @@ export function UserEditCard({ user, done }) {
   </div>`;
 }
 
-// one credential: its targets, each a QR card; owner controls + edit + add-target
 
-// A peer deployment card. A WDTT deployment is keyless — it has no WG config/QR, so it dispatches to a dedicated
-// card that shows the wdtt:// client link instead of the (empty) WireGuard config. Everything else is WG/AWG.
 export function TargetCard(props) {
   const tt = targetType(props.t);
   return tt === "csqtt" ? html`<${TargetCardCsqtt} ...${props}/>`
@@ -1172,7 +1075,6 @@ export function clientHandoff(cl, cid, qr, os) {
 }
 export function artLabel(a) {
   const m = (typeof SWGTurn !== "undefined" && SWGTurn.clientMeta) ? SWGTurn.clientMeta(a.enc) : null;
-  // no app (the desktop CLI): turn-artifacts composed "<fork id> · CLI client (desktop)" — the id is not a name (forkLabel), and the words are ours to translate
   if (!m) return a.fork ? T("{v1} · CLI client (desktop)", { v1: forkLabel(a.fork) }) : T(a.label || "");
   return T("{v1} via {v2} ({v3}) by {v4}", { v1: forkLabel(a.fork), v2: m.app, v3: m.platform + (a.labelMode || ""), v4: forkLabel(m.author) });
 }
@@ -1186,29 +1088,24 @@ export function wdttArtInput(peer, t) {
     endpoint_host: (_lh && _lh !== "0.0.0.0" ? _lh : "") || (nrec.endpoint_host || "").trim() || _pub,
     dtls_port: String(rb.listen || "").split(":").pop() || "56000",
     wg_port: rb.wg_port || 56001, tun_port: "9000",
-    raw_port: rb.raw_port || "",   // RAW-IP mode, when this server accepts it (the user enters it in the app)
+    raw_port: rb.raw_port || "",
     vk_hash: peer.vk_hash || "", vk_links: userVkLinks(user) };
 }
-// The csqtt:// client link input for a peer's csqtt deployment — assembled from the node read-back (endpoint /
-// listen port) + the panel-owned per-peer password + the user's VK call hashes. Mirrors wdttArtInput.
 export function csqttArtInput(peer, t) {
   const rb = ((Store.stats[t.node] || {}).csqtt || []).find(c => c && c.iface === t.iface) || {};
   const nrec = (Store.nodes || []).find(n => n.id === t.node) || {};
   const user = (peer.user_id != null) ? (Store.roster.users || {})[peer.user_id] : null;
   const _lh = ipOf(rb.listen || "");
   const _pub = (((Store.stats[t.node] || {}).node_ips) || []).find(ip => ip && !/^(0\.|10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(ip)) || "";
-  const host = (_lh && _lh !== "0.0.0.0" ? _lh : "") || (nrec.endpoint_host || "").trim() || _pub;   // bind wins (see above); never 0.0.0.0 — a dead link
+  const host = (_lh && _lh !== "0.0.0.0" ? _lh : "") || (nrec.endpoint_host || "").trim() || _pub;
   const port = String(rb.listen || "").split(":").pop() || "46000";
-  // Raw VK inputs — csqttArtifact strips/dedupes/caps them into the link's `hashes` (one place, shared with the sub page).
   return { host, port, password: peer.csqtt_password || "", vk_hash: peer.vk_hash || "", vk_links: userVkLinks(user) || [],
-           line: rb.line || "" };   // the line the server RUNS: 2.5 takes a sealed link (+ a QR), 2.1 the plain one
+           line: rb.line || "" };
 }
-// One client's link, by its catalog id: the encoder decides. csqtt apps take the csqtt:// link; anton48's iOS
-// VK TURN Proxy is handed its own vkturnproxy:// one, because it reads only the first VK hash of a csqtt:// link.
 export function csqttClientCfg(inp, cid) {
   const cl = ((Store.turnCatalog && Store.turnCatalog.clients) || {})[cid] || {};
   const art = (typeof SWGTurn !== "undefined" && SWGTurn.csqttArtifact) ? SWGTurn.csqttArtifact(inp, cl.encoder || "csqtt", inp.line) : null;
-  return { cl, art, uri: art && art.text, qr: !!(art && art.qr) };   // the encoder decides; a 2.5 link is a QR, a 2.1 one is not
+  return { cl, art, uri: art && art.text, qr: !!(art && art.qr) };
 }
 export function useCsqttCfg(inp, cid) {
   const dc = inp ? csqttClientCfg(inp, cid) : { cl: {}, art: null, uri: null, qr: false };
@@ -1227,14 +1124,13 @@ export function useCsqttCfg(inp, cid) {
 }
 export function TargetCardCsqtt({ peer: peerProp, t, bare, primary, head }) {
   useStore();
-  const peer = Store.recon.peers.find(p => p.id === peerProp.id) || peerProp;   // LIVE peer → current csqtt_password (a rotate would else leave a stale link)
+  const peer = Store.recon.peers.find(p => p.id === peerProp.id) || peerProp;
   const lt = (((Store.recon.peers.find(p => p.id === peer.id) || {}).targets) || []).find(d => d.node === t.node && d.iface === t.iface) || t;
   const col = Store.nodeColor(t.node); const dnode = Store.nodeName(t.node);
   const inp = csqttArtInput(peer, t);
   const rb = ((Store.stats[t.node] || {}).csqtt || []).find(x => x && x.iface === t.iface) || {};
-  const clientIds = csqttClientIds(rb);   // same ordering as WDTT: [0] = the fork's own app (CSQTT); only apps of the server's line
+  const clientIds = csqttClientIds(rb);
   const dc = useCsqttCfg(inp, clientIds[0] || "csqttapp");
-  // the link is complete, but only because the panel-wide fallback filled it in — see vkOwnHash
   const vkFallbackHere = !vkOwnHash(peer, (peer.user_id != null) ? (Store.roster.users || {})[peer.user_id] : null);
   const vkUnassigned = peer.user_id == null;
   const vkNote = (dc.art && dc.art.vkMissing)
@@ -1249,7 +1145,7 @@ export function TargetCardCsqtt({ peer: peerProp, t, bare, primary, head }) {
     + `<span class="qrc-srv" style="color:${esc(col)}">${esc(dnode)}</span><span class="tg tg-csqtt">${esc(t.iface)}</span>`;
   return html`<div class="deploy deploy-csqtt">
     ${head || html`<div class="deploy-head"><div class="nmwrap"><a class="nm nmlink" style=${"color:" + col} onClick=${() => { closeModal(); go("#/node/" + encodeURIComponent(t.node)); }}>${dnode}</a></div><${Tag} kind="csqtt" label=${t.iface}/><span class="grow"></span><${Badge} s=${lt.status}/></div>`}
-    <div class=${"deploy-body" + (uri && !dc.qr ? " deploy-body-stack" : "")   /* no scanner → the link stacks, same as a WDTT link card */}>
+    <div class=${"deploy-body" + (uri && !dc.qr ? " deploy-body-stack" : "")    }>
       ${primary === "backup" ? html`<span class="qr-primary qr-backup">${T("Backup")}</span>`
         : primary ? html`<span class="qr-primary">${T("Primary")}</span>` : null}
       ${!uri ? html`<div class="qr-none">${dc.pending ? T("generating…") : dc.err || T("csqtt link unavailable — the server isn't reporting yet.")}</div>`
@@ -1262,9 +1158,6 @@ export function TargetCardCsqtt({ peer: peerProp, t, bare, primary, head }) {
         <div class="row"><span class="k">${T("row|status")}</span><span class="vv"><${Badge} s=${lt.status}/></span></div>
       </div>`}
     </div>
-    ${/* A FOOTNOTE, below the body — never inside it. .deploy-body is a flex row and .qr is min-width:0, so a
-          sibling of prose collapsed the QR column to 0px and the note appeared to have REPLACED the config.
-          Same trap the RAW note hit (see the .tg-raw comment in app.css); same fix. */""}
     ${vkNote}
     ${uri ? html`<div class="acts">
       <button class="btn btn-mini" onClick=${() => copy(uri, T("csqtt link copied"))}><${Ic} i="copy"/> ${T("Copy")}</button>
@@ -1276,8 +1169,6 @@ export function wdttClientIds(fork) {
   const cmap = (Store.turnCatalog && Store.turnCatalog.clients) || {};
   return turnClientsFor(fork).map(c => c.id).filter(cid => cmap[cid]);
 }
-// The apps a csqtt server can be reached with: its fork's, minus those of another csqtt line — 2.1 and 2.5 do not speak
-// to each other (csqtt_lines in the catalog; absent = 2.1 only). A node that reports no line runs 2.1 and filters nothing.
 export function csqttClientIds(rb) {
   const cmap = (Store.turnCatalog && Store.turnCatalog.clients) || {};
   return wdttClientIds(rb.fork || "csqtt").filter(cid => !rb.line || (cmap[cid].csqtt_lines || ["2.1"]).includes(rb.line));
@@ -1287,28 +1178,23 @@ export function wdttClientCfg(w, cid, fork, os) {
   const enc = cl.encoder || "wdtt";
   const wIn = (enc === "qwdtt" && fork) ? { ...w, ...pickDefined(turnClientSettingsFor(fork, enc, os), ["workers"]) } : w;
   const art = (typeof SWGTurn !== "undefined" && SWGTurn.wdttArtifact) ? SWGTurn.wdttArtifact(wIn, enc) : null;
-  return { cl, qr: !!cl.qr, art, uri: art && art.text };   // qr = the app scans a QR; else it imports a pasted link
+  return { cl, qr: !!cl.qr, art, uri: art && art.text };
 }
-// Only the keys that carry a real value: the encoder omits a blank `workers` entirely (the app then uses its own
-// default), so an empty saved value must not become `workers=` in the link.
 function pickDefined(o, keys) {
   const out = {};
   for (const k of keys) { const v = (o || {})[k]; if (v !== undefined && v !== null && String(v).trim() !== "") out[k] = v; }
   return out;
 }
 export function TargetCardWdtt({ peer: peerProp, t, bare, primary, head }) {
-  useStore();   // re-render on each poll so the status badge stays live
-  const peer = Store.recon.peers.find(p => p.id === peerProp.id) || peerProp;   // LIVE peer → its current wdtt_password; the frozen prop would keep a stale link after a rotate
+  useStore();
+  const peer = Store.recon.peers.find(p => p.id === peerProp.id) || peerProp;
   const lt = (((Store.recon.peers.find(p => p.id === peer.id) || {}).targets) || []).find(d => d.node === t.node && d.iface === t.iface) || t;
   const col = Store.nodeColor(t.node); const dnode = Store.nodeName(t.node);
   const w = wdttArtInput(peer, t);
-  // Show the DEFAULT client's config (the fork's first/native app) — a QR where the app scans one, else the plain
-  // link. Every other app + per-OS build lives behind "Alternatives" (a child modal, like the turn-proxy config view).
   const rb = ((Store.stats[t.node] || {}).wdtt || []).find(x => x && x.iface === t.iface) || {};
   const fork = rb.fork || "amurcanov";
   const clientIds = wdttClientIds(fork);
   const dc = wdttClientCfg(w, clientIds[0] || "wdttapp", fork);
-  // same as the csqtt card: complete-looking link, filled in from the panel-wide fallback — see vkOwnHash
   const vkFallbackHere = !vkOwnHash(peer, (peer.user_id != null) ? (Store.roster.users || {})[peer.user_id] : null);
   const vkUnassigned = peer.user_id == null;
   const vkNote = (dc.art && dc.art.vkMissing)
@@ -1323,7 +1209,7 @@ export function TargetCardWdtt({ peer: peerProp, t, bare, primary, head }) {
     + `<span class="qrc-srv" style="color:${esc(col)}">${esc(dnode)}</span><span class="tg tg-wdtt">${esc(t.iface)}</span>`;
   return html`<div class="deploy deploy-wdtt">
     ${head || html`<div class="deploy-head"><div class="nmwrap"><a class="nm nmlink" style=${"color:" + col} onClick=${() => { closeModal(); go("#/node/" + encodeURIComponent(t.node)); }}>${dnode}</a></div><${Tag} kind="wdtt" label=${t.iface}/><span class="grow"></span><${Badge} s=${lt.status}/></div>`}
-    <div class=${"deploy-body" + (uri && !dc.qr ? " deploy-body-stack" : "")   /* a QR sits BESIDE its meta (the body's default row); a LINK has to stack — see .deploy-body-stack */}>
+    <div class=${"deploy-body" + (uri && !dc.qr ? " deploy-body-stack" : "")    }>
       ${primary === "backup" ? html`<span class="qr-primary qr-backup">${T("Backup")}</span>`
         : primary ? html`<span class="qr-primary">${T("Primary")}</span>` : null}
       ${!uri ? html`<div class="qr-none">${T("WDTT link unavailable — the server isn't reporting yet.")}</div>`
@@ -1338,9 +1224,6 @@ export function TargetCardWdtt({ peer: peerProp, t, bare, primary, head }) {
         <div class="row"><span class="k">${T("row|status")}</span><span class="vv"><${Badge} s=${lt.status}/></span></div>
       </div>`}
     </div>
-    ${/* A FOOTNOTE, below the body — never inside it. .deploy-body is a flex row and .qr is min-width:0, so a
-          sibling of prose collapsed the QR column to 0px and the note appeared to have REPLACED the config.
-          Same trap the RAW note hit (see the .tg-raw comment in app.css); same fix. */""}
     ${vkNote}
     ${uri ? html`<div class="acts">
       <button class="btn btn-mini" onClick=${() => copy(uri, T("WDTT link copied"))}><${Ic} i="copy"/> ${T("Copy")}</button>
@@ -1348,8 +1231,6 @@ export function TargetCardWdtt({ peer: peerProp, t, bare, primary, head }) {
     </div>` : null}
   </div>`;
 }
-// "Alternatives" — every app for this WDTT (or, with kind="csqtt", csqtt) fork, by device: a Device dropdown + app chips ("app · by author", in the
-// author's colour) on one line, and the chosen app's config (QR where it scans one, else the link) underneath.
 export function WdttConfigSheet({ peer, t, kind }) {
   useStore();
   const cs = kind === "csqtt";
@@ -1388,7 +1269,7 @@ export function WdttConfigSheet({ peer, t, kind }) {
 }
 export function WdttCfgItem({ w, cid, base, fork, os, kind }) {
   const cs = kind === "csqtt";
-  const dcs = useCsqttCfg(cs ? w : null, cid);   // called either way — a hook
+  const dcs = useCsqttCfg(cs ? w : null, cid);
   const dc = cs ? dcs : wdttClientCfg(w, cid, fork, os); const uri = dc.uri;
   const copied = cs ? T("csqtt link copied") : T("WDTT link copied");
   const [view, setView] = useState(dc.qr ? "qr" : "text");
@@ -1411,19 +1292,17 @@ export function WdttCfgItem({ w, cid, base, fork, os, kind }) {
   </div>`;
 }
 export function TargetCardWg({ peer: peerProp, t, bare, primary, head }) {
-  useStore();   // re-render on each poll so the status badge stays live (t is a snapshot from open)
-  const peer = Store.recon.peers.find(p => p.id === peerProp.id) || peerProp;   // LIVE peer → its current pubkey; the modal's prop is frozen at open, so a rotation (new key) would otherwise keep the QR gone
+  useStore();
+  const peer = Store.recon.peers.find(p => p.id === peerProp.id) || peerProp;
   const [conf, setConf] = useState(null);
   const [loaded, setLoaded] = useState(false);
   useEffect(() => { let ok = true; getConfig(peer.pubkey, t.node, t.iface).then(c => { if (ok) { setConf(c); setLoaded(true); ensurePeerBlob(peer, c); } }); return () => { ok = false; }; }, [peer.pubkey, t.node, t.iface, Store.configEpoch]);
-  // live target (status / observed) from the store, falling back to the passed-in snapshot
   const ft = (Store.recon.peers.find(p => p.id === peer.id) || {}).targets;
   const lt = (ft && ft.find(d => d.node === t.node && d.iface === t.iface)) || t;
   const col = Store.nodeColor(t.node);
   const obs = lt.observed;
   const tps = turnProxiesFor(t.node, t.iface);
   const dnode = Store.nodeName(t.node);
-  // zoom caption: username + title (or "Unassigned"), then the server name (in its colour) + iface tag
   const idParts = []; if (peer.name) idParts.push(esc(peer.name)); if (peer.title) idParts.push(esc(peer.title));
   const ltype = targetType(t);
   const label = `<span class="qrc-id">${idParts.length ? idParts.join(" · ") : esc(T("val|Unassigned"))}</span>`

@@ -31,7 +31,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// New user — identity, then optionally straight into adding peers (one per interface).
 export function openCreateUser() { openModal(html`<${CreateUserSheet}/>`); }
 export function CreateUserSheet() {
   const [name, setName] = useState(""); const [tag, setTag] = useState(""); const [note, setNote] = useState(""); const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false);
@@ -61,7 +60,7 @@ export function PeerBlockGrid({ peers, mode, act }) {
   useStore();
   const gridRef = useRef(null);
   const ids = peers.map(p => p.id).join(",");
-  useEffect(() => {                                     // cap the grid at 7 peer blocks (styled scrollbar past that) + centre a just-added/moved peer
+  useEffect(() => {
     const el = gridRef.current; if (!el) return;
     const kids = el.children;
     el.style.maxHeight = kids.length > 7 ? Math.ceil(kids[6].getBoundingClientRect().bottom - el.getBoundingClientRect().top) + "px" : "";
@@ -73,7 +72,7 @@ export function PeerBlockGrid({ peers, mode, act }) {
   if (!peers.length) return html`<div class="pg2-empty">${mode === "mine" ? T("No peers assigned to this user yet.") : T("No unassigned peers to add.")}</div>`;
   return html`<div class="pg2" ref=${gridRef}>${peers.map(p => {
     const ts = orderedTargets(p.targets || []); const multi = ts.length > 1;
-    const fresh = Store.recentlyCreated[p.id] && (Date.now() - Store.recentlyCreated[p.id] < 2500);   // reuse the users/peers-grid glow (recentlyCreated + pcreate)
+    const fresh = Store.recentlyCreated[p.id] && (Date.now() - Store.recentlyCreated[p.id] < 2500);
     return html`<div key=${p.id} data-pid=${p.id} class=${"pg2-peer" + (fresh ? " pcreate" : "")}>${(ts.length ? ts : [{}]).map((t, i) => html`
       <div key=${tkey(t.node, t.iface)} class=${"pg2-dep clk" + (multi && i === 0 ? " primary" : "")} title=${T("Double-click for QR / configs")}
         onMouseDown=${rowNoSelect} onClick=${e => rowSingle(e, () => openPeerView(p.id, t.node, t.iface, true))} onDblClick=${e => rowDouble(e, () => openPeerConfigs(p, { child: true }))}>
@@ -94,14 +93,14 @@ export function AddPeersSheet({ userId, userName }) {
   useStore();
   const rep = p => orderedTargets(p.targets || [])[0] || {};
   const orderPeers = list => [...list].sort((a, b) =>
-    (b.title ? 1 : 0) - (a.title ? 1 : 0) ||                              // named peers first (untitled sink to the bottom)
-    String(a.title || "").localeCompare(String(b.title || "")) ||        // then alphabetical by title
+    (b.title ? 1 : 0) - (a.title ? 1 : 0) ||
+    String(a.title || "").localeCompare(String(b.title || "")) ||
     Store.byNode(rep(a).node, rep(b).node) ||
     String(rep(a).ip || "").localeCompare(String(rep(b).ip || ""), undefined, { numeric: true }));
   const mine = orderPeers(userId ? Store.peersOfUser(userId) : []);
   const free = orderPeers(Store.unassignedPeers());
 
-  const doAssign = p => { Store.recentlyCreated[p.id] = Date.now(); return mutate({ key: "peer:" + p.id,   // keep the key, just link — publish the blob (prompts to unlock if locked)
+  const doAssign = p => { Store.recentlyCreated[p.id] = Date.now(); return mutate({ key: "peer:" + p.id,
     patch: s => { const pp = s.roster.peers[p.id]; if (pp) pp.user_id = userId; },
     call: () => api.peerUpdate({ peer_id: p.id, user_id: userId }),
     onOk: () => subReconcileUser(userId) }); };
@@ -128,11 +127,10 @@ export function AddPeersSheet({ userId, userName }) {
   <//>`;
 }
 
-// All deployable (node, iface) targets known from the consolidated state.
 export function allTargets() {
   const out = [];
   for (const node of Object.keys(Store.describe)) for (const iface of Object.keys(Store.describe[node] || {}))
-    if (!Store.ifaceIsSystem(node, iface)) out.push({ node, iface });   // never offer a mesh link (swg_*) as a peer target
+    if (!Store.ifaceIsSystem(node, iface)) out.push({ node, iface });
   for (const n of (Store.nodes || [])) {
     for (const iface of Object.keys(n.wdtt_cfg || {}))
       if (!out.some(t => t.node === n.id && t.iface === iface)) out.push({ node: n.id, iface });
@@ -142,12 +140,10 @@ export function allTargets() {
   return out;
 }
 
-// A deployment row's node name ends in an ellipsis when long (app.css .targetopt .nm): its full name as a tooltip then,
-// and only then — asked on hover, when the browser has laid it out.
 const nmTip = e => { const el = e.currentTarget; el.title = el.scrollWidth > el.clientWidth ? el.textContent : ""; };
 
 export function TargetFrontBadge({ node, iface, peer, dim }) {
-  useStore();          // it is a publish switch when `peer` is set — without this it never re-renders after a toggle
+  useStore();
   if (!node || !iface) return null;
   if (kindOf(node, iface, null) === "wdtt") {
     const nrec = (Store.nodes || []).find(x => x.id === node) || {};
@@ -163,8 +159,6 @@ export function TargetFrontBadge({ node, iface, peer, dim }) {
   if (!tps.length) return null;
   const one = t => shownTitle("t|" + node + "|" + t.service, t.title) || forkLabel(turnFork(t.service));
   const st = peer ? pubState(peer, "turn") : null;
-  // Offline dims this the same way it dims the interface badge beside it — they describe one deployment, so
-  // one of them fading while the other stays lit read as a difference in state that isn't there.
   const tag = (body, cls, style, title) => st
     ? html`<button type="button" class=${"tg tgt-front " + pubCls(st, ((cls || "") + (dim ? " dim" : "")).trim())} style=${style} title=${st.title}
         aria-pressed=${!st.hidden} onClick=${e => { e.preventDefault(); e.stopPropagation(); st.flip(); }}><span class="tgt-ttl">${body}</span>${st.hidden ? html`<${Ic} i="off"/>` : null}</button>`
@@ -186,12 +180,9 @@ export function TargetPicker({ prefill, exclude, onChange, initial, pubPeer }) {
   const pubHave = useMemo(() => new Set(((pubPeer && pubPeer.targets) || []).map(t => tkey(t.node, t.iface))),
                           [pubPeer && pubPeer.targets]);
   const all = useMemo(allTargets, [Store.describe, Store.stats]);
-  // locked: launched from one interface — show only that target, no toggling, just the IP.
   const locked = !!(prefill && prefill.lock && prefill.node && prefill.iface);
   const baseAll = locked ? all.filter(t => t.node === prefill.node && t.iface === prefill.iface)
     : (exclude ? all.filter(t => !exclude.has(tkey(t.node, t.iface))) : all);
-  // existing deployments whose interface the node no longer reports (dangling/missing) — still list them so the
-  // operator can UNCHECK to drop them; otherwise a dangling deployment is stuck on the peer with no way to remove it.
   const missingExisting = (!locked && initial) ? initial.filter(t => !baseAll.some(a => a.node === t.node && a.iface === t.iface))
     .map(t => ({ node: t.node, iface: t.iface, type: t.type, missing: true })) : [];
   const targets = baseAll.concat(missingExisting);
@@ -205,24 +196,24 @@ export function TargetPicker({ prefill, exclude, onChange, initial, pubPeer }) {
   const toggle = (node, iface) => {
     const k = tkey(node, iface);
     if (sel[k]) setSel(s => { const n = { ...s }; delete n[k]; return n; });
-    else if (iTypeOf(node, iface) === "wdtt") setSel(s => ({ ...s, [k]: { node, iface, ip: "", wdtt: true } }));   // WDTT mints the client IP on connect — no address to pick
-    else if (iTypeOf(node, iface) === "csqtt") setSel(s => ({ ...s, [k]: { node, iface, ip: "", csqtt: true } }));   // csqtt mints the address on connect too
+    else if (iTypeOf(node, iface) === "wdtt") setSel(s => ({ ...s, [k]: { node, iface, ip: "", wdtt: true } }));
+    else if (iTypeOf(node, iface) === "csqtt") setSel(s => ({ ...s, [k]: { node, iface, ip: "", csqtt: true } }));
     else allocIp(node, iface);
   };
   const setIp = (k, v) => setSel(s => s[k] ? { ...s, [k]: { ...s[k], ip: v } } : s);
   const setOpts = (k, v) => setSel(s => s[k] ? { ...s, [k]: { ...s[k], opts: v } } : s);
   const seeded = useRef(false);
-  useEffect(() => {                                  // seed already-deployed targets (their assigned IP, read-only)
+  useEffect(() => {
     if (seeded.current || !initial || !initial.length || !all.length) return;
     seeded.current = true;
     const seed = {};
     initial.forEach(t => { seed[tkey(t.node, t.iface)] = { node: t.node, iface: t.iface, ip: String(t.ip || "").split("/")[0], existing: true }; });
     setSel(seed);
   }, [all, initial]);
-  useEffect(() => {                                  // preselect from prefill once targets are known
+  useEffect(() => {
     if (!targets.length || Object.keys(sel).length || (initial && initial.length)) return;
     if (prefill && prefill.node && prefill.iface) {
-      if (iTypeOf(prefill.node, prefill.iface) === "wdtt") setSel({ [tkey(prefill.node, prefill.iface)]: { node: prefill.node, iface: prefill.iface, ip: "", wdtt: true } });   // WDTT: select without allocating an address
+      if (iTypeOf(prefill.node, prefill.iface) === "wdtt") setSel({ [tkey(prefill.node, prefill.iface)]: { node: prefill.node, iface: prefill.iface, ip: "", wdtt: true } });
       else if (iTypeOf(prefill.node, prefill.iface) === "csqtt") setSel({ [tkey(prefill.node, prefill.iface)]: { node: prefill.node, iface: prefill.iface, ip: "", csqtt: true } });
       else allocIp(prefill.node, prefill.iface);
     } else if (prefill && prefill.node) targets.filter(t => t.node === prefill.node).slice(0, 1).forEach(t => allocIp(t.node, t.iface));
@@ -234,7 +225,7 @@ export function TargetPicker({ prefill, exclude, onChange, initial, pubPeer }) {
     Store.byNode(a.node, b.node) || (a.iface || "").localeCompare(b.iface || ""));
   return html`<div class="targetpick">${ordered.map(t => {
     const k = tkey(t.node, t.iface); const s = sel[k];
-    const ity = t.missing ? (t.type || "wg") : iTypeOf(t.node, t.iface);   // wg | awg | wdtt (a WDTT iface isn't in `describe`, so key off the name via iTypeOf)
+    const ity = t.missing ? (t.type || "wg") : iTypeOf(t.node, t.iface);
     return html`<div class=${"targetopt " + (s ? "sel " : "") + (locked ? "locked" : "") + (t.missing ? " missing" : "")}>
       <label class="topt-main" onClick=${locked ? null : () => toggle(t.node, t.iface)}>
         <span class="box">${s ? html`<${Ic} i="check"/>` : ""}</span>
@@ -247,7 +238,6 @@ export function TargetPicker({ prefill, exclude, onChange, initial, pubPeer }) {
         ${(s && (s.wdtt || s.csqtt || isSelfContainedKind(ity)))
           ? html`<span class="topt-ip faint" title=${T("The server assigns the address on connect")}>${T("val|auto IP")}</span>`
           : (s ? html`<input class=${"topt-ip " + (s.ip && !V.ipv4(s.ip) ? "bad" : "")} value=${s.ip} placeholder=${s.ipHint || T("address")} title=${s.ip && !V.ipv4(s.ip) ? T("not a valid IPv4 address") : ""} onInput=${e => setIp(k, e.target.value)}/>` : null)}
-        ${/* a phone shows no title: the reason goes under the field (MOBILE-PLAN hook 5) */""}
         ${s && isMobile() && s.ip && !V.ipv4(s.ip) ? html`<span class="hint err topt-err">${T("not a valid IPv4 address")}</span>` : null}
         ${(s && !t.missing) ? html`<${TargetGear} node=${t.node} iface=${t.iface} kind=${ity} opts=${s.opts} onSave=${v => setOpts(k, v)} readOnly=${!!s.existing}/>` : null}
       </div>
@@ -255,16 +245,11 @@ export function TargetPicker({ prefill, exclude, onChange, initial, pubPeer }) {
   })}</div>`;
 }
 
-// ONE DEPLOYMENT's client-config settings
 export const tgtDefaults = (meta) => ({
   dns: ((meta || {}).dns || []).join(", "), mtu: String((meta || {}).mtu || 1280),
-  // keepalive reads the interface like dns/mtu do. It used to be a hardcoded "25", so the gear seeded 25
-  // over an interface set to something else and configOverrides then stored that 25 as a customisation.
   keepalive: String((meta || {}).keepalive != null ? (meta || {}).keepalive : 25),
-  allowed: "0.0.0.0/0, ::/0",   // an interface has no AllowedIPs to inherit — routing belongs to the client
+  allowed: "0.0.0.0/0, ::/0",
 });
-// Does this deployment differ from its interface's defaults? Drives the gear's "customised" dot, so an
-// operator can see which rows carry settings without opening each one.
 export const tgtCustomised = (opts, meta) => !!(opts && Object.keys(configOverrides(opts, meta)).length);
 
 export function openTargetSettings({ node, iface, opts, meta, onSave, readOnly }) {
@@ -299,8 +284,6 @@ export function TargetSettingsSheet({ node, iface, opts, meta, onSave, readOnly 
       : T("This is a plain WireGuard interface, so it carries no AmneziaWG obfuscation parameters.")}</div>
   <//>`;
 }
-// The gear that opens the sheet above, for ONE wg/awg row. Returns null for a self-contained kind — WDTT and
-// csqtt have no client config to open, and that absence IS the affordance.
 export function TargetGear({ node, iface, kind, opts, onSave, readOnly }) {
   if (isSelfContainedKind(kind)) return null;
   const meta = Store.ifaceMeta(node, iface);
@@ -310,8 +293,6 @@ export function TargetGear({ node, iface, kind, opts, onSave, readOnly }) {
     onClick=${e => { e.preventDefault(); e.stopPropagation(); openTargetSettings({ node, iface, opts, meta, onSave, readOnly }); }}><${Ic} i="gear"/></button>`;
 }
 
-// New peer (mint a fresh keypair) deployed to one OR MORE (node,iface) targets as ONE
-// credential (redundancy / failover). For per-interface devices, use a user's "Add peers".
 export function openCreatePeer(prefill, child) { (child ? pushModal : openModal)(html`<${CreatePeerSheet} prefill=${prefill || {}}/>`); }
 export function CreatePeerSheet({ prefill }) {
   const [chosen, setChosen] = useState([]);
@@ -327,7 +308,7 @@ export function CreatePeerSheet({ prefill }) {
     if (!chosen.length) return T("Pick at least one target.");
     const badIp = keyed.find(t => !V.ipv4(String(t.ip || "").trim()));
     if (badIp) return T("Invalid address for {v1}.", { v1: Store.nodeName(badIp.node) + "/" + badIp.iface });
-    for (const t of keyed) {                      // each deployment's own settings, validated on its own
+    for (const t of keyed) {
       const ce = configErrors(t.opts || tgtDefaults(Store.ifaceMeta(t.node, t.iface)));
       const k = Object.keys(ce)[0];
       if (k) return T("{v1}: {v2}", { v1: t.iface, v2: ce[k] });
@@ -339,15 +320,15 @@ export function CreatePeerSheet({ prefill }) {
     const err = validate(); if (err) return setMsg({ k: "err", t: err });
     setBusy(true); setMsg({ k: "work", t: keyed.length ? T("generating key…") : T("creating peer…") });
     let keys = null, pskV = "", tgts, configs, body;
-    try {                                            // browser-side crypto/config build is the only awaited part
+    try {
       if (keyed.length) {
         keys = await genKeys();
-        pskV = genPSK();   // PSK is panel-owned & auto-minted; change it via a peer's Rotate keys
+        pskV = genPSK();
       }
       tgts = []; configs = {};
       for (const t of chosen) {
         const kind = kindFor(t);
-        if (isSelfContainedKind(kind)) {            // no address, no key, no client config — the server owns all three
+        if (isSelfContainedKind(kind)) {
           tgts.push({ node: t.node, iface: t.iface, ip: "", type: kind });
           continue;
         }
@@ -355,30 +336,26 @@ export function CreatePeerSheet({ prefill }) {
         const ipClean = String(t.ip).trim().split("/")[0];
         const o = t.opts || tgtDefaults(m);
         const tg = { node: t.node, iface: t.iface, ip: ipClean, type: (m.awg_params && Object.keys(m.awg_params).length) ? "awg" : "wg" };
-        const ov = configOverrides(o, m);           // only what differs from THIS interface's defaults is stored
+        const ov = configOverrides(o, m);
         if (Object.keys(ov).length) tg.overrides = ov;
         tgts.push(tg);
         configs[tkey(t.node, t.iface)] = buildConf({ privkey: keys.priv, address: ipClean + "/32", dns: o.dns.split(",").map(x => x.trim()).filter(Boolean), mtu: String(o.mtu).trim() || 1280, awg_params: m.awg_params, server_pubkey: m.public_key, psk: pskV, endpoint: m.endpoint, allowed: String(o.allowed).trim() || "0.0.0.0/0, ::/0", keepalive: String(o.keepalive).trim() });
       }
       body = { user_id: userId || null, title: title.trim(), pubkey: keys ? keys.pub : "", psk: pskV, targets: tgts };
-      // No plaintext to the server: the key stays in the browser (session config for the immediate QR) and is
-      // encrypted into the blob by subMaybePublish (below, after the create POST succeeds).
     } catch (e) { setBusy(false); return setMsg({ k: "err", t: T("Error: {v1}", { v1: e.message })}); }
-    // Optimistic: stash the config, drop a "creating" peer onto the grid, close the modal NOW, and let
-    // the create POST run in the background (mutate reverts + toasts on failure; the next poll supersedes).
     if (keys) Store.sessionConfigs[keys.pub] = Object.assign(Store.sessionConfigs[keys.pub] || {}, configs);
     const tempId = "tmp_" + (keys ? keys.pub.slice(0, 14) : String(Math.random()).slice(2, 16));
     const optimistic = { id: tempId, pubkey: keys ? keys.pub : "", user_id: userId || null, title: title.trim(), psk: pskV,
       targets: tgts.map(t => ({ node: t.node, iface: t.iface, ip: t.ip, type: t.type })),
-      created_at: panelNowS(), _creating: true };   // panel clock: reconcile judges the "creating" grace against it
+      created_at: panelNowS(), _creating: true };
     closeModal();
     if (prefill.lock && prefill.node && prefill.iface) go("#/node/" + encodeURIComponent(prefill.node) + "/" + encodeURIComponent(prefill.iface));
     else if (userId) revealUser(userId, tempId);
     mutate({
-      patch: s => { s.roster.peers[tempId] = optimistic; },        // shows instantly with status "creating"
+      patch: s => { s.roster.peers[tempId] = optimistic; },
       call: () => api.peerCreate(body),
       onOk: r => { if (r && r.data && r.data.id) { Store.recentlyCreated[r.data.id] = Date.now();
-        if (keys) subPublishOrPrompt(userId || null, r.data.id, keys.priv, pskV); } },   // encrypt {k,p} → blob (prompt to unlock if locked)
+        if (keys) subPublishOrPrompt(userId || null, r.data.id, keys.priv, pskV); } },
     });
   };
 
@@ -398,15 +375,13 @@ export function CreatePeerSheet({ prefill }) {
 }
 
 export function openAddTarget(peer, back) {
-  const child = modalDepth() > 0;   // opened from another modal (peer view / edit) → child; Cancel pops back to it
+  const child = modalDepth() > 0;
   (child ? pushModal : openModal)(html`<${AddTargetSheet} peer=${peer} back=${back || closeModal} child=${child}/>`);
 }
 export function AddTargetSheet({ peer, back, child }) {
   back = back || closeModal;
   const [chosen, setChosen] = useState([]);
   const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false);
-  // source config (holds the client's private key) so NEW targets can rebuild a QR: session first,
-  // then the panel's stored copy when store_configs is on. Any target's config carries the same key.
   const [srcConf, setSrcConf] = useState(() => anySessionConf(peer.pubkey));
   const [confLoaded, setConfLoaded] = useState(() => !!anySessionConf(peer.pubkey) || !Store.storeConfigs);
   useEffect(() => {
@@ -423,17 +398,13 @@ export function AddTargetSheet({ peer, back, child }) {
   const haveKeys = new Set(peer.targets.map(t => tkey(t.node, t.iface)));
   const origIp = {}; peer.targets.forEach(t => origIp[tkey(t.node, t.iface)] = String(t.ip || "").split("/")[0]);
   const chosenKeys = new Set(chosen.map(c => tkey(c.node, c.iface)));
-  const added = chosen.filter(c => !haveKeys.has(tkey(c.node, c.iface)));         // newly checked
-  const removed = peer.targets.filter(t => !chosenKeys.has(tkey(t.node, t.iface))); // unchecked existing
-  const ipChanged = chosen.filter(c => haveKeys.has(tkey(c.node, c.iface)) && c.ip && String(c.ip).split("/")[0] !== origIp[tkey(c.node, c.iface)]);  // existing whose address was edited
-  // A peer may now hold a mix of kinds, so a newly-ticked row is only asked for an address when its interface
-  // HAS one to give — a wdtt/csqtt server mints the client address on connect.
+  const added = chosen.filter(c => !haveKeys.has(tkey(c.node, c.iface)));
+  const removed = peer.targets.filter(t => !chosenKeys.has(tkey(t.node, t.iface)));
+  const ipChanged = chosen.filter(c => haveKeys.has(tkey(c.node, c.iface)) && c.ip && String(c.ip).split("/")[0] !== origIp[tkey(c.node, c.iface)]);
   const kindFor = c => (c.wdtt ? "wdtt" : c.csqtt ? "csqtt" : iTypeOf(c.node, c.iface));
   const needsIp = c => !isSelfContainedKind(kindFor(c));
   const badIp = added.concat(ipChanged).filter(needsIp).some(c => !c.ip || !V.ipv4(String(c.ip).split("/")[0]));
   const nochange = !added.length && !removed.length && !ipChanged.length;
-  // A device that carries networks carries them on EVERY node it is deployed to — so a node added here opens them to that
-  // node too, and a node removed takes them away from everyone there. Neither was said.
   const nets = peer.routes || [];
   const netDev = peer.title || ((peer.user_id && Store.user(peer.user_id)) || {}).name || T("This device");
   const netsAdded = nets.length > 0 && added.some(needsIp);
@@ -445,25 +416,21 @@ export function AddTargetSheet({ peer, back, child }) {
     for (const t of added) {
       const kind = kindFor(t);
       if (isSelfContainedKind(kind)) {
-        // A keyless deployment brings no address and no client config; if this is the peer's first of that
-        // kind, the panel mints its access password server-side (mint_keyless_secrets).
         const r = await api.peerAddTarget({ peer_id: peer.id, target: { node: t.node, iface: t.iface, ip: "", type: kind } });
         if (!r.ok) fails.push(Store.nodeName(t.node) + "/" + T("{v1} (add)", { v1: t.iface }));
         continue;
       }
       const info = Store.ifaceMeta(t.node, t.iface);
       const ipClean = String(t.ip || "").split("/")[0];
-      const o = t.opts || null;                  // settings the operator set behind this row's gear
+      const o = t.opts || null;
       let conf = null;
       if (srcConf) { const s = parseFullConf(srcConf);
         conf = buildConf({ privkey: s.privkey, address: ipClean + "/32", dns: o ? String(o.dns).split(",").map(x => x.trim()).filter(Boolean) : s.dns, mtu: o ? (String(o.mtu).trim() || 1280) : s.mtu, awg_params: info.awg_params, server_pubkey: info.public_key, psk: s.psk || peer.psk, endpoint: info.endpoint, allowed: o ? (String(o.allowed).trim() || "0.0.0.0/0, ::/0") : s.allowed, keepalive: o ? String(o.keepalive).trim() : s.keepalive }); }
       const target = { node: t.node, iface: t.iface, ip: ipClean, type: info.awg_params && Object.keys(info.awg_params).length ? "awg" : "wg" };
       const ov = o ? configOverrides(o, info) : {};
       if (Object.keys(ov).length) target.overrides = ov;
-      // Same key as the existing deployments → the peer's blob already covers it; no plaintext to the server.
       const r = await api.peerAddTarget({ peer_id: peer.id, target });
       if (r.ok) { if (conf) (Store.sessionConfigs[peer.pubkey] = Store.sessionConfigs[peer.pubkey] || {})[tkey(t.node, t.iface)] = conf; }
-      // a refused deployment says WHY — "(add)" alone left the operator guessing which of this device's networks was in the way
       else fails.push(Store.nodeName(t.node) + "/" + T("{v1} (add)", { v1: t.iface })
         + ((r.refusals || []).length ? " — " + r.refusals.map(x => netWhy(x, Store.nodeName(x.node))).join(" ") : ""));
     }
@@ -471,7 +438,6 @@ export function AddTargetSheet({ peer, back, child }) {
       const info = Store.ifaceMeta(t.node, t.iface);
       const ipClean = String(t.ip || "").split("/")[0];
       const body = { peer_id: peer.id, node: t.node, iface: t.iface, ip: ipClean };
-      // address lives in the roster (rendered live); rebuild the session config for the QR, but send no plaintext.
       if (srcConf) { const s = parseFullConf(srcConf); const conf = buildConf({ privkey: s.privkey, address: ipClean + "/32", dns: s.dns, mtu: s.mtu, awg_params: info.awg_params, server_pubkey: info.public_key, psk: s.psk || peer.psk, endpoint: info.endpoint, allowed: s.allowed, keepalive: s.keepalive }); (Store.sessionConfigs[peer.pubkey] = Store.sessionConfigs[peer.pubkey] || {})[tkey(t.node, t.iface)] = conf; }
       const r = await api.peerUpdateTarget(body);
       if (!r.ok) fails.push(Store.nodeName(t.node) + "/" + T("{v1} (address)", { v1: t.iface }));
@@ -487,7 +453,7 @@ export function AddTargetSheet({ peer, back, child }) {
   const save = () => {
     if (nochange) { back(); return; }
     if (badIp) return setMsg({ k: "err", t: T("A target has an invalid address.") });
-    if (chosen.length === 0) {                       // a peer must live on at least one interface — none left = delete it
+    if (chosen.length === 0) {
       pushModal(html`<${ConfirmSheet} title=${T("Delete this peer?")} confirmLabel=${T("Yes, delete")} danger=${true}
         body=${T("You've unchecked every interface, so there's nothing left to deploy this peer to — saving will completely delete it. Its access is revoked everywhere and its config / QR stops working. This action is irreversible. Are you sure you want to continue?")
           + (nets.length ? " " + T("{device} carries {nets} — everyone who reaches them through it loses access.", { device: netDev, nets: nets.join(", ") }) : "")}
@@ -545,12 +511,10 @@ export function openPeerView(pid, node, iface, child) { (child ? pushModal : ope
 export function PeerViewSheet({ pid, node, iface }) {
   useStore();
   const p = Store.peer(pid);
-  const depsOrdered = useStableOrder(p ? p.targets : []);   // frozen at open — toggling ★ won't re-shuffle the cards
+  const depsOrdered = useStableOrder(p ? p.targets : []);
   if (!p) return html`<${Sheet} title=${T("sheet|Peer")} foot=${html`<button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Close")}</button>`}><div class="empty"><b>${T("Peer not found")}</b>${T("It may have been removed.")}</div><//>`;
   const u = p.user_id ? Store.user(p.user_id) : null;
   const editLocked = p.targets.some(t => t.status === "dangling" || t.status === "broken");
-  // Same status treatment as the peer QR modal: in a subscription → subscription status in the header (right) + the
-  // peer's own status on a line under it; not in a subscription → the peer's own status takes the header slot.
   const headExtra = u ? html`<${SubStatusLine} user=${u} pos="hr"/>` : html`<${PeerStatusLine} peer=${p} pos="hr"/>`;
   return html`<${Sheet} title=${p.title || (u ? u.name : T("Unassigned peer"))} width=${760} headExtra=${headExtra} subject=${{ kind: "peer", id: pid }}
     foot=${html`<${Fragment}>
@@ -563,7 +527,6 @@ export function PeerViewSheet({ pid, node, iface }) {
       ${peerBlockBtn(p)}
       ${p.unassigned ? html`<button class="btn btn-danger" onClick=${() => confirmDeletePeer(p, null, true)}>${T("Delete")}</button>`
         : html`<button class="btn btn-danger" onClick=${() => confirmUnassign(p)}>${T("Unassign")}</button>`}
-      ${/* a phone: the device's keys from its view, amber as everywhere (operator, 2026-10-29) */""}
       ${isMobile() && !rotateParts(p).none ? html`<button class="btn btn-warn m-pvrot" onClick=${() => rotateOnePeerKeys(p)}><${Ic} i="key"/> ${rotateOneLabel(p)}</button>` : null}<//>`}>
     ${u ? html`<${PeerStatusLine} peer=${p} pos="bar"/>` : null}
     <div class="pv-head">
@@ -574,7 +537,7 @@ export function PeerViewSheet({ pid, node, iface }) {
     <div class="lbl" style="margin:16px 2px 4px">${T("Deployments · {n}", { n: p.targets.length })}</div>
     <div class="pv-deps">${depsOrdered.map(t => {
       const obs = t.observed;
-      const xfer = tgtXfer(t);            // wire counters for wg/awg, per-password byte deltas for a keyless server
+      const xfer = tgtXfer(t);
       const proto = targetType(t);
       return html`<div class=${"pv-dep" + (node === t.node && iface === t.iface ? " hl" : "")} key=${tkey(t.node, t.iface)}>
         <div class="pv-dep-top">${peerUncategorised(t) && t.status !== "blocked" && t.status !== "faulty"
@@ -593,8 +556,6 @@ export function PeerViewSheet({ pid, node, iface }) {
         <div class="pv-dep-grid">
           <span><span class="k">${T("col|Node")}</span> <span style=${"color:" + (Store.nodeColor(t.node) || "var(--ink)")}>${Store.nodeName(t.node)}</span></span>
           <span><span class="k">${T("col|Interface")}</span> ${t.iface}</span>
-          ${/* A qWDTT instance running RAW gives the peer a SECOND address, on its own TUN — it holds both at
-                once, so this sits BESIDE the wg address rather than replacing it. Absent for every other kind. */""}
           <span class=${t.raw_ip ? "pv-addr-raw" : ""}><span class="k">${T("col|Address")}</span> <span class="addr">${t.ip || "—"}</span>${t.raw_ip
             ? html` <span class="tg tg-raw" title=${T("This peer's address on the RAW datapath — it holds both at once")}>RAW ${t.raw_ip}</span>`
             : null}</span>
@@ -616,7 +577,6 @@ export function UserViewSheet({ uid }) {
   const e = trafficTotals(trafficModalView);
   const d = e && e.data;
   const rows = ((d && d.rows.get(uid)) || []).slice().sort((a, b) => (b.rx + b.tx) - (a.rx + a.tx) || String(a.name).localeCompare(String(b.name)));
-  // devices the user holds now but that carried nothing in the window still belong on the list
   const inRows = new Set(rows.map(r => r.id));
   const quiet = u ? Store.peersOfUser(uid).filter(p => !inRows.has(p.id)).map(p => ({ id: p.id, name: p.title || "", rx: 0, tx: 0, quiet: true })) : [];
   const all = rows.concat(quiet);
@@ -676,37 +636,33 @@ export function GroupViewSheet({ gid, child }) {
 }
 
 export function openEditPeer(peer, focus, done, flash) {
-  const child = modalDepth() > 0;   // opened from another modal (peer view) → child; closing pops back to it
+  const child = modalDepth() > 0;
   (child ? pushModal : openModal)(html`<${EditPeerSheet} peer=${peer} focus=${focus} done=${done || closeModal} flash=${flash} child=${child}/>`);
 }
 export function EditPeerSheet({ peer, focus, done, flash, child }) {
   done = done || closeModal;
-  useStore();                                        // re-render on poll so a target added via the Targets sheet shows up live
-  const live = Store.peer(peer.id) || peer;          // LIVE peer (the `peer` prop is a snapshot from open) — used for the target list
-  const targetsOrdered = useStableOrder(live.targets);   // frozen at open — the primary ★ won't re-shuffle rows mid-edit
+  useStore();
+  const live = Store.peer(peer.id) || peer;
+  const targetsOrdered = useStableOrder(live.targets);
   const [title, setTitle] = useState(peer.title || "");
   const [ips, setIps] = useState(() => Object.fromEntries(live.targets.map(t => [tkey(t.node, t.iface), (t.ip || "").split("/")[0]])));
-  useEffect(() => {                                  // a newly-added target appears live → give it an IP field
+  useEffect(() => {
     setIps(prev => { const next = { ...prev }; let ch = false;
       live.targets.forEach(t => { const k = tkey(t.node, t.iface); if (!(k in next)) { next[k] = (t.ip || "").split("/")[0]; ch = true; } });
       return ch ? next : prev; });
   }, [live.targets.map(t => tkey(t.node, t.iface)).join(",")]);
   const setIpFor = (k, v) => setIps(m => ({ ...m, [k]: v }));
   const [loaded, setLoaded] = useState(false);
-  const [confs, setConfs] = useState({});            // "node|iface" -> conf text (those we can rebuild)
-  // "node|iface" -> {dns,mtu,keepalive,allowed} for THAT deployment. Was one set for the whole peer, which
-  // stopped being expressible once a peer could span kinds — see TargetSettingsSheet.
+  const [confs, setConfs] = useState({});
   const [topts, setTopts] = useState({});
   const setOptsFor = (k, v) => setTopts(m => ({ ...m, [k]: v }));
-  const [userId, setUserId] = useState(peer.user_id || "");   // staged owner (applied on Save for an unassigned peer)
+  const [userId, setUserId] = useState(peer.user_id || "");
   const [priv, setPriv] = useState(peer.private === true);
-  const [router, setRouter] = useState(peer.router === true);   // several devices behind this address (S11b)
-  const [expDate, setExpDate] = useState(expiryInputVal(peer.ownExpiry || 0));   // this peer's OWN expiry (blank = inherit the subscription's)
+  const [router, setRouter] = useState(peer.router === true);
+  const [expDate, setExpDate] = useState(expiryInputVal(peer.ownExpiry || 0));
   const [msg, setMsg] = useState(flash || null); const [busy, setBusy] = useState(false);
-  const [orig, setOrig] = useState(null);          // the loaded config values — Save stays off until one differs
-  const [rotating, setRotating] = useState(false); // Rotate in flight → the button disables + says so
-  // reopening THIS sheet with a new flash (e.g. rotate: orange "Rotating…" → green "Keys rotated")
-  // reuses the instance, so the useState initial above is ignored — sync the prop into state.
+  const [orig, setOrig] = useState(null);
+  const [rotating, setRotating] = useState(false);
   useEffect(() => { if (flash) setMsg(flash); }, [flash]);
 
   useEffect(() => {
@@ -720,10 +676,10 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
       const seed = {};
       for (const k of Object.keys(found)) { const c = parseFullConf(found[k]);
         seed[k] = { dns: (c.dns || []).join(", "), mtu: String(c.mtu), keepalive: String(c.keepalive), allowed: c.allowed }; }
-      setTopts(seed); setOrig(seed);   // baseline for the "anything changed?" Save gate
+      setTopts(seed); setOrig(seed);
     })();
     return () => { ok = false; };
-  }, [peer.id, live && live.pubkey, Store.configEpoch]);   // LIVE pubkey / epoch change (e.g. after Rotate) re-reads the now-available config
+  }, [peer.id, live && live.pubkey, Store.configEpoch]);
 
   const editable = Object.keys(confs).length;
   const ipChangedFor = t => { const v = (ips[tkey(t.node, t.iface)] || "").trim(); return !!v && v !== (t.ip || "").split("/")[0]; };
@@ -732,12 +688,10 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
   const optsErr = Object.keys(topts).map(k => { const e = configErrors(topts[k]); const f = Object.keys(e)[0];
     return f ? { k, msg: T("{v1}: {v2}", { v1: k.split("|")[1], v2: e[f] }) } : null; }).find(Boolean);
   const optsChanged = k => !!orig && !!orig[k] && JSON.stringify(topts[k]) !== JSON.stringify(orig[k]);
-  // Save is only offered when something would actually change — otherwise it rewrites the peer with identical
-  // values (and, for a user change, walks the operator into a confirm for a no-op).
   const _dirty = (title.trim() !== (peer.title || "").trim())
-    || (priv !== (peer.private === true))          // ⚠️ or Save stays disabled: this sheet computes dirty from its OWN
+    || (priv !== (peer.private === true))
     || (router !== (peer.router === true))
-    || ((userId || "") !== (peer.user_id || ""))   //    fields, it does not watch input events
+    || ((userId || "") !== (peer.user_id || ""))
     || (expDate !== expiryInputVal(peer.ownExpiry || 0))
     || (live.targets || []).some(ipChangedFor)
     || Object.keys(topts).some(optsChanged);
@@ -746,7 +700,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
     if (anyIpBad) return setMsg({ k: "err", t: T("Each address must be a valid IPv4.") });
     if (optsErr) return setMsg({ k: "err", t: optsErr.msg });
     const expSec = expiryFromInput(expDate);
-    // A peer can't outlive its subscription (the server enforces it too — check here for a clean message).
     if (expSec && ownerExp && expSec > ownerExp) return setMsg({ k: "err", t: T("Expiry can't be later than the subscription's (") + fmtDate(ownerExp) + ")." });
     setBusy(true); setMsg({ k: "work", t: T("saving…") });
     let fails = 0;
@@ -754,7 +707,7 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
       if (title.trim() !== (peer.title || "")) {
         const r = await api.peerUpdate({ peer_id: peer.id, title: title.trim() }); if (!r.ok) fails++;
       }
-      if (expSec !== (peer.ownExpiry || 0)) {   // this peer's own expiry date (independent of the subscription's)
+      if (expSec !== (peer.ownExpiry || 0)) {
         const r = await api.peerUpdate({ peer_id: peer.id, expiry: expSec }); if (!r.ok) { fails++; if (r.error) setMsg({ k: "err", t: srvText(r) }); }
       }
       if (priv !== (peer.private === true)) {
@@ -770,16 +723,14 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
         const r = await api.peerUpdateTarget({ peer_id: peer.id, node: t.node, iface: t.iface, overrides: ovNew });
         if (!r.ok) fails++;
       }
-      // staged assignment of a previously-unassigned peer — keep the key, just set the owner
       if (peer.unassigned && userId && userId !== (peer.user_id || "")) {
         const r = await api.peerUpdate({ peer_id: peer.id, user_id: userId }); if (!r.ok) fails++;
       }
-      // rebuild + persist each target's config; any target whose address changed moves on its iface
       for (const t of (live.targets || peer.targets)) {
         const k = tkey(t.node, t.iface); const cur = confs[k];
         const changed = ipChangedFor(t);
         const newIP = (ips[k] || "").trim().split("/")[0];
-        if (!cur) {                                  // no config to rebuild (or a keyless deployment) — IP can still move
+        if (!cur) {
           if (changed) { const r = await api.peerUpdateTarget({ peer_id: peer.id, node: t.node, iface: t.iface, ip: newIP }); if (!r.ok) fails++; }
           continue;
         }
@@ -788,27 +739,23 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
         const addr = (changed ? newIP : (s.address || "").split("/")[0]) + "/32";
         const conf = buildConf({ privkey: s.privkey, address: addr, dns: String(o.dns).split(",").map(x => x.trim()).filter(Boolean), mtu: (String(o.mtu).trim() || 1280), awg_params: s.awg_params, server_pubkey: s.server_pubkey, psk: s.psk, endpoint: s.endpoint, allowed: (String(o.allowed).trim() || "0.0.0.0/0, ::/0"), keepalive: String(o.keepalive).trim() });
         (Store.sessionConfigs[peer.pubkey] = Store.sessionConfigs[peer.pubkey] || {})[k] = conf;
-        // No plaintext to the server: the address moves via the roster, and the DNS/MTU/AllowedIPs edits are
-        // persisted as roster overrides (the peerUpdate above); the key is unchanged, so the blob still holds it.
         if (changed) { const r = await api.peerUpdateTarget({ peer_id: peer.id, node: t.node, iface: t.iface, ip: newIP }); if (!r.ok) fails++; }
       }
     } catch (e) { setBusy(false); return setMsg({ k: "err", t: String(e.message || e) }); }
     setBusy(false); Store.configEpoch++;
-    // an already-assigned peer changing owner is destructive (keys rotate) — confirm it now, on
-    // Save (so cancelling keeps the previous owner). Title/config above are already persisted.
     const oldUid = peer.user_id || "", newUid = userId || "";
     if (oldUid && newUid !== oldUid) {
       await Store.poll();
       const fresh = (Store.recon.peers.find(x => x.id === peer.id)) || peer;
-      return newUid ? confirmReassign(fresh, newUid) : confirmUnassign(fresh);   // stacks over this sheet; Cancel pops back
+      return newUid ? confirmReassign(fresh, newUid) : confirmUnassign(fresh);
     }
     toast(fails ? T("Saved (some changes couldn't be persisted).") : T("Peer updated."), fails ? "info" : "ok");
     done(); await Store.poll();
   };
 
-  const { hasWdtt, hasCsqtt, hasKeyed } = rotateParts(peer);   // the live peer's, one copy with the phone's Rotate (review F72)
-  const isKeyless = !hasKeyed;   // EVERY deployment is self-contained: panel-owned password, no browser keypair
-  const isWdttPeer = hasWdtt, isCsqttPeer = hasCsqtt;   // (rotate-link wording below)
+  const { hasWdtt, hasCsqtt, hasKeyed } = rotateParts(peer);
+  const isKeyless = !hasKeyed;
+  const isWdttPeer = hasWdtt, isCsqttPeer = hasCsqtt;
   const rotate = () => {
     if (hasKeyed && (hasWdtt || hasCsqtt)) {
       openConfirm({ title: T("Rotate credentials"), confirmLabel: T("Rotate credentials"), warn: true,
@@ -819,7 +766,7 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
             try {
               if (hasCsqtt) await api.csqttPeerRotate({ peer_id: peer.id });
               if (hasWdtt) await api.wdttPeerRotate({ peer_id: peer.id });
-              await rotatePeerKeys(peer);   // LAST: this changes the pubkey, and the two above address by id
+              await rotatePeerKeys(peer);
               await Store.poll();
               const re = Store.rowErrors["peer:" + peer.id];
               toast(re ? (re.msg || T("Rotate failed.")) : T("Credentials rotated — send the user their new QR and links; the old ones no longer work."), re ? "err" : "ok");
@@ -829,7 +776,7 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
         } });
       return;
     }
-    if (isKeyless) {   // keyless turn peer: no browser keypair — rotate the panel-owned access password (revokes the old link)
+    if (isKeyless) {
       const rotateApi = b => (isCsqttPeer ? api.csqttPeerRotate(b) : api.wdttPeerRotate(b));
       openConfirm({ title: T("Rotate link"), confirmLabel: T("Rotate link"), warn: true,
         body: isCsqttPeer
@@ -896,14 +843,8 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
     <div class="field"><label>${T("Access expires")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— this peer only; blank = {fallback}", { fallback: ownerExp ? T("follows the subscription") : T("never") })}</span></label>
       <div class="daterow"><input type="date" class="datein" max=${ownerExp ? expiryInputVal(ownerExp) : ""} value=${expDate} onInput=${e => setExpDate(e.target.value)}/>${expDate ? html`<button class="btn btn-ghost btn-mini" onClick=${() => setExpDate("")}>${T("Clear")}</button>` : null}</div>
       <div class=${"hint"}>${T("On this date the peer stops working (it reappears if you extend it).")}${ownerExp ? T(" Can't be later than the subscription's expiry ({v1}).", { v1: fmtDate(ownerExp) }) : ""}</div></div>
-    ${/* ⚠️ Reuses `Switch` and the .toggle-row label shape the panel already uses for a boolean with an explanation
-          under it, rather than drawing a new control. The hint is the whole promise in one line, because "private"
-          on its own would leave an operator guessing whether it hides the device or only its networks. */""}
     <div class="field"><label class="toggle-row"><${Switch} on=${priv} onChange=${v => setPriv(v)}/><span>${T("Private")}</span></label>
       <div class="hint">${T("Only this user's own devices reach it and the networks behind it — not the people they share a group with, and not everyone on the node, whatever the interface allows.")}</div>
-      ${/* ⚠️ The switch promises "not everyone on the node, whatever the interface allows". On a node too old to enforce,
-            or one not reporting now, that promise is not kept and NOTHING said so — and this file's own rule is that
-            claiming isolation a box does not have is the one answer worse than no answer. */""}
       ${(priv ? privateUnenforced(live || peer) : []).map(u => html`<div class="notice warn" key=${"nx" + u.node + (u.iface || "")}>
         <${Ic} i="warn"/><span>${u.why === "old"
           ? T("Not enforced on {node} — it runs an older version, or hasn't reported yet. Devices there still reach this one.", { node: Store.nodeName(u.node) })
@@ -911,9 +852,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
           ? T("Not enforced for {iface} on {node} — the device has no user, so every device there still reaches it.", { iface: u.iface, node: Store.nodeName(u.node) })
           : T("Not enforced for {iface} on {node} — this server build can't prove which address the device has, so every device there still reaches it.",
               { iface: u.iface, node: Store.nodeName(u.node) })}</span></div>`)}
-      ${/* ⚠️ THE DIRECTION THAT OPENS SOMETHING. Turning Private OFF hands the device back to whatever its stored share
-            says — and for a device that never had one that means everyone on the node, which is invisible from here.
-            The ON direction got a warning because consent belongs to the person clicking; so does this one. */""}
       ${!priv && peer.private === true ? (o => html`<div class="notice warn">
         <${Ic} i="warn"/><span>${[T("Saving this opens it again."),
           o.everyoneAt.length
@@ -924,9 +862,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
             : o.nets.mode === "shared" ? T("The networks behind it open to {who}.",
                 { who: namedFew([...o.nets.users.map(u => u.name), ...o.nets.groups.map(g => g.name)]) })
             : T("The networks behind it stay with this user's own devices.")].filter(Boolean).join(" ")}</span></div>`)(privateOffOpens(live || peer)) : null}</div>
-    ${/* S11b: a router is several devices behind one address — a torrent flag on it cut every other device's high ports
-          (a user's report: a NAT router's OpenVPN). Only where it can mean something: a wg/awg deployment; a keyless one
-          is not a router. The hint says the cost in the same breath as the gain. */""}
     ${router || routerCapable(live) ? html`<div class="field">
       <label class="toggle-row"><${Switch} on=${router} onChange=${v => setRouter(v)}/><span>${T("Router — several devices share this address")}</span></label>
       <div class="hint">${T("Torrents are still blocked connection by connection, but one device's torrent no longer cuts the other devices' VPNs, calls and games. The cost: an encrypted torrent behind it with DHT off gets through.")}</div></div>` : null}
@@ -938,7 +873,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
         return html`<div class="targetopt sel locked" key=${k}>
           <div class="topt-main"><span class="box"><${Ic} i="check"/></span><span class="nm" style=${"color:" + (Store.nodeColor(t.node) || "var(--ink)")} onMouseEnter=${nmTip}>${Store.nodeName(t.node)}</span><span class="tp">${t.iface}</span></div>
           <div class="topt-right hasprim">
-            ${/* a phone has no hover for the star's title, so its word stays (MOBILE-PLAN hook 9) */""}
             <${RoleToggle} peer=${peer} t=${t} compact=${!isMobile()}/>
             <${PubTag} peer=${live} src=${ity} label=${ity} dim=${!t.online} gen3=${tgt3(t)}/>
             <${TargetFrontBadge} node=${t.node} iface=${t.iface} peer=${live}/>
@@ -962,11 +896,9 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
 }
 
 const netList = s => String(s || "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
-// The ranges home routers hand out by default (TP-Link/D-Link/Asus, Netgear, Huawei, Xiaomi, MikroTik, ISP boxes). A network
-// overlapping one is unreachable from any home that uses it — the home LAN's own route wins on the user's device.
 const HOME_RANGES = ["192.168.0.0/24", "192.168.1.0/24", "192.168.2.0/24", "192.168.8.0/24", "192.168.31.0/24",
   "192.168.88.0/24", "192.168.100.0/24", "10.0.0.0/24"];
-const v4Range = s => {                                        // "a.b.c.d[/n]" → [first, last] as integers, or null
+const v4Range = s => {
   const m = /^(\d{1,3}(?:\.\d{1,3}){3})(?:\/(\d{1,2}))?$/.exec(String(s).trim());
   if (!m || !V.ipv4(m[1]) || (m[2] !== undefined && +m[2] > 32)) return null;
   const size = 2 ** (32 - (m[2] === undefined ? 32 : +m[2])), a = m[1].split(".").reduce((n, o) => n * 256 + +o, 0);
@@ -1017,10 +949,7 @@ const shareOf = s => {
   return { mode: Object.keys(s.users).length || Object.keys(groups).length ? "chosen" : "owner", users: { ...s.users }, groups };
 };
 const storedGroupsOf = peer => (peer && peer.share && peer.share.groups && typeof peer.share.groups === "object") ? peer.share.groups : {};
-// The draft's groups to SHOW: every group that exists, and a deleted one only when this draft added it — the panel refuses that one
-// until it is removed, so it has to be on screen to remove. A deleted group the device already had is dropped by the next save.
 const shownGroups = (draftGroups, stored) => Object.keys(draftGroups || {}).filter(id => Store.group(id) || !(id in stored));
-// Does the draft let anyone besides the owner in right now? A group counts only while it exists and has members.
 const draftReaches = (userIds, draftGroups) => userIds.length > 0
   || Object.keys(draftGroups || {}).some(id => ((Store.group(id) || {}).users || []).length > 0);
 const shareBody = d => d.mode === "everyone" ? null
@@ -1038,7 +967,6 @@ function shareRefused(why) {
   }
 }
 const shareUser = id => { const u = Store.user(id); return u ? u.name : T("a user who no longer exists"); };
-// Why a grantee's turn-server devices do not reach it (swg-panel-server keyless_sources, docs/NETWORKS-PLAN.md §16).
 function shareKeyless(why, name, devices) {
   const o = { name, devices };
   switch (why) {
@@ -1052,8 +980,6 @@ function shareKeyless(why, name, devices) {
 
 function NetShare({ peer, draft, setDraft, nodes, noShare, routes }) {
   const owner = peer.user_id ? Store.user(peer.user_id) : null;
-  // The owner is in regardless and never stored as a grantee; after a reassignment the new owner can still sit in the stored
-  // list, and was shown twice — once as the owner, once as someone chosen.
   const ids = Object.keys(draft.users).filter(id => id !== peer.user_id).sort((a, b) => shareUser(a).localeCompare(shareUser(b)));
   const gids = shownGroups(draft.groups, storedGroupsOf(peer));
   const reaches = draftReaches(ids, draft.groups);
@@ -1067,9 +993,6 @@ function NetShare({ peer, draft, setDraft, nodes, noShare, routes }) {
     return html`<div class="netshare">
       <label class="netshare-l">${label}</label>
       <div class="notice warn"><${Ic} i="warn"/><span>${T("This device is Private, so these networks are its owner's alone. Turn Private off in the device's own settings to share them.")}</span></div>
-      ${/* ⚠️ "Its owner's alone" and it has NO owner: share_grants hands out nothing, so these networks reach no one at
-            all. The sentence that used to explain an empty audience lives in the control this guard replaces, so
-            without it the operator met a Save button that had silently greyed out and no reason anywhere on screen. */""}
       ${!owner ? html`<div class="hint">${T("This device has no owner yet, so nobody reaches these networks. Assign it to a user, or turn Private off.")}</div>` : null}
     </div>`;
   }
@@ -1083,8 +1006,6 @@ function NetShare({ peer, draft, setDraft, nodes, noShare, routes }) {
           : gids.length ? T("Shared with {groups}", { groups: plural(gids.length, "group") })
           : ids.length ? T("Shared with {users}", { users: plural(ids.length, "user") }) : T("Choose people")}</span></button>` : null}
     </div>
-    ${/* NETWORKS P5 S8: a node that can't enforce a restriction carries a restricted network for NOBODY. Said at the choice,
-          before the save — further down it was one reason line among many, and "Only Alice" read as simply broken. */""}
     ${draft.mode !== "everyone" && noShare.length ? html`<div class="notice warn"><${Ic} i="warn"/><span>${owner
         ? T("{nodes} runs an older version that can't limit who reaches a network, so with this choice nobody reaches them there — {name} included. Update {nodes}, or choose “{everyone}”.", { nodes: noShare.join(", "), name: owner.name, everyone })
         : T("{nodes} runs an older version that can't limit who reaches a network, so with this choice nobody reaches them there. Update {nodes}, or choose “{everyone}”.", { nodes: noShare.join(", "), everyone })}</span></div>` : null}
@@ -1097,9 +1018,7 @@ function NetShare({ peer, draft, setDraft, nodes, noShare, routes }) {
   </div>`;
 }
 
-// a list sized by the fleet, not by the operator
-const NET_PAGE = LIST_PAGE, pageOf = pageSlice, NetPager = ListPager;   // the shared pager (js/ui.js), also the user sheet's
-// Rows inside a disclosure, paged; `total` is the server's count when it capped the list it sent.
+const NET_PAGE = LIST_PAGE, pageOf = pageSlice, NetPager = ListPager;
 function NetPagedRows({ rows, total, render }) {
   const [page, setPage] = useState(1);
   const pages = Math.max(1, Math.ceil(rows.length / NET_PAGE)), pg = Math.min(page, pages);
@@ -1109,7 +1028,7 @@ function NetPagedRows({ rows, total, render }) {
 }
 
 function ShareListSheet({ peer, users: initial, groups: initialGroups, routes, onApply }) {
-  useStore();          // a group deleted while this window is open must turn into its "no longer exists" row on the next poll
+  useStore();
   const owner = peer.user_id ? Store.user(peer.user_id) : null;
   const [users, setUsers] = useState(() => { const u = { ...(initial || {}) }; delete u[peer.user_id]; return u; });
   const [groups, setGroups] = useState(() => ({ ...(initialGroups || {}) }));
@@ -1118,8 +1037,6 @@ function ShareListSheet({ peer, users: initial, groups: initialGroups, routes, o
   const key = signOf(users) + "|" + signOf(groups);
   if (base.current === null) base.current = key;
   dirtyRef.current = key !== base.current;
-  // The draft is unchanged when someone ELSE deletes one of its groups, so the preview is asked again on that too — the panel's
-  // refusal is what tells the operator to remove the row before Apply, instead of the Networks window failing after it.
   const goneKey = Object.keys(groups).filter(id => !Store.group(id)).sort().join(",");
   useEffect(() => {
     let ok = true;
@@ -1132,7 +1049,7 @@ function ShareListSheet({ peer, users: initial, groups: initialGroups, routes, o
     }, 350);
     return () => { ok = false; clearTimeout(h); };
   }, [key, goneKey]);
-  const reach = {};                                      // uid → devices that reach it, summed over the device's nodes
+  const reach = {};
   for (const t of (rep && rep.targets) || []) for (const g of ((t.share || {}).grants || [])) {
     const w = g.keyless_why || {}, soon = w.not_connected || 0;
     const r = reach[g.user_id] = reach[g.user_id] || { ok: 0, soon: 0, no: 0, nodes: [] };
@@ -1141,10 +1058,9 @@ function ShareListSheet({ peer, users: initial, groups: initialGroups, routes, o
   }
   const byName = (a, b) => shareUser(a).localeCompare(shareUser(b));
   const all = Object.keys(users).sort(byName);
-  // GROUPS (docs/GROUPS-PLAN.md G11): a group is a row of its own, first; a deleted one is not shown (it grants nothing)
   const gname = id => { const g = Store.group(id); return g ? g.name : T("a group that no longer exists"); };
   const byGroup = (a, b) => gname(a).localeCompare(gname(b));
-  const allG = shownGroups(groups, storedGroupsOf(peer)).sort(byGroup);   // a deleted group this window added stays, to be removed
+  const allG = shownGroups(groups, storedGroupsOf(peer)).sort(byGroup);
   const list = [...allG.map(id => ({ g: true, id })), ...all.map(id => ({ g: false, id }))];
   const ql = q.trim().toLowerCase();
   const rows = ql ? list.filter(r => (r.g ? gname(r.id) : shareUser(r.id)).toLowerCase().includes(ql)) : list;
@@ -1152,7 +1068,7 @@ function ShareListSheet({ peer, users: initial, groups: initialGroups, routes, o
   const add = id => {
     if (!id || id === peer.user_id || id in users) return;
     setUsers(u => ({ ...u, [id]: 0 })); setQ("");
-    setPage(Math.floor((allG.length + [...all, id].sort(byName).indexOf(id)) / NET_PAGE) + 1);   // to the page the new person lands on
+    setPage(Math.floor((allG.length + [...all, id].sort(byName).indexOf(id)) / NET_PAGE) + 1);
   };
   const addGroup = id => {
     if (!id || id in groups) return;
@@ -1176,7 +1092,6 @@ function ShareListSheet({ peer, users: initial, groups: initialGroups, routes, o
         ${Object.entries(g.keyless_why || {}).map(([w, n]) => html`<div class="netbub-row sub">${shareKeyless(w, shareUser(id), plural(n, "device"))}</div>`)}`)}
     <//>`;
   };
-  // A group's devices: the sum over its members, and the members on hover — ten named, the rest counted.
   const groupDevices = id => {
     if (!Store.group(id)) return html`<span class="faint">—</span>`;
     if (!rep) return html`<span class="faint">…</span>`;
@@ -1245,10 +1160,8 @@ function NetCounts({ t, node }) {
   if (soonKl) lines.push(["soon", T("{devices} not connected yet — they reach it once connected", { devices: plural(soonKl, "device") })]);
   if (s && c.peers) lines.push(["no", T("{peers} aren't among the people with access", { peers: plural(c.peers, "peer") })]);
   if (noKl) lines.push(["no", T("{devices} on turn servers that can't reach a restricted network", { devices: plural(noKl, "device") })]);
-  // Site to site: a device that fronts a network is a source too, so the devices on ITS network reach this one only when its
-  // owner has access. Named, with its networks and the reason — the first three; the rest counted.
   const provs = c.providers || [];
-  const provShown = capShown(provs.length, 3);   // four named rather than three and "…and 1 more"
+  const provShown = capShown(provs.length, 3);
   provs.slice(0, provShown).forEach(o => { const q = Store.peer(o) || {};
     const v = { device: netPeerName(o), nets: (q.routes || []).join(", "), owner: q.user_id ? shareUser(q.user_id) : "" };
     lines.push(["no", q.user_id
@@ -1291,13 +1204,11 @@ function NetworksSheet({ pid }) {
   const [rep, setRep] = useState(null);
   const [busy, setBusy] = useState(false);
   const [open, setOpen] = useState({});
-  const [rk, setRk] = useState(0);                             // bumped when a deployment's routing is saved from a node's line
+  const [rk, setRk] = useState(0);
   const dirtyRef = useRef(false), closeRef = useRef(null), cleanRef = useRef(null), base = useRef(null);
   const toggle = k => setOpen(o => ({ ...o, [k]: !o[k] }));
   const want = netList(draft);
   const wantKey = want.join(",");
-  // A NEW network starts private to its owner: open to everyone on the node the moment it is saved was the old default,
-  // and the report explaining the exposure arrived only after the fact. A stored network keeps its stored audience.
   const [share, setShare] = useState(() => {
     const d = stored.length ? shareOf(peer.share) : { mode: owner ? "owner" : "chosen", users: {}, groups: {} };
     return (!owner && d.mode === "owner") ? { ...d, mode: "chosen" } : d;
@@ -1306,7 +1217,7 @@ function NetworksSheet({ pid }) {
   const shareStoredKey = stored.length ? shareKey(shareOf(peer.share)) : "";
   const shareDirty = want.length > 0 && shareDraftKey !== shareStoredKey;
   const nodes = [...new Set((peer.targets || []).filter(t => !isSelfContainedKind(targetType(t))).map(t => Store.nodeName(t.node)))];
-  const reqKey = wantKey + "|" + shareDraftKey;                // the draft a report answers — anything else on screen is stale
+  const reqKey = wantKey + "|" + shareDraftKey;
   useEffect(() => {
     if (!want.length && !stored.length) { setRep(null); return; }
     let ok = true;
@@ -1322,13 +1233,10 @@ function NetworksSheet({ pid }) {
     return () => { ok = false; clearTimeout(h); };
   }, [wantKey, pid, storedKey, shareDraftKey, rk]);
   const refusals = (rep && rep.refusals) || [];
-  // Compared NORMALISED: the operator types `172.30.9.9`, the roster stores `172.30.9.9/32`.
   const normKey = (rep && rep.routes && rep._for === wantKey) ? rep.routes.join(",") : wantKey;
   const dirty = normKey !== storedKey || shareDirty;
   dirtyRef.current = dirty;
   if (base.current === null) base.current = storedKey + "|" + shareStoredKey;
-  // Someone else saved these networks while this window was open (another operator, another tab): saving now would put the
-  // old list back over theirs without a word. Caught on the poll that brings their change, before anything is written.
   const stale = storedKey + "|" + shareStoredKey !== base.current;
   const nobody = want.length > 0 && !owner && !peer.private && share.mode === "chosen" && !draftReaches(Object.keys(share.users), share.groups);
   const noShare = ((rep && rep.targets) || []).filter(x => x.can_share === false).map(x => Store.nodeName(x.node));
@@ -1362,7 +1270,6 @@ function NetworksSheet({ pid }) {
       ${stored.length ? html`<button class="btn btn-danger" disabled=${busy} onClick=${remove}>${T("Remove networks")}</button>` : null}
       <span class="grow"></span>
       <button class="btn btn-ghost btn-dismiss" onClick=${() => (closeRef.current ? closeRef.current() : closeModal())}>${T("Cancel")}</button>
-      ${/* An emptied field saves as a removal, through the same confirm — Save used to just grey out, which read as broken. */""}
       <button class="btn btn-primary" disabled=${busy || !dirty || stale || nobody || (!want.length && !stored.length) || refusals.length > 0}
         onClick=${want.length ? save : remove}>${busy ? T("saving…") : T("Save")}</button><//>`}>
     <div class="field netfield">
@@ -1370,15 +1277,9 @@ function NetworksSheet({ pid }) {
       <input class=${"mono" + (refusals.length ? " bad" : "")} value=${draft} onInput=${e => setDraft(e.target.value)}
         placeholder="192.168.1.0/24, 10.20.0.0/16" autocomplete="off" spellcheck="false" autofocus/>
       <div class="hint">${T("Networks this device routes for, like the office LAN behind a router. Clients on the same node reach them through it.")}</div>
-      ${/* Feature 11: peer-to-peer needs nothing built — two devices on a node reach each other — and operators do not know
-            that. Said here, where someone reaching for "connect devices" will look. ⚠️ DEVICE ACCESS (§10.6): only TRUE where
-            every interface this device is on is at Everyone; anywhere else its interface decides, and the sentence says so.
-            A device deployed nowhere is on no interface, so it gets no peer-to-peer claim either (§11.2 F7). */""}
       <div class="hint">${(ts => ts.length > 0 && ts.every(t => {
           const nr = (Store.nodes || []).find(x => x.id === t.node) || {};
           const c = (nr.wdtt_cfg || {})[t.iface] || (nr.csqtt_cfg || {})[t.iface];
-          // ⚠️ …and not for a PRIVATE device: on an Everyone interface every other device still reaches its neighbours, but
-          // this one is reached only by its user's own devices, which is not what the claim below promises.
           return ((c ? c.reach : (Store.ifaceMeta(t.node, t.iface) || {}).reach) || "user") === "everyone"; }))(
           peer.private ? [] : (peer.targets || []).filter(t => t && t.node && t.iface))
         ? T("Devices on the same node already reach each other at their tunnel addresses — that needs nothing here.")
@@ -1387,8 +1288,6 @@ function NetworksSheet({ pid }) {
       ${stale ? html`<div class="formmsg err">${T("Someone changed these networks while this window was open. Cancel and open it again to see the latest.")}</div>` : null}
       ${rep && rep.error ? html`<div class="formmsg err">${rep.error}</div>` : null}
       ${refusals.length ? html`<div class="netref">${refusals.map(r => html`<div><${Ic} i="warn"/><span>${netWhy(r, r.node ? Store.nodeName(r.node) : "")}</span></div>`)}</div>` : null}
-      ${/* The trap nobody on the panel side can see: a user whose home LAN uses the same range reaches their own printer, not
-            the office — "works on mobile data, not at home". Only the common home-router ranges; a hint, never a refusal. */""}
       ${clash.length ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Many home routers use {list}. Anyone whose home network uses the same addresses can't reach it from home — their own network wins — though it still works on mobile data. If you can, renumber this network to something rarer, like 10.57.20.0/24.", { list: clash.join(", ") })}</span></div>` : null}
       ${want.length ? html`<${NetShare} peer=${peer} draft=${share} setDraft=${setShare} nodes=${nodes} noShare=${noShare} routes=${want}/>` : null}
       ${checking ? html`<div class="loading"><span class="spin"></span>${T("Checking these networks…")}</div>` : null}
@@ -1402,8 +1301,6 @@ function netProbeSays(v, node) {
   const r = v.result || {};
   const o = { addr: v.addr, node, port: v.port || "", ms: r.ms, from: r.from || "", dev: r.dev || "", detail: r.detail || "" };
   switch (r.verdict) {
-    // Measured on the rig: this device's OWN address on its network answers with forwarding off, so an answer is
-    // only proof when it came from something behind it. Said with the answer, the one moment it could mislead.
     case "answered": return ["on", T("{addr} answered through {node} in {ms} ms.", o),
       T("That proves the path only if {addr} is a device on the network — this device's own address there answers even when it passes nothing on.", o)];
     case "refused_port": return ["on", T("{addr} answered through {node} in {ms} ms — port {port} is closed, but the network is reachable.", o), null];
@@ -1426,7 +1323,6 @@ function netProbeSays(v, node) {
   }
 }
 
-// Why the panel would not arm a test (net_probe_refusal), in words. → lines.
 function netProbeRefused(b, node, addr) {
   const d = b.detail || {};
   const o = { addr, node, p: d.prefix || "" };
@@ -1446,10 +1342,10 @@ function netProbeRefused(b, node, addr) {
 function NetProbe({ pid, nid, node, nets, restricted }) {
   const [addr, setAddr] = useState("");
   const [port, setPort] = useState("");
-  const [test, setTest] = useState(null);       // the panel's view of the latest test on this node
-  const [msg, setMsg] = useState(null);          // why a test was not armed, as lines
+  const [test, setTest] = useState(null);
+  const [msg, setMsg] = useState(null);
   const pending = !!test && test.state === "pending";
-  useEffect(() => {                              // a test still running, or just answered, when the sheet opens
+  useEffect(() => {
     let ok = true;
     api.peerNetworkProbe({ peer_id: pid }).then(r => {
       const x = r && r.ok ? (r.data || []).find(q => q.node === nid) : null;
@@ -1457,7 +1353,7 @@ function NetProbe({ pid, nid, node, nets, restricted }) {
     }).catch(() => {});
     return () => { ok = false; };
   }, [pid, nid]);
-  useEffect(() => {                              // the answer arrives within a couple of syncs; the panel expires it at 45 s
+  useEffect(() => {
     if (!pending) return;
     let ok = true, n = 0;
     const h = setInterval(async () => {
@@ -1467,7 +1363,7 @@ function NetProbe({ pid, nid, node, nets, restricted }) {
         if (!ok) return;
         if (r && r.ok) setTest(r.data);
         else if (r && r.why === "unknown") { setTest(null); setMsg([T("The panel no longer has that test — run it again.")]); }
-      } catch (e) { /* the next tick asks again */ }
+      } catch (e) {   }
     }, 1500);
     return () => { ok = false; clearInterval(h); };
   }, [pending, test && test.id]);
@@ -1477,13 +1373,10 @@ function NetProbe({ pid, nid, node, nets, restricted }) {
     try {
       const r = await api.peerNetworkProbe({ peer_id: pid, node: nid, addr: a, ...(port.trim() ? { port: port.trim() } : {}) });
       if (r && r.ok) { setTest(r.data); return; }
-      // ⚠️ A refused attempt clears the last answer. Left on screen, "nothing is at 192.168.50.99" sat directly above
-      // "192.168.1.1 isn't in a network…" and read as the new address's result — seen in the real sheet, not predicted.
       if (!(r && r.why === "busy")) setTest(null);
       setMsg(r && r.why ? netProbeRefused(r, node, a) : [srvText(r) || T("Couldn't start the test.")]);
     } catch (e) { setTest(null); setMsg([T("Couldn't start the test.")]); }
   };
-  // The sheet turns Enter into Save unless an input owns the key (data-enter="self"): here Enter runs the test.
   const key = e => { if (e.key === "Enter") { e.preventDefault(); if (!pending && addr.trim()) run(); } };
   const says = test && !pending ? netProbeSays(test, node) : null;
   return html`<div class="netprobe">
@@ -1503,47 +1396,46 @@ function NetProbe({ pid, nid, node, nets, restricted }) {
   </div>`;
 }
 
-const netAddrMask = sub => {                        // Keenetic asks for the network address and the mask separately
+const netAddrMask = sub => {
   const m = /^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/.exec(sub || "");
   if (!m || +m[2] > 32) return [sub, ""];
   const bits = +m[2], mask = bits ? (0xffffffff << (32 - bits)) >>> 0 : 0;
   return [m[1], [24, 16, 8, 0].map(sh => (mask >>> sh) & 255).join(".")];
 };
 const netSetupSnips = sub => ({
-  openwrt: ["uci -q delete network.<peer-section>.allowed_ips",   // i18n-keys: shell commands, not prose
-    "uci add_list network.<peer-section>.allowed_ips='" + sub + "'",   // i18n-keys: shell commands, not prose
-    "uci set network.<peer-section>.route_allowed_ips='1'", "uci commit network",   // i18n-keys: shell commands, not prose
-    "uci -q delete firewall.swg", "uci -q delete firewall.swg_lan",   // i18n-keys: shell commands, not prose
-    "uci set firewall.swg=zone", "uci set firewall.swg.name='swg'",   // i18n-keys: shell commands, not prose
-    "uci set firewall.swg.input='REJECT'", "uci set firewall.swg.output='ACCEPT'", "uci set firewall.swg.forward='REJECT'",   // i18n-keys: shell commands, not prose
-    "uci add_list firewall.swg.network='<wg-interface>'",   // i18n-keys: shell commands, not prose
-    "uci set firewall.swg_lan=forwarding", "uci set firewall.swg_lan.src='swg'", "uci set firewall.swg_lan.dest='lan'",   // i18n-keys: shell commands, not prose
-    "uci commit firewall", "ifup <wg-interface>", "service firewall reload"].join("\n"),   // i18n-keys: shell commands, not prose
-  mikrotik: ["/interface wireguard peers set [find interface=<wg-interface>] allowed-address=" + sub,   // i18n-keys: RouterOS commands, not prose
-    "/ip route add dst-address=" + sub + " gateway=<wg-interface>"].join("\n"),   // i18n-keys: RouterOS commands, not prose
-  linuxConf: ["# under [Interface]", "# (delete the DNS = line)",   // i18n-keys: config lines, not prose
-    "PostUp = iptables -t nat -A POSTROUTING -s " + sub + " -o <lan-device> -j MASQUERADE",   // i18n-keys: config lines, not prose
-    "PostUp = iptables -I FORWARD -i %i -o <lan-device> -j ACCEPT",   // i18n-keys: config lines, not prose
-    "PostUp = iptables -I FORWARD -i <lan-device> -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",   // i18n-keys: config lines, not prose
-    "PostDown = iptables -t nat -D POSTROUTING -s " + sub + " -o <lan-device> -j MASQUERADE",   // i18n-keys: config lines, not prose
-    "PostDown = iptables -D FORWARD -i %i -o <lan-device> -j ACCEPT",   // i18n-keys: config lines, not prose
-    "PostDown = iptables -D FORWARD -i <lan-device> -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",   // i18n-keys: config lines, not prose
-    "# under [Peer]", "AllowedIPs = " + sub].join("\n"),   // i18n-keys: config lines, not prose
-  linuxOnce: ["apt install -y iptables",   // i18n-keys: shell commands, not prose
-    "echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/99-swg-forward.conf",   // i18n-keys: shell commands, not prose
-    "sysctl -p /etc/sysctl.d/99-swg-forward.conf",   // i18n-keys: shell commands, not prose
-    "wg-quick down <wg-interface> 2>/dev/null", "systemctl enable wg-quick@<wg-interface>",   // i18n-keys: shell commands, not prose
-    "systemctl restart wg-quick@<wg-interface>"].join("\n"),   // i18n-keys: shell commands, not prose
+  openwrt: ["uci -q delete network.<peer-section>.allowed_ips",
+    "uci add_list network.<peer-section>.allowed_ips='" + sub + "'",
+    "uci set network.<peer-section>.route_allowed_ips='1'", "uci commit network",
+    "uci -q delete firewall.swg", "uci -q delete firewall.swg_lan",
+    "uci set firewall.swg=zone", "uci set firewall.swg.name='swg'",
+    "uci set firewall.swg.input='REJECT'", "uci set firewall.swg.output='ACCEPT'", "uci set firewall.swg.forward='REJECT'",
+    "uci add_list firewall.swg.network='<wg-interface>'",
+    "uci set firewall.swg_lan=forwarding", "uci set firewall.swg_lan.src='swg'", "uci set firewall.swg_lan.dest='lan'",
+    "uci commit firewall", "ifup <wg-interface>", "service firewall reload"].join("\n"),
+  mikrotik: ["/interface wireguard peers set [find interface=<wg-interface>] allowed-address=" + sub,
+    "/ip route add dst-address=" + sub + " gateway=<wg-interface>"].join("\n"),
+  linuxConf: ["# under [Interface]", "# (delete the DNS = line)",
+    "PostUp = iptables -t nat -A POSTROUTING -s " + sub + " -o <lan-device> -j MASQUERADE",
+    "PostUp = iptables -I FORWARD -i %i -o <lan-device> -j ACCEPT",
+    "PostUp = iptables -I FORWARD -i <lan-device> -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",
+    "PostDown = iptables -t nat -D POSTROUTING -s " + sub + " -o <lan-device> -j MASQUERADE",
+    "PostDown = iptables -D FORWARD -i %i -o <lan-device> -j ACCEPT",
+    "PostDown = iptables -D FORWARD -i <lan-device> -o %i -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT",
+    "# under [Peer]", "AllowedIPs = " + sub].join("\n"),
+  linuxOnce: ["apt install -y iptables",
+    "echo 'net.ipv4.ip_forward = 1' > /etc/sysctl.d/99-swg-forward.conf",
+    "sysctl -p /etc/sysctl.d/99-swg-forward.conf",
+    "wg-quick down <wg-interface> 2>/dev/null", "systemctl enable wg-quick@<wg-interface>",
+    "systemctl restart wg-quick@<wg-interface>"].join("\n"),
 });
 
 function NetSetup({ sub }) {
   const [kind, setKind] = useState("openwrt");
   const S = netSetupSnips(sub);
   const [addr, mask] = netAddrMask(sub);
-  // Commands go in as variables: T() reads everything before a "|" as a context prefix and would cut the sentence there.
-  const uciPeers = "uci show network | grep -E 'wireguard_|amneziawg_'", uciZones = "uci show firewall | grep <wg-interface>";   // i18n-keys: shell commands
+  const uciPeers = "uci show network | grep -E 'wireguard_|amneziawg_'", uciZones = "uci show firewall | grep <wg-interface>";
   const box = s => html`<div class="netsnip"><pre class="mono nixblock">${s}</pre><button type="button" class="btn btn-ghost btn-mini" onClick=${() => copy(s)}><${Ic} i="copy"/> ${T("Copy")}</button></div>`;
-  const kinds = [["openwrt", T("OpenWrt router")], ["mikrotik", "MikroTik"], ["keenetic", "Keenetic"],   // i18n-keys: brand names
+  const kinds = [["openwrt", T("OpenWrt router")], ["mikrotik", "MikroTik"], ["keenetic", "Keenetic"],
     ["linux", T("Linux computer")]];
   return html`<div class="netsetup">
     <div class="hint">${T("The node sends traffic to this device; the device has to pass it on to its network and send the answers back. Where does the tunnel run?")}</div>
@@ -1580,24 +1472,23 @@ function NetRouting({ t, node, sub, pid, onSaved }) {
   const g = t.gateway, p = Store.peer(pid);
   const tg = p && (p.targets || []).find(x => x.node === t.node && x.iface === t.iface);
   const meta = Store.ifaceMeta(t.node, t.iface);
-  const fromOv = o => { const r = {}; if (!o) return r;              // roster overrides → the settings sheet's string fields
+  const fromOv = o => { const r = {}; if (!o) return r;
     if (Array.isArray(o.dns)) r.dns = o.dns.join(", ");
     if (o.mtu != null) r.mtu = String(o.mtu);
     if (o.keepalive != null) r.keepalive = String(o.keepalive);
     if (o.allowed) r.allowed = o.allowed;
     return r; };
-  const opts = { ...tgtDefaults(meta), ...fromOv(p && p.overrides), ...fromOv(tg && tg.overrides) };   // target over peer over interface
+  const opts = { ...tgtDefaults(meta), ...fromOv(p && p.overrides), ...fromOv(tg && tg.overrides) };
   const save = async cur => {
     const r = await api.peerUpdateTarget({ peer_id: pid, node: t.node, iface: t.iface, overrides: configOverrides(cur, meta) });
     if (!(r && r.ok)) { toast(srvText(r) || T("Settings weren't saved."), "err"); return; }
-    // The QR this panel shows is rebuilt from the stored config, as Edit peer does, so it carries the new routing.
     try {
       const c = p && await getConfig(p.pubkey, t.node, t.iface);
       if (c) { const s = parseFullConf(c);
         (Store.sessionConfigs[p.pubkey] = Store.sessionConfigs[p.pubkey] || {})[tkey(t.node, t.iface)] = buildConf({ privkey: s.privkey, address: s.address,
           dns: String(cur.dns).split(",").map(x => x.trim()).filter(Boolean), mtu: String(cur.mtu).trim() || 1280, awg_params: s.awg_params,
           server_pubkey: s.server_pubkey, psk: s.psk, endpoint: s.endpoint, allowed: String(cur.allowed).trim() || "0.0.0.0/0, ::/0", keepalive: String(cur.keepalive).trim() }); }
-    } catch (_) { /* the roster copy is saved; only this browser's QR stays as it was */ }
+    } catch (_) {   }
     Store.configEpoch++;
     toast(T("Saved. The device uses the new settings once its config is re-imported."), "ok");
     await Store.poll();
@@ -1609,8 +1500,6 @@ function NetRouting({ t, node, sub, pid, onSaved }) {
       ? T("This device's config sends all its traffic into the tunnel — the usual setup for a phone or laptop. On a router it means every device behind it browses the internet through {node} too; to carry only its networks, set the routing to {subnet}.", { node, subnet: sub })
       : T("This device's config sends only {allowed} into the tunnel; everything else uses its own internet connection.", { allowed: g.allowed });
   return html`<span class="netroute">
-    ${/* left-anchored, not alignRight: only that placement is clamped into the viewport, and on a phone the value sits at the
-          right edge — alignRight hung the bubble off the left side. */""}
     <${Popover} hoverOnly cls="netroute-pop" popCls="netroute-bub"
       trigger=${html`<span class=${"netroute-v mono" + (g.no_return ? " bad" : "")}>${g.allowed}</span>`}>
       <span class="netroute-h">${T("Client allowed IPs (routing)")}</span>${says}<//>
@@ -1621,16 +1510,12 @@ function NetRouting({ t, node, sub, pid, onSaved }) {
 
 function NetNode({ t, open, toggle, kaOff, pid, testable, stored = [], onSaved }) {
   const node = Store.nodeName(t.node);
-  // `pending` = sent to the node and not routed there yet (swg-noded net_carried). It still counts as what saving means —
-  // who can reach it, whose routing leaves it out, the far-side setup — just not as "carried".
   const active = t.networks.filter(n => n.state === "active" || n.state === "pending");
   const sub = t.subnet || "<tunnel-subnet>";
   return html`<div class="netnode">
     <div class="netnode-h"><span class="nm" style=${"color:" + (Store.nodeColor(t.node) || "var(--ink)")}>${node}</span><span class="tp">${t.iface}</span>${t.address
         ? html`<span class="tp netaddr" title=${T("This device's address on {node}", { node })}>${t.address}</span>` : null}
       ${t.gateway && t.gateway.allowed != null ? html`<span class="grow"></span><${NetRouting} t=${t} node=${node} sub=${sub} pid=${pid} onSaved=${onSaved}/>` : null}</div>
-    ${/* P3 evidence: is the gateway there to carry anything? Its traffic is the device's own and its networks'
-          together — wg counts per peer — so it is labelled as traffic THROUGH the device. */""}
     ${t.gateway ? html`<div class=${"netgw" + (t.gateway.online ? " on" : "")}>
       <span class=${"condot " + (t.gateway.online ? "on" : "off")}></span>
       <span>${!t.gateway.reported ? T("{node} doesn't list this device yet.", { node })
@@ -1639,8 +1524,6 @@ function NetNode({ t, open, toggle, kaOff, pid, testable, stored = [], onSaved }
       ${t.gateway.online ? html`${rateCell(t.gateway.rx_speed, t.gateway.tx_speed)}${xferCell(...dlul(t.gateway.rx_bytes, t.gateway.tx_bytes))}` : null}
     </div>` : null}
     ${kaOff ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("This device's config for {node} sends no keepalive, so {node} loses its session when the device goes quiet — and these networks with it. Set a keepalive on that deployment.", { node })}</span></div>` : null}
-    ${/* Only a config that cannot work stays a warning (network_report gateway.no_return); the routing itself is on the line
-          above, with its meaning on hover and the gear to change it. */""}
     ${t.gateway && t.gateway.no_return ? html`<div class="notice warn"><${Ic} i="warn"/><span>${
         T("This device's config for {node} doesn't route {subnet}, so its answers to clients leave through its own internet connection and never arrive. Add {subnet} to its routing with the gear above and re-import its config.", { node, subnet: sub })}</span></div>` : null}
     <div class="netlist">${t.networks.map(n => html`<span class=${"nettag s-" + n.state}><span class="mono">${n.prefix}</span><em>${
@@ -1648,19 +1531,12 @@ function NetNode({ t, open, toggle, kaOff, pid, testable, stored = [], onSaved }
       : n.state === "pending" ? (stored.includes(n.prefix) ? T("waiting for {node}", { node }) : T("carried once saved"))
       : n.state === "refused_by_node" ? T("refused by the node") : T("not carried")}</em></span>`)}
       ${active.length ? html`<span class="grow"></span><${NetCounts} t=${t} node=${node}/>` : null}</div>
-    ${/* A restriction the node could not apply is not a number — nobody reaches the networks there, so it stays a line. */""}
     ${t.share && t.share.node && t.share.node.ok === false ? html`<div class="netref"><div><${Ic} i="warn"/><span>${T("{node} couldn't apply the restriction, so nobody reaches these networks there until it can: {detail}",
         { node, detail: t.share.node.detail || t.share.node.why || "" })}</span></div></div>` : null}
     ${t.networks.some(n => n.state === "pending" && stored.includes(n.prefix))
       ? html`<div class="netwhy">${T("{node} hasn't routed it yet — it does on its next sync, usually within a minute.", { node })}</div>` : null}
-    ${/* One line per REASON, not per network: two networks refused for the same node-wide reason ("can't restrict") printed
-          the identical sentence twice, under a warning that had already said it. */""}
-    ${/* `share_unsupported` is left to the warning at "Who can reach these networks", which names the node and the way out;
-          repeated here it was the same news twice in one window. */""}
     ${[...new Set(t.networks.filter(n => n.state !== "active" && n.state !== "pending" && n.why !== "share_unsupported")
         .map(n => netWhy(n, node)))].map(s => html`<div class="netwhy">${s}</div>`)}
-    ${/* NETWORKS §17 F1: the device is blocked or expired, so its networks go nowhere — and the people who used them are
-          not told by anything on their side. Said here, where the block is visible, with the list one click away. */""}
     ${t.lost ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Blocked, so {peers} of {users} lose these networks until it is unblocked — their devices keep sending that traffic into the tunnel, where nothing answers.",
         { peers: plural(t.lost.peers, "peer"), users: plural(t.lost.users, "gen|user") })}</span></div>
       <${Disclosure} title=${T("Who loses these networks: {peers}", { peers: plural(t.lost.total, "peer") })}
@@ -1668,8 +1544,6 @@ function NetNode({ t, open, toggle, kaOff, pid, testable, stored = [], onSaved }
         <${NetPagedRows} rows=${t.lost.list} total=${t.lost.total}
           render=${w => html`<div class="netwiden" key=${w.peer_id}><span class="grow">${netPeerName(w.peer_id)}</span><span class="tp">${w.iface}</span></div>`}/>
       <//>` : null}
-    ${/* NETWORKS §17 F5: Force DNS on this node answers every lookup itself; the node lets DNS to this network through, so
-          names on it resolve — and a client that uses a resolver there skips Force DNS for everything it looks up. */""}
     ${t.force_dns ? t.force_dns.exempt.map(p => html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Clients of {ifaces} on {node} that use a DNS server on {p} skip Force DNS: those lookups aren't blocked or routed by name.",
         { ifaces: t.force_dns.ifaces.join(", "), node, p })}</span></div>`) : null}
     ${t.widen_total ? html`<${Disclosure} title=${T("Narrowed routing, can't reach it: {peers}", { peers: plural(t.widen_total, "peer") })}
@@ -1683,8 +1557,6 @@ function NetNode({ t, open, toggle, kaOff, pid, testable, stored = [], onSaved }
     ${active.length ? html`<${Disclosure} title=${T("Set up the device's side")} open=${!!open[t.node + "|s"]} onToggle=${() => toggle(t.node + "|s")}>
       <${NetSetup} sub=${sub}/>
     <//>` : null}
-    ${/* The test is a tool, not a status: it lives last, folded, after the setup it checks. Only for what is SAVED (a draft
-          network is carried nowhere, so the panel would refuse the test) and only through a keyed deployment. */""}
     ${testable && t.gateway && t.networks.some(n => n.state !== "inert") ? html`<${Disclosure} title=${T("Connection test")}
         open=${!!open[t.node + "|t"]} onToggle=${() => toggle(t.node + "|t")}>
       <${NetProbe} pid=${pid} nid=${t.node} node=${node} nets=${t.networks.filter(n => n.state !== "inert").map(n => n.prefix)} restricted=${!!t.share}/>
@@ -1692,10 +1564,7 @@ function NetNode({ t, open, toggle, kaOff, pid, testable, stored = [], onSaved }
   </div>`;
 }
 
-// ── node sheets ──
 export function openNodeCreate() { openModal(html`<${NodeCreateSheet}/>`); }
-/* Sentences with a styled run (a bold name, a bold warning, a link) inside them. Each is ONE key with a
-   marker, split around the styled element — see Tsplit in js/i18n.js. */
 function meshElsewhere() {
   const [a, b] = Tsplit("Mesh settings (ingress address, subnet, port, prefix, AWG) for this node are configured in {where} — select this node there.", "where");
   return html`<${Fragment}>${a}<a href="#/panel/settings">${T("Panel settings → Network")}</a>${b}<//>`;
@@ -1755,12 +1624,10 @@ export function NodeTokenSheet({ name, token, isNew }) {
 export function openNodeEdit(node) { openModal(html`<${NodeEditSheet} node=${node}/>`); }
 
 export function NodeEditSheet({ node }) {
-  const rsv = (Store.panelSettings || {}).reserved || {};   // panel-wide defaults (used when the node has no override)
+  const rsv = (Store.panelSettings || {}).reserved || {};
   const dSub = rsv.mesh_subnet || "10.255.0.0/16", dPort = String(rsv.mesh_port_base || 9999), dPfx = rsv.iface_prefix || "swg_";
   const [name, setName] = useState(node.name || ""); const [color, setColor] = useState(() => toThemed(node.color, NODE_COLOR_DEFAULT)); const [msg, setMsg] = useState(null);
   const [ingress, setIngress] = useState(node.endpoint_host || "");
-  // mesh fields show the EFFECTIVE value in use (the node's override, else the panel default). Leaving it at
-  // the default normalizes to "inherit" on save (no spurious override / re-provision).
   const [meshPort, setMeshPort] = useState(node.mesh_port ? String(node.mesh_port) : dPort);
   const [meshSubnet, setMeshSubnet] = useState(node.mesh_subnet || dSub);
   const [meshPrefix, setMeshPrefix] = useState(node.mesh_prefix || dPfx);
@@ -1768,17 +1635,13 @@ export function NodeEditSheet({ node }) {
   const [panelIp, setPanelIp] = useState(node.panel_ip || "");
   const [meshEgress, setMeshEgress] = useState(node.mesh_egress_ip || "");
   const ips = node.ips || [];
-  const ovSub = meshSubnet.trim() === dSub ? "" : meshSubnet.trim();   // normalized overrides (default → inherit)
+  const ovSub = meshSubnet.trim() === dSub ? "" : meshSubnet.trim();
   const ovPort = meshPort.trim() === dPort ? "" : meshPort.trim();
   const ovPfx = meshPrefix.trim() === dPfx ? "" : meshPrefix.trim();
   const nameBad = name.trim() && !V.nodeName(name);
-  // Only a subnet or PREFIX change re-provisions (re-addresses / renames the iface → rebuild). A port-only
-  // change is applied LIVE (the node re-ports in place + peers re-dial), so it needs no re-provision confirm.
   const reprovChanged = ovSub !== (node.mesh_subnet || "") || ovPfx !== (node.mesh_prefix || "");
   const [busy, setBusy] = useState(false);
   const doSave = async () => {
-    // Sent before the sheet closes (q189 SPA-3): a refusal stays here, in the panel's words, with every edit kept — it used to
-    // close the sheet (and the re-provision confirm on top) first and lose them all. Accepted, both close.
     const r = await sheetSend(() => api.nodeUpdate({ id: node.id, name: name.trim(), color, endpoint_host: ingress, mesh_port: ovPort,
         mesh_egress_ip: meshEgress, mesh_subnet: ovSub, mesh_prefix: ovPfx, default_egress_ip: defEgress, panel_ip: panelIp }),
       t => setMsg(t ? { k: "err", t } : null), setBusy);
@@ -1787,7 +1650,7 @@ export function NodeEditSheet({ node }) {
   };
   const save = async () => {
     if (!name.trim() || !V.nodeName(name)) return setMsg({ k: "err", t: T("Name: 1–40 chars, letters/digits/-/_ only.") });
-    if (reprovChanged) {   // re-provisioning bounces this node's mesh links → confirm first
+    if (reprovChanged) {
       return pushModal(html`<${ConfirmSheet} title=${T("Re-provision this node's mesh links?")} confirmLabel=${T("Re-provision")} warn=${true}
         body=${T("Changing the mesh subnet / port / prefix of {v1} rebuilds all of its node-to-node links with the new settings.", { v1: node.name }) + " " + T("{v1} will briefly drop off the mesh (and any cascade/smart traffic routed through it pauses) until every peer pulls the new config and reconnects — usually a few seconds. Other nodes' links to each other are unaffected.", { v1: node.name })}
         onConfirm=${doSave}/>`);
@@ -1810,10 +1673,8 @@ export function NodeEditSheet({ node }) {
     <div class="field"><label>${T("Panel egress connection IP")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— source to reach the panel")}</span></label>
       <${NodeIpPick} ips=${ips} value=${panelIp} onChange=${setPanelIp} auto=${T("Auto (default route)")}/>
       <div class="hint">${T("Source IP this node uses to reach the panel. Ignored on same-server installs; falls back to auto if it can't connect.")}</div></div>
-    ${/* The third outbound role, beside the other two rather than under Mesh: an operator asking "which of
-          this box's addresses does it go OUT from?" wants all three answers in one place. It is a node-level
-          DEFAULT because the per-connection override cannot be one — re-provisioning wipes `links` wholesale
-          and rebuilds them without it, so a value set on a single card is dropped by the next migration. */ null}
+    ${
+ null}
     <div class="field"><label>${T("Mesh egress IP")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— source to dial other nodes")}</span></label>
       <${NodeIpPick} ips=${ips} value=${meshEgress} onChange=${setMeshEgress} auto=${T("Auto (default route)")}/>
       <div class="hint">${T("Which of this node's addresses it dials the other nodes' mesh links from. A single connection can still override it on its own card.")}</div></div>
@@ -1830,14 +1691,13 @@ export function NodeRotateSheet({ node }) {
   <//>`;
 }
 export function openNodeRemove(node) { openModal(html`<${NodeRemoveSheet} node=${node}/>`); }
-export function unflagNode(n) {   // cancel a pending soft removal — keep the node
+export function unflagNode(n) {
   mutate({
     key: "node:" + n.id,
     patch: s => { const x = s.nodes.find(y => y.id === n.id); if (x) { delete x.removing; delete x.removing_at; } },
     call: () => api.nodeUnflagRemove({ id: n.id }),
   });
 }
-// Force-remove a node — destructive (cuts it off immediately + drops peers that live only here), so gated behind typing "DELETE <name>" (case-sensitive), like deleting an interface/turn-proxy.
 export function ForceRemoveNodeSheet({ node }) {
   const [txt, setTxt] = useState(""); const [busy, setBusy] = useState(false);
   const phrase = T("DELETE {v1}", { v1: node.name });
@@ -1849,7 +1709,7 @@ export function ForceRemoveNodeSheet({ node }) {
     setBusy(true); closeAllModals();
     mutate({
       key: "node:" + node.id,
-      patch: s => {                                  // optimistic: drop the node + purge its targets (mirrors the cascade)
+      patch: s => {
         s.nodes = s.nodes.filter(x => x.id !== node.id);
         for (const id of Object.keys(s.roster.peers)) {
           const p = s.roster.peers[id]; p.targets = p.targets.filter(t => t.node !== node.id);
@@ -1876,14 +1736,14 @@ export function NodeRemoveSheet({ node }) {
   const declarative = !!node.declarative;
   const nixos = node.platform === "nixos";
   const uninstall = declarative
-    ? (nixos ? "services.swg-node.enable = false;   # then: sudo nixos-rebuild switch" : "")   // i18n-keys: generated Nix — file text, copied verbatim
+    ? (nixos ? "services.swg-node.enable = false;   # then: sudo nixos-rebuild switch" : "")
     : "cd /opt/swg-node && sudo docker compose down";
   const flag = () => { setFlagged(true); mutate({
     key: "node:" + node.id,
     patch: s => { const n = s.nodes.find(x => x.id === node.id); if (n) n.removing = true; },
     call: () => api.nodeFlagRemove({ id: node.id }),
   }); };
-  const force = () => pushModal(html`<${ForceRemoveNodeSheet} node=${node}/>`);   // typed "DELETE <name>" confirmation (matches interface/turn-proxy deletes)
+  const force = () => pushModal(html`<${ForceRemoveNodeSheet} node=${node}/>`);
   return html`<${Sheet} title=${T("Remove {v1}", { v1: node.name })}
     foot=${html`<${Fragment}><span class="grow"></span><button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Close")}</button>
       ${flagged ? null : html`<button class="btn btn-primary" onClick=${flag}>${T("Flag for removal")}</button>`}

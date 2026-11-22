@@ -1,12 +1,10 @@
 name: docker
 
-# Нативные сборки amd64 и arm64 объединяются в манифесты GHCR.
 
 on:
   push:
     branches: [main, dev]
     tags: ['v*']
-    # swg.sh запрашивает образ по SHA HEAD, включая коммиты с документацией.
   workflow_dispatch:
 
 permissions:
@@ -20,7 +18,7 @@ jobs:
   build:
     runs-on: ${{ matrix.runner }}
     strategy:
-      fail-fast: false        # one image/arch failing must not cancel the others
+      fail-fast: false
       matrix:
         include:
           - { image: swg-panel, dockerfile: docker/Dockerfile,      arch: amd64, runner: ubuntu-24.04 }
@@ -33,7 +31,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      # GHCR refs must be lowercase but the owner (SanityProtocol) is mixed-case — lowercase it once.
       - id: ref
         env:
           OWNER: ${{ github.repository_owner }}
@@ -42,16 +39,15 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ steps.ref.outputs.image }}
-      # Выбираем реестр, проверив индекс и манифест нужной архитектуры.
       - id: base
-        shell: bash        # bash -eo pipefail: a failing inspect must fail its pipeline, not hand jq an empty input
+        shell: bash
         env:
           DOCKERFILE: ${{ matrix.dockerfile }}
           ARCH: ${{ matrix.arch }}
         run: |
           imgs=$(sed -n 's|^FROM \(--[^ ]* \)*\${BASE_REGISTRY}/\([^ ]*\).*|\2|p' "$DOCKERFILE")
           [ -n "$imgs" ] || { echo "::error::no FROM \${BASE_REGISTRY}/… line in $DOCKERFILE"; exit 1; }
-          serves() {   # serves <registry>: every base image's index, and the manifest it names for linux/$ARCH
+          serves() {
             local img d
             for img in $imgs; do
               d=$(docker buildx imagetools inspect --raw "$1/$img" | jq -r --arg a "$ARCH" \
@@ -70,8 +66,6 @@ jobs:
             fi
           done
           echo "::error::neither ECR Public nor mirror.gcr.io serves the base images ($(echo $imgs)) for linux/$ARCH"; exit 1
-      # Build this single arch NATIVELY and push it by DIGEST only (no tag) — the merge job
-      # below assembles the tagged multi-arch manifest list from all arches' digests.
       - id: build
         uses: docker/build-push-action@v7
         with:
@@ -81,15 +75,13 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           build-args: BASE_REGISTRY=${{ steps.base.outputs.registry }}
           outputs: type=image,name=${{ steps.ref.outputs.image }},push-by-digest=true,name-canonical=true,push=true
-          # cache scoped per image+arch so the four builds never share/clobber a cache; ignore-error
-          # so a flaky gha cache ('error writing layer blob') can't fail the publish.
           cache-from: type=gha,scope=${{ matrix.image }}-${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}-${{ matrix.arch }},ignore-error=true
       - name: Export digest
         run: |
           mkdir -p /tmp/digests
           digest="${{ steps.build.outputs.digest }}"
-          touch "/tmp/digests/${digest#sha256:}"   # bare hex — the merge prepends @sha256:
+          touch "/tmp/digests/${digest#sha256:}"
       - uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.image }}-${{ matrix.arch }}
@@ -105,22 +97,17 @@ jobs:
       matrix:
         image: [swg-panel, swg-node]
     steps:
-      # Полная история нужна для защиты образов выпусков от очистки.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: rel
         run: |
           echo "version=$(tr -d '[:space:]' < VERSION)" >> "$GITHUB_OUTPUT"
-          # tags the prune must never take: latest, every release's version tag, and every release commit's sha tag
-          # (type=sha,format=short = the first 7 hex digits). Only the prune reads this, and it runs on main only.
           keep="latest,*-beta"
-          # a release commit's subject is `<version> — <headline>` (the squash); older history is granular, not releases
           for h in $(git log --first-parent --format='%H %s' HEAD | awk '$2 ~ /^[0-9]+[.][0-9]+[.][0-9]+(-[a-z]+)?$/ {print $1}'); do
             keep="$keep,sha-${h:0:7}"
           done
           echo "keep=$keep" >> "$GITHUB_OUTPUT"
-      # Collect this image's per-arch digests (both amd64 + arm64) into one dir.
       - uses: actions/download-artifact@v8
         with:
           path: /tmp/digests
@@ -148,14 +135,11 @@ jobs:
       - name: Create + push the multi-arch manifest list
         working-directory: /tmp/digests
         run: |
-          # shellcheck disable=SC2046  # both expansions MUST word-split: the first is `-t tag -t tag …`,
-          # the second one `image@sha256:<digest>` per architecture. Quoting either passes it as a single
-          # argument and imagetools takes it as one malformed tag/source.
+          # shellcheck disable=SC2046
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ steps.ref.outputs.image }}@sha256:%s ' *)
       - name: Inspect
         run: docker buildx imagetools inspect ${{ steps.ref.outputs.image }}:${{ steps.meta.outputs.version }}
-      # На main сохраняем latest и теги выпусков для отката.
       - name: Prune old GHCR versions (keep newest 3)
         if: github.ref == 'refs/heads/main'
         uses: dataaxiom/ghcr-cleanup-action@v1

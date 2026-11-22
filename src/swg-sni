@@ -1,45 +1,4 @@
 #!/usr/bin/env python3
-"""swg-sni — the SNI-router classifier (routing_mode == "sni").
-
-Reads the TLS SNI off the ClientHello of new HTTPS connections from the node's smart subnets and LEARNS which
-destination IP serves which category, by adding that IP to the category's nft set (`cat_<x>` in `swg_smart`). The
-kernel then routes FUTURE connections to that IP via the existing fwmark → table → mesh path — exactly like the
-Force-DNS mode, except the source of truth is the TLS handshake instead of a hijacked DNS resolver. So the client's
-own DNS (incl. DoH/DoT) is never touched, observed, or downgraded — it stays encrypted end-to-end.
-
-Why this shape (see docs/PANEL.md routing modes): the SNI is only visible AFTER the TCP handshake, and a live
-connection's egress can't change mid-stream (the egress node SNATs to a different src IP → the peer drops it). So we
-do NOT try to reroute the connection we sniffed; we record its IP for the NEXT connection. The current connection is
-pinned to its SYN-time decision by conntrack (swg-noded's nft rules). First hit to a brand-new IP therefore routes by
-whatever that IP already matched (geoip / direct) — the same first-connection race Force-DNS has via its first DNS
-lookup. Acceptable, and self-corrects immediately.
-
-NFQUEUE is spoken directly over an AF_NETLINK socket (NETLINK_NETFILTER) — no libnetfilter_queue, no third-party
-Python: pure stdlib, single file, like the rest of the fleet. Fails OPEN: swg-noded adds the queue rule with the
-`bypass` flag, so if this process dies, new connections simply stop being learned — traffic keeps flowing.
-
-TWO INPUT FILES, both written by swg-noded and both pre-bucketed by the PANEL — this process classifies
-nothing, it only looks strings up. `sni-map.json` is {category: [domain]}, matched by longest suffix.
-`sni-patterns.json` beside it is {kind: {category: [operand]}} — the panel's pattern buckets — of which this
-build lowers all six, in two tiers: label-anchored ones by dict lookup (`any` / `first` / `zone`) and
-character-level ones by a linear scan (`starts` / `ends` / `contains`). This is the only engine holding the
-PARSED hostname as a string, so it is the only one that can anchor either end of a name. A kind not in
-SNI_KINDS is IGNORED, so a build that predates a kind routes fewer destinations, never more, and a later
-phase is a change here alone.
-
-A THIRD FILE, `sni-blocks.json`, makes it the place a BLOCK BY NAME is decided — per connection, never by address. For
-each source subnet it lists the rules in the order the node's chain has them; the first whose categories meet the host's
-decides, and a Block returns `(entry << 16) | 0x9998`, which one nft forward rule resets. Every connection of a blocked
-name is refused and no other name on its address is touched (a tracker on a Google front end no longer takes YouTube down
-with it — docs/KSNI-HOSTNAMES-PLAN.md D1). Absent = no blocks; categories only Blocks use are not learned at all.
-
-Two files and not one, because in the domain map a bare label is indistinguishable from a domain and this
-process would have to guess what the operator meant. The patterns path is derived from --map, so neither
-side of a half-updated node needs a new flag.
-
-Run:  swg-sni --queue 0 --map /var/lib/swg-noded/sni-map.json --table swg_smart
-Env:  SWG_SNI_QUEUE, SWG_SNI_MAP, SWG_SNI_TABLE (flags win).
-"""
 import argparse
 import atexit
 import collections
@@ -54,35 +13,29 @@ import threading
 import time
 import traceback
 
-# ── netlink / nfnetlink_queue constants (linux/netfilter/nfnetlink*.h) ──
 NETLINK_NETFILTER = 12
 NFNL_SUBSYS_QUEUE = 3
-NFQNL_MSG_PACKET  = (NFNL_SUBSYS_QUEUE << 8) | 0    # kernel → us
-NFQNL_MSG_VERDICT = (NFNL_SUBSYS_QUEUE << 8) | 1    # us → kernel
+NFQNL_MSG_PACKET  = (NFNL_SUBSYS_QUEUE << 8) | 0
+NFQNL_MSG_VERDICT = (NFNL_SUBSYS_QUEUE << 8) | 1
 NFQNL_MSG_CONFIG  = (NFNL_SUBSYS_QUEUE << 8) | 2
 NLM_F_REQUEST = 0x01
-# config command / attribute ids
 NFQA_CFG_CMD, NFQA_CFG_PARAMS, NFQA_CFG_MASK, NFQA_CFG_FLAGS = 1, 2, 4, 5
 NFQNL_CFG_CMD_BIND = 1
 NFQNL_COPY_PACKET = 2
 NFQA_CFG_F_FAIL_OPEN = 0x0001
-# packet attribute ids
 NFQA_PACKET_HDR, NFQA_IFINDEX_INDEV, NFQA_PAYLOAD = 1, 5, 10
-# verdict
 NFQA_VERDICT_HDR = 2
-NFQA_MARK = 3                                       # __u32 nfmark — set the skb mark in the verdict (→ a standing nft rule RSTs the flow)
+NFQA_MARK = 3
 NF_ACCEPT = 1
-NLA_TYPE_MASK = 0x3fff                              # strip NLA_F_NESTED / NLA_F_NET_BYTEORDER flags
+NLA_TYPE_MASK = 0x3fff
 
 
 def _nla(attr_type, payload):
-    """Pack one netlink attribute (host-order header) padded to 4 bytes."""
     ln = 4 + len(payload)
     return struct.pack("=HH", ln, attr_type) + payload + b"\x00" * ((4 - ln % 4) % 4)
 
 
 def _msg(msg_type, res_id, *attrs):
-    """Wrap a nfnetlink message: nlmsghdr + nfgenmsg(family=AF_UNSPEC, ver=0, res_id BE) + attrs."""
     body = struct.pack("=BB", socket.AF_UNSPEC, 0) + struct.pack(">H", res_id) + b"".join(attrs)
     total = 16 + len(body)
     hdr = struct.pack("=IHHII", total, msg_type, NLM_F_REQUEST, 0, 0)
@@ -90,7 +43,6 @@ def _msg(msg_type, res_id, *attrs):
 
 
 
-# output
 SAY_MAX, SAY_RATE = 1000, 100
 LOG_OFF, LOG_ERR, LOG_WARNING, LOG_NOTICE, LOG_INFO, LOG_DEBUG = -1, 3, 4, 5, 6, 7
 LOG_LEVEL_FILE = os.environ.get("SWG_LOG_LEVEL_FILE") or "/var/lib/swg-noded/log-level"
@@ -101,7 +53,6 @@ _SAY = {"q": collections.deque(), "dropped": 0, "wake": threading.Event(), "thre
 
 
 def _say_level():
-    """The level swg-noded set, from its file; Info when there is none (a node from before levels, or a test)."""
     _SAY["level_at"] = time.monotonic()
     try:
         with open(LOG_LEVEL_FILE) as f:
@@ -112,7 +63,6 @@ def _say_level():
 
 
 def _say_to_journal():
-    """True when stdout IS the journal stream (JOURNAL_STREAM names its device:inode), not merely inherited."""
     try:
         dev, ino = (int(x) for x in os.environ.get("JOURNAL_STREAM", "").split(":"))
         st = os.fstat(sys.stdout.fileno())
@@ -126,8 +76,6 @@ _say_level()
 
 
 class _Join:
-    """`", ".join(items)` done when the line is WRITTEN, by the writer thread — not on the packet path. Safe to defer:
-    the category lists are replaced whole on a reload, never changed in place."""
     __slots__ = ("v",)
 
     def __init__(self, v):
@@ -147,14 +95,10 @@ def _say_text(prio, fmt, args):
 
 
 def _say_write(text):
-    """Write `text` to stdout's file descriptor directly. NOT sys.stdout.write: the buffered writer takes a lock, and a
-    daemon thread holding it while the interpreter shuts down makes Python abort ("could not acquire lock for
-    <stdout> at interpreter shutdown") — measured with this thread on tests/sni_learn_refresh_selftest.py. os.write
-    takes no Python lock. A stdout with no descriptor (a test's stand-in) is written the ordinary way."""
     out = sys.stdout
     try:
         fd = out.fileno()
-    except (AttributeError, OSError, ValueError):     # io.UnsupportedOperation is an OSError and a ValueError
+    except (AttributeError, OSError, ValueError):
         out.write(text)
         out.flush()
         return
@@ -186,15 +130,11 @@ def _say_loop():
             except Exception:
                 pass
         if q:
-            time.sleep(1.0)                            # SAY_RATE is a rate: the rest waits for the next second…
-            wake.set()                                 # …and no longer, even if nothing new arrives
+            time.sleep(1.0)
+            wake.set()
 
 
 def _say_drain():
-    """At exit, write what is still queued: the lines just before a crash are the ones that explain it (a failed map
-    reload queued, then NFQueue() raising). Bounded to a second, in a thread of its own, because the stream may be
-    the very thing that is stuck — a stalled journald must not hold the process from exiting. A SIGTERM with the
-    default handler ends the process without this; the queue is normally empty within a second of each line."""
     def run():
         q = _SAY["q"]
         while q:
@@ -208,10 +148,9 @@ def _say_drain():
 
 
 def say(prio, fmt, *args):
-    """log(prio, fmt, *args), queued: never blocks, never raises, and never formats a line the level drops."""
     try:
-        if _SAY["thread"] is None:                   # BEFORE the level check: the thread is also what re-reads the level,
-            with _SAY["lock"]:                       # so a classifier started below Info must still follow a raise
+        if _SAY["thread"] is None:
+            with _SAY["lock"]:
                 if _SAY["thread"] is None:
                     _SAY["thread"] = threading.Thread(target=_say_loop, daemon=True)
                     _SAY["thread"].start()
@@ -228,8 +167,6 @@ def say(prio, fmt, *args):
 
 
 def _say_excepthook(et, ev, tb):
-    """A crash's traceback at `err`, through the queue (drained at exit): printed bare it would be filed as info. Each
-    line starts "swg-sni: ": it shares swg-noded's stream, and the live viewer and `swg-logs sni` file a line by that."""
     if et is None or issubclass(et, (SystemExit, KeyboardInterrupt)):
         return
     text = "".join(traceback.format_exception(et, ev, tb)).rstrip("\n")
@@ -240,19 +177,15 @@ sys.excepthook = _say_excepthook
 threading.excepthook = lambda a: _say_excepthook(a.exc_type, a.exc_value, a.exc_traceback)
 
 class NFQueue:
-    """Minimal NFQUEUE reader over raw netlink. Bind a queue, receive full packets, ACCEPT them."""
 
     def __init__(self, qnum):
         self.qnum = qnum
         self.s = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, NETLINK_NETFILTER)
         self.s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 << 20)
         self.s.bind((0, 0))
-        # bind the queue to this socket
         cmd = struct.pack("=BB", NFQNL_CFG_CMD_BIND, 0) + struct.pack(">H", socket.AF_UNSPEC)
         self.s.send(_msg(NFQNL_MSG_CONFIG, qnum, _nla(NFQA_CFG_CMD, cmd)))
-        # copy the whole packet up to us
         params = struct.pack(">I", 0xFFFF) + struct.pack("=B", NFQNL_COPY_PACKET)
-        # fail-open at the config layer too (belt-and-suspenders with the rule's bypass flag)
         flags = struct.pack(">I", NFQA_CFG_F_FAIL_OPEN)
         self.s.send(_msg(NFQNL_MSG_CONFIG, qnum,
                          _nla(NFQA_CFG_PARAMS, params),
@@ -260,16 +193,12 @@ class NFQueue:
                          _nla(NFQA_CFG_FLAGS, flags)))
 
     def _accept(self, packet_id, mark=None):
-        """ACCEPT the packet; if `mark` is truthy, also stamp the skb mark (NFQA_MARK) so a standing nft rule can
-        act on it (we use it to RST the first flow to a newly-learned dst). Omitting the mark leaves it untouched,
-        so an already-routed connection's mark (restored from its connmark) survives — we don't reroute it."""
         attrs = [_nla(NFQA_VERDICT_HDR, struct.pack(">II", NF_ACCEPT, packet_id))]
         if mark:
             attrs.append(_nla(NFQA_MARK, struct.pack(">I", mark)))
         self.s.send(_msg(NFQNL_MSG_VERDICT, self.qnum, *attrs))
 
     def loop(self, on_packet):
-        """Receive packets forever; for each, call on_packet(payload_bytes) → optional skb mark, then ACCEPT. Never drops."""
         while True:
             buf = self.s.recv(0x10000)
             off = 0
@@ -285,14 +214,12 @@ class NFQueue:
                             if payload:
                                 mark = on_packet(payload, indev)
                         except Exception:
-                            pass                       # a bad packet must never stop the queue
+                            pass
                         self._accept(pid, mark)
                 off += (mlen + 3) & ~3
 
     @staticmethod
     def _parse_packet(body):
-        """Pull packet_id + raw L3 payload + the ingress ifindex (0 = not given) out of an NFQNL_MSG_PACKET (skip the 4-byte
-        nfgenmsg). The device is what a per-person rule binds an address to, as the nft chain's `iifname . ip saddr` does."""
         pid, payload, indev, o = None, b"", 0, 4
         while o + 4 <= len(body):
             alen, atype = struct.unpack("=HH", body[o:o + 4])
@@ -310,14 +237,11 @@ class NFQueue:
         return pid, payload, indev
 
 
-# ── packet + TLS parsing ──
 def _dst_and_tcp_payload(pkt):
-    """(dst_ip_str, tcp_payload_bytes) for an IPv4/TCP packet, or (None, None). v1 is IPv4-only (matches the
-    smart-routing datapath, which is also IPv4-only)."""
     if len(pkt) < 20 or (pkt[0] >> 4) != 4:
         return None, None
     ihl = (pkt[0] & 0x0F) * 4
-    if pkt[9] != 6 or len(pkt) < ihl + 20:            # proto 6 = TCP
+    if pkt[9] != 6 or len(pkt) < ihl + 20:
         return None, None
     dst = socket.inet_ntoa(pkt[16:20])
     toff = ((pkt[ihl + 12] >> 4) & 0x0F) * 4
@@ -326,47 +250,38 @@ def _dst_and_tcp_payload(pkt):
 
 
 def _hello_len(p):
-    """The whole ClientHello record's length (header included) when `p` opens one — a TLS handshake record whose first
-    message is a ClientHello — else 0."""
     if len(p) >= 6 and p[0] == 0x16 and p[1] == 0x03 and p[5] == 0x01:
         return 5 + ((p[3] << 8) | p[4])
     return 0
 
 
 def _flow_seq(pkt):
-    """(flow key, TCP sequence number, client address) of a packet _dst_and_tcp_payload has ALREADY accepted as IPv4/TCP
-    with a whole TCP header — so nothing here is re-validated, only read. The key is its addresses and ports, raw."""
     ihl = (pkt[0] & 0x0F) * 4
     return (pkt[12:20], pkt[ihl:ihl + 4]), struct.unpack(">I", pkt[ihl + 4:ihl + 8])[0], pkt[12:16]
 
 
 def parse_sni(p):
-    """Extract the SNI host_name from a TLS ClientHello record. Returns a lowercased str or None. Bounds-checked
-    throughout; any short/odd buffer → None (we just don't learn from it). It reads what it is given — ONE segment, or a
-    ClientHello Classifier._reassemble has put back together from several."""
     try:
-        if len(p) < 43 or p[0] != 0x16:               # TLS record, content_type 22 = handshake
+        if len(p) < 43 or p[0] != 0x16:
             return None
-        # skip: record hdr(5) + handshake type(1)+len(3) + client_version(2) + random(32) = 43
         i = 43
-        sid = p[i]; i += 1 + sid                       # session_id
-        cs = struct.unpack(">H", p[i:i + 2])[0]; i += 2 + cs   # cipher_suites
-        cm = p[i]; i += 1 + cm                          # compression_methods
+        sid = p[i]; i += 1 + sid
+        cs = struct.unpack(">H", p[i:i + 2])[0]; i += 2 + cs
+        cm = p[i]; i += 1 + cm
         if i + 2 > len(p):
             return None
         ext_total = struct.unpack(">H", p[i:i + 2])[0]; i += 2
         end = min(len(p), i + ext_total)
         while i + 4 <= end:
             etype, elen = struct.unpack(">HH", p[i:i + 4]); i += 4
-            if etype == 0x0000:                        # server_name extension
-                # server_name_list(2) then entries: type(1)=host_name(0), name_len(2), name
+            if etype == 0x0000:
                 j = i + 2
                 if j + 3 > len(p):
                     return None
                 ntype, nlen = p[j], struct.unpack(">H", p[j + 1:j + 3])[0]
                 j += 3
                 if ntype == 0 and j + nlen <= len(p):
-                    return p[j:j + nlen].decode("ascii", "ignore").lower() or None   # SNI is ASCII (IDN sent as punycode)
+                    return p[j:j + nlen].decode("ascii", "ignore").lower() or None
                 return None
             i += elen
     except Exception:
@@ -374,24 +289,20 @@ def parse_sni(p):
     return None
 
 
-# domain → category matching + nft learning
-FLUSH_INTERVAL = 0.025      # s — under load, how far apart the learned-set writes are (the batching); the first is at once
-MAX_BATCH      = 128        # flush early once this many IPs are pending (bounds latency + argv length)
-PRUNE_EVERY    = 30.0       # s — how often the in-memory seen cache is swept of expired entries
-IFNAME_TTL     = 30.0       # s — how long an ifindex → device name answer is trusted (see Classifier._ifname)
-BLK_TOPK       = 500        # blocked-domain attribution: keep at most this many hottest hostnames (bounded memory)
-BLK_WRITE_EVERY = 10.0      # s — how often the blocked-domain top-K is mirrored to disk for swg-noded to harvest
-IDLE_WAKE      = 10.0       # s — the flusher's longest sleep with nothing to write: a backstop, as each chore wakes it
-PARTIAL_MAX    = 1024       # ClientHellos held while their next segment is on its way (see Classifier._reassemble)
-PARTIAL_PER_SRC = 64        # …and from one client address, so one peer cannot fill the table for everyone (not 16: a
-#                             router peer carries a whole LAN behind its one address, an onward hop every arrival it
-#                             forwards behind the relaying node's)
-PARTIAL_TTL    = 5.0        # s — how long one waits for its next segment, renewed by each: it follows at once, a lost
-#                             one's retransmit within an RTO (~0.2–1.5 s), a second loss's within ~3 RTOs (2 s covered one)
-PARTIAL_BYTES  = 8197       # the longest ClientHello held (8 KB + its 5-byte header); Chrome's is ~2 KB
+FLUSH_INTERVAL = 0.025
+MAX_BATCH      = 128
+PRUNE_EVERY    = 30.0
+IFNAME_TTL     = 30.0
+BLK_TOPK       = 500
+BLK_WRITE_EVERY = 10.0
+IDLE_WAKE      = 10.0
+PARTIAL_MAX    = 1024
+PARTIAL_PER_SRC = 64
+PARTIAL_TTL    = 5.0
+PARTIAL_BYTES  = 8197
 
 
-SNI_TIER1 = ("first", "zone", "any")      # ladder order — see _match, which spells it out itself
+SNI_TIER1 = ("first", "zone", "any")
 SNI_TIER2 = ("starts", "ends", "contains")
 SNI_KINDS = SNI_TIER1 + SNI_TIER2
 if set(SNI_TIER1) & set(SNI_TIER2):
@@ -400,8 +311,6 @@ if set(SNI_TIER1) & set(SNI_TIER2):
 
 
 def _mtime(path):
-    """A file's mtime, or None when it is not there. `None` is a VALUE here, not an error: an absent input
-    file is the empty set, and it has to compare equal to itself so a missing file is not re-read for ever."""
     try:
         return os.stat(path).st_mtime
     except OSError:
@@ -409,32 +318,10 @@ def _mtime(path):
 
 
 def _index(data, labels=True):
-    """{category: [name, ...]} → {name: [category, ...]}, the shape every lookup uses.
-
-    `labels=False` FOR TIER 2, and it is not a tidiness flag. Everything else indexed here is made of DNS
-    LABELS — a domain name, a zone, a first/any label — where a leading or trailing dot is punctuation and
-    stripping it is what makes `yandex.ru.` and `yandex.ru` the same key. A Tier-2 operand is not a name: it
-    is a run of BYTES matched against one, and a dot at either end is the operator pinning a label boundary.
-    Stripping it silently WIDENS the rule — `*yandex.*` becomes `yandex`, which matches
-    `notyandexmail.com`, the exact string the dot was written to exclude — and it desyncs the two engines
-    that both run `contains`, since xt_string matches the operand as stored.
-
-    PER-NAME, and a LIST — the same shape, and for the same reason, as _ensure_smart_dnsmasq's dom_sets. This
-    used to be `d2c[dom] = cat`, so a domain claimed by two categories (google.com in a custom list AND the
-    built-in Google set; two rules that both name a service) landed in exactly one of them — and since
-    swg-noded writes this map with sort_keys=True, the winner was whichever category NAME sorted last. Silent,
-    order-dependent, and invisible in every reading the panel takes: the other category's set simply never
-    fills, so its rule never matches and its traffic goes wherever it would have gone anyway. Learn the
-    destination into EVERY matched category and let the nft chain pick by RULE ORDER, which is the operator's
-    own priority and the answer dnsmasq has always given in Force-DNS mode.
-
-    An empty key is dropped whichever way: as a zone it would be the last label of a name written with a
-    trailing dot, and a "" that matched would claim every hostname on the node."""
     out = {}
     for cat, names in (data or {}).items():
         if not isinstance(names, (list, tuple)):
-            continue                                   # a string here would iterate CHARACTERS and invent
-            #                                            single-letter zone keys out of a malformed file
+            continue
         for n in names:
             k = str(n).lower()
             k = k.strip(".") if labels else k
@@ -447,30 +334,17 @@ def _index(data, labels=True):
 
 
 def _bucket(kind, data):
-    """One kind's operands, in the shape ITS TIER is matched with: a dict for Tier 1, an ordered list for
-    Tier 2. Two tiers are two matchers, so they get two structures rather than one shape the packet path
-    then has to adapt — and the difference is visible in the data instead of only in a comment.
-
-    TIER 2 IS ORDERED LONGEST OPERAND FIRST, then lexicographically. A scan can have several operands match
-    one hostname and something has to decide which category wins; "most specific" is the same rule §1.4
-    already uses BETWEEN kinds, so it is the one used within them. Left as a dict, the answer would come out
-    of JSON key order — emergent, and different on a node whose file was written by a different panel
-    version. §1.4 says never. Sorted here, once per reload, and never in the packet path."""
     if kind in SNI_TIER1:
-        return _index(data)                            # labels: a dot at either end is punctuation
-    d = _index(data, labels=False)                     # bytes: a dot at either end is the rule
+        return _index(data)
+    d = _index(data, labels=False)
     return sorted(d.items(), key=lambda kv: (-len(kv[0]), kv[0]))
 
 
 def _empty_pats():
-    """The no-patterns state — every kind present, each in its tier's shape. One function because four places
-    reset this and a branch that built a bare {} would hand `_match` a dict where it iterates pairs."""
     return {k: _bucket(k, None) for k in SNI_KINDS}
 
 
 def _learnsetname(cat):
-    # MUST match swg-noded's _smart_learnsetname: learned dst IPs go in the per-cat catl_ set (flags timeout → they
-    # auto-expire), separate from the timeout-less interval cat_ set that holds the static geoip CIDRs.
     return "catl_" + re.sub(r"[^a-z0-9]", "_", str(cat).lower())
 
 
@@ -479,22 +353,6 @@ def _ip4(s):
 
 
 def _blocks_parse(data):
-    """`sni-blocks.json` → (sources, arrival nets, selections, nolearn, mark), or the empty state for anything malformed.
-
-    A BLOCK BY NAME IS DECIDED PER CONNECTION HERE, and never by an address (docs/KSNI-HOSTNAMES-PLAN.md D1). It used
-    to be: a blocked name's destination was learned into the block's set and swg-noded dropped every packet to it, so
-    a tracker on a Google or Facebook front end took YouTube and Instagram down with it for as long as trackers kept
-    being seen (a client's report, 2026-09-26; reproduced on msk-main). This process is the only place that sees the
-    name, so it is the only place a name can be refused without refusing its neighbours on the same address.
-
-    Filters are per INTERFACE and this process serves every interface of the node, so it is told, per source subnet,
-    the rules in the order the node's chain has them — `[mark, action, [[category, [excluded selections]], …],
-    selection or None]` — and the FIRST rule whose categories meet the host's decides, as the chain did when every
-    matching set learned the address. A selection is its devices as (device, address) pairs — an address arriving on
-    another device is not the person, as the chain's `iifname . ip saddr` says. `mark` is what a Block returns; the nft
-    forward chain resets it. Sources come
-    back most specific first, so a subnet inside another is asked before it. Malformed → no blocks at all: fewer
-    connections refused, never more — the same direction as every other reader in this file."""
     empty = ([], [], {}, frozenset(), 0)
     try:
         def rules(lst):
@@ -529,54 +387,46 @@ def _blocks_parse(data):
 
 
 class Classifier:
-    # The block verdicts' empty state, at class level too: a reader that builds a Classifier its own way (the gates) and never
-    # loads a blocks file gets "nothing is refused by name", never an AttributeError on the packet path.
     bsrc, barr, bsel, nolearn, bmark, blocks_path, blocks_mtime = (), (), {}, frozenset(), 0, None, None
-    quiet = frozenset()                                # categories learned WITHOUT the first-hit reset (see _reload)
+    quiet = frozenset()
     sets_path, sets_mtime, set_gen = None, None, {}
 
     def __init__(self, map_path, table, reset_mark=0, learn_ttl=3600):
         self.map_path = map_path
         self.table = table
-        self.reset_mark = reset_mark               # >0: RST the FIRST flow to each newly-learned dst so it reconnects routed
-        self.learn_ttl = learn_ttl                 # learned catl_ entry lifetime (matches the set's default timeout)
-        self.refresh_age = learn_ttl / 2.0         # write again (refresh the set timeout) once a seen entry is this old → active dsts never expire
-        self.map_mtime = None                          # each file is stat-gated and PARSED on its own — see _reload
+        self.reset_mark = reset_mark
+        self.learn_ttl = learn_ttl
+        self.refresh_age = learn_ttl / 2.0
+        self.map_mtime = None
         self.pat_mtime = None
-        self.dom2cat = {}                              # exact domain → [category, ...] — see _reload
-        self.pats = _empty_pats()                      # kind → Tier-1 {operand: [cat]} / Tier-2 [(operand, [cat])]
-        # Derived from --map, like blk_path below: swg-noded writes both into the same directory, so a node
-        # whose swg-noded and swg-sni are updated a moment apart never has to agree about a new flag.
+        self.dom2cat = {}
+        self.pats = _empty_pats()
         self.pat_path = os.path.join(os.path.dirname(map_path) or ".", "sni-patterns.json")
         self.blk_path = os.path.join(os.path.dirname(map_path) or ".", "sni-blk-hits.json")
-        self.blocks_path = os.path.join(os.path.dirname(map_path) or ".", "sni-blocks.json")   # per-source verdicts (D1)
+        self.blocks_path = os.path.join(os.path.dirname(map_path) or ".", "sni-blocks.json")
         self.blocks_mtime = None
         self.bsrc, self.barr, self.bsel, self.nolearn, self.bmark = [], [], {}, frozenset(), 0
-        self.sets_path = os.path.join(os.path.dirname(map_path) or ".", "sni-sets.json")   # when each learned set was made
+        self.sets_path = os.path.join(os.path.dirname(map_path) or ".", "sni-sets.json")
         self.sets_mtime, self.set_gen = None, {}
-        self._blk_hits = {}                            # blocked hostname → cumulative hit count (bounded top-K, panel buckets → category)
-        self._blk_last_w = 0.0                         # last time _blk_hits was mirrored to disk (monotonic)
-        self._blk_dirty = False                        # …and whether it has moved since
-        self.seen = {}                                 # (ip, cat) → last time we (re)added it → sliding refresh + expiry
-        self._pending = []                             # [(cat, ip)] buffered for the next batched nft add
-        self._lock = threading.Lock()                  # guards _pending + seen (touched by packet loop + flusher)
-        self._wake = threading.Event()                 # set on the first learn queued (write it now) and at MAX_BATCH
-        self._partial = collections.OrderedDict()      # flow → [first seq, bytes so far, since, client]: a ClientHello
-        self._partial_src = {}                         # awaiting its next segment, oldest first; client → how many held.
-        self._plock = threading.Lock()                 # guards both: the packet thread's, but the flusher sweeps them too
+        self._blk_hits = {}
+        self._blk_last_w = 0.0
+        self._blk_dirty = False
+        self.seen = {}
+        self._pending = []
+        self._lock = threading.Lock()
+        self._wake = threading.Event()
+        self._partial = collections.OrderedDict()
+        self._partial_src = {}
+        self._plock = threading.Lock()
         self._last_reload = 0.0
-        self._last_prune = 0.0                         # monotonic, as is every time the flusher keeps for itself
+        self._last_prune = 0.0
         self._reload()
         t = threading.Thread(target=self._flush_forever, name="swg-sni-flush", daemon=True)
         t.start()
 
     def _reload(self):
-        """Re-read whichever of the two inputs has moved. INDEPENDENTLY, on purpose: a patterns file that
-        fails to parse must not also freeze the domain map, and neither one's mtime may gate the other. Each
-        stamps its own mtime BEFORE parsing, so a file that is broken is read once and not once every two
-        seconds for ever; each keeps its previous index on failure, which routes what it already routed."""
         mt = _mtime(self.map_path)
-        if mt is None:                                 # no map ⇒ this node routes nothing through us at all
+        if mt is None:
             self.dom2cat = {}; self.pats = _empty_pats()
             self.map_mtime = self.pat_mtime = self.blocks_mtime = None
             self.bsrc, self.barr, self.bsel, self.nolearn, self.bmark = [], [], {}, frozenset(), 0
@@ -586,19 +436,19 @@ class Classifier:
             self.map_mtime = mt
             try:
                 with open(self.map_path) as f:
-                    self.dom2cat = _index(json.load(f))   # {category: [domain, ...]}
+                    self.dom2cat = _index(json.load(f))
                 say(LOG_INFO, "swg-sni: loaded %d domains", len(self.dom2cat))
             except Exception as e:
                 say(LOG_ERR, "swg-sni: map reload failed: %s", e)
         pmt = _mtime(self.pat_path)
         if pmt != self.pat_mtime:
             self.pat_mtime = pmt
-            if pmt is None:                            # absent IS the empty set — swg-noded removes the file
+            if pmt is None:
                 self.pats = _empty_pats()
-            else:                                      # an `else`, not an early return: nothing here may
-                try:                                   # depend on this being the last thing _reload does
+            else:
+                try:
                     with open(self.pat_path) as f:
-                        pdata = json.load(f) or {}     # {kind: {category: [operand, ...]}}
+                        pdata = json.load(f) or {}
                     self.pats = {k: _bucket(k, pdata.get(k)) for k in SNI_KINDS}
                     say(LOG_INFO, "swg-sni: loaded patterns %s%s",
                         ", ".join("%d %s" % (len(v), k) for k, v in self.pats.items()),
@@ -606,7 +456,7 @@ class Classifier:
                          if set(pdata) - set(SNI_KINDS) else ""))
                 except Exception as e:
                     say(LOG_ERR, "swg-sni: pattern reload failed: %s", e)
-        bmt = _mtime(self.blocks_path) if self.blocks_path else None   # the per-source verdicts — the third input, gated alike
+        bmt = _mtime(self.blocks_path) if self.blocks_path else None
         if bmt != self.blocks_mtime:
             self.blocks_mtime = bmt
             data = {}
@@ -623,9 +473,9 @@ class Classifier:
                 say(LOG_INFO, "swg-sni: loaded blocks for %d sources%s, %d categories not learned",
                     len(self.bsrc), " + arrivals" if self.barr else "", len(self.nolearn))
         smt = _mtime(self.sets_path) if self.sets_path else None
-        if smt != self.sets_mtime:                     # a learned set RECREATED since we wrote into it is empty: forget what
-            self.sets_mtime = smt                      # we believe it holds, so the next hello writes it again (and resets
-            gen = {}                                   # that first connection, as for any first learn) — swg-noded _CATL_GEN
+        if smt != self.sets_mtime:
+            self.sets_mtime = smt
+            gen = {}
             if smt is not None:
                 try:
                     with open(self.sets_path) as f:
@@ -641,74 +491,12 @@ class Classifier:
             self.set_gen = gen
 
     def _match(self, host):
-        """Which categories claim this hostname — EVERY one the winning operand belongs to (usually one), or
-        an empty tuple.
-
-        ONE LADDER, MOST SPECIFIC FIRST, and it is spelled out here rather than derived from SNI_KINDS or from
-        any dict's ordering (plan §1.4, and PATTERNS §1.4 where it is decided). The first rung that answers
-        wins outright; nothing accumulates across rungs.
-
-            1. full suffix   `mail.google.com`   the domain map, longest suffix, ≥2 labels
-            2. first-label   `google.*`          the leftmost label is exactly `google`
-            3. zone          `*.ru`              the rightmost label is
-            4. any-label     `*.google.*`        SOME label is — anywhere
-            5. Tier-2 scan   `google*` `*google` `*google*`   the name as a string: starts, then ends, then contains
-
-        WHY THIS ORDER — MOST SPECIFIC FIRST, and "specific" is meant literally: for one operand, each rung
-        matches a SUBSET of the hosts the rung below it matches. A two-label suffix pins two labels and their
-        position; `first` and `zone` pin one label and its position; `any` pins a label and no position, so
-        `google.*` ⊂ `*.google.*` and `*.ru` ⊂ `*.ru.*` — both strictly. Tier 2 pins no boundary at all and
-        goes last.
-
-        ⚠️ THIS PUTS `any` BELOW `first`, WHICH IS NOT THE ORDER §1.4 LISTS. That list has any-label second,
-        and it is wrong by its own heading ("most specific wins"): `any` is a strict SUPERSET of `first` for
-        the same operand, so trying it first means the broader kind always wins and `google.*` could never
-        beat `*.google.*`. §1.4 is marked [DECIDE] / "Confirm" in PATTERNS §9 precisely because the list was
-        never checked against the principle above it. The principle is what is implemented here.
-
-        `first` before `zone` is the one CONVENTION in the ladder and is flagged as such: neither is a subset
-        of the other — one pins the start, one pins the end — so nothing derives the order. It is chosen
-        because a zone is the broadest key an operator can write in practice (a TLD is millions of sites),
-        and the same convention then reads down into Tier 2 as starts, then ends, then contains: anchored at
-        the start, then at the end, then not anchored.
-
-        `mail.google.com` and `*.com` both claim `mail.google.com`; the suffix must win, exactly as dnsmasq's
-        longest-suffix rule decides it, because those are the two rungs Force-DNS also runs and the two
-        engines have to agree about one name. MEASURED, not reasoned (2026-09-07, svo-im, plan §10.4x): two
-        overlapping directives, one real lookup, both sets read — dnsmasq fills ONLY the most specific
-        matching key's sets, regardless of the order the directives are written in. Read twice through
-        different back ends on different builds (2.91/nftset in the node container, 2.90/ipset on the host)
-        because "most specific wins" could otherwise have been a property of one back end rather than of
-        dnsmasq's domain matching. The agreement this paragraph claims is therefore TOTAL, not just true of
-        the example: every overlap Force-DNS can express is suffix-comparable (its only two kinds are a
-        domain and a one-label zone, and any two keys matching one host are suffixes of it), and the walk
-        above answers each one the way dnsmasq does. That makes these two rungs the one part of the ladder a
-        union would BREAK rather than fix — see on_packet.
-
-        WHAT THIS LADDER IS NOT: the operator's rule order. When two RULES both claim a host, this function
-        picks by kind and the panel's "first match wins" does not apply — see the note in on_packet.
-
-        The suffix walk is unchanged and still stops at the MOST SPECIFIC key: a host covered by
-        `mail.google.com` does not also collect `google.com`'s categories. The multi-category part is about one
-        key belonging to several categories, not about matching more keys.
-
-        EVERY TIER-1 RUNG MATCHES A WHOLE LABEL, never a substring. `*.ru` routes `x.ru` and `ru` itself, and
-        never `sub.ruble.com` — that is the whole difference between a zone and what an xt_string engine would
-        make of the same two bytes, and it is why Kernel-SNI refuses the kind outright rather than accepting it
-        degraded. Tier 2 is the opposite by construction, which is what the 3-character floor and the operator's
-        amber badge are for.
-
-        Tier 2 costs one pass over its operands on a MISS, which is every connection to a name nothing claims —
-        the hot path. Measured on the build machine for this exact code: 0.44 µs at 10 operands, 2.6 µs at 100
-        (§12.1's per-interface cap), 26.7 µs at 1000. Bounded at the node, not here, because the node is what
-        can report a truncation to the panel."""
-        name = host.strip(".")                         # `yandex.ru.` is a valid FQDN — a trailing dot is not a label
+        name = host.strip(".")
         labels = name.split(".")
-        for k in range(len(labels) - 1):               # need ≥2 labels; try progressively broader suffixes
+        for k in range(len(labels) - 1):
             cats = self.dom2cat.get(".".join(labels[k:]))
             if cats:
                 return cats
-        # ── Tier 1: label-anchored, O(1) whatever the operand count ──
         cats = self.pats["first"].get(labels[0])
         if cats:
             return cats
@@ -716,11 +504,11 @@ class Classifier:
         if cats:
             return cats
         anyl = self.pats["any"]
-        if anyl:                                       # guarded: the one rung that is O(labels), not O(1)
-            for lb in labels:                          # LEFTMOST label wins, and that is a decision, not an
-                cats = anyl.get(lb)                    # accident: `mail.google.com` under both `*.mail.*` and
-                if cats:                               # `*.google.*` goes to mail's, because labels get more
-                    return cats                        # specific right-to-left and the leftmost is the most
+        if anyl:
+            for lb in labels:
+                cats = anyl.get(lb)
+                if cats:
+                    return cats
         for op, cats in self.pats["starts"]:
             if name.startswith(op):
                 return cats
@@ -733,7 +521,7 @@ class Classifier:
         return ()
 
     def on_packet(self, payload, indev=None):
-        now = time.time()                              # pick up map edits within a couple of seconds (mtime-gated)
+        now = time.time()
         if now - self._last_reload > 2:
             self._last_reload = now; self._reload()
         dst, tcp = _dst_and_tcp_payload(payload)
@@ -742,55 +530,49 @@ class Classifier:
         host = parse_sni(tcp)
         if not host:
             host = self._reassemble(payload, tcp)
-        elif self._partial:                            # it names the host by itself: whatever was held for its flow is done
-            self._drop_held(payload)                   # with (a retransmit re-cut to carry it all, or a new hello)
+        elif self._partial:
+            self._drop_held(payload)
         if not host:
             return
         cats = self._match(host)
         if not cats:
             return
         blk = self._blocked(struct.unpack(">I", payload[12:16])[0], cats, indev) if (self.bsrc or self.barr) else 0
-        if blk:                                        # REFUSED, this connection only — count the hostname (bounded) so the
-            with self._lock:                           # panel can bucket it into its content category. ONCE per ClientHello
-                new_host = host not in self._blk_hits  # however many categories claim the host — it is one refused
-                self._blk_hits[host] = self._blk_hits.get(host, 0) + 1   # connection, not one per category.
+        if blk:
+            with self._lock:
+                new_host = host not in self._blk_hits
+                self._blk_hits[host] = self._blk_hits.get(host, 0) + 1
                 if len(self._blk_hits) > BLK_TOPK:
                     self._blk_hits.pop(min(self._blk_hits, key=self._blk_hits.get), None)
-                if not self._blk_dirty:                # the first since the last mirror: the flusher may be asleep for
-                    self._blk_dirty = True             # longer than the next mirror is due in (see _flush_loop)
+                if not self._blk_dirty:
+                    self._blk_dirty = True
                     self._wake.set()
-            if new_host:                               # a line per host, not per connection: trackers are the busiest names
+            if new_host:
                 say(LOG_DEBUG, "swg-sni: %s → blocked (%s)", host, _Join(cats))
-        first = False                                      # any category learning this dst for the first time earns the RST
+        first = False
         with self._lock:
-            idle = not self._pending                       # the flusher sleeps while nothing is queued (see _flush_loop)
+            idle = not self._pending
             for cat in cats:
-                if cat in self.nolearn:                    # only Block rules use it: its address is never a verdict (D1)
+                if cat in self.nolearn:
                     continue
                 key = (dst, cat)
                 ts = self.seen.get(key)
-                if ts is None or now - ts >= self.learn_ttl:   # not in the set (never learned, or timed out) → learn + RST
-                    first = first or cat not in self.quiet     # …unless no rule of the category reaches TCP 443 (`quiet`)
-                elif now - ts < self.refresh_age:              # fresh → already routing in this category, nothing to do
+                if ts is None or now - ts >= self.learn_ttl:
+                    first = first or cat not in self.quiet
+                elif now - ts < self.refresh_age:
                     continue
-                #  else: still in the set, aging → write it again to refresh its timeout (no RST on account of this one)
                 self.seen[key] = now
-                self._pending.append((cat, dst))           # buffered; the flusher adds it to catl_ (see _flush_loop)
+                self._pending.append((cat, dst))
             if self._pending and (idle or len(self._pending) >= MAX_BATCH):
-                self._wake.set()                           # the first one after a quiet spell is written now
-        if blk:                                             # the block wins over a learn's reset: both refuse this connection,
-            return blk                                      # and only this mark reaches the blocked counter (the learn is kept)
+                self._wake.set()
+        if blk:
+            return blk
         if first:
             say(LOG_DEBUG, "swg-sni: %s → %s  (+%s)", host, _Join(cats), dst)
-            return self.reset_mark                          # FIRST sight of this dst: RST this flow so the client reconnects —
-            #                                                 the retry's SYN matches catl_ (added by the flusher) and routes.
-        return None                                         # refresh only → the dst already routes, don't disturb the flow
+            return self.reset_mark
+        return None
 
     def _blocked(self, src, cats, indev=None):
-        """The block mark for a connection from `src` to a host `_match` put in `cats`, or 0. The source's rules in its
-        chain's order (see _blocks_parse); the first whose categories meet the host's decides, an Exit or a Direct as much
-        as a Block — a name a rule above claims is not refused by one below. A per-person rule asks whether `src` is one of
-        its devices; a shadow category skips the devices its claimer's rules reach (swg-noded `_smart_shadows`)."""
         rules = None
         for net, m, rl in self.bsrc:
             if src & m == net:
@@ -804,7 +586,7 @@ class Classifier:
         if rules is None:
             return 0
         sel = self.bsel
-        me = None                                          # (device, address), resolved only when a rule asks who it is
+        me = None
         for mark, act, rcats, who in rules:
             if who is not None:
                 me = me or (self._ifname(indev), src)
@@ -819,12 +601,9 @@ class Classifier:
                     return mark if act == "block" else 0
         return 0
 
-    _ifn = {}                                              # ifindex → (name, when): an index is reused after an interface
-    #                                                        is recreated, so an entry lives IFNAME_TTL and a miss asks again
+    _ifn = {}
 
     def _ifname(self, indev):
-        """The ingress device's name — `indev` as NFQUEUE gives it (an ifindex), or a name already. "" when unknown: then no
-        selection holds the packet, so a per-person rule does not take it."""
         if not indev:
             return ""
         if isinstance(indev, str):
@@ -841,64 +620,40 @@ class Classifier:
         return nm
 
     def _reassemble(self, pkt, tcp):
-        """The name in a ClientHello split across TCP segments, once the segment that carries it has arrived — else None.
-
-        parse_sni reads ONE segment. Chrome's ~2 KB ClientHello (a 1 263-byte X25519MLKEM768 key share) always takes two,
-        and its extensions are shuffled, so the SNI was past the first 1 340 bytes in 15 of 27 captured (Chrome 152,
-        2026-09-23) — and msk-main's wg1 delivered such a hello as two packets (no GRO merge), from which this process
-        learned nothing: those connections left by whatever else matched, past a Block included, until a later one
-        happened to show the name early. So a segment that opens a ClientHello longer than itself is held, from its
-        sequence number, and whatever follows is placed BY ITS OFFSET in the stream: the next segment extends it, a
-        retransmit or a re-cut segment that overlaps it adds only what is new, one that leaves a gap (out of order) is
-        ignored and the hello kept. Parsed after every addition; the reset, when due, goes out on the segment that
-        completed the name. The table is kept oldest first — an addition renews its entry's PARTIAL_TTL and moves it to
-        the back — so a timed-out entry leaves from the front in O(1); it holds at most PARTIAL_MAX hellos,
-        PARTIAL_PER_SRC from one client address, PARTIAL_BYTES each.
-
-        NOT READ, AND WHY THAT STAYS: a hello whose segments arrive out of order (its second before its first: the first
-        is held, and what it waits for has already gone by — or, past a gap, a later one), and one whose first segment
-        is under 6 bytes (too short to say it opens a ClientHello). A tunnel delivers a client's back-to-back segments in
-        order as a rule, and no TLS stack sends a hello's first bytes on their own; DPI-evasion tools do both, and more
-        (fake hellos, TLS-record splits) that no reassembly here would undo. Such a connection leaves as if its name were
-        unknown, once; the next one to the same address, in order, is learned."""
         key, seq, src = _flow_seq(pkt)
         now = time.monotonic()
         with self._plock:
             self._sweep_partial(now)
             held = self._partial.get(key)
             if held is not None:
-                off = (seq - held[0]) & 0xFFFFFFFF                   # where this segment starts in the held hello
+                off = (seq - held[0]) & 0xFFFFFFFF
                 buf = held[1]
-                if off <= len(buf):                                  # it continues, or overlaps, what is held
+                if off <= len(buf):
                     if off + len(tcp) <= len(buf):
-                        return None                                  # nothing new (a retransmit of what is held)
+                        return None
                     buf = buf[:off] + tcp
                     host = parse_sni(buf)
                     if host or len(buf) >= _hello_len(buf) or len(buf) >= PARTIAL_BYTES:
-                        self._drop_partial(key)                      # named, or complete without a name, or too long
+                        self._drop_partial(key)
                         return host
-                    held[1] = buf; held[2] = now                     # the name is further on: wait for it afresh,
-                    self._partial.move_to_end(key)                   # at the back of the table
+                    held[1] = buf; held[2] = now
+                    self._partial.move_to_end(key)
                     return None
                 if not _hello_len(tcp):
-                    return None                                      # a gap (reordered) or before the hello: keep it
-                self._drop_partial(key)                              # a NEW hello on the same ports replaces it
+                    return None
+                self._drop_partial(key)
             need = _hello_len(tcp)
-            if len(tcp) < need <= PARTIAL_BYTES:                     # opens a ClientHello longer than this segment
+            if len(tcp) < need <= PARTIAL_BYTES:
                 if len(self._partial) < PARTIAL_MAX and self._partial_src.get(src, 0) < PARTIAL_PER_SRC:
                     self._partial[key] = [seq, bytes(tcp), now, src]
                     self._partial_src[src] = self._partial_src.get(src, 0) + 1
         return None
 
     def _drop_held(self, pkt):
-        """Forget the hello held for this packet's flow, if any — it named its host in one segment after all."""
         with self._plock:
             self._drop_partial(_flow_seq(pkt)[0])
 
     def _sweep_partial(self, now):
-        """Drop the held hellos that have waited PARTIAL_TTL for their next segment, oldest first. Under _plock: the
-        packet thread sweeps before each hello it reassembles, the flusher at its prune — so a node whose traffic stops
-        does not keep a full table (up to PARTIAL_MAX × PARTIAL_BYTES) until its next ClientHello."""
         while self._partial:
             k0, h0 = next(iter(self._partial.items()))
             if now - h0[2] < PARTIAL_TTL:
@@ -915,8 +670,6 @@ class Classifier:
                 self._partial_src.pop(h[3], None)
 
     def _write_blk(self, hits):
-        """Atomically mirror the blocked-domain top-K to disk for swg-noded to harvest. Best-effort, never raises: False
-        when it could not be written."""
         try:
             tmp = self.blk_path + ".tmp"
             with open(tmp, "w") as f:
@@ -927,9 +680,6 @@ class Classifier:
             return False
 
     def _flush_forever(self):
-        """The flusher's thread: _flush_loop, run again after anything it raises (logged, a second apart). One nft fork
-        refused under memory pressure ended the thread for good: learning stopped while _pending grew without bound
-        (1.8.9 qualification HE-5)."""
         while True:
             try:
                 self._flush_loop()
@@ -938,19 +688,6 @@ class Classifier:
                 time.sleep(1.0)
 
     def _flush_loop(self):
-        """Background: drain the pending buffer into batched nft writes (one transaction for every category), and sweep the
-        seen cache of expired entries. Adds go to catl_ (the self-expiring learned set) — see _write_learned for how.
-
-        IT SLEEPS UNTIL THERE IS SOMETHING TO DO. It used to wake every FLUSH_INTERVAL to look: 40 times a second,
-        ~100 µs each on a 1-vCPU VM — 0.41 % of it with nothing to do (msk-main, 2026-09-23), as much as a quiet node's
-        traffic cost. on_packet now wakes it when it queues a learn into an empty buffer, so that write goes out at once
-        instead of up to FLUSH_INTERVAL later (the reconnect the reset provokes finds the address sooner); under load the
-        writes stay FLUSH_INTERVAL apart, which is the batching; MAX_BATCH still writes at once. With nothing queued it
-        sleeps until its next chore is due: the prune (the seen cache, and the held hellos that timed out), and the
-        blocked-hits mirror once a hit has moved it — on_packet wakes it for the first since a mirror, which then goes out
-        at once, or BLK_WRITE_EVERY after the last, and an unchanged mirror is not rewritten. IDLE_WAKE caps the sleep,
-        as a backstop. Its own times are monotonic, and a chore is due when its time is reached (`>=`), the very time
-        the sleep was aimed at. The event is cleared BEFORE the buffer is read, so a wake is never lost."""
         last_write = 0.0
         while True:
             self._wake.clear()
@@ -960,7 +697,7 @@ class Classifier:
                 if self._blk_dirty:
                     due = min(due, self._blk_last_w + BLK_WRITE_EVERY)
             mono = time.monotonic()
-            if n == 0:                                 # nothing to write: sleep until a learn, a hit, or the next chore
+            if n == 0:
                 self._wake.wait(min(IDLE_WAKE, max(0.0, due - mono)))
             elif n < MAX_BATCH and mono - last_write < FLUSH_INTERVAL:
                 self._wake.wait(FLUSH_INTERVAL - (mono - last_write))
@@ -968,11 +705,11 @@ class Classifier:
             batch = blk_snap = None
             sweep = False
             with self._lock:
-                if mono >= self._last_prune + PRUNE_EVERY:   # drop entries older than the TTL so the cache tracks the live set
+                if mono >= self._last_prune + PRUNE_EVERY:
                     self._last_prune = mono; sweep = True
                     self.seen = {k: v for k, v in self.seen.items() if now - v < self.learn_ttl}
-                if self._blk_dirty and mono >= self._blk_last_w + BLK_WRITE_EVERY:   # mirror the blocked-domain top-K
-                    self._blk_last_w = mono; self._blk_dirty = False; blk_snap = dict(self._blk_hits)   # for swg-noded
+                if self._blk_dirty and mono >= self._blk_last_w + BLK_WRITE_EVERY:
+                    self._blk_last_w = mono; self._blk_dirty = False; blk_snap = dict(self._blk_hits)
                 if self._pending and (len(self._pending) >= MAX_BATCH or mono - last_write >= FLUSH_INTERVAL):
                     batch, self._pending = self._pending, []
             if sweep:
@@ -980,16 +717,12 @@ class Classifier:
                     self._sweep_partial(mono)
             if blk_snap is not None and not self._write_blk(blk_snap):
                 with self._lock:
-                    self._blk_dirty = True             # not written: again when the next mirror is due
+                    self._blk_dirty = True
             if batch:
                 self._write_learned(batch)
                 last_write = time.monotonic()
 
     def _write_learned(self, batch):
-        """[(cat, ip)] → one `nft -f` transaction for every category (one per category only when that one is refused) that
-        (re)writes each address with a FRESH timeout: add, delete,
-        add (see the note above FLUSH_INTERVAL — a plain second add does not refresh). Addresses are unique per category, since
-        the delete of one listed twice would fail and take the whole transaction with it."""
         bycat = {}
         for cat, ip in batch:
             if ip not in bycat.setdefault(cat, []):
@@ -1002,7 +735,7 @@ class Classifier:
             return
         for cat, ips in bycat.items():
             r = subprocess.run(["nft", "-f", "-"], input=script(cat, ips), capture_output=True, text=True)
-            if r.returncode != 0:                      # set may not exist yet → forget these so they re-learn next time
+            if r.returncode != 0:
                 with self._lock:
                     for ip in ips:
                         self.seen.pop((ip, cat), None)

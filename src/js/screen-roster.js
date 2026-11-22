@@ -44,7 +44,7 @@ function noPeersYet(onAdd) {
 }
 
 export function ActivityHistoryScreen() {
-  const [rows, setRows] = useState(null);   // null = still loading
+  const [rows, setRows] = useState(null);
   const [, force] = useState(0);
   const bump = () => force(x => x + 1);
   const load = () => api.events(1000).then(r => setRows(Array.isArray(r.data) ? r.data : [])).catch(() => setRows([]));
@@ -54,8 +54,6 @@ export function ActivityHistoryScreen() {
   let list = all;
   if (activityView.item) list = list.filter(e => e.item === activityView.item);
   if (activityView.action) list = list.filter(e => e.action === activityView.action);
-  // search the TRANSLATED text as well as the stored English: the operator types what they can see,
-  // and a row written before the sweep still matches its English verb.
   if (q) list = list.filter(e => (e.verb + " " + srvVerb(e.verb) + " " + e.name + " " + (e.detail || "") + " " + srvDetail(e))
     .toLowerCase().includes(q));
   const pageSize = 25;
@@ -81,7 +79,6 @@ export function ActivityHistoryScreen() {
       <${Dropdown} className="selwrap" ariaLabel=${T("All actions")} value=${activityView.action}
         onChange=${v => { activityView.action = v; activityView.page = 1; bump(); if (r) r(); }}
         options=${[{ value: "", label: T("All actions") }, ...EV_ACTIONS.map(a => ({ value: a, label: evActionLabel(a) }))]}/>`;
-        // a phone: the search, the two filters behind the Filters button; Clear history goes under the list
         return m ? filterBtn(!!(activityView.item || activityView.action), dd) : dd(); })()}
       ${m ? null : clearBtn}
     </div>
@@ -110,7 +107,6 @@ export function ActivityHistoryScreen() {
   </div>`;
 }
 
-// The nodes a set of peers lives on, each node's interfaces listed ONCE with a peer count — the Nodes column's hover bubble.
 function nodesOfPeers(peers) {
   const nm = {};
   for (const p of peers) for (const t of p.targets) {
@@ -141,7 +137,6 @@ function NodesSheet({ title, label, srvNodes }) {
     </div>
   <//>`;
 }
-// The Nodes cell (users and groups): one node's badge, or "N Nodes"; hover lists each node's interfaces and peer counts.
 function nodesChip(srvNodes) {
   if (!srvNodes.length) return html`<span class="faint">—</span>`;
   return html`<span class="turnwrap srvwrap" title="" onClick=${e => e.stopPropagation()}>
@@ -169,7 +164,6 @@ export function UserRow({ user, onlineOnly, q, nested }) {
   const srvNodes = nodesOfPeers(allPeers);
   const st = userStats(user.id);
   const view = userPeerViews[user.id] || (userPeerViews[user.id] = { node: "", iface: "", q: "", page: 1, pageSize: 20, sort: "status", dir: -1 });
-  // a member row inside an open group carries no id: the users list's own row is the one revealUser() scrolls to
   return html`<div class=${"urow" + (expanded ? " open" : "")} id=${nested ? null : "urow-" + user.id}>
     <div class="urow-head" title=${T("Double-click for QR / configs")} onMouseDown=${rowNoSelect} onClick=${e => rowSingle(e, toggle)} onDblClick=${e => rowDouble(e, () => openUserConfigs(user))}>
       <span class="u-exp"><${Ic} i="arrow"/></span>
@@ -185,13 +179,11 @@ export function UserRow({ user, onlineOnly, q, nested }) {
         <span class="u-servers">${nodesChip(srvNodes)}</span>${nodesTap(srvNodes, user.name)}
         <span class="u-last">${st.last == null ? html`<span class="u-never">${T("Never")}</span>` : html`<span class="when">${seen(st.last)}</span>`}</span>
         <span class="u-thru">${rateCell(st.rx, st.tx)}</span>
-        ${/* a phone draws no traffic window, so no figure from one (MOBILE-PLAN hook 4): the ledger is not fetched there */ isMobile() ? null
-          // the user's figure opens the user's view — their graph and every device they had (O12)
+        ${  isMobile() ? null
           : html`<span class="u-total clk" role="button" tabindex="0" title=${T("Open this user's traffic — graph and devices")}
               onClick=${e => { e.stopPropagation(); openUserView(user.id); }} onDblClick=${e => e.stopPropagation()}
               onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openUserView(user.id); } }}><${UserTrafficCell} uid=${user.id}/></span>`}
         <span class="u-acts" onClick=${e => e.stopPropagation()}>
-          ${/* data-lbl: the word a phone shows under each icon, where the row's swipe reveals them (m/m.css); nothing on a desktop */""}
           <button class="iconbtn qr" title=${T("Show QR / configs")} data-lbl="QR" onClick=${() => openUserConfigs(user)}><${Ic} i="qr"/></button>
           <button class="iconbtn" title=${T("Traffic — graph and devices")} aria-label=${T("Traffic — graph and devices")} data-lbl=${T("Traffic")} onClick=${() => openUserView(user.id)}><${Ic} i="bars"/></button>
           <button class="iconbtn" title=${T("Edit user")} data-lbl=${T("Edit")} onClick=${() => openUserEdit(user)}><${Ic} i="pencil"/></button>
@@ -210,7 +202,6 @@ export function UserRow({ user, onlineOnly, q, nested }) {
 function ModeIcons({ users, force }) {
   const set = m => { usersView.mode = m; force(x => x + 1); };
   const groupsMode = usersView.mode === "groups";
-  // Two icons are a pair of tabs; the lone Groups icon beside the filter is a plain button that opens the groups grid.
   const tab = users ? { role: "tab", "aria-selected": groupsMode } : {};
   return html`<div class="pmode pm-icons" role=${users ? "tablist" : null} aria-label=${users ? T("Users or groups") : null}>
     ${users ? html`<button type="button" role="tab" aria-selected=${!groupsMode} class=${"pm-opt pm-ico pm-users" + (groupsMode ? "" : " on")}
@@ -220,7 +211,6 @@ function ModeIcons({ users, force }) {
   </div>`;
 }
 
-// The groups grid's column line — the users list's widths, so a group's figures sit above its members' once it is open.
 function GroupsHeader({ sort, dir, onSort }) {
   const arrow = c => sort === c ? (dir < 0 ? "↓ " : "↑ ") : "";
   const th = (c, label, cls) => html`<span class=${"clk" + (cls ? " " + cls : "")} onClick=${() => onSort(c)}>${arrow(c)}${label}</span>`;
@@ -236,7 +226,7 @@ function GroupRow({ g, st, q }) {
   const nameHit = searching && searchMatch(g.name, q);
   const expanded = searching && !nameHit ? usersView.gexpanded[g.id] !== false : !!usersView.gexpanded[g.id];
   const toggle = () => { usersView.gexpanded[g.id] = !expanded; force(x => x + 1); };
-  const shares = groupShares(g.id);   // cached per poll (Store.sharesByGroup) — the count in `st` came from the same list
+  const shares = groupShares(g.id);
   const lit = st.online > 0;
   const view = groupMemberViews[g.id] || (groupMemberViews[g.id] = { page: 1, pageSize: 20, sort: "status", dir: -1 });
   let body = null;
@@ -277,7 +267,6 @@ function GroupRow({ g, st, q }) {
         ${isMobile() ? null : html`<span class="u-total"><${TrafficCell} a=${st.traffic} e=${trafficTotals()} ctx=${{ group: true }}/></span>`}
         <span class="u-acts" onClick=${e => e.stopPropagation()} onDblClick=${e => e.stopPropagation()}>
           <button type="button" class="iconbtn" data-lbl=${T("Traffic")} title=${T("Traffic — graph and members")} aria-label=${T("Traffic — graph and members")} onClick=${() => openGroupView(g.id)}><${Ic} i="bars"/></button>
-          ${/* not on a phone: its swipe holds four actions at most (operator, 2026-10-29); the Filters sheet's group does the same */""}
           ${isMobile() ? null : html`<button type="button" class="iconbtn" data-lbl=${T("Users")} title=${T("Show this group on the users list")} aria-label=${T("Show this group on the users list")}
             onClick=${() => { usersView.mode = "users"; usersView.group = g.id; usersView.q = ""; usersView.page = 1; bus.emit(); }}><${Ic} i="user"/></button>`}
           <button type="button" class="iconbtn" data-lbl=${T("Edit")} title=${T("Edit group")} aria-label=${T("Edit group")} onClick=${() => openGroup(g.id)}><${Ic} i="pencil"/></button>
@@ -312,15 +301,13 @@ function RosterFilters({ reset }) {
 function GroupsView({ force }) {
   const all = Store.groups();
   const q = usersView.gq.trim().toLowerCase();
-  const byId = new Map(Store.recon.users.map(u => [u.id, u]));      // one pass per render, not a search per member
+  const byId = new Map(Store.recon.users.map(u => [u.id, u]));
   const hit = g => searchMatch(g.name, q) || g.users.some(u => byId.has(u) && userMatchesQ(byId.get(u), q));
   const filt = filtersOn();
   const passes = g => (!q || hit(g)) && (!filt || g.users.some(u => byId.has(u) && memberPasses(byId.get(u))));
-  // A group's figures walk every member's devices: work out only the groups the sort compares (every group for a sort by a
-  // figure, none for the name sort) and the page shows — each once per render.
   const stc = new Map();
   const st = g => stc.get(g.id) || (stc.set(g.id, groupStats(g)), stc.get(g.id));
-  const list = sortGroups(all, st, usersView.gsort, usersView.gdir).filter(passes);   // freeze over all, then filter
+  const list = sortGroups(all, st, usersView.gsort, usersView.gdir).filter(passes);
   const pageSize = usersView.gpageSize || 20;
   const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
   const page = Math.min(Math.max(1, usersView.gpage || 1), totalPages);
@@ -353,12 +340,10 @@ export function UsersScreen() {
   const [, force] = useState(0);
   if (usersView.mode === "groups") return html`<${GroupsView} force=${force}/>`;
   const groups = Store.groups();
-  if (usersView.group && !Store.group(usersView.group)) usersView.group = "";   // the group was deleted (here or elsewhere)
+  if (usersView.group && !Store.group(usersView.group)) usersView.group = "";
   const inGroup = usersView.group ? new Set(Store.group(usersView.group).users) : null;
   const q = usersView.q.toLowerCase();
   const allUsers = Store.recon.users;
-  // node/iface filter the user LIST (has a peer there); each expanded row still shows ALL of that user's peers
-  // freeze the order over the FULL list, then filter — so searching/clearing never reshuffles the frozen rows
   const users = sortUsers(allUsers, usersView.sort, usersView.dir, "users").filter(u => (!inGroup || inGroup.has(u.id)) && userMatchesQ(u, q) && memberPasses(u)
     && (!usersView.status || Store.peersByUser(u.id).some(p => peerInRosterStatus(p, usersView.status))));
   const unassigned = Store.unassignedPeers().filter(p => peerInRosterStatus(p, usersView.status)
@@ -410,9 +395,3 @@ export function UsersScreen() {
     <//>` : null}
   </div>`;
 }
-
-// ═════════════════════════ SCREEN: USER DETAIL ═════════════════════════
-
-
-// ═════════════════════════ SCREEN: NODES ═════════════════════════
-// ═════════════════════════ SCREEN: ACCOUNT ═════════════════════════

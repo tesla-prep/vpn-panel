@@ -1,4 +1,3 @@
-// `rate`/`niceScaleCeil` come from ui.js: they follow the operator's unit choice (see rateUnits there).
 
 import { resolvedTheme } from "./theme.js";
 import { Store, api } from "./store.js";
@@ -11,22 +10,19 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// Minimal auto-scaling filled sparkline — trend shape only, no axes (distinct from Sparkline, which is a fixed
-// 0–100 % line for CPU load). `data` is oldest→newest; flat/short/all-zero series draw nothing.
 export function TrendSpark({ data, w = 104, h = 24, color = "var(--brand)" }) {
   const a = (data || []).filter(v => v != null);
   if (a.length < 2) return null;
   const max = Math.max.apply(null, a), min = Math.min.apply(null, a), span = (max - min) || 1, n = a.length;
   const xy = a.map((v, i) => [(i / (n - 1)) * w, h - 1 - ((v - min) / span) * (h - 3)]);
   const line = xy.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
-  if (max <= 0) return null;   // all-zero window → nothing worth drawing
+  if (max <= 0) return null;
   return html`<svg class="spark" width=${w} height=${h} viewBox=${"0 0 " + w + " " + h} preserveAspectRatio="none" aria-hidden="true">
     <polygon points=${"0," + h + " " + line + " " + w + "," + h} fill=${color} opacity="0.12"/>
     <polyline points=${line} fill="none" stroke=${color} stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
   </svg>`;
 }
 
-// Tiny inline-SVG sparkline (no charting lib). `points` is an array of numbers 0..100.
 export function Sparkline({ points, color, w, h }) {
   w = w || 90; h = h || 22;
   const pts = (points || []).filter(v => v != null);
@@ -42,20 +38,17 @@ export function Sparkline({ points, color, w, h }) {
 const _md = {};
 const monthDay = d => { const k = locale() === "en-GB" ? "en-US" : locale(); try { return (_md[k] || (_md[k] = new Intl.DateTimeFormat(k, { month: "long", day: "numeric" }))).format(d); }
   catch (_) { return d.toISOString().slice(0, 10); } };
-// per-range tooltip time: live = h:m:s, hour/day = h:m, week/month = "June 24, 6PM" (date + 12h hour); a custom window
-// (its key, views.js isCustomKey) = the date and time, or the date alone for a point at midnight (a day bar)
 export function histTime(ts, range) {
   if (ts == null) return "";
   const d = new Date(ts * 1000), p2 = x => String(x).padStart(2, "0");
   const hm = p2(d.getHours()) + ":" + p2(d.getMinutes());
   const date = monthDay(d);
-  if (range === "month") return date;                                  // date only
-  if (range === "day" || range === "week") return date + " " + hm;     // date + time
-  if (range === "live") return hm + ":" + p2(d.getSeconds());          // time + seconds
+  if (range === "month") return date;
+  if (range === "day" || range === "week") return date + " " + hm;
+  if (range === "live") return hm + ":" + p2(d.getSeconds());
   if (/^custom:/.test(range || "")) return hm === "00:00" ? date : date + " " + hm;
-  return hm;                                                           // hour → time
+  return hm;
 }
-// hover overlay shared by the CPU + throughput charts: vertical guide, point dot(s), value tooltip
 export function ChartHover({ xp, dots, label }) {
   const anchor = xp < 22 ? "translateX(0)" : xp > 78 ? "translateX(-100%)" : "translateX(-50%)";
   return html`<${Fragment}>
@@ -67,15 +60,15 @@ export function ChartHover({ xp, dots, label }) {
 export const LOAD_G_DARK = [63, 216, 154], LOAD_G_LIGHT = [14, 158, 99], LOAD_O = [242, 163, 60], LOAD_R = [242, 84, 91];
 export function cpuColor(v) {
   const mix = (a, b, t) => "rgb(" + a.map((x, i) => Math.round(x + (b[i] - x) * t)).join(",") + ")";
-  const LOAD_G = resolvedTheme() === "light" ? LOAD_G_LIGHT : LOAD_G_DARK;   // the low-load green must stay legible on white
+  const LOAD_G = resolvedTheme() === "light" ? LOAD_G_LIGHT : LOAD_G_DARK;
   if (v <= 60) return mix(LOAD_G, LOAD_G, 0);
   if (v <= 85) return mix(LOAD_G, LOAD_O, (v - 60) / 25);
   if (v <= 100) return mix(LOAD_O, LOAD_R, (v - 85) / 15);
   return mix(LOAD_R, LOAD_R, 0);
 }
 const LOSS_FLOOR = 0.5;
-const LOSS_FLOOR_DARK = [79, 168, 240], LOSS_FLOOR_LIGHT = [43, 124, 211];        // --ready
-const LOSS_STOPS_DARK = [[0.5, [226, 200, 74]], [2, [242, 153, 74]], [5, [242, 107, 130]]];   // partial → fault → dangling
+const LOSS_FLOOR_DARK = [79, 168, 240], LOSS_FLOOR_LIGHT = [43, 124, 211];
+const LOSS_STOPS_DARK = [[0.5, [226, 200, 74]], [2, [242, 153, 74]], [5, [242, 107, 130]]];
 const LOSS_STOPS_LIGHT = [[0.5, [176, 122, 22]], [2, [217, 119, 42]], [5, [214, 58, 85]]];
 const LOSS_FLOOR_MESH = 0.05;
 const MESH_STOPS_DARK = [[0.05, [226, 200, 74]], [0.5, [242, 153, 74]], [2, [242, 107, 130]]];
@@ -102,19 +95,14 @@ export function MiniArea({ points, h, times, range, cap }) {
   const pts = (points || []).filter(v => v != null);
   h = h || 42; const w = 100;
   const n = pts.length;
-  // x-axis holds `cap` blocks (the ring's full capacity); data is pinned to the RIGHT edge and
-  // grows leftward as blocks arrive, so a fresh node fills one block at a time instead of stretching.
   const C = Math.max(cap || n || 1, 2);
   const xAt = i => w - (n - 1 - i) * (w / (C - 1));
   const TS = times || [];
-  // map a mouse x to the nearest plotted block (null over the still-empty left area)
   const onMove = e => { const el = wref.current; if (!el) return; const r = el.getBoundingClientRect();
     const x = (e.clientX - r.left) / r.width * w; const i = Math.round((n - 1) - (w - x) * (C - 1) / w);
     setHov(i >= 0 && i < n ? i : null); };
-  if (n === 0)   // empty plot area — fills from the right as the first blocks arrive
+  if (n === 0)
     return html`<div class="harea-wrap" style=${"height:" + h + "px"}></div>`;
-  // FIXED stepped y-scale from 0 (not min/max autoscale) so CPU doesn't always touch the top. Pick the bar
-  // height by the peak: ≤10% → 0–20% · ≤30% → 0–50% · ≤60% → 0–80% · above → 0–100%.
   const lo = Math.min(...pts), hi = Math.max(...pts), rng = (hi - lo) || 1, vpad = h * 0.06;
   const scaleMax = hi <= 10 ? 20 : hi <= 30 ? 50 : hi <= 60 ? 80 : 100;
   const Y = v => h - vpad - (Math.min(Math.max(v, 0), scaleMax) / scaleMax) * (h - 2 * vpad);
@@ -124,7 +112,7 @@ export function MiniArea({ points, h, times, range, cap }) {
   const id = "ha" + (MiniArea._n = (MiniArea._n || 0) + 1);
   const edges = [...new Set([lo, 60, 85, hi].filter(v => v >= lo && v <= hi))].sort((a, b) => b - a);
   const stops = edges.map(v => ({ off: Math.max(0, Math.min(1, (hi - v) / rng)), col: cpuColor(v) }));
-  const cur = pts[n - 1];   // area fade is tinted by the latest value
+  const cur = pts[n - 1];
   return html`<div class="harea-wrap" ref=${wref} style=${"height:" + h + "px"} onMouseMove=${onMove} onMouseLeave=${() => setHov(null)}>
     <svg class="harea" viewBox=${"0 0 " + w + " " + h} preserveAspectRatio="none" height=${h}>
       <defs>
@@ -144,12 +132,9 @@ export function MiniArea({ points, h, times, range, cap }) {
   </div>`;
 }
 
-// Throughput history: rx as a filled area + tx as a line, scaled to the series max.
 export function ThroughputChart({ rx, tx, h, head, times, range, cap }) {
   const [hov, setHov] = useState(null);
   const wref = useRef(null);
-  // Perspective is applied HERE (once, centrally) so every caller can pass raw node rx/tx and the ↓ series
-  // always means "download in the active perspective" — node-side by default, user-side when set to peers.
   const _pov = (Store.panelSettings || {}).throughput_perspective === "peers";
   const dnArr = _pov ? tx : rx, upArr = _pov ? rx : tx;
   const R = (dnArr || []).map(v => v || 0), TS = (upArr || []).map(v => v || 0);
@@ -160,11 +145,8 @@ export function ThroughputChart({ rx, tx, h, head, times, range, cap }) {
   const scaleLabel = rate(scaleMax);
   const legend = html`<div class="tp-legend"><span class="tp-k"><i class="sw rx"></i>↓ ${rate(curR)}</span><span class="tp-k"><i class="sw tx"></i>↑ ${rate(curT)}</span><span class="tp-peak">${T("peak {v1}", { v1: rate(hi) })}</span><span class="tp-scale" title=${T("Vertical scale — nearest 1/5/10/50/100/500 unit above the peak (≥15% headroom)")}>${scaleLabel}</span><span class="grow"></span>${head || null}</div>`;
   h = h || 60; const w = 100;
-  // right-anchored to the ring's full capacity, like MiniArea — fills from the right as blocks arrive
   const C = Math.max(cap || n || 1, 2);
   const xAt = i => w - (n - 1 - i) * (w / (C - 1));
-  // baseline 0 at the bottom, scaleMax (the nice ceiling) at the very top — the ceiling itself carries the ≥15%
-  // headroom, so no extra top padding is needed (the peak line lands at ≥15% below the top).
   const top = 0;
   const Y = v => h - (Math.max(0, Math.min(v, scaleMax)) / scaleMax) * (h - top);
   const line = arr => arr.map((v, i) => xAt(i).toFixed(1) + "," + Y(v).toFixed(1)).join(" ");
@@ -199,7 +181,6 @@ export function MultiRing({ rings, size, thick, gap, center, active, onActive })
   const cx = size / 2, cy = size / 2;
   const rings2 = (rings || []).filter(Boolean);
   const directional = rings2.some(r => r.unitColor);
-  // outer ring radius leaves a thick/2 margin; each inner ring steps in by thick + a 4px groove
   const step = thick + 5;
   const arcs = [];
   rings2.forEach((ring, ri) => {
@@ -215,26 +196,22 @@ export function MultiRing({ rings, size, thick, gap, center, active, onActive })
       acc += pct;
     });
   });
-  // The arrow comes from the ring's own `dir`, never from its label text — the label is translated, and
-  // inferring direction from words is a coupling that breaks silently in every language but English.
   const arrowOf = dir => dir === "dn" ? "↓ " : dir === "up" ? "↑ " : "";
-  // an arc is LIT when it matches the active key AND (whole-entity hover, or its exact ring)
   const lit = a => active && a.seg.key === active.key && (active.dir == null || a.ri === active.dir);
   const set = t => onActive && onActive(t);
-  // ── centre readout while hovering ──
   let readout = center;
   if (active) {
     const ea = arcs.filter(a => !a.track && a.seg && a.seg.key === active.key).sort((p, q) => p.ri - q.ri);
     if (ea.length) {
       const nm = ea[0].seg.name, col = ea[0].seg.color;
       const valLine = a => html`<div class="mrc-val" style=${a.ring.unitColor ? "color:" + a.ring.unitColor : ""}>${arrowOf(a.ring.dir)}${(a.ring.fmt || (v => v))(a.seg.value)}</div>`;
-      if (active.dir != null) {                                   // one arc → its single value + which ring / %
+      if (active.dir != null) {
         const a = ea.find(x => x.ri === active.dir) || ea[0];
         readout = html`<div class="mrc-hov"><div class="mrc-name" style=${"color:" + col}>${nm}</div>
           ${valLine(a)}<div class="mrc-sub">${a.ring.label} · ${Math.round(a.pct)}%</div></div>`;
-      } else if (directional) {                                   // whole entity → its own ↓ / ↑
+      } else if (directional) {
         readout = html`<div class="mrc-hov"><div class="mrc-name" style=${"color:" + col}>${nm}</div>${ea.map(valLine)}</div>`;
-      } else {                                                    // count doughnut → this entity's on / tot
+      } else {
         const tot = (ea.find(a => a.ri === 0) || {}).seg, on = (ea[ea.length - 1] || {}).seg;
         readout = html`<div class="mrc-hov"><div class="mrc-name" style=${"color:" + col}>${nm}</div>
           <div class="mrc-val">${on ? on.value : 0}<small style="color:var(--faint)"> / ${tot ? tot.value : 0}</small></div></div>`;
@@ -273,7 +250,7 @@ export function RingLegend({ items, cols, active, onActive }) {
   })}</div>`;
 }
 
-export function OnlineBlocks({ blocks, step, endTs, times, range, h, color }) {   // times: each bar's start, when the server laid them (a custom window, on the local clock)
+export function OnlineBlocks({ blocks, step, endTs, times, range, h, color }) {
   const [hov, setHov] = useState(null); const wref = useRef(null);
   color = color || "var(--online)"; h = h || 70;
   const n = blocks.length, hi = Math.max(1, ...blocks.filter(v => v != null));
@@ -309,7 +286,6 @@ export function TrendArea({ points, times, color, h, cap, fmt, range, label }) {
   </div>`;
 }
 
-// A ranked horizontal-bar list. rows: [{label, value, sub, color, href}].
 export function RankBars({ rows }) {
   const mx = Math.max(1, ...rows.map(r => r.value || 0));
   if (!rows.length) return html`<div class="harea-empty">${T("no data")}</div>`;
@@ -317,13 +293,11 @@ export function RankBars({ rows }) {
     const inner = html`<span class="rb-label"><span class="rb-nm">${r.label}</span>${r.count > 1 ? html`<span class="rb-n" title=${T("{v1} peers", { v1: r.count })}>${r.count}</span>` : ""}</span>
       <span class="rb-track"><i style=${"width:" + Math.max(2, (r.value || 0) / mx * 100) + "%;background:" + (r.color || "var(--brand)")}></i></span>
       <span class="rb-val">${r.sub}</span>`;
-    // a talker aggregating several peers carries a per-peer breakdown, shown on hover as its own mini bar list
     const bmx = (r.bub && r.bub.length) ? Math.max(1, ...r.bub.map(b => b.value || 0)) : 1;
     const bub = (r.bub && r.bub.length) ? html`<span class="rb-bub">${r.bub.map(b => html`<${Fragment}>
         <span class="rb-bub-n">${b.kind ? html`<${Tag} kind=${b.kind} label=${b.kind} gen3=${b.gen3}/>` : ""}<span class="rb-bub-nm" title=${b.name}>${b.name}</span></span>
         <span class="rb-bub-track"><i style=${"width:" + Math.max(3, (b.value || 0) / bmx * 100) + "%;background:" + (r.color || "var(--brand)")}></i></span>
         <span class="rb-bub-v">${b.sub}</span><//>`)}</span>` : null;
-    // rows with an href/onClick are interactive; rows without (e.g. destinations — nothing to open) render static
     const cls = "rb" + (bub ? " hasbub" : "");
     return (r.href || r.onClick)
       ? html`<a class=${cls} href=${r.href || "#"} onClick=${r.onClick || null} key=${r.label}>${inner}${bub}</a>`
@@ -331,16 +305,9 @@ export function RankBars({ rows }) {
   })}</div>`;
 }
 
-// A history chart (CPU or throughput) with live/day/week/month range tabs. "live" uses the
-// series already in /api/state; day/week/month are fetched on demand from /api/node-history.
 export const HIST_RANGES = ["live", "hour", "day", "week", "month"];
-// blocks (= slots = plotted points) each range's x-axis holds — must match swg-panel-server
-// HRRD_RINGS slot counts (live = LIVE_MAX). Charts pin data to the right and fill leftward.
 export const RANGE_CAP = { live: 200, hour: 250, day: 300, week: 350, month: 400 };
-// Seconds each range covers — mirrors the panel's RANGE_SPEC windows. Only used to work out how many samples
-// a window can hold at a series' real resolution (densityCap).
 export const RANGE_WIN = { live: 200 * 15, hour: 3600, day: 86400, week: 7 * 86400, month: 30 * 86400 };
-// A custom window's x-axis (P3): as many slots as the buckets of the `axis` a ranged reply carries; 0 without one.
 export const axisCap = a => a && a.step ? Math.max(1, Math.ceil((a.until - a.since) / a.step)) : 0;
 
 export function densityCap(times, range) {
@@ -351,28 +318,25 @@ export function densityCap(times, range) {
   for (let i = 1; i < t.length; i++) { const d = t[i] - t[i - 1]; if (d > 0) gaps.push(d); }
   if (!gaps.length) return fallback;
   gaps.sort((a, b) => a - b);
-  const step = gaps[Math.floor(gaps.length / 2)];   // median: one long gap from a restart must not widen the axis
+  const step = gaps[Math.floor(gaps.length / 2)];
   if (!step) return fallback;
-  // never exceed the designed block count — this only ever narrows the axis to what the data can fill
   return Math.max(2, Math.min(fallback, Math.round(win / step)));
 }
 export const tailSeries = (s, n) => { const o = {}; for (const k of ["t", "cpu", "mem", "disk", "rx", "tx", "mrx", "mtx"]) if (Array.isArray((s || {})[k])) o[k] = s[k].slice(-n); return o; };
 
-// The live/hour/day/week/month picker. Rendered inside the chart by default, or lifted into a panel header
-// (controlled `range`/`setRange`) so Health/Throughput can host it up top.
 export function RangeTabs({ range, setRange }) {
   return html`<div class="rangetabs">${HIST_RANGES.map(t => html`<button class=${"rtab" + (range === t ? " on" : "")} onClick=${() => setRange(t)}>${rangeLabel(t)}</button>`)}</div>`;
 }
 export function RangedHistory({ node, kind, live, h, head, liveFine, fetch, traf, range: cRange, setRange: cSetRange }) {
   const [iRange, iSetRange] = useState("live");
-  const controlled = cRange !== undefined;   // parent owns the range (tabs live in a panel header) → don't draw them here
+  const controlled = cRange !== undefined;
   const range = controlled ? cRange : iRange, setRange = cSetRange || iSetRange;
   const [fetched, setFetched] = useState(null);
-  const custom = !!fetch;   // per-entity graphs (turn / mesh / interface): fetch EVERY range on-demand off their own RRD (never in /api/state)
-  const fetchRange = custom || range === "day" || range === "week" || range === "month";   // node graph: live/hour ride /api/state
+  const custom = !!fetch;
+  const fetchRange = custom || range === "day" || range === "week" || range === "month";
   useEffect(() => {
     if (!fetchRange) { setFetched(null); return; }
-    let ok = true; setFetched(null);   // clear so the chart shows an empty area, then fills when the fetch lands
+    let ok = true; setFetched(null);
     const p = custom ? Promise.resolve(fetch(range)) : api.nodeHistory(node, range).then(r => r && r.ok ? r.data : {});
     p.then(d => { if (ok) setFetched(d || {}); }).catch(() => {});
     return () => { ok = false; };
@@ -381,26 +345,19 @@ export function RangedHistory({ node, kind, live, h, head, liveFine, fetch, traf
   const s = custom ? (fetched || {})
     : range === "live" ? (liveBuf ? liveFine : tailSeries(live, 70))
     : range === "hour" ? (live || {}) : (fetched || {});
-  // x-axis capacity: the live fallback is coarse 15s data, so let it fit to its own length (cap 0)
-  // rather than pinning to the 5s window; every other range uses its fixed block count.
   const cap = custom ? densityCap(s.t, range) : range === "live" ? (liveBuf ? RANGE_CAP.live : 0) : RANGE_CAP[range];
   const hasData = (s.cpu || s.rx || []).some(x => x != null);
-  const nlive = Store.recon.nodeStatus[node] === "live";   // node hasn't reported for several rounds → the live feed is frozen
-  // A node that stops reporting (update / re-install / convert / brief outage) must NEVER blank the
-  // chart — the data already collected stays on screen, flagged with a small "paused" pill.
-  const notLive = !nlive && (range === "live" || range === "hour");   // only the live-fed ranges; day/week/month keep their stored history
+  const nlive = Store.recon.nodeStatus[node] === "live";
+  const notLive = !nlive && (range === "live" || range === "hour");
   const pausedPill = (notLive && hasData) ? html`<span class="rt-paused" title=${T("This node isn't reporting right now — showing the last data it sent.")}>${T("tag|paused")}</span>` : null;
-  // when the range picker is hoisted into the panel header, the in-chart slot keeps only the "paused" pill
   const tabs = html`${pausedPill}${controlled ? null : html`<${RangeTabs} range=${range} setRange=${setRange}/>`}`;
   if (kind === "throughput") {
-    // The node throughput carries a mesh split; the parent passes a `traf` {peers,mesh} filter (its Peers/Mesh toggle
-    // lives in the panel header). client = rx−mrx, mesh = mrx. Per-entity graphs (iface/turn/mesh) pass no filter.
     let rx = s.rx, tx = s.tx;
     if (traf) {
       const pick = (tot, mesh) => (tot || []).map((v, i) => (traf.peers ? Math.max(0, (v || 0) - ((mesh || [])[i] || 0)) : 0) + (traf.mesh ? ((mesh || [])[i] || 0) : 0));
       rx = pick(s.rx, s.mrx); tx = pick(s.tx, s.mtx);
     }
-    return html`<${ThroughputChart} rx=${rx} tx=${tx} h=${h} head=${tabs} times=${s.t} range=${range} cap=${cap}/>`;   // perspective handled inside ThroughputChart
+    return html`<${ThroughputChart} rx=${rx} tx=${tx} h=${h} head=${tabs} times=${s.t} range=${range} cap=${cap}/>`;
   }
   return html`<div class="chartwrap">
     <div class="chart-head">${head || null}<span class="grow"></span>${tabs}</div>
@@ -408,7 +365,6 @@ export function RangedHistory({ node, kind, live, h, head, liveFine, fetch, traf
   </div>`;
 }
 
-// Interface throughput panel (interface-detail screen): range picker hoisted into the header, like the node graph.
 export function IfaceThroughput({ node, iface }) {
   const [range, setRange] = useState("live");
   return html`<${Panel} icon="gauge" title=${T("Throughput")} actions=${html`<${RangeTabs} range=${range} setRange=${setRange}/>`}>

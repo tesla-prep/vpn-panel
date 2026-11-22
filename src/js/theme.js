@@ -1,19 +1,17 @@
 export const IFACE_COLOR_DEFAULTS = { wg: { dark: "#3FD89A", light: "#0E9E63" }, awg: { dark: "#1FC8D6", light: "#0E9BB0" }, awg3: { dark: "#4481FF", light: "#1D3FD6" }, wdtt: { dark: "#81B512", light: "#5EAF0E" }, csqtt: { dark: "#F97316", light: "#E5620C" } };
-export const NODE_COLOR_DEFAULT = { dark: "#5f7569", light: "#4A5C52" };   // fallback node colour when unset (per mode)
-export const NODE_CREATE_DEFAULT = { dark: "#34d399", light: "#12A46B" };  // a fresh node's starting colour
-// normalize a possibly-legacy colour ({dark,light} | string | null) into a {dark,light} pair.
+export const NODE_COLOR_DEFAULT = { dark: "#5f7569", light: "#4A5C52" };
+export const NODE_CREATE_DEFAULT = { dark: "#34d399", light: "#12A46B" };
 export function toThemed(v, def) {
   if (v && typeof v === "object") return { dark: v.dark || def.dark, light: v.light || def.light };
   if (typeof v === "string" && v) return { dark: v, light: v };
   return { ...def };
 }
-export const THEME_COLOR_DEFAULT = "#1FC8D6";        // brand cyan (--brand) — the dark-mode accent
-export const THEME_COLOR_LIGHT_DEFAULT = "#0E9BB0";  // a deeper cyan reads better on light surfaces
-// resolve a themed colour: v may be {dark,light}, a legacy single string (used for both), or missing (→ defaults).
+export const THEME_COLOR_DEFAULT = "#1FC8D6";
+export const THEME_COLOR_LIGHT_DEFAULT = "#0E9BB0";
 export function pickThemed(v, defDark, defLight) {
   const light = resolvedTheme() === "light";
   if (v && typeof v === "object") return (light ? v.light : v.dark) || (light ? defLight : defDark);
-  if (typeof v === "string" && v) return v;   // legacy single colour → same in both modes
+  if (typeof v === "string" && v) return v;
   return light ? defLight : defDark;
 }
 
@@ -41,7 +39,7 @@ export function clampBrand(hex, light) {
   if (light && l > 0.52) l = 0.44;
   else if (!light && l < 0.44) l = 0.54;
   else return hex;
-  s = Math.max(s, 0.4);   // keep it saturated so the darker/lighter shade reads as the colour, not grey
+  s = Math.max(s, 0.4);
   return hslToHex(h, s, l);
 }
 

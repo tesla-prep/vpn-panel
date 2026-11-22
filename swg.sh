@@ -93,7 +93,6 @@ install_awg_module() (
 
     apt-get update
     apt-get install -y --no-install-recommends dkms build-essential kmod "linux-headers-$kernel"
-    # Follow the Ubuntu kernel flavour when it has a headers metapackage.
     flavour=${kernel#*-}
     flavour=${flavour#*-}
     if apt-cache show "linux-headers-$flavour" >/dev/null 2>&1; then
@@ -208,7 +207,6 @@ trap 'rm -f -- "$candidate"' EXIT
     sed "s/SWG_REVISION/$image_tag/g" "$source_dir/docker/compose.$role.yml"
 } > "$candidate"
 
-# Compose gives exported shell variables precedence over the saved settings.
 unset PANEL_URL SUB_URL PANEL_PORT SUB_PORT NODE_TOKEN NODE_ENDPOINT
 compose=(docker compose --ansi never --env-file .env -f "$candidate")
 "${compose[@]}" config --quiet

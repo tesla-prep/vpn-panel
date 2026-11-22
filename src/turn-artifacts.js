@@ -4,9 +4,8 @@
   "use strict";
 
   var AWG_ORDER = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5",
-    "HeaderProtectionKey", "RandomTrailers", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "DisableCookies"];   // + AmneziaWG 3.x; twin of js/crypto.js AWG_ORDER
+    "HeaderProtectionKey", "RandomTrailers", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "DisableCookies"];
 
-  // ── byte helpers ──
   function b64ToBytes(b64) {
     try { var s = atob(String(b64 || "").trim()); var a = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; }
     catch (_) { return new Uint8Array(0); }
@@ -14,7 +13,7 @@
   function hexToBytes(h) { h = String(h || "").replace(/[^0-9a-fA-F]/g, ""); var a = new Uint8Array(h.length >> 1); for (var i = 0; i < a.length; i++) a[i] = parseInt(h.substr(i * 2, 2), 16); return a; }
   function ipToBytes(addr) {
     addr = String(addr || "").trim();
-    if (addr.indexOf(":") >= 0) {                                    // IPv6 (handles :: expansion)
+    if (addr.indexOf(":") >= 0) {
       var parts = addr.split("::");
       var head = parts[0], tail = parts[1];
       var h = head ? head.split(":").filter(Boolean) : [], t = tail ? tail.split(":").filter(Boolean) : [];
@@ -24,16 +23,14 @@
     var p = addr.split("."), bb = new Uint8Array(4); for (var i = 0; i < 4; i++) bb[i] = (+p[i]) || 0; return bb;
   }
 
-  // ── protobuf primitives (hand-serialize, no lib) ──
   function pbVarint(n) { var o = [], v = Math.floor(n); while (v > 127) { o.push((v % 128) | 0x80); v = Math.floor(v / 128); } o.push(v & 0x7f); return o; }
   function pbKey(f, w) { return pbVarint((f << 3) | w); }
-  function pbLen(f, arr) { return pbKey(f, 2).concat(pbVarint(arr.length), arr); }          // length-delimited (string / bytes / message)
-  function pbVar(f, n) { return pbKey(f, 0).concat(pbVarint(n)); }                           // varint (uint / bool / enum)
+  function pbLen(f, arr) { return pbKey(f, 2).concat(pbVarint(arr.length), arr); }
+  function pbVar(f, n) { return pbKey(f, 0).concat(pbVarint(n)); }
   function pbStr(f, s) { return pbLen(f, [].slice.call(new TextEncoder().encode(String(s)))); }
   function pbBin(f, u8) { return pbLen(f, [].slice.call(u8)); }
   function epBytes(hostport) { var s = String(hostport || ""); var i = s.lastIndexOf(":"); if (i < 0) return null; return pbStr(1, s.slice(0, i)).concat(pbVar(2, +s.slice(i + 1) || 0)); }
 
-  // descriptor-driven protobuf encoder (WINGS-N C path)
   var WINGSV_SCHEMA = {
     Endpoint:  [{ name: "host", num: 1, type: "string" }, { name: "port", num: 2, type: "uint32" }],
     Cidr:      [{ name: "addr", num: 1, type: "bytes" }, { name: "prefix", num: 2, type: "uint32" }],
@@ -63,17 +60,17 @@
     if (d.type === "msg") return pbLen(d.num, pbEncodeMsg(d.msg, v));
     if (d.type === "string") return pbStr(d.num, String(v));
     if (d.type === "bytes") return pbBin(d.num, v);
-    return pbVar(d.num, d.type === "bool" ? (v ? 1 : 0) : Math.floor(+v || 0));   // uint32 / enum / bool → varint
+    return pbVar(d.num, d.type === "bool" ? (v ? 1 : 0) : Math.floor(+v || 0));
   }
   function pbEncodeMsg(msgName, obj) {
     var schema = WINGSV_SCHEMA[msgName], out = [];
     for (var i = 0; i < schema.length; i++) {
       var d = schema[i], v = obj[d.name];
-      if (v === undefined || v === null) continue;                         // field not set on this object
+      if (v === undefined || v === null) continue;
       if (d.repeated) { for (var j = 0; j < v.length; j++) out = out.concat(pbFieldBytes(d, v[j])); continue; }
-      if (d.type === "msg") { out = out.concat(pbFieldBytes(d, v)); continue; }   // present sub-message → emit
-      if (!d.opt && pbIsDefault(d.type, v)) continue;                      // proto3 scalar default-omission
-      out = out.concat(pbFieldBytes(d, v));                               // opt → emit even at zero (explicit presence)
+      if (d.type === "msg") { out = out.concat(pbFieldBytes(d, v)); continue; }
+      if (!d.opt && pbIsDefault(d.type, v)) continue;
+      out = out.concat(pbFieldBytes(d, v));
     }
     return out;
   }
@@ -90,7 +87,6 @@
   }
   function jsonSortedCompact(obj) { return JSON.stringify(sortedCanonical(obj)); }
 
-  // Parse a client .conf back into fields (the private key lives only in the caller's config).
   function parseFullConf(text) {
     var m = function (re) { return (text.match(re) || [])[1]; };
     var dnsLine = m(/DNS\s*=\s*(.+)/);
@@ -110,46 +106,42 @@
     };
   }
 
-  // ── a fork's NAME for an end user ({fork} in a server-name template): each page hands its catalog's (q189 HE-8 —
-  // "samosvalishe 56005" was the raw id of a fork renamed hack-diaz). Identity until a page sets it.
   var forkName = function (f) { return f; };
-  // ── the CLI builds a fork's catalog offers (its cli_authors, native first) — each page hands its own; none = the table ──
   var cliAuthorsOf = function () { return null; };
 
-  // ── fork id from a service name (vk-turn-proxy-<fork>-<port>) ──
   function label(service) {
     var s = (service || "turn-proxy").replace(/^vk-turn-proxy-?/, "") || "turn";
     s = s.replace(/-\d+$/, "") || "turn";
-    return s === "main" ? "cacggghp" : s;             // legacy "main" services still display as cacggghp
+    return s === "main" ? "cacggghp" : s;
   }
 
-  var WINGSV_SESSION_MODES = { mainline: 2, mux: 3 };                     // TurnSessionMode (auto omitted → field absent = the app's default)
-  var WINGSV_RUNTIME_MODES = { vpn: 1, proxy: 2 };                        // ProxyRuntimeMode (auto/UNSPECIFIED=0 omitted → app default)
+  var WINGSV_SESSION_MODES = { mainline: 2, mux: 3 };
+  var WINGSV_RUNTIME_MODES = { vpn: 1, proxy: 2 };
   function wingsvConfigBytes(cf, tp, vk, rawConf, cs) {
     var LOCAL_HOST = "127.0.0.1", LOCAL_PORT = 9000;
-    var isAwg = !!(cf.awg_params && Object.keys(cf.awg_params).length);   // AmneziaWG interface → awg transport
+    var isAwg = !!(cf.awg_params && Object.keys(cf.awg_params).length);
     var lp = String(tp.listen || ""), ci = lp.lastIndexOf(":");
     var turn = {
-      endpoint: { host: ci >= 0 ? lp.slice(0, ci) : lp, port: ci >= 0 ? (+lp.slice(ci + 1) || 0) : 0 },   // public proxy ip:listen
-      local_endpoint: { host: LOCAL_HOST, port: LOCAL_PORT },             // where the app's local turn client listens
-      use_udp: csBool(cs, "useUDP", true),                                // admin-set; default true (unchanged)
-      tunnel_mode: isAwg ? 2 : 1                                          // AMNEZIAWG : WIREGUARD
+      endpoint: { host: ci >= 0 ? lp.slice(0, ci) : lp, port: ci >= 0 ? (+lp.slice(ci + 1) || 0) : 0 },
+      local_endpoint: { host: LOCAL_HOST, port: LOCAL_PORT },
+      use_udp: csBool(cs, "useUDP", true),
+      tunnel_mode: isAwg ? 2 : 1
     };
     var vkList = Array.isArray(vk) ? vk.map(function (s) { return (s || "").trim(); }).filter(Boolean) : ((vk || "").trim() ? [(vk || "").trim()] : []);
-    if (vkList.length > 1) turn.links = vkList;                           // MULTIPLE VK links → the app's link pool (Turn.links, repeated #10) — each its own stream pool
-    else if (vkList.length === 1) turn.link = vkList[0];                  // single → legacy Turn.link (#2); empty → omitted (recipient adds their VK link in-app)
-    if ((cs || {}).threads) turn.threads = csNum(cs, "threads", 24);       // -n worker count — omitted → app default
+    if (vkList.length > 1) turn.links = vkList;
+    else if (vkList.length === 1) turn.link = vkList[0];
+    if ((cs || {}).threads) turn.threads = csNum(cs, "threads", 24);
     var sm = csEnum(cs, "sessionMode", WINGSV_SESSION_MODES, 0); if (sm) turn.session_mode = sm;
-    var bf = (cs || {}).browserFingerprint; if (bf && bf !== "auto") turn.browser_fingerprint = String(bf);   // TLS-imitation family
+    var bf = (cs || {}).browserFingerprint; if (bf && bf !== "auto") turn.browser_fingerprint = String(bf);
     var cg = csNum(cs, "credsGroupSize", 0); if (cg) turn.creds_group_size = cg;
-    turn.manual_captcha = csBool(cs, "manualCaptcha", false);                            // num 13
-    var cas = (cs || {}).captchaSolver; if (cas && cas !== "auto") turn.captcha_auto_solver = String(cas); // v2/v1/bypass; auto → app default (Enhanced), field omitted
-    turn.restart_on_network_change = csBool(cs, "restartOnNetworkChange", false);        // num 15
-    turn.no_obfuscation = csBool(cs, "noObfuscation", false);                            // num 5
-    var rmode = csEnum(cs, "runtimeMode", WINGSV_RUNTIME_MODES, 0); if (rmode) turn.runtime_mode = rmode;   // VPN vs local PROXY
-    var udns = splitList((cs || {}).userDns); if (udns.length) turn.user_dns = udns;     // custom DNS resolvers (comma-separated)
-    if (tp.wrap_key) { turn.wrap_mode = 2; turn.wrap_key = hexToBytes(tp.wrap_key); }   // WRAP_MODE_PREFERRED + key
-    var config = { ver: 1, type: 10, backend: 7, turn: turn };            // VK_TURN_PROFILE + VK_TURN backend
+    turn.manual_captcha = csBool(cs, "manualCaptcha", false);
+    var cas = (cs || {}).captchaSolver; if (cas && cas !== "auto") turn.captcha_auto_solver = String(cas);
+    turn.restart_on_network_change = csBool(cs, "restartOnNetworkChange", false);
+    turn.no_obfuscation = csBool(cs, "noObfuscation", false);
+    var rmode = csEnum(cs, "runtimeMode", WINGSV_RUNTIME_MODES, 0); if (rmode) turn.runtime_mode = rmode;
+    var udns = splitList((cs || {}).userDns); if (udns.length) turn.user_dns = udns;
+    if (tp.wrap_key) { turn.wrap_mode = 2; turn.wrap_key = hexToBytes(tp.wrap_key); }
+    var config = { ver: 1, type: 10, backend: 7, turn: turn };
     if (isAwg) {
       config.awg = { awg_quick_config: String(rawConf || "").replace(/^([ \t]*Endpoint[ \t]*=).*$/m, "$1 " + LOCAL_HOST + ":" + LOCAL_PORT) };
     } else {
@@ -161,13 +153,13 @@
         var sp = c.split("/"), a = sp[0], pfx = sp[1];
         return { addr: ipToBytes(a), prefix: pfx != null ? +pfx : (a.indexOf(":") >= 0 ? 128 : 32) };
       });
-      config.wg = { iface: iface, peer: peer, endpoint: { host: LOCAL_HOST, port: LOCAL_PORT } };   // WG dials the local turn client
+      config.wg = { iface: iface, peer: peer, endpoint: { host: LOCAL_HOST, port: LOCAL_PORT } };
     }
     return new Uint8Array(pbEncodeMsg("Config", config));
   }
   function wingsvLink(baseConf, tp, vk, clientSettings) {
     if (typeof CompressionStream === "undefined") return Promise.reject(new Error("this browser can't build a wingsv:// link (no CompressionStream) — copy the fields into the WINGS V app manually"));
-    var proto = wingsvConfigBytes(parseFullConf(baseConf), tp, vk, baseConf, clientSettings);   // vk = the VK-link list (or string); wingsvConfigBytes normalizes → Turn.links[] / Turn.link (empty → omitted)
+    var proto = wingsvConfigBytes(parseFullConf(baseConf), tp, vk, baseConf, clientSettings);
     var stream = new CompressionStream("deflate"); var w = stream.writable.getWriter(); w.write(proto); w.close();
     return new Response(stream.readable).arrayBuffer().then(function (buf) {
       var comp = new Uint8Array(buf);
@@ -180,8 +172,6 @@
   function b64urlUtf8(s) {
     return b64Utf8(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
   }
-  // Standard alphabet, padded — what Go's base64.StdEncoding reads. The url-safe variant above would hand a
-  // decoder '-'/'_' where it expects '+'/'/', so anything Go-side must use THIS one.
   function b64Utf8(s) {
     var bytes = new TextEncoder().encode(String(s)), bin = "";
     for (var i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
@@ -199,26 +189,25 @@
   function freeturnLink(tp, rawConf, vkLinks, cs, fork) {
     var wg = freeturnConf(String(rawConf || "").replace(/^([ \t]*Endpoint[ \t]*=).*$/m, "$1 127.0.0.1:9000"));
     var cf = parseFullConf(rawConf);
-    var o = { v: 1, provider: "vk", peer: tp.listen || "" };        // key order matches FreeturnLink.encode()
+    var o = { v: 1, provider: "vk", peer: tp.listen || "" };
     var vks = (vkLinks || []).map(function (s) { return (s || "").trim(); }).filter(Boolean);
     if (vks.length) o.vk = vks.join(",");
-    // Client (app) knobs — omitted when default/blank so the link stays minimal (empty/default keys are dropped, per uri.md).
-    var n = csNum(cs, "n", 0); if (n > 0) o.n = n;                   // parallel TURN streams (-n); omit → app default (10)
-    var spc = csNum(cs, "spc", 0); if (spc > 0) o.spc = spc;        // streams per cached credential (-streams-per-cred); omit → default (10)
-    var transport = String((cs || {}).transport || "").trim(); if (transport && transport !== "auto") o.transport = transport;   // -transport tcp|udp to the TURN relay (v2.1); auto → app default (udp)
+    var n = csNum(cs, "n", 0); if (n > 0) o.n = n;
+    var spc = csNum(cs, "spc", 0); if (spc > 0) o.spc = spc;
+    var transport = String((cs || {}).transport || "").trim(); if (transport && transport !== "auto") o.transport = transport;
     var srvParams = String((tp && tp.params) || "");
     var srvMode = (srvParams.match(/-mode\s+(\S+)/) || [])[1];
     if (srvMode && srvMode !== "udp") {
       o.mode = srvMode;
-      var kcp = {};   // only meaningful under tcp; mirrored so the client's ARQ matches the relay's
+      var kcp = {};
       srvParams.replace(/-kcp-([a-z]+)\s+(\S+)/g, function (_m, k, v) { kcp[k] = /^-?\d+$/.test(v) ? +v : v; return ""; });
       if (Object.keys(kcp).length) o.kcp = kcp;
     }
-    var dnsMode = String((cs || {}).dns || "").trim(); if (dnsMode && dnsMode !== "auto") o.dns = dnsMode;   // plain|doh (auto = default → omit)
-    var dnss = String((cs || {}).dnss || "").trim(); if (dnss) o.dnss = dnss;   // custom DNS servers (-dns-servers)
-    if (csBool(cs, "mcap", false)) o.mcap = true;                   // manual VK captcha
+    var dnsMode = String((cs || {}).dns || "").trim(); if (dnsMode && dnsMode !== "auto") o.dns = dnsMode;
+    var dnss = String((cs || {}).dnss || "").trim(); if (dnss) o.dnss = dnss;
+    if (csBool(cs, "mcap", false)) o.mcap = true;
     var key = (tp.wrap_key || "").trim();
-    if (key) { o.obf = obfProfileOf(cs, tp); o.key = key; }             // omitted → server must also run obf none
+    if (key) { o.obf = obfProfileOf(cs, tp); o.key = key; }
     var nm = expandServerName(String((cs || {}).serverName || "").trim(), fork, tp.listen || "");
     if (nm) o.name = nm;
     var addr = String(cf.address || "").split("/")[0];
@@ -229,20 +218,20 @@
 
   function vktgzCoreFlags(fork, key, cs, tp) {
     var f = [], la = String((cs || {}).linkArgument || "").trim();
-    if (fork === "MYSOREZ") {                     // MYSOREZ CORE v1.5.x (-vk/-password RTP-AEAD): VK-Calls anon bypass + VK-ID smart-captcha auto-solver. Needs the LATEST core (≤v1.4.2 is the old cacggghp-family -vk-link binary that can't pass VK-ID). NO cacggghp flags.
+    if (fork === "MYSOREZ") {
       la = la || "-vk";
       if (key) f.push({ id: "flag-pw", label: "Password", argument: "-password " + key, enabled: true, deletable: true });
-      f.push({ id: "flag-anon", label: "VK bypass",    argument: "-vk-anon-path " + (String((cs || {}).vkAnonPath || "").trim() || "vkcalls"), enabled: true, deletable: true });   // v1.5.x primary anon path (api.vk.me) — usually avoids the captcha entirely
-      f.push({ id: "flag-cap",  label: "Captcha mode", argument: "-captcha-mode " + (String((cs || {}).captchaMode || "").trim() || "auto"),   enabled: true, deletable: true });   // auto = Go v2 smart-captcha solver (the app doesn't feed a stdin token, so DON'T use wv)
+      f.push({ id: "flag-anon", label: "VK bypass",    argument: "-vk-anon-path " + (String((cs || {}).vkAnonPath || "").trim() || "vkcalls"), enabled: true, deletable: true });
+      f.push({ id: "flag-cap",  label: "Captcha mode", argument: "-captcha-mode " + (String((cs || {}).captchaMode || "").trim() || "auto"),   enabled: true, deletable: true });
       f.push({ id: "flag-auth", label: "VK auth",      argument: "-vk-auth "      + (String((cs || {}).vkAuth || "").trim()      || "anonymous"), enabled: true, deletable: true });
       var dev = String((cs || {}).deviceId || "").trim(); if (dev) f.push({ id: "flag-dev", label: "Device ID", argument: "-device-id " + dev, enabled: true, deletable: true });
-    } else if (fork === "Moroka8") {              // Moroka8 CORE (rtpopus v1) loaded into the app: -wrap -wrap-key <K>
+    } else if (fork === "Moroka8") {
       la = la || "-vk-link";
       if (key) f.push({ id: "flag-wrap", label: "Wrap", argument: "-wrap -wrap-key " + key, enabled: true, deletable: true });
-    } else if (fork === "samosvalishe") {         // free-turn CORE (rtpopus) loaded into the app: -obf-profile rtpopus -obf-key <K> (its link flag is -links; -link is deprecated)
+    } else if (fork === "samosvalishe") {
       la = la || "-links";
       if (key) f.push({ id: "flag-obf", label: "Obfuscation", argument: "-obf-profile " + obfProfileOf(cs, tp) + " -obf-key " + key, enabled: true, deletable: true });
-    } else {                                      // cacggghp CORE (plain) — the app's five built-in customFlags (AppPreferences.createDefaultConfig)
+    } else {
       la = la || "-vk-link";
       f = [{ id: "flag-udp",     label: "UDP",            argument: "-udp",             enabled: csBool(cs, "udp", true),            deletable: false },
            { id: "flag-vless",   label: "VLESS",          argument: "-vless",           enabled: false,                              deletable: false },
@@ -258,14 +247,14 @@
     var addr = String(cf.address || "").split("/")[0];
     var core = vktgzCoreFlags(fork, (tp.wrap_key || "").trim(), cs, tp);
     var flags = core.flags;
-    String((cs || {}).rawFlags || "").split(/[\r\n]+/).map(function (s) { return s.trim(); }).filter(Boolean)   // admin-added raw args (the app's Raw-mode flags box)
+    String((cs || {}).rawFlags || "").split(/[\r\n]+/).map(function (s) { return s.trim(); }).filter(Boolean)
       .forEach(function (f, i) { flags.push({ id: "flag-raw-" + i, label: "Custom", argument: f, enabled: true, deletable: true }); });
-    var la = String(core.linkArgument || "").replace(/^-+/, "");   // Go's flag package takes -links and --links alike
+    var la = String(core.linkArgument || "").replace(/^-+/, "");
     var multi = (la === "links" || la === "vk");
     var vkArg = multi ? (vkList || []).join(",") : ((vkList && vkList[0]) || "");
     var config = { serverAddress: listen, vkLink: vkArg, linkArgument: core.linkArgument,
       localPort: "127.0.0.1:9000", isRawMode: false, rawCommand: "", customFlags: flags };
-    var threads = csNum(cs, "threads", 0); if (threads > 0) config.threads = threads;   // -n; omitted → the app's own default (8)
+    var threads = csNum(cs, "threads", 0); if (threads > 0) config.threads = threads;
     return { id: "swg-" + (addr || listen).replace(/[^0-9A-Za-z]+/g, "-"), name: "SWG " + (addr || listen), isDefault: false, config: config };
   }
   function vktgzLink(baseConf, tp, vkList, cs, fork) {
@@ -275,7 +264,7 @@
     return new Response(stream.readable).arrayBuffer().then(function (buf) {
       var comp = new Uint8Array(buf), s = "";
       for (var i = 0; i < comp.length; i++) s += String.fromCharCode(comp[i]);
-      return "VKTGZ:" + btoa(s);   // standard base64 (Android Base64.NO_WRAP — padded, no line breaks)
+      return "VKTGZ:" + btoa(s);
     });
   }
 
@@ -286,32 +275,26 @@
     return new Response(stream.readable).arrayBuffer().then(function (buf) {
       var comp = new Uint8Array(buf), n = data.length;
       var out = new Uint8Array(4 + comp.length);
-      out[0] = (n >>> 24) & 0xff; out[1] = (n >>> 16) & 0xff; out[2] = (n >>> 8) & 0xff; out[3] = n & 0xff;   // qCompress length header
+      out[0] = (n >>> 24) & 0xff; out[1] = (n >>> 16) & 0xff; out[2] = (n >>> 8) & 0xff; out[3] = n & 0xff;
       out.set(comp, 4);
       var s = ""; for (var i = 0; i < out.length; i++) s += String.fromCharCode(out[i]);
       return "vpn://" + btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
     });
   }
 
-  // A server's NATIVE client encoder (the app built for that fork).
-  // Returns an ENCODER id (matches swg-panel-server TURN_CLIENTS[*].encoder, which the SPA passes as `asClient`).
   function nativeEncoder(fork) {
     return ({ "WINGS-N": "wingsv", "anton48": "anton48",
       "samosvalishe": "freeturn", "MYSOREZ": "vktgz", "cacggghp": "vktgz" })[fork] || "sidecar";
   }
-  // The fork (turn-proxy server) a client encoder is NATIVE to — the canonical publisher, reverse of nativeEncoder.
-  // Lets the UI colour a cross-fork pairing: the SERVER used vs the fork the chosen app belongs to.
   function encoderFork(enc) {
     return ({ wingsv: "WINGS-N", anton48: "anton48", freeturn: "samosvalishe", vktgz: "MYSOREZ" })[enc] || "";
   }
-  // A stable per-peer id (attribution / allowlist-ready), derived from the peer's tunnel IP so it survives regen.
   function stableCid(cf, tp) { return "swg-" + String(String(cf.address || "").split("/")[0] || (tp.listen || "")).replace(/[^0-9A-Za-z]+/g, "-"); }
 
-  // App name / platform / author per client encoder — for the "<server> via <app> (<platform>) by <author>" label.
   var CLIENT_META = {
     wingsv:   { app: "WINGS V",        platform: "Android", author: "WINGS-N" },
     anton48:  { app: "VK TURN Proxy",  platform: "iOS",     author: "anton48" },
-    freeturn: { app: "FreeTurn",       platform: "Android", author: "samosvalishe" },   // a fork id, as the others: artLabel names it (forkLabel)
+    freeturn: { app: "FreeTurn",       platform: "Android", author: "samosvalishe" },
     vktgz:    { app: "VK TURN Proxy",  platform: "Android", author: "MYSOREZ" }
   };
   function obfProfileOf(cs, tp) {
@@ -324,10 +307,10 @@
   function expandServerName(tpl, fork, listen) {
     if (!tpl) return "";
     var l = String(listen || ""), host = l, port = "";
-    var m = l.match(/^\[(.*)\]:(\d+)$/);                   // [2001:db8::1]:56005 — bracketed IPv6 + port
+    var m = l.match(/^\[(.*)\]:(\d+)$/);
     if (m) { host = m[1]; port = m[2]; }
-    else {                                                  // host:port only when there is ONE colon: a bare IPv6
-      var i = l.lastIndexOf(":");                           // address is all colons and has no port to split off.
+    else {
+      var i = l.lastIndexOf(":");
       if (i > 0 && l.indexOf(":") === i) { host = l.slice(0, i); port = l.slice(i + 1); }
     }
     return tpl.replace(/\{(fork|host|port)\}/g, function (_m, k) {
@@ -340,8 +323,6 @@
     return m ? (fork + " via " + m.app + " (" + m.platform + (mode || "") + ") by " + m.author) : (fork + " · CLI client (desktop)");
   }
 
-  /* The VK TURN Proxy import hint, as four finished sentences — see the note at its use below for why it is
-     a table and not a ternary. Index: launcher ? 0 : 2, plus vkMissing ? 0 : 1. */
   var VKTGZ_HINTS = [
     { hint: "Import the {v1} core (client-android-arm64 from the {v1} releases) into the VK TURN Proxy app — it runs as a launcher for that core, then scan the QR (Profiles → Import) or paste the VKTGZ: text — the VK call link + endpoint ride inside once you add a VK link." },
     { hint: "Import the {v1} core (client-android-arm64 from the {v1} releases) into the VK TURN Proxy app — it runs as a launcher for that core, then scan the QR (Profiles → Import) or paste the VKTGZ: text — the VK call link + endpoint ride inside." },
@@ -365,38 +346,37 @@
   function artifact(baseConf, tp, vkLink, cs, vkLinks, asClient) {
     tp = dialListen(tp, baseConf);
     var fork = label(tp.service);
-    var enc = asClient || nativeEncoder(fork);            // which client app's encoder to run
-    cs = cs || {};                                        // client (app) settings for THIS client (admin-chosen; defaults applied per reader)
+    var enc = asClient || nativeEncoder(fork);
+    cs = cs || {};
     var listen = tp.listen || "";
     var vkList = (Array.isArray(vkLinks) && vkLinks.length ? vkLinks : (vkLink ? [vkLink] : [])).map(function (s) { return (s || "").trim(); }).filter(Boolean);
-    var vkRaw = vkList[0] || "";                          // the PRIMARY VK call link — empty when unset
-    var vkText = vkRaw || "<PASTE VK CALL LINK>";          // placeholder ONLY in plain-text configs (a visible fill-in line the user edits)
-    var vkMissing = vkList.length === 0;                   // every fork reports this so the UI can flag "create a VK link"
+    var vkRaw = vkList[0] || "";
+    var vkText = vkRaw || "<PASTE VK CALL LINK>";
+    var vkMissing = vkList.length === 0;
     var cf = parseFullConf(baseConf);
     if (enc === "wingsv") {
       return { fork: fork, app: "WINGS V", label: clientLabel(fork, "wingsv"), ext: "txt", uri: true, qr: true, vkMissing: vkMissing, enc: enc,
         hint: "Scan the QR with the WINGS V app, or paste the wingsv:// link (Settings → import from link).",
-        buildAsync: function () { return wingsvLink(baseConf, tp, vkList, cs); } };   // pass ALL VK links → Turn.links[]; empty omitted
+        buildAsync: function () { return wingsvLink(baseConf, tp, vkList, cs); } };
     }
     if (enc === "anton48") {
       var isWrapS = (fork === "samosvalishe") || csBool(cs, "useWrapS", false);
       var vkObf = (fork === "anton48" || fork === "Moroka8" || fork === "samosvalishe");
-      var dnsOverride = String((cs || {}).dnsServers || "").trim();      // admin override → else the peer's own DNS → else 1.1.1.1
-      var s = { privateKey: cf.privkey, peerPublicKey: cf.server_pubkey, presharedKey: cf.psk || "",   // emit even when empty → deterministically clears any stale device PSK (our PSK is panel-owned + consistent)
+      var dnsOverride = String((cs || {}).dnsServers || "").trim();
+      var s = { privateKey: cf.privkey, peerPublicKey: cf.server_pubkey, presharedKey: cf.psk || "",
         tunnelAddress: cf.address,
         dnsServers: dnsOverride || (cf.dns && cf.dns.length ? cf.dns.join(",") : "1.1.1.1"),
-        peerAddress: listen, vkLink: vkList.join("\n"), numConnections: csNum(cs, "numConnections", 30),   // MULTIPLE VK links → newline-joined (the VK TURN Proxy app's vkLink is a multiline string, one link per line); empty → ""
+        peerAddress: listen, vkLink: vkList.join("\n"), numConnections: csNum(cs, "numConnections", 30),
         useDTLS: true, useSrtp: (vkObf && !isWrapS && !tp.wrap_key), useUDP: csBool(cs, "useUDP", false),
         useWrap: (vkObf && !isWrapS && !!tp.wrap_key), wrapKeyHex: vkObf ? (tp.wrap_key || "") : "",
-        useWrapA: csBool(cs, "useWrapA", false), useWrapS: isWrapS,   // WRAP-A = amurcanov (future); WRAP-S = free-turn cross-drive. Emitted explicitly (mode precedence useWrapA>useSrtp>useWrap)
-        obfProfile: obfProfileOf(cs, tp),   // read off the running proxy's own -obf-profile; admin setting is the fallback
-        clientID: isWrapS ? stableCid(cf, tp) : "" };   // WRAP-S needs an allowlist-ready client-id; free-turn runs open so it is attribution-only
-      // Keys the app's parser accepts but quick_link.py's CONFIG omits — emitted only when set (empty would clobber a device value):
-      var wrapApw = String((cs || {}).wrapAPassword || "").trim(); if (wrapApw) s.wrapAPassword = wrapApw;   // amurcanov WRAP-A secret (future)
+        useWrapA: csBool(cs, "useWrapA", false), useWrapS: isWrapS,
+        obfProfile: obfProfileOf(cs, tp),
+        clientID: isWrapS ? stableCid(cf, tp) : "" };
+      var wrapApw = String((cs || {}).wrapAPassword || "").trim(); if (wrapApw) s.wrapAPassword = wrapApw;
       var srvName = expandServerName(String((cs || {}).serverName || "").trim(), fork, listen);
       if (srvName) s.serverName = srvName;
-      var turnOv = String((cs || {}).turnServerOverride || "").trim(); if (turnOv) s.turnServerOverride = turnOv;   // pin fresh conns to a specific TURN relay
-      if (csBool(cs, "vkAuth", false)) s.vkAuth = true;                  // VK cookie-auth path (instead of anon PoW)
+      var turnOv = String((cs || {}).turnServerOverride || "").trim(); if (turnOv) s.turnServerOverride = turnOv;
+      if (csBool(cs, "vkAuth", false)) s.vkAuth = true;
       var uri = "vkturnproxy://import?data=" + b64urlUtf8(jsonSortedCompact({ version: 1, type: "connection", settings: s }));
       return { fork: fork, app: "VK TURN Proxy", label: clientLabel(fork, "anton48", isWrapS ? " · WRAP-S" : ""), labelMode: (isWrapS ? " · WRAP-S" : ""), ext: "txt", uri: true, qr: false, vkMissing: vkMissing, enc: enc,
         hint: "Open the link on the iPhone (or the app's Settings → Import from connection link) to import into the VK TURN Proxy app.",
@@ -404,7 +384,7 @@
     }
     if (enc === "vktgz") {
       var coreName = ({ MYSOREZ: "MYSOREZ", Moroka8: "Moroka8", samosvalishe: "free-turn", cacggghp: "cacggghp" })[fork] || fork;
-      var launcher = (fork === "Moroka8" || fork === "samosvalishe");   // the app hosts ANOTHER fork's core (universal launcher)
+      var launcher = (fork === "Moroka8" || fork === "samosvalishe");
       return { fork: fork, app: "VK TURN Proxy", label: clientLabel(fork, "vktgz"), ext: "txt", qr: true, wrap: true, vkMissing: vkMissing, enc: enc,
         vk: true, vkLinks: vkList,
         hint: VKTGZ_HINTS[(launcher ? 0 : 2) + (vkMissing ? 0 : 1)].hint,
@@ -413,20 +393,17 @@
     }
     if (enc === "freeturn") {
       return { fork: fork, app: "FreeTurn", label: clientLabel(fork, "freeturn"), ext: "txt", uri: true, qr: true, vkMissing: vkMissing, enc: enc,
-        vk: true, vkLinks: vkList, vkEmbedded: true,   // the freeturn:// link CARRIES the call link in `vk` (verified on a live relay), so the sub must not ask the reader to paste it too
+        vk: true, vkLinks: vkList, vkEmbedded: true,
         hint: "Scan the QR with the FreeTurn app (hackdiaz-dev/turn-proxy-android), or paste the freeturn:// link — it carries the VK call link and the whole config.",
         text: freeturnLink(tp, baseConf, vkList, cs, fork) };
     }
-    // sidecar forks (cacggghp / Moroka8 / unknown): WG dials the local client on :9000
     var sidecar = baseConf.replace(/^([ \t]*Endpoint[ \t]*=).*$/m, "$1 127.0.0.1:9000");
     sidecar = /^[ \t]*MTU[ \t]*=/m.test(sidecar) ? sidecar.replace(/^([ \t]*MTU[ \t]*=).*$/m, "$1 1280")
       : sidecar.replace(/^([ \t]*Address[ \t]*=.*)$/m, "$1\nMTU = 1280");
-    var rawExtra = String((cs || {}).rawFlags || "").split(/[\r\n]+/).map(function (s) { return s.trim(); }).filter(Boolean).join(" ");   // admin-added extra CLI flags
-    // the page's catalog decides (its cli_authors: a hidden fork's build is withdrawn from the visible forks — operator,
-    // 2026-10-14); this table is only the fallback for a page without one
+    var rawExtra = String((cs || {}).rawFlags || "").split(/[\r\n]+/).map(function (s) { return s.trim(); }).filter(Boolean).join(" ");
     var served = cliAuthorsOf(fork);
     var authorForks = (Array.isArray(served) && served.length) ? served : (({ Moroka8: ["Moroka8", "samosvalishe"], samosvalishe: ["samosvalishe", "Moroka8"],
-      anton48: ["samosvalishe", "Moroka8"], MYSOREZ: ["MYSOREZ"] })[fork] || ["samosvalishe"]);   // plain forks + WINGS: the universal free-turn CLI (plain)
+      anton48: ["samosvalishe", "Moroka8"], MYSOREZ: ["MYSOREZ"] })[fork] || ["samosvalishe"]);
     function authorCmd(a) {
       var link = (a === "MYSOREZ") ? " -vk " : (a === "samosvalishe") ? " -links " : " -vk-link ", obf = "";
       if (tp.wrap_key) {
@@ -434,19 +411,17 @@
         else if (a === "samosvalishe") obf = " -obf-profile " + obfProfileOf(cs, tp) + " -obf-key " + tp.wrap_key;
         else if (a === "MYSOREZ") obf = " -password " + tp.wrap_key + " -vk-anon-path vkcalls -captcha-mode auto -vk-auth anonymous";
       }
-      // free-turn's -links and MYSOREZ's -vk take every call comma-joined (a stream pool each); Moroka8's -vk-link takes one.
       var vkArg = (a === "samosvalishe" || a === "MYSOREZ") && vkList.length ? vkList.join(",") : vkText;
       return "./client -listen 127.0.0.1:9000 -peer " + listen + link + vkArg + obf + (rawExtra ? " " + rawExtra : "");
     }
     var authors = authorForks.map(function (a) { return { fork: a, cmd: authorCmd(a), native: (a === fork) }; });
     return { fork: fork, app: fork, label: clientLabel(fork, "sidecar"), ext: "conf", qr: true, vkMissing: vkMissing, enc: enc,
       hint: "This server needs a separate client binary. Scan the QR or import .conf into WireGuard/AmneziaWG, then run the client alongside it:",
-      cmd: authors[0].cmd, cliAuthors: authors,   // authors[0] = the native/preferred build (backward-compatible single cmd)
+      cmd: authors[0].cmd, cliAuthors: authors,
       text: sidecar };
   }
 
-  // WDTT (amurcanov/proxy-turn-vk-android) client artifact
-  function stripVkUrl(u) {   // full VK call link → bare hash (mirrors the WDTT server's stripVkUrl)
+  function stripVkUrl(u) {
     u = String(u || "").trim();
     if (u.indexOf("/") >= 0) u = u.slice(u.lastIndexOf("/") + 1);
     if (u.indexOf("?") >= 0) u = u.slice(0, u.indexOf("?"));
@@ -473,7 +448,6 @@
         hint: "Scan the QR or open the wdtt:// link in WDTT-Plus.", text: uriW };
     }
     if (enc === "qwdtt") {
-      // qWDTT native: query params, password appended LAST and unencoded (so & / @ in a password survive). peer=host:dtls.
       var q = ["peer=" + encodeURIComponent(host + ":" + dtls)];
       if (w.name) q.push("name=" + encodeURIComponent(w.name));
       if (vkHashes.length) q.push("hashes=" + encodeURIComponent(vkHashes.join(",")));
@@ -492,24 +466,21 @@
     if (enc === "pwdttilg") {
       var pl = { ip: host, dtls: parseInt(dtls, 10) || 56000, pass: pass };
       var rawp = parseInt(w.raw_port, 10) || 0;
-      if (rawp && rawp !== (parseInt(dtls, 10) || 56000) + 3) pl.raw = rawp;   // 0/omitted = the client's own dtls+3
+      if (rawp && rawp !== (parseInt(dtls, 10) || 56000) + 3) pl.raw = rawp;
       if (w.name) pl.name = String(w.name);
-      // Their vkhash.Max is 4 — a longer list is truncated by the client anyway. Omitted when empty: their own
-      // builder substitutes a literal "VK_HASH" placeholder there, which is a prompt, not a credential.
       if (vkHashes.length) pl.hash = vkHashes.slice(0, VK_LINK_CAPS.wdtt).join(",");
       var uriI = "wdtt://" + b64Utf8(JSON.stringify(pl));
       return { fork: "WDTT", app: "PWDTT", label: "WDTT via PWDTT (desktop · wdtt:// base64) by ildarmaga", ext: "txt",
         uri: true, qr: false, vkMissing: vkMissing, enc: enc,
         hint: "Paste the wdtt:// link into PWDTT — «Добавление VK профиля».", text: uriI };
     }
-    // colon wdtt:// — ALWAYS 6 fields (host:dtls:wg:tun:password:hash). Multiple hashes join with a comma at index 5.
     var vkh = vkHashes.join(",");
     var uri = "wdtt://" + host + ":" + dtls + ":" + wg + ":" + tun + ":" + pass + ":" + vkh;
     return { fork: "WDTT", app: "WDTT", label: "WDTT via WDTT app (Android · WRAP)", ext: "txt", uri: true, qr: true, vkMissing: vkMissing, enc: enc,
       hint: "Scan the QR or open the wdtt:// link in the WDTT app (Android) or PWDTT (desktop).", text: uri };
   }
 
-  var CSQTT_LINK_SEED = "csqtt-chiper-key";   // sic — the authors' spelling, byte for byte
+  var CSQTT_LINK_SEED = "csqtt-chiper-key";
   function csqttUrlEnc(v) {
     var b = new TextEncoder().encode(String(v == null ? "" : v)), out = "";
     for (var i = 0; i < b.length; i++) {
@@ -537,7 +508,6 @@
       });
     });
   }
-  // `line` — the csqtt line the server runs ("" / "2.1" = the plain link every 2.1 app takes; 2.5 = the sealed one).
   function csqttArtifact(c, asClient, line) {
     c = c || {};
     var hs = c.hashes;
@@ -557,10 +527,8 @@
         vkMissing: hs.length === 0, enc: asClient, hint: "Open the link on the iPhone (or VK TURN Proxy → Settings → Import from connection link) to import in csqtt mode. It needs VK TURN Proxy build 364 or newer — an older build imports it as a WireGuard server without keys.", text: uriA };
     }
     hs = hs.slice(0, VK_LINK_CAPS.csqtt);
-    var vkMissing = hs.length === 0;   // VK hashes are the TURN credential; a link without them only works for a self-test
+    var vkMissing = hs.length === 0;
     if (line && line !== "2.1") {
-      // 2.5: the sealed link, and a QR — the 2.5 app scans one. `src` is the payload it seals: what the link IS, for a
-      // caller that must tell two links apart before the async seal resolves.
       var p25 = "connect?v=2&host=" + csqttUrlEnc(c.host) + "&peer=" + (parseInt(c.port, 10) || 46000)
         + (c.password ? "&password=" + csqttUrlEnc(c.password) : "") + (hs.length ? "&hashes=" + hs.map(csqttUrlEnc).join("+") : "");
       return { fork: "csqtt", app: "CSQTT", label: "CSQTT (csqtt://connect)", ext: "txt", uri: true, qr: true,

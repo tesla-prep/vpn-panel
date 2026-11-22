@@ -1,5 +1,5 @@
 import { T, Trich, Tsplit, plural, srvText, locale, fmtNum } from "./i18n.js";
-import { normVkLink, _VK_CALL_RE } from "./peer-ui.js";   // validate pool links by the same rule as the per-user field
+import { normVkLink, _VK_CALL_RE } from "./peer-ui.js";
 import { awgDict3, nodeStale, P2P_PORTOK_DEFAULT, PORTOK_WIDE, portokRead, portokSame } from "./model.js";
 import {
   BASE, ago, dur, ipChoices, seen, url, fmtBytes, panelNow, panelNowS, isMobile,
@@ -38,10 +38,10 @@ import {
   exitHealthMark, RoutingRules, rulesTitle, rulesSummary, egressSaveBlock,
   p2pVal, p2pRec, p2pTarget, p2pLabel, p2pTargetOpts, p2pTargetHints,
 } from "./routing.js";
-import { awgFieldCheck } from "./mimic.js";   // a template value a dial-in exit can take: one every app reads
-import { LogViewer } from "./journal.js";   // Settings → Logs, the live viewer (docs/LOGS-PLAN.md §5)
-import { classifyAll } from "./classify.js";   // the one grammar — CustomListSheet accepts what a rule accepts
-import { customCaps, customTargets, rulesToRows, rowsToRules, adoptRows, PORTS_MAX_TOKENS } from "./rulerows.js";   // what a list record holds — preact-free, so it is gated
+import { awgFieldCheck } from "./mimic.js";
+import { LogViewer } from "./journal.js";
+import { classifyAll } from "./classify.js";
+import { customCaps, customTargets, rulesToRows, rowsToRules, adoptRows, PORTS_MAX_TOKENS } from "./rulerows.js";
 import {
   TURN_FORKS_DEFAULT, TurnCollectedIps, openRosterCheck, openServerClients, openServerDefaults,
   turnDialFallback, turnForkPlatforms, turnUpdateTarget, turnUpdating,
@@ -50,7 +50,7 @@ import {
   openIfaceEditor, AwgGenField, Awg3Grid, AWG3_EDIT_COLS, MeshGenField,
   AWG_KEYS, DEFAULT_AWG_GEN, genAwg, awgBlankHints, AwgGrid, MeshAwgParams, mesh3Hints,
 } from "./iface.js";
-export { AWG_KEYS, genAwg, awgBlankHints, AwgGrid };   // their home moved to iface.js (the link sheet draws them too); kept here for importers
+export { AWG_KEYS, genAwg, awgBlankHints, AwgGrid };
 import { statsUsage, trafficInvalidate } from "./traffic.js";
 import { h, Fragment } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
@@ -78,12 +78,12 @@ export function AccountScreen() {
     setMsg({ ok: true, t: T("Saving…") });
     let reWrapped = false;
     if (np) {
-      if (!subSKCached()) { try { await subUnlock(cur); } catch (_) {} }   // not unlocked this session — the current password is right here
+      if (!subSKCached()) { try { await subUnlock(cur); } catch (_) {} }
       if (subSKCached()) { try { reWrapped = await subRewrap(np); } catch (_) { reWrapped = false; } }
     }
     const r = await api.accountSave({ username: user.trim(), current_password: cur, new_password: np });
     if (!r.ok) {
-      if (reWrapped) { try { await subRewrap(cur); } catch (_) {} }   // undo — the password never actually changed
+      if (reWrapped) { try { await subRewrap(cur); } catch (_) {} }
       return setMsg({ ok: false, t: srvText(r) || T("Failed to update.") });
     }
     setMsg({ ok: true, t: T("Updated. Reloading — sign in with your new credentials…") });
@@ -104,7 +104,7 @@ export function AccountScreen() {
   </div>`;
 }
 
-export const WH_EVENTS = ["peer.added", "peer.removed", "node.online", "node.offline"];   // i18n-keys
+export const WH_EVENTS = ["peer.added", "peer.removed", "node.online", "node.offline"];
 const whEventLabel = ev => ({
   "peer.added": T("Peer added"), "peer.removed": T("Peer removed"),
   "node.online": T("Node came online"), "node.offline": T("Node went offline"),
@@ -114,7 +114,7 @@ export function WebhookSheet({ hook, onSaved, onClose }) {
   const [events, setEvents] = useState(new Set((hook && hook.events) || WH_EVENTS));
   const [enabled, setEnabled] = useState(hook ? hook.enabled !== false : true);
   const [busy, setBusy] = useState(false);
-  const [secret, setSecret] = useState("");                 // shown once, only on create
+  const [secret, setSecret] = useState("");
   const valid = /^https?:\/\/.+/i.test(url.trim());
   const toggle = ev => setEvents(s => { const n = new Set(s); n.has(ev) ? n.delete(ev) : n.add(ev); return n; });
   const save = async () => {
@@ -123,7 +123,7 @@ export function WebhookSheet({ hook, onSaved, onClose }) {
     const r = await api.apiWebhookSave({ id: hook && hook.id, url: url.trim(), events: [...events], enabled });
     setBusy(false);
     if (!r.ok) return toast(srvText(r) || T("Failed to save webhook"), "err");
-    if (r.data && r.data.secret && !hook) { setSecret(r.data.secret); onSaved && onSaved(); return; }   // creation: reveal the secret, keep the sheet open
+    if (r.data && r.data.secret && !hook) { setSecret(r.data.secret); onSaved && onSaved(); return; }
     onSaved && onSaved(); onClose && onClose();
   };
   return html`<${Sheet} title=${hook ? T("Edit webhook") : T("Add webhook")} onClose=${onClose} noSwipe=${!!secret}
@@ -143,12 +143,10 @@ export function WebhookSheet({ hook, onSaved, onClose }) {
   <//>`;
 }
 
-// Settings → Integrations: the read-only external API (tokens + Prometheus) and outbound webhooks. All actions
-// persist immediately via dedicated endpoints (outside the batched Save), mirrored optimistically into Store.
 export function IntegrationsSettings() {
   const cfg = () => ((Store.panelSettings || {}).api) || { enabled: false, tokens: [], webhooks: [] };
   const [label, setLabel] = useState("");
-  const [minted, setMinted] = useState(null);               // {label, token} — revealed once after minting
+  const [minted, setMinted] = useState(null);
   const [busy, setBusy] = useState(false);
   const c = cfg();
   const baseUrl = `${location.origin}${BASE}`;
@@ -231,14 +229,12 @@ export function InterfaceKeyEscrow({ value, onChange, vaultExists }) {
   </div>`;
 }
 
-// Subscription encryption setup. The Subscription Key is generated + wrapped IN THE BROWSER; the server only
-// ever gets the wrapped form. It's shown once (like 2FA recovery codes) and is independent of the login password.
 export function SubVaultCard() {
   const [state, setState] = useState({ loading: true });
   const [pw, setPw] = useState(""); const [busy, setBusy] = useState(false);
-  const [sk, setSk] = useState(null);                    // the shown-once Subscription Key
+  const [sk, setSk] = useState(null);
   const [resetMode, setResetMode] = useState(false); const [confirm, setConfirm] = useState("");
-  const [shown, setShown] = useState(null);   // the encryption key, revealed on demand while the vault is unlocked
+  const [shown, setShown] = useState(null);
   const load = () => api.subVault().then(r => setState({ loading: false, exists: !!(r && r.ok && r.data && r.data.exists) })).catch(() => setState({ loading: false, exists: false }));
   useEffect(() => { load(); }, []);
   const create = async () => {
@@ -249,7 +245,7 @@ export function SubVaultCard() {
   };
   const doReset = async () => {
     setBusy(true); const r = await api.subReset(); setBusy(false);
-    if (r && r.ok) { subForget(); setResetMode(false); setConfirm(""); setSk(null); load(); toast(T("Config encryption reset."), "ok"); }   // drop the now-stale cached SK
+    if (r && r.ok) { subForget(); setResetMode(false); setConfirm(""); setSk(null); load(); toast(T("Config encryption reset."), "ok"); }
     else toast(srvText(r) || T("Reset failed"), "err");
   };
   if (state.loading) return html`<div class="hint">${T("Checking…")}</div>`;
@@ -306,14 +302,11 @@ function tzOptions(cat, now, cur) {
     groups.get(a).push({ value: z, label: tzPlace(z) });
   }
   for (const [group, items] of groups) opts.push({ group, items });
-  if (cur && cur !== mine && !zones.includes(cur)) opts.push({ value: cur, label: tzPlace(cur) });   // stored, but not listed (lost, or the list is not in yet)
+  if (cur && cur !== mine && !zones.includes(cur)) opts.push({ value: cur, label: tzPlace(cur) });
   return opts;
 }
-// ── Display → Data: the traffic history (P2) ──────────────────────────────────────────────────────────────────
 const HIST_RES = [300, 900, 3600, 86400];
-const histResLabel = n => ({ 300: T("5 minutes"), 900: T("15 minutes"), 3600: T("1 hour"), 86400: T("1 day") }[n] || T("1 hour"));   // i18n-keys
-// What the history uses, MEASURED by the panel (GET /api/stats-usage: one directory walk, a minute's cache) — its own
-// component, subscribed to the store, so the form around it is not re-rendered by the poll.
+const histResLabel = n => ({ 300: T("5 minutes"), 900: T("15 minutes"), 3600: T("1 hour"), 86400: T("1 day") }[n] || T("1 hour"));
 function HistoryUsage() {
   useStore();
   const u = statsUsage();
@@ -328,8 +321,6 @@ function HistoryUsage() {
     ${!d.infinite ? html`<div>${T("The detail is kept for the last 33 days; totals for any period are always kept.")}</div>` : null}
   </div></div>`;
 }
-// Turning it off says what goes, from the read-out already measured (at most a minute old). ⚠️ With no measurement to
-// hand — not loaded, failed, or the ledger off — the confirm must not say that nothing goes.
 function confirmHistOff(ok) {
   const u = statsUsage().data;
   const d = u && u.on ? u : null;
@@ -340,49 +331,41 @@ function confirmHistOff(ok) {
       : T("The panel will keep the traffic detail — each day's figures at the history resolution — for the last 33 days only. None is older than that yet, so nothing is deleted when you save; from then on, each day's detail is deleted once it is 33 days old. Totals for any period are kept."),
     onConfirm: ok });
 }
-// One version, whatever its leading "v": "4.0.3" is "v4.0.3" — the panel's _turn_behind rule, so Settings → Check updates and
-// the header badge / Server updates never disagree about the same server.
 const sameVer = (a, b) => String(a || "").replace(/^[vV]/, "") === String(b || "").replace(/^[vV]/, "");
 export function PanelSettingsScreen() {
   const ps = Store.panelSettings || {};
   const idf = ps.interface_defaults || {}; const mir = ps.mirrors || {}; const adv = ps.advanced || {};
-  const declarative = !!((Store.env || {}).declarative);   // → the subscription address is a module option, not a field here
+  const declarative = !!((Store.env || {}).declarative);
   const [dns, setDns] = useState((idf.dns || []).join(", "));
   const [mtu, setMtu] = useState(String(idf.mtu || 1280));
   const [ka, setKa] = useState(String(idf.keepalive || 25));
-  const [awgDef, setAwgDef] = useState(() => ({ ...(idf.awg_params || {}) }));   // new-interface AWG obfuscation
-  const [reachDef, setReachDef] = useState(idf.reach || "user");   // device access (§10.6): the level the create sheet preselects
+  const [awgDef, setAwgDef] = useState(() => ({ ...(idf.awg_params || {}) }));
+  const [reachDef, setReachDef] = useState(idf.reach || "user");
   const [awgGenDef, setAwgGenDef] = useState(idf.awg_gen || DEFAULT_AWG_GEN);
-  // only FILLED cells count: a blank one means "leave it to the node", so clearing a cell must read as
-  // back-to-default rather than as a change, and must not be sent as an empty override.
   const awgTrim = o => AWG_KEYS.reduce((a, k) => { const v = String((o || {})[k] ?? "").trim(); if (v) a[k] = v; return a; }, {});
-  // …and the AmneziaWG 3.1 defaults (the panel's awg3_defaults): the six cells an interface's Edit sheet has too, blank =
-  // Amnezia's own value. Sent only when there is something to say — a fleet that never fills one sends what it always sent.
   const [awg3Def, setAwg3Def] = useState(() => ({ ...(idf.awg3_params || {}) }));
   const awg3Trim = o => AWG3_EDIT_COLS.flat().reduce((a, k) => { const v = String((o || {})[k] ?? "").trim(); if (v) a[k] = v; return a; }, {});
   const [awgOpen, setAwgOpen] = useState(false);
   const [geoMir, setGeoMir] = useState(mir.geo || "");
   const [turnMir, setTurnMir] = useState(mir.turn || "");
-  // Geo-data: catalog provider enable/disable + scheduled list refresh (replacing the geo mirror).
   const _provReg = Store.catalogProviders || [];
   const [provEnabled, setProvEnabled] = useState(() => Object.fromEntries(_provReg.map(p => [p.id, p.enabled !== false])));
   const _gu = ps.geo_update || {};
   const [guEvery, setGuEvery] = useState(String(_gu.every_days == null ? 1 : _gu.every_days));
   const [guAt, setGuAt] = useState(_gu.at || "04:00");
-  const [geoUpdating, setGeoUpdating] = useState(false);   // the Update-all-lists button in flight → poll provider status
+  const [geoUpdating, setGeoUpdating] = useState(false);
   const updateAllLists = async () => {
     setGeoUpdating(true);
     const r = await api.geoUpdate();
     if (!r || !r.ok) { setGeoUpdating(false); return toast(srvText(r) || T("Couldn't start update"), "err"); }
-    // poll /api/state until no provider is still "updating" (or a 25s cap)
     const t0 = Date.now();
     const tick = async () => { await Store.poll();
-      const busy = (Store.catalogProviders || []).some(p => p.status === "updating");   // i18n-keys
+      const busy = (Store.catalogProviders || []).some(p => p.status === "updating");
       if (busy && Date.now() - t0 < 25000) return setTimeout(tick, 1500);
       setGeoUpdating(false); };
     setTimeout(tick, 1500);
   };
-  const retryProvider = async (pid) => {   // manual retry after a provider's automatic fetch retries (4×, backoff) all failed
+  const retryProvider = async (pid) => {
     const r = await api.geoProviderRetry(pid);
     if (!r || !r.ok) return toast(srvText(r) || T("Couldn't retry"), "err");
     const t0 = Date.now();
@@ -407,16 +390,14 @@ export function PanelSettingsScreen() {
       onConfirm: () => setProvEnabled(m => ({ ...m, [p.id]: false })),
     });
   };
-  // Transient "updated" / T("up to date") — show for 5s AFTER a busy→done transition, then hide. In-progress
-  // (downloading/updating) always shows; failed persists (with Retry). No flash on first load (statuses stay hidden).
-  const [provFlash, setProvFlash] = useState({});   // pid -> expiry ts
+  const [provFlash, setProvFlash] = useState({});
   const _provSeen = useRef({});
   useEffect(() => {
     const now = Date.now(), seen = _provSeen.current; let next = null;
     for (const p of (Store.catalogProviders || [])) {
       const prev = seen[p.id];
       if (p.status !== prev) {
-        if (prev !== undefined && (p.status === "updated" || p.status === "uptodate")) { next = next || { ...provFlash }; next[p.id] = now + 5000; }   // i18n-keys
+        if (prev !== undefined && (p.status === "updated" || p.status === "uptodate")) { next = next || { ...provFlash }; next[p.id] = now + 5000; }
         seen[p.id] = p.status;
       }
     }
@@ -428,14 +409,13 @@ export function PanelSettingsScreen() {
     const t = setTimeout(() => setProvFlash(f => ({ ...f })), Math.min(...exps) - Date.now() + 50);
     return () => clearTimeout(t);
   }, [provFlash]);
-  const _scMode = Store.storeMode || "encrypted";   // the RESOLVED enum (server considers the panel/fleet default)
+  const _scMode = Store.storeMode || "encrypted";
   const [sc, setSc] = useState(_scMode);
   const [tput, setTput] = useState(ps.throughput_perspective === "peers" ? "peers" : "nodes");
   const [tunit, setTunit] = useState(ps.throughput_units === "bits" ? "bits" : "bytes");
   const [tz, setTz] = useState(ps.time_zone || "");
-  // Display → Data (P2): keep the traffic history for ever (default on, like showLans), and its fine resolution
   const [infHist, setInfHist] = useState(ps.infinite_history !== false);
-  const [histRes, setHistRes] = useState(String(ps.history_resolution || 3600));   // Display → Data: the zone days are counted in ("" = this server's own)
+  const [histRes, setHistRes] = useState(String(ps.history_resolution || 3600));
   const [tzCat, setTzCat] = useState(_tzCat);
   const [staleS, setStaleS] = useState(String(Math.round((adv.node_stale_ms || 30000) / 1000)));
   const [graceS, setGraceS] = useState(String(Math.round((adv.peer_grace_ms || 60000) / 1000)));
@@ -444,52 +424,48 @@ export function PanelSettingsScreen() {
   const [topDest, setTopDest] = useState(String(ps.top_destinations || 10));
   const [warnDays, setWarnDays] = useState(String(ps.expiry_warn_days == null ? 3 : ps.expiry_warn_days));
   const [logEdit, setLogEdit] = useState(null);
-  const logBase = ps.log_level || "info";       // the level Debug returns to
+  const logBase = ps.log_level || "info";
   const logSaved = () => (ps.log_debug_left ? "debug" : logBase);
   const logShown = logEdit ? logEdit.lvl : logSaved();
   const logForSaved = ps.log_debug_left === -1 ? "-1" : ps.log_debug_left > 3600 ? "86400" : "3600";
   const logForShown = (logEdit && logEdit.for) || logForSaved;
   const logDirty = () => !!logEdit && (logEdit.lvl !== logSaved() || (logEdit.lvl === "debug" && logEdit.for != null));
   const pickLog = v => setLogEdit(v === logSaved() ? null : { lvl: v, for: v === "debug" ? "3600" : null });
-  const [logMbP, setLogMbP] = useState(String(ps.log_mb_panel || 100));   // the panel's disk budget (the table's first row)
+  const [logMbP, setLogMbP] = useState(String(ps.log_mb_panel || 100));
   const logMbPDirty = () => logMbP !== String(ps.log_mb_panel || 100);
-  // On unless an operator has switched it off — which closes these networks rather than merely hiding them.
   const [showLans, setShowLans] = useState(ps.show_node_lans !== false);
   const [scanAllow, setScanAllow] = useState((ps.scan_allow || []).join("\n"));
   const normScanAllow = s => [...new Set(String(s || "").split(/[\s,]+/).filter(Boolean).map(t => (t.includes("/") || t.includes(":")) ? t : t + "/32"))];
-  // The Never-block list (docs/NEVER-BLOCK-AND-PORT-RULES-PLAN.md A.5): read by the rules' own grammar; what it cannot take is
-  // named under the box before Save, and the server refuses it again with the same reasons.
   const [blockAllow, setBlockAllow] = useState((ps.block_allow || []).join("\n"));
-  const [pok, setPok] = useState((ps.p2p_portok || P2P_PORTOK_DEFAULT).join(", "));   // ports the torrent filter never cuts (S11c)
+  const [pok, setPok] = useState((ps.p2p_portok || P2P_PORTOK_DEFAULT).join(", "));
   const nbRead = s => classifyAll(s).map(c => ({ ...c, ok: c.kind === "site" || (c.kind === "ip" && +String(c.value).split("/")[1] >= 8) }));
   const normBlockAllow = s => [...new Set(nbRead(s).map(c => c.ok ? c.value : c.raw.toLowerCase()))];
   const [meshGen, setMeshGen] = useState(ps.mesh_awg_gen || DEFAULT_AWG_GEN);
-  const [meshMode, setMeshMode] = useState(ps.mesh_mode || "auto");   // which node pairs get a mesh link (auto | full | demand)
+  const [meshMode, setMeshMode] = useState(ps.mesh_mode || "auto");
   const [lists, setLists] = useState((ps.custom_lists || []).map(l => ({ ...l, _rid: newRid(), targets: customTargets(l) })));
-  const [turnEnabledS, setTurnEnabledS] = useState(ps.turn_enabled !== false);   // master turn-proxy switch
-  const [turnForks, setTurnForks] = useState(new Set(ps.enabled_turn_forks || TURN_FORKS_DEFAULT));   // forks offered in the install picker
-  // ---- themed colour pickers ({dark,light} each) — Interfaces / Display / Turn sections ----
+  const [turnEnabledS, setTurnEnabledS] = useState(ps.turn_enabled !== false);
+  const [turnForks, setTurnForks] = useState(new Set(ps.enabled_turn_forks || TURN_FORKS_DEFAULT));
   const asThemed = (v, dd, dl) => (v && typeof v === "object") ? { dark: v.dark || dd, light: v.light || dl } : { dark: v || dd, light: v || dl };
   const sameThemed = (a, dd, dl) => (a.dark || "").toLowerCase() === dd.toLowerCase() && (a.light || "").toLowerCase() === dl.toLowerCase();
-  const _bprovs = (Store.blockCatalog || {}).providers || [];   // content-filter feeds share the provider_colors map (ids never collide with catalog ids)
+  const _bprovs = (Store.blockCatalog || {}).providers || [];
   const _provColDefault = p => {
     const c = CAT_PROVIDER_DEFAULTS[p];
     if (c) return { dark: c.color, light: c.colorL };
     const bp = _bprovs.find(x => x.id === p);
-    if (bp && bp.color) return { dark: bp.color, light: bp.color_l || bp.color };   // block feeds ship a dark + light default hex
+    if (bp && bp.color) return { dark: bp.color, light: bp.color_l || bp.color };
     if (p === "custom") return { dark: "#8A94A6", light: "#5E6875" };
     return { dark: "#8FA8C0", light: "#5E7085" };
   };
   const _provColKeys = [..._provReg.map(p => p.id), ..._bprovs.map(p => p.id), "custom"];
   const [provColors, setProvColors] = useState(() => Object.fromEntries([..._provReg.map(p => p.id), "custom"].map(k => [k, asThemed((ps.provider_colors || {})[k], _provColDefault(k).dark, _provColDefault(k).light)])));
-  useEffect(() => {   // block catalog loads async — seed its providers' default colours once present (only keys not already set)
+  useEffect(() => {
     if (!_bprovs.length) return;
     setProvColors(c => { let ch = false; const n = { ...c }; for (const p of _bprovs) if (n[p.id] === undefined) { n[p.id] = asThemed((ps.provider_colors || {})[p.id], p.color, p.color_l || p.color); ch = true; } return ch ? n : c; });
   }, [Store.blockCatalog]);
   const provColorOverrides = () => { const o = {}; for (const k of _provColKeys) { const d = _provColDefault(k); const t = asThemed(provColors[k], d.dark, d.light); if (!sameThemed(t, d.dark, d.light)) o[k] = t; } return o; };
   const [customEnabled, setCustomEnabled] = useState(ps.custom_lists_enabled !== false);
   const [forkColors, setForkColors] = useState(() => Object.fromEntries(turnForkList().map(f => [f.id, asThemed((ps.turn_fork_colors || {})[f.id], f.color, f.colorL)])));
-  const _tu = ps.turn_update || {};   // turn-proxy auto-update schedule: every_days (0=off) + node-checked panel-local hour
+  const _tu = ps.turn_update || {};
   const [tuEvery, setTuEvery] = useState(String(_tu.every_days == null ? 0 : _tu.every_days));
   const [tuAt, setTuAt] = useState(_tu.at || "04:00");
   const [themeColorS, setThemeColorS] = useState(clampBrand(ps.theme_color || THEME_COLOR_DEFAULT, false));
@@ -497,32 +473,25 @@ export function PanelSettingsScreen() {
   const themeVal = { dark: themeColorS, light: themeColorLightS };
   const _sc = ps.status_conditions || {};
   const [statusConds, setStatusConds] = useState({ blocked: _sc.blocked !== false, faulty: _sc.faulty !== false });
-  // interface-key escrow (Interfaces section): staged like a field — the toggle sets a pending value; Save applies it.
-  const [ivkEscrow, setIvkEscrow] = useState(null);           // pending value (null = still loading)
-  const [ivkEscrowInit, setIvkEscrowInit] = useState(null);   // saved value → dirty when they differ
-  const [ivkVaultExists, setIvkVaultExists] = useState(null); // vault set up? escrow needs it
+  const [ivkEscrow, setIvkEscrow] = useState(null);
+  const [ivkEscrowInit, setIvkEscrowInit] = useState(null);
+  const [ivkVaultExists, setIvkVaultExists] = useState(null);
   useEffect(() => { api.subVault().then(r => { const okd = !!(r && r.ok && r.data); const on = okd && !!r.data.ivk_enabled; setIvkEscrow(on); setIvkEscrowInit(on); setIvkVaultExists(okd ? !!r.data.exists : false); }).catch(() => setIvkVaultExists(false)); }, []);
-  // overrides derived from a raw source (state OR the stored panel-settings), normalized identically so a legacy
-  // single-colour value in panel-settings compares equal to its normalized {dark,light} form (no phantom "dirty").
   const forkOvFrom = src => { const o = {}; for (const f of turnForkList()) { const t = asThemed((src || {})[f.id], f.color, f.colorL); if (!sameThemed(t, f.color, f.colorL)) o[f.id] = t; } return o; };
   const forkColorOverrides = () => forkOvFrom(forkColors);
   const statusCondsOut = () => ({ blocked: statusConds.blocked, faulty: statusConds.faulty });
   const themeColorOut = () => themeColorS.toLowerCase() === THEME_COLOR_DEFAULT.toLowerCase() ? "" : themeColorS;
   const themeColorLightOut = () => themeColorLightS.toLowerCase() === THEME_COLOR_LIGHT_DEFAULT.toLowerCase() ? "" : themeColorLightS;
   const csqttOtherLine = w => !!(w && w.kind === "csqtt" && w.line && w.line !== "2.1");
-  // the rows of Settings → Turn proxies: every visible fork, and a hidden one while a node still runs it — so the operator
-  // keeps its users' app, client knobs, version and colour (MYSOREZ, Moroka8, xxcipherx, hidden 2026-10-14)
   const settingsForks = () => turnForkList().filter(f => !f.hidden || forkNodeStates(f.id, true).length);
   const forkVersions = (fid, all) => { const v = new Set();
     for (const snap of Object.values(Store.stats || {})) {
       for (const tp of (snap.turn_proxies || [])) if (tp.service && turnFork(tp.service) === fid && tp.version) v.add(tp.version);
-      for (const w of [...(snap.wdtt || []), ...(snap.csqtt || [])]) if (w && w.fork === fid && (all || !csqttOtherLine(w))) v.add(w.version || "installed");   // i18n-keys
+      for (const w of [...(snap.wdtt || []), ...(snap.csqtt || [])]) if (w && w.fork === fid && (all || !csqttOtherLine(w))) v.add(w.version || "installed");
     }
     return [...v]; };
-  // per-NODE view of a fork for the hover bubble: one row per node carrying its version + whether it's mid-update
-  // (a shared per-fork binary → one version/node; updating if ANY of its instances is installing or Update-clicked).
   const forkNodeStates = (fid, all) => {
-    const m = {};   // nodeId -> {version, installing (real, clears when done), updatePending (Update-clicked, 120s hint)}
+    const m = {};
     for (const [nid, snap] of Object.entries(Store.stats || {})) {
       for (const tp of (snap.turn_proxies || [])) {
         if (!tp.service || turnFork(tp.service) !== fid) continue;
@@ -533,22 +502,19 @@ export function PanelSettingsScreen() {
         if (turnUpdating[uk] && Date.now() < turnUpdating[uk]) cur.updatePending = true;
         m[nid] = cur;
       }
-      for (const w of [...(snap.wdtt || []), ...(snap.csqtt || [])]) {   // self-contained kinds (keyed by fork, usually no version string)
+      for (const w of [...(snap.wdtt || []), ...(snap.csqtt || [])]) {
         if (!w || w.fork !== fid || (!all && csqttOtherLine(w))) continue;
-        // `all`: a box runs csqtt 2.1 and 2.5 side by side, one binary each — one row per (node, version line), or the
-        // bubble shows one of them (operator, 2026-10-28: msk-shadow runs both, the row showed 2.1.9-4 only)
         const line = all && csqttOtherLine(w) ? w.line : "", k = line ? nid + "@" + line : nid;
         const cur = m[k] || { version: "", installing: false, updatePending: false, ...(line ? { node: nid, line } : {}) };
-        cur.version = w.version || cur.version || "installed";   // i18n-keys
-        if (w.active && w.active !== "active") cur.installing = true;   // starting / awaiting restore
+        cur.version = w.version || cur.version || "installed";
+        if (w.active && w.active !== "active") cur.installing = true;
         m[k] = cur;
       }
     }
     return Object.entries(m).map(([node, v]) => ({ node, ...v })).sort((a, b) => Store.byNode(a.node, b.node) || String(a.line || "").localeCompare(String(b.line || "")));
   };
-  const [turnCheck, setTurnCheck] = useState({});   // {forkId: {status:'checking'|'uptodate'|'update', latest}}
+  const [turnCheck, setTurnCheck] = useState({});
   const checkTurnUpdates = async () => {
-    // the forks with a row only (a hidden fork no node runs has none: its lookup was a curl of up to ~25 s for nothing)
     const rows = settingsForks();
     setTurnCheck(Object.fromEntries(rows.map(f => [f.id, { status: "checking" }])));
     const r = await api.turnCheckUpdates({ forks: rows.map(f => ({ id: f.id, owner: f.owner })) });
@@ -559,17 +525,17 @@ export function PanelSettingsScreen() {
       next[f.id] = (lt && dep.length && dep.some(v => !sameVer(v, lt))) ? { status: "update", latest: lt } : { status: "uptodate" };
     }
     setTurnCheck(next);
-    setTimeout(() => setTurnCheck(c => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v.status === "update" || v.status === "updating" ? v : {}]))), 5000);   // T("up to date") clears after 5s; "update" (and an update clicked meanwhile) persists
+    setTimeout(() => setTurnCheck(c => Object.fromEntries(Object.entries(c).map(([k, v]) => [k, v.status === "update" || v.status === "updating" ? v : {}]))), 5000);
   };
   const turnFollow = Object.values(turnCheck).some(v => v && v.status === "updating" && v.until);
   useEffect(() => {
     if (!turnFollow) return;
     return bus.sub(() => setTurnCheck(c => {
-      const n = { ...c };   // always a new object: the redraw itself is the point
+      const n = { ...c };
       for (const [fid, v] of Object.entries(c)) {
         if (!v || v.status !== "updating" || !v.until) continue;
-        const st = forkNodeStates(fid).filter(s => canTurnAct(s.node));   // a node the update skipped keeps its version — don't wait on it
-        if (st.length && st.every(s => sameVer(s.version, v.latest) && !s.installing)) n[fid] = { status: "updated" };   // i18n-keys
+        const st = forkNodeStates(fid).filter(s => canTurnAct(s.node));
+        if (st.length && st.every(s => sameVer(s.version, v.latest) && !s.installing)) n[fid] = { status: "updated" };
         else if (Date.now() > v.until) n[fid] = {};
       }
       return n;
@@ -585,32 +551,32 @@ export function PanelSettingsScreen() {
   const skipNote = skipped => { if (skipped) toast(T("{v1} skipped — turn-proxy management is off there, or their architecture has no published build.", { v1: plural(skipped, "node") }), "err"); };
   const updateFork = async (fid, latest) => {
     const fork = turnForkList().find(x => x.id === fid) || {};
-    if (fork.kind === "csqtt") {   // csqtt: one binary per NODE — release each node's hold and it takes the current build
+    if (fork.kind === "csqtt") {
       const all = [];
       for (const [nid, snap] of Object.entries(Store.stats || {})) for (const c of (snap.csqtt || [])) if (c && c.iface && !csqttOtherLine(c)) all.push({ node: nid, iface: c.iface });
       const ct = all.filter(t => canTurnAct(t.node));
       const cskip = new Set(all.filter(t => !canTurnAct(t.node)).map(t => t.node)).size;
       if (!ct.length) { skipNote(cskip); return; }
-      setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest } }));   // i18n-keys
+      setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest } }));
       turnUpdateTarget[fid] = { ver: latest, until: Date.now() + 120000 };
       const seen = new Set();
       for (const t of ct) { if (seen.has(t.node)) continue; seen.add(t.node); await api.csqttVersion({ node: t.node, iface: t.iface, ver: "" }); }
-      setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest, until: Date.now() + 120000 } }));   // i18n-keys
+      setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest, until: Date.now() + 120000 } }));
       await Store.poll();
       toast(T("Update requested on {v1} — each node applies it on its next sync.", { v1: plural(seen.size, "node") }), "ok");
       skipNote(cskip);
       return;
     }
-    if (fork.kind === "wdtt") {   // WDTT: release each instance's hold → the node swaps its shared binary to the current published build
+    if (fork.kind === "wdtt") {
       const all = [];
       for (const [nid, snap] of Object.entries(Store.stats || {})) for (const w of (snap.wdtt || [])) if (w && w.fork === fid && w.iface) all.push({ node: nid, iface: w.iface });
       const wt = all.filter(t => canTurnAct(t.node));
       const wskip = new Set(all.filter(t => !canTurnAct(t.node)).map(t => t.node)).size;
       if (!wt.length) { skipNote(wskip); return; }
-      setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest } }));   // i18n-keys
+      setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest } }));
       turnUpdateTarget[fid] = { ver: latest, until: Date.now() + 120000 };
       for (const t of wt) await api.wdttVersion({ node: t.node, iface: t.iface, ver: "" });
-      setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest, until: Date.now() + 120000 } }));   // i18n-keys
+      setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest, until: Date.now() + 120000 } }));
       await Store.poll();
       toast(T("Update requested on {v1} — each node applies it on its next sync.", { v1: plural(wt.length, "WDTT server") }), "ok");
       skipNote(wskip);
@@ -622,34 +588,28 @@ export function PanelSettingsScreen() {
     const targets = all.filter(t => canTurnAct(t.node));
     const skipped = new Set(all.filter(t => !canTurnAct(t.node)).map(t => t.node)).size;
     if (!targets.length) { skipNote(skipped); return; }
-    setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest } }));   // i18n-keys
-    turnUpdateTarget[fid] = { ver: latest, until: Date.now() + 120000 };   // persists past the turnCheck reset so the bubble can show per-node updating→updated
+    setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest } }));
+    turnUpdateTarget[fid] = { ver: latest, until: Date.now() + 120000 };
     for (const t of targets) { turnUpdating[t.node + "|" + t.service] = Date.now() + 120000; await api.turnReinstall({ node: t.node, service: t.service, owner }); }
-    setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest, until: Date.now() + 120000 } }));   // i18n-keys
+    setTurnCheck(c => ({ ...c, [fid]: { status: "updating", latest, until: Date.now() + 120000 } }));
     await Store.poll();
     toast(T("Update requested on {v1} — each node applies it on its next sync.", { v1: plural(targets.length, "proxy") }), "ok");
     skipNote(skipped);
   };
-  // Security (panel login) — folded into the unified Save: credentials update on Save (if changed), and a
-  // validation error blocks Save. Username is loaded from the server once on mount.
   const [secUser, setSecUser] = useState(""); const [secOrigUser, setSecOrigUser] = useState("");
   const [secCur, setSecCur] = useState(""); const [secNp, setSecNp] = useState(""); const [secNp2, setSecNp2] = useState("");
-  const [secAuth, setSecAuth] = useState(true);   // false = panel has no login configured (fields disabled)
+  const [secAuth, setSecAuth] = useState(true);
   useEffect(() => { api.account().then(r => { if (r && r.ok) { setSecAuth(r.data.auth_enabled !== false); if (r.data.username) { setSecUser(r.data.username); setSecOrigUser(r.data.username); } } }); }, []);
   const secChanged = () => secAuth && (secUser.trim() !== secOrigUser || !!secNp);
   const [exitWhy, setExitWhy] = useState({});
   const exitErr = () => {
     for (const n of (Store.nodes || [])) {
       const ex = (nodeEdits[n.id] || {}).exits || [];
-      // Only an ADOPTED exit needs a device typed into it — an imported one's device is minted from its id
-      // by the server, so demanding one here would block the Save that creates it.
       const msg = ex.some(x => (x.producer || "adopted") !== "imported" && !String(x.device || "").trim())
         ? T("Choose a device for the new exit, or remove it.")
         : ex.some(x => x.producer === "imported" && x.provider === "profile"
                        && !String(x.profile_text || "").trim() && !(x.profile && x.profile.address))
         ? T("Paste a WireGuard profile for the new exit, or remove it.") : (exitWhy[n.id] || "");
-      // Name the node when it is not the one on screen, or the Save button is disabled for a reason the
-      // operator is not looking at.
       if (msg) return n.id === selNode ? msg : (n.name + " — " + msg);
     }
     return "";
@@ -663,13 +623,11 @@ export function PanelSettingsScreen() {
     if (secNp && secNp.length < 8) return T("New password must be at least 8 characters.");
     return null;
   };
-  // A phone opens on the LIST of sections and drills into one (MOBILE-PLAN hook 3) — the rail does not fit beside a pane there.
-  // `null` is the list. A deep link (an activity row, a sheet's "go to settings") still lands on its section.
-  const [section, setSection] = useState(takePendingSection() || (isMobile() ? null : "display"));   // active left-rail section (a Settings activity click can deep-link here)
-  useEffect(() => { registerSectionSetter(setSection); return () => registerSectionSetter(null); }, []);   // one-shot section pin + expose setSection so a modal can switch the rail (confirm modal → Access & TLS)
-  const [routeTab, setRouteTab] = useState("routing");   // "Routing & Blocking" section: Routing (route→exit) | Blocking (drop) — both gated by the node's mode above
-  useEffect(() => { if (routeTab === "blocking" || section === "geo") loadBlockCatalog(); }, [routeTab, section]);   // lazy-load the block catalog for the Blocking tab and the Geo-data Filters-providers list
-  useEffect(() => {   // the zone list (tzOptions): once per page, the first time Display opens
+  const [section, setSection] = useState(takePendingSection() || (isMobile() ? null : "display"));
+  useEffect(() => { registerSectionSetter(setSection); return () => registerSectionSetter(null); }, []);
+  const [routeTab, setRouteTab] = useState("routing");
+  useEffect(() => { if (routeTab === "blocking" || section === "geo") loadBlockCatalog(); }, [routeTab, section]);
+  useEffect(() => {
     if (section !== "display" || _tzCat) return;
     let live = true;
     api.get("/api/time-zones?browser=" + encodeURIComponent(browserZone()))
@@ -686,47 +644,41 @@ export function PanelSettingsScreen() {
     const t = setTimeout(() => { _bkCountTries.current++; loadBlockCatalog(true); }, Math.min(30000, 4000 * 2 ** Math.floor(_bkCountTries.current / 3)));
     return () => clearTimeout(t);
   }, [routeTab, Store.blockCatalog]);
-  const [blockProvEdits, setBlockProvEdits] = useState({});   // staged Filters-providers toggle deltas {prov_id:bool} → panelSettings.block_providers (committed by the shared Save)
+  const [blockProvEdits, setBlockProvEdits] = useState({});
   const blockCatalogStatus = loading => Store.blockCatalogError ? html`<div class="hint warnish">
     ${T("Could not load the block-list catalog.")}
     <button class="btn btn-mini" onClick=${() => loadBlockCatalog(true)}>${T("Retry")}</button>
   </div>` : html`<div class="hint">${loading}</div>`;
-  const [geoTab, setGeoTab] = useState("routing");   // Geo-data providers card: Routing (list providers) | Blocking (content-filter feeds)
-  const [blockEdits, setBlockEdits] = useState({});   // staged block-category deltas {id:{enabled_nodes?,default_on?,sources?,…}} → api.blockCatalogSave (committed by the shared Save)
-  const [bkOpen, setBkOpen] = useState({});   // expanded block-category rows (id→bool) — the expand shows/edits the category's lists
-  const [blockRemoved, setBlockRemoved] = useState([]);   // custom block-category ids staged for deletion → api.blockCatalogSave removed[]
-  const [bkAutoAdd, setBkAutoAdd] = useState(null);   // a just-created category id → auto-open its Add-list picker
+  const [geoTab, setGeoTab] = useState("routing");
+  const [blockEdits, setBlockEdits] = useState({});
+  const [bkOpen, setBkOpen] = useState({});
+  const [blockRemoved, setBlockRemoved] = useState([]);
+  const [bkAutoAdd, setBkAutoAdd] = useState(null);
   const rsv = ps.reserved || {};
   const [rsvSubnet, setRsvSubnet] = useState(rsv.mesh_subnet || "10.255.0.0/16");
   const [rsvPort, setRsvPort] = useState(String(rsv.mesh_port_base || 9999));
   const [rsvPrefix, setRsvPrefix] = useState(rsv.iface_prefix || "swg_");
   const [awg, setAwg] = useState(ps.mesh_awg || {});
   const [showAwg, setShowAwg] = useState(false);
-  const awgSet = [...AWG_KEYS, ...AWG3_EDIT_COLS.flat()].some(k => String(awg[k] ?? "").trim() !== "");   // …the mesh template's 3.1 six too
-  // the template as the panel stores it — trimmed strings, blanks gone — so a draft holding Generate's numbers, or a key order of
-  // its own, does not read as a change after the save that stored it
+  const awgSet = [...AWG_KEYS, ...AWG3_EDIT_COLS.flat()].some(k => String(awg[k] ?? "").trim() !== "");
   const meshTpl = o => Object.fromEntries(Object.entries(o || {}).map(([k, x]) => [k, String(x ?? "").trim()]).filter(([, x]) => x));
   const [showAdv, setShowAdv] = useState(false);
   const [msg, setMsg] = useState(null);
-  // subscriptions section state — enable + languages ride the global save; the vault ceremony uses /api/sub/*.
-  // The sub's address, URL and certificate now live in the Access & TLS section (access.sub / access.tls).
   const subCfg = ps.subscriptions || {};
   const [subsOn, setSubsOn] = useState(!!subCfg.enabled);
-  const [autoGen, setAutoGen] = useState(!!subCfg.auto_generate);   // auto-mint a subscription link for each new user
+  const [autoGen, setAutoGen] = useState(!!subCfg.auto_generate);
   const subLangCfg = (subCfg.languages && typeof subCfg.languages === "object") ? subCfg.languages : {};
   const [subLangs, setSubLangs] = useState((subLangCfg.enabled && subLangCfg.enabled.length) ? [...subLangCfg.enabled] : ["en"]);
   const [subLangDef, setSubLangDef] = useState(subLangCfg.default || "en");
   const toggleSubLang = (id, on) => {
     let next = on ? [...new Set([...subLangs, id])] : subLangs.filter(l => l !== id);
-    if (!next.length) next = [id];                 // never empty — at least one language
+    if (!next.length) next = [id];
     setSubLangs(next);
-    if (next.indexOf(subLangDef) < 0) setSubLangDef(next[0]);   // default must stay enabled
+    if (next.indexOf(subLangDef) < 0) setSubLangDef(next[0]);
   };
-  // per-node pending edits (mode / mesh / egress) — lifted here so switching node or section keeps unsaved
-  // changes; the single Save commits the global settings AND one nodeUpdate per changed node.
   const eq = (a, b) => { const c = v => v == null ? "" : Array.isArray(v) ? JSON.stringify([...v].sort()) : typeof v === "object" ? JSON.stringify(Object.keys(v).sort().reduce((o, k) => (o[k] = v[k], o), {})) : String(v); return c(a) === c(b); };
   const nFields = n => ({ routing_mode: n.routing_mode || "kernel", ip_learning: n.ip_learning !== false, endpoint_host: n.endpoint_host || "",
-    log_mb: String(n.log_mb || 100),   // Settings → Logs, the node's disk budget (published by the panel, or a save of anything else posts 100)
+    log_mb: String(n.log_mb || 100),
     mesh_subnet: n.mesh_subnet || "", mesh_port: n.mesh_port ? String(n.mesh_port) : "", mesh_prefix: n.mesh_prefix || "",
     default_egress_ip: n.default_egress_ip || "", panel_ip: n.panel_ip || "", mesh_egress_ip: n.mesh_egress_ip || "",
     default_exit: n.default_exit || "",
@@ -734,7 +686,7 @@ export function PanelSettingsScreen() {
     default_routing_exit_ips: { ...(n.default_routing_exit_ips || {}) },
     p2p: n.p2p && n.p2p.action ? { action: n.p2p.action, ...(n.p2p.node ? { node: n.p2p.node } : {}),
                                    ...(n.p2p.exit_id ? { exit_id: n.p2p.exit_id } : {}) } : null,
-    p2p_portok: Array.isArray(n.p2p_portok) ? n.p2p_portok.join(", ") : null,   // its own never-cut ports, as typed; null = the fleet's
+    p2p_portok: Array.isArray(n.p2p_portok) ? n.p2p_portok.join(", ") : null,
     endpoint_hosts: [...(n.endpoint_hosts || [])],
     catalog_cats: [...(n.catalog_cats || [])],
     exits: (n.exits || []).map(x => ({ id: x.id || "", label: x.label || "", producer: x.producer || "adopted",
@@ -743,13 +695,10 @@ export function PanelSettingsScreen() {
       ...(x.producer === "imported" ? { provider: x.provider || "warp", licence: x.licence || "",
                                         dial_src: x.dial_src || "",
                                         profile: x.profile || null, profile_text: "",
-                                        // a SOCKS exit's address as the browser has it (no password — T7); the paste box and
-                                        // the password field are empty = keep what is stored, as `profile_text` is
                                         ...(x.socks ? { socks: x.socks, socks_text: "", socks_pass: "" } : {}) } : {}) })) });
-  // (no mesh_awg: a link's AWG params are set on the link's own sheet, not per node — plan §8 round 13)
   const [nodeEdits, setNodeEdits] = useState(() => Object.fromEntries((Store.nodes || []).map(n => [n.id, nFields(n)])));
   const [orig, setOrig] = useState(() => Object.fromEntries((Store.nodes || []).map(n => [n.id, nFields(n)])));
-  const [gridKeep, setGridKeep] = useState([]);   // provider-list rows kept visible after toggling to 0/N nodes (until × removes them)
+  const [gridKeep, setGridKeep] = useState([]);
   const setNV = (nid, patch) => setNodeEdits(e => ({ ...e, [nid]: { ...nFields((Store.nodes || []).find(n => n.id === nid) || {}), ...(e[nid] || {}), ...patch } }));
   const nv = (nid, f) => (nodeEdits[nid] || nFields((Store.nodes || []).find(n => n.id === nid) || {}))[f];
   const rebaseDefault = (nid, fresh) => {
@@ -763,13 +712,13 @@ export function PanelSettingsScreen() {
       return { ...e, [nid]: { ...cur, default_routing: dr, default_exit: eq(cur.default_exit, o.default_exit) ? fresh.default_exit : cur.default_exit, p2p } }; });
     setOrig(o => ({ ...o, [nid]: { ...(o[nid] || {}), default_routing: fresh.default_routing, default_exit: fresh.default_exit, p2p: fresh.p2p } }));
   };
-  const [saved, setSaved] = useState(0);   // timestamp; the green "All settings saved" flash shows while now < saved
+  const [saved, setSaved] = useState(0);
   const save = async () => {
     try {
-    if (SECTIONS.some(([s]) => glDirty(s))) {   // only rewrite panel_settings when a GLOBAL setting actually changed (nodes go via nodeUpdate below)
-      const dirtySecs = SECTIONS.filter(([s]) => glDirty(s)), secLabel = Object.fromEntries(SECTIONS);   // for the activity one-liner + deep-link
+    if (SECTIONS.some(([s]) => glDirty(s))) {
+      const dirtySecs = SECTIONS.filter(([s]) => glDirty(s)), secLabel = Object.fromEntries(SECTIONS);
       const r = await api.panelSettings({
-        _ev: { first: (dirtySecs[0] || [""])[0], sections: dirtySecs.map(([s]) => secLabel[s]).join(", ") },   // display-only: which sections changed (drives the "Settings changed" activity row)
+        _ev: { first: (dirtySecs[0] || [""])[0], sections: dirtySecs.map(([s]) => secLabel[s]).join(", ") },
         interface_defaults: { dns: dns.split(",").map(s => s.trim()).filter(Boolean), mtu: +mtu || 1280, keepalive: +ka || 25,
           awg_params: awgTrim(awgDef), reach: reachDef, awg_gen: awgGenDef,
           ...(Object.keys(awg3Trim(awg3Def)).length || Object.keys(awg3Trim(idf.awg3_params)).length ? { awg3_params: awg3Trim(awg3Def) } : {}) },
@@ -780,7 +729,7 @@ export function PanelSettingsScreen() {
         custom_lists_enabled: customEnabled,
         geo_update: { every_days: Math.max(0, Math.min(30, parseInt(guEvery) || 0)), at: guAt },
         store_configs: sc === "off" ? "off" : "encrypted",
-        subscriptions: { enabled: subsOn, auto_generate: autoGen,   // base_url + serve now live in Access & TLS (access.sub/access.tls)
+        subscriptions: { enabled: subsOn, auto_generate: autoGen,
           languages: { enabled: subLangs, default: subLangDef } },
         throughput_perspective: tput,
         throughput_units: tunit,
@@ -793,14 +742,13 @@ export function PanelSettingsScreen() {
         show_node_lans: showLans,
         scan_allow: normScanAllow(scanAllow),
         block_allow: normBlockAllow(blockAllow),
-        // only when changed; the defaults → null (no key). The text as typed, so the panel names what it cannot take
         ...(pokDirty() ? { p2p_portok: (r => !r.bad.length && portokSame(r.list, P2P_PORTOK_DEFAULT) ? null : pok)(portokRead(pok)) } : {}),
         mesh_mode: meshMode,
         mesh_awg_gen: meshGen,
         reserved: { mesh_subnet: rsvSubnet.trim(), mesh_port_base: +rsvPort || 9999, iface_prefix: rsvPrefix.trim() || "swg_" },
         mesh_awg: awgSet ? awg : {},
         advanced: { node_stale_ms: (+staleS || 30) * 1000, peer_grace_ms: (+graceS || 60) * 1000, geo_ttl_days: +ttlD || 3 },
-        custom_lists: lists.map(({ _rid, domains, cidrs, asns, ...l }) => l),   // send id/title/targets/enabled; the backend re-derives domains+cidrs+asns
+        custom_lists: lists.map(({ _rid, domains, cidrs, asns, ...l }) => l),
         turn_enabled: turnEnabledS,
         turn_update: { every_days: Math.max(0, Math.min(30, parseInt(tuEvery) || 0)), at: tuAt },
         enabled_turn_forks: [...turnForks],
@@ -808,19 +756,14 @@ export function PanelSettingsScreen() {
         status_conditions: statusCondsOut(),
         theme_color: themeColorOut(),
         theme_color_light: themeColorLightOut(),
-        // Only when the card changed: log_debug is a duration, and an unrelated save must not restart Debug's clock.
-        // Debug keeps the level saved before it as the base, which is what it returns to.
         ...(logDirty() ? { log_level: logEdit.lvl === "debug" ? logBase : logEdit.lvl,
                            log_debug: logEdit.lvl === "debug" ? +logForShown : 0 } : {}),
         ...(logMbPDirty() ? { log_mb_panel: +logMbP } : {}),
       });
       if (!r.ok) return setMsg({ ok: false, t: srvText(r) || T("Failed to save.") });
-      // The level is saved: drop the draft NOW, so a later step that fails cannot leave it dirty and a retry re-send Debug's
-      // duration (restarting its clock) — after a poll, so the card shows the saved level rather than flashing the old one.
       if (logEdit) { await Store.poll(); setLogEdit(null); }
-      if (dataDirty() || tzDirty()) trafficInvalidate();   // re-read what the save changed: a zone moves every day's edges
+      if (dataDirty() || tzDirty()) trafficInvalidate();
     }
-    // interface-key escrow — applied on Save (not on toggle), like every other field. Enabling needs the vault unlocked.
     if (ivkEscrow !== null && ivkEscrow !== ivkEscrowInit) {
       if (ivkEscrow && !subSKCached()) {
         const ok = await new Promise(res => pushModal(html`<${VaultPromptSheet} opts=${{ title: T("Unlock to enable escrow"), reason: T("Enabling interface-key escrow seals each server's interface key under your Encryption Vault key. Unlock it to apply.") }} onDone=${res}/>`));
@@ -829,7 +772,6 @@ export function PanelSettingsScreen() {
       try { await ivkSetEscrow(ivkEscrow); setIvkEscrowInit(ivkEscrow); }
       catch (e) { return setMsg({ ok: false, t: (e && e.message) || T("Couldn't update key escrow.") }); }
     }
-    // per-node changes: one nodeUpdate per node whose edits differ from the saved baseline
     const dSub = rsvSubnet.trim(), dPort = String(+rsvPort || 9999), dPfx = rsvPrefix.trim() || "swg_";
     let nerr = null;
     for (const n of (Store.nodes || [])) {
@@ -843,49 +785,45 @@ export function PanelSettingsScreen() {
         default_routing: Array.isArray(e.default_routing) ? e.default_routing : null,
         default_routing_exit_ips: e.default_routing_exit_ips || {},
         p2p: e.p2p || null,
-        p2p_portok: e.p2p_portok ?? null,   // the text as typed, so the panel names what it cannot take; null = the fleet's
+        p2p_portok: e.p2p_portok ?? null,
         mesh_egress_ip: e.mesh_egress_ip || "",
         endpoint_hosts: (e.endpoint_hosts || []).map(h => (h || "").trim()).filter(Boolean),
         catalog_cats: e.catalog_cats || [], exits: e.exits || [], log_mb: +e.log_mb || 100 });
       if (!nr.ok) nerr = srvText(nr) || (T("Couldn't save {v1}", { v1: n.name }));
-      else reportDropped(nr);   // what the default list's save could not keep (§5.4) — never swallowed
+      else reportDropped(nr);
     }
     if (nerr) return setMsg({ ok: false, t: nerr });
-    if (Object.keys(blockEdits).length || blockRemoved.length) {   // block-list category edits (availability/defaults/sources/custom) → panel_settings.block_catalog
+    if (Object.keys(blockEdits).length || blockRemoved.length) {
       const br = await api.blockCatalogSave({ categories: blockEdits, removed: blockRemoved });
       if (!br.ok) return setMsg({ ok: false, t: srvText(br) || T("Couldn't save block lists.") });
       await loadBlockCatalog(true); setBlockEdits({}); setBlockRemoved([]);
     }
-    if (Object.keys(blockProvEdits).length) { await loadBlockCatalog(true); setBlockProvEdits({}); }   // Filters-providers toggles committed via panelSettings above → refresh catalog + clear deltas
-    // credentials (if changed) — last, since a username/password change re-auths and forces a reload
+    if (Object.keys(blockProvEdits).length) { await loadBlockCatalog(true); setBlockProvEdits({}); }
     if (secChanged()) {
       let reWrapped = false;
       if (secNp) {
-        if (!subSKCached()) { try { await subUnlock(secCur); } catch (_) {} }   // not unlocked this session — the current password is right here
+        if (!subSKCached()) { try { await subUnlock(secCur); } catch (_) {} }
         if (subSKCached()) { try { reWrapped = await subRewrap(secNp); } catch (_) { reWrapped = false; } }
       }
       const ar = await api.accountSave({ username: secUser.trim(), current_password: secCur, new_password: secNp });
       if (!ar.ok) {
-        if (reWrapped) { try { await subRewrap(secCur); } catch (_) {} }   // undo — the password never actually changed
+        if (reWrapped) { try { await subRewrap(secCur); } catch (_) {} }
         return setMsg({ ok: false, t: srvText(ar) || T("Couldn't update credentials.") });
       }
       setMsg({ ok: true, t: T("Saved. Reloading — sign in with your new credentials…") });
       return setTimeout(() => location.reload(), 1400);
     }
-    setMsg(null); setSaved(Date.now() + 4000);   // green "All settings saved" flash in the header
+    setMsg(null); setSaved(Date.now() + 4000);
     await Store.poll();
-    // Re-seed the scan-guard allowlist from the server's CANONICAL form (it masks host bits, drops dupes), so a CIDR
-    // typed with host bits — 10.0.0.1/24 → 10.0.0.0/24 — does not leave the section showing unsaved changes for ever.
     setScanAllow((((Store.panelSettings) || {}).scan_allow || []).join("\n"));
-    setBlockAllow((((Store.panelSettings) || {}).block_allow || []).join("\n"));   // its canonical form (host bits masked)
-    setPok((((Store.panelSettings) || {}).p2p_portok || P2P_PORTOK_DEFAULT).join(", "));   // merged and sorted
+    setBlockAllow((((Store.panelSettings) || {}).block_allow || []).join("\n"));
+    setPok((((Store.panelSettings) || {}).p2p_portok || P2P_PORTOK_DEFAULT).join(", "));
     const fresh = Object.fromEntries((Store.nodes || []).map(n => [n.id, nFields(n)]));
     setNodeEdits(fresh); setOrig(fresh);
     } catch (e) {
       setMsg({ ok: false, t: T("Couldn't save — {v1}", { v1: (e && e.message) || T("the panel didn't respond. Nothing was lost; try again.") }) });
     }
   };
-  // Save click → confirm modal listing the modified values + a reprovisioning warning, then commit.
   const REPROV_WARN = T("Heads up: changing a node's mesh subnet, interface prefix, or AWG params re-provisions its mesh links — it briefly drops off the mesh while every peer pulls the new config and reconnects.");
   const diffList = () => {
     const out = [];
@@ -893,7 +831,7 @@ export function PanelSettingsScreen() {
     if (Object.keys(blockEdits).length || blockRemoved.length) out.push(T("Content filters — categories / lists"));
     if (secChanged()) out.push(T("Authentication — panel credentials"));
     if (glDirty("turn")) out.push(T("Turn proxies — forks / colours / VK link"));
-    if (geoDirty()) out.push(T("Geo data providers"));   // the Never-block list has its own line below
+    if (geoDirty()) out.push(T("Geo data providers"));
     if (glDirty("defaults")) out.push(T("Interfaces — colours / defaults"));
     if (glDirty("configs")) out.push(T("Client configs → {v1}", { v1: sc === "off" ? T("val|off") : T("val|encrypted") }));
     if (glDirty("subs")) out.push(T("Subscriptions — enable / languages"));
@@ -903,8 +841,6 @@ export function PanelSettingsScreen() {
     if (tzDirty()) out.push(tz ? T("Days are counted in {v1}", { v1: tz }) : T("Days are counted in this server's zone"));
     if (infHist !== (ps.infinite_history !== false)) out.push(infHist ? T("Infinite history — on") : T("Infinite history — off: detail older than 33 days is deleted"));
     if (histRes !== String(ps.history_resolution || 3600)) out.push(T("History resolution → {v1}, from the next day", { v1: histResLabel(+histRes) }));
-    // Two changes share this section, so the line names the one that actually moved rather than reporting
-    // "mesh defaults" for a disclosure toggle that is not one.
     if (showLans !== (ps.show_node_lans !== false)) out.push(showLans ? T("Node local networks — shown in the panel") : T("Node local networks — hidden, and closed on every node"));
     if (normScanAllow(scanAllow).join(",") !== (ps.scan_allow || []).join(",")) out.push(T("Port-scan guard — trusted sources updated"));
     if (nbDirty()) out.push(T("Never-block list updated"));
@@ -924,7 +860,7 @@ export function PanelSettingsScreen() {
       if (!eq(e.default_egress_ip, o.default_egress_ip)) fl.push(T("egress IP → {v1}", { v1: e.default_egress_ip || T("val|auto") }));
       if (!eq(e.default_exit, o.default_exit)) fl.push(T("default exit"));
       if (!eq(e.default_routing, o.default_routing) && (Array.isArray(e.default_routing) || eq(e.default_exit, o.default_exit)))
-        fl.push(Array.isArray(e.default_routing) ? T("default routing rules") : T("default exit"));   // one line for one change
+        fl.push(Array.isArray(e.default_routing) ? T("default routing rules") : T("default exit"));
       if (!eq(e.default_routing_exit_ips, o.default_routing_exit_ips)) fl.push(T("default routing exit addresses"));
       if (!eq(e.p2p, o.p2p)) fl.push(T("torrents → {v1}", { v1: p2pLabel(e.p2p, e.exits || n.exits, n) }));
       if (!eq(e.p2p_portok, o.p2p_portok)) fl.push(e.p2p_portok == null ? T("never-cut ports → the fleet's list") : T("never-cut ports → {v1}", { v1: e.p2p_portok }));
@@ -954,34 +890,24 @@ export function PanelSettingsScreen() {
       note: html`<div class="savediff-note">${T("Applying can take up to a minute — the nodes reconfigure and re-pull their lists. This stays open until it finishes.")}</div>` });
   };
   const refreshGeo = async () => { const r = await api.refreshGeo(); toast(r.ok ? T("Geo lists will refresh on each node's next sync.") : (srvText(r) || T("Failed")), r.ok ? "ok" : "err"); };
-    // Custom lists AUTOSAVE on add/edit/delete — they persist on their own (POST just custom_lists), no global Save needed.
-  // Re-baseline the local rows from the server afterwards so the row content + the routing dirty-state both stay correct.
   const persistLists = async newLists => {
     setLists(newLists);
-    // `patterns` joins the stripped set for the same reason the other three are stripped: the server
-    // re-derives every kind from `targets`, and sending a stale copy alongside is a second source of truth.
     const r = await api.panelSettings({ custom_lists: newLists.map(({ _rid, domains, cidrs, asns, patterns, ...l }) => l) });
     if (!r.ok) return setMsg({ ok: false, t: srvText(r) || T("Couldn't save the list.") });
-    // §5.4 — say what the save could not keep. Until now this response was not read for it at all, so an
-    // unreadable token (and a list whose every token was unreadable) disappeared into an "ok".
     reportDropped(r);
     await Store.poll();
-    const ridById = Object.fromEntries(newLists.filter(l => l.id).map(l => [l.id, l._rid]));   // keep row identity so a per-node toggle / edit doesn't remount every row
+    const ridById = Object.fromEntries(newLists.filter(l => l.id).map(l => [l.id, l._rid]));
     setLists(((Store.panelSettings || {}).custom_lists || []).map(l => ({ ...l, _rid: ridById[l.id] || newRid(), targets: customTargets(l) })));
     setSaved(Date.now() + 2500);
   };
-  /* Add or replace one list, then persist the WHOLE array — the array is the save (see persistLists), so
-     an edit and an add are the same operation with a different starting point. */
   const saveList = l => persistLists(lists.some(x => x._rid === l._rid)
     ? lists.map(x => (x._rid === l._rid ? l : x)) : [...lists, l]);
   const confirmDeleteList = l => openConfirm({ title: T("Delete custom list"), confirmLabel: T("Delete"), danger: true,
     body: Trich("Delete *{v1}*? It's removed from *every node* it's enabled on, and its interface rules stop matching on the next sync. This can't be undone.", { v1: l.title || T("Untitled list") }),
     onConfirm: () => persistLists(lists.filter(x => x._rid !== l._rid)) });
-    const SECTIONS = [["display", "Display"], ["security", "Authentication"], ["configs", "Client configs"], ["subs", "Subscriptions"], ["mesh", "Network"], ["links", "Mesh"], ["exits", "SOCKS5 exits"], ["defaults", "Interfaces"], ["turn", "Turn proxies"], ["routing", "Routing & Blocking"], ["geo", "Geo data providers"], ["integrations", "Integrations"], ["logs", "Logs"]]   // i18n-keys: canonical (deep-link + persisted section); sectionLabel() below carries the display names
-const VK_LINK_PLACEHOLDER = "<PASTE VK CALL LINK>";   // i18n-keys: emitted verbatim into generated configs
+    const SECTIONS = [["display", "Display"], ["security", "Authentication"], ["configs", "Client configs"], ["subs", "Subscriptions"], ["mesh", "Network"], ["links", "Mesh"], ["exits", "SOCKS5 exits"], ["defaults", "Interfaces"], ["turn", "Turn proxies"], ["routing", "Routing & Blocking"], ["geo", "Geo data providers"], ["integrations", "Integrations"], ["logs", "Logs"]]
+const VK_LINK_PLACEHOLDER = "<PASTE VK CALL LINK>";
 
-/* Settings → Logs: the five levels, quietest first (docs/LOGS-PLAN.md §1). Each label and line has a key of its own:
-   "Info" or "Off" elsewhere in the panel is a different word in Russian. */
 const LOG_LEVEL_IDS = ["off", "error", "warning", "info", "debug"];
 const logLevelLabel = v => ({ off: T("log|Off"), error: T("log|Errors"), warning: T("log|Warnings"), info: T("log|Info"),
   debug: T("log|Debug") }[v] || v);
@@ -995,62 +921,51 @@ const logLeftLabel = s => s >= 3600
   ? T("{v1} h {v2} min", { v1: Math.floor(s / 3600), v2: Math.floor((s % 3600) / 60) })
   : T("{v1} min", { v1: Math.max(1, Math.ceil(s / 60)) });
 
-/* Display names for SECTIONS. The array above stays the canonical key list (the value is the deep-link and
-   the persisted section), so only the LABEL is translated — literal T() calls, same as evItemLabel. */
 const sectionLabel = k => ({
   display: T("Display"), security: T("Authentication"), access: T("Panel access"), configs: T("Client configs"),
   subs: T("Subscriptions"), mesh: T("Network"), links: T("Mesh"), exits: T("SOCKS5 exits"), defaults: T("Interfaces"),
   turn: T("Turn proxies"), routing: T("Routing & Blocking"), geo: T("Geo data providers"),
   integrations: T("Integrations"), logs: T("Logs"),
-}[k] || k);   // i18n-keys
-  // per-node context: the node whose mode/lists/mesh/egress we're editing — defaults to the first node (no "default")
+}[k] || k);
   const [selectedNode, setSelNode] = useState("");
   const perNodeSection = section === "routing" || section === "mesh" || section === "links" || section === "exits";
   const nodeRec = (Store.nodes || []).find(n => n.id === selectedNode) || (Store.nodes || [])[0];
   const selNode = nodeRec ? nodeRec.id : "";
-  const nodeMode = nv(selNode, "routing_mode") || "kernel";       // DRAFT mode being edited (drives the mode card + tabs)
+  const nodeMode = nv(selNode, "routing_mode") || "kernel";
   const setMode = m => setNV(selNode, { routing_mode: m });
-  const savedMode = (nodeRec && nodeRec.routing_mode) || "kernel"; // what the node is ACTUALLY running (drives the status runbar — only changes on Save)
-  const ipLearn = nv(selNode, "ip_learning") !== false;           // per-node "remember learned IPs" toggle (default on)
+  const savedMode = (nodeRec && nodeRec.routing_mode) || "kernel";
+  const ipLearn = nv(selNode, "ip_learning") !== false;
   const setIpLearn = v => setNV(selNode, { ip_learning: v });
   const ccOf = nid => nv(nid, "catalog_cats") || [];
-  const ruleCats = fleetRuleCats();          // one walk for the whole fleet, from the node record (§1.4)
+  const ruleCats = fleetRuleCats();
   const catInUse = (id, nid) => !!(ruleCats[nid] && ruleCats[nid].has(id));
   const catIfaces = (id, nid) => Object.entries(((fleetNodes.find(n => n.id === nid) || {}).rule_cats) || {})
     .filter(([, cats]) => (cats || []).includes(id)).map(([ifn]) => ifn).sort();
-  // One renderer for both grids: the interfaces holding a list, each a way into the rule that put it there.
   const usedBy = id => { const ifs = catIfaces(id, selNode);
     return ifs.length
       ? html`<div class="lg-used">${ifs.map(ifn => html`<button type="button" class="lg-ifchip" key=${ifn}
           title=${T("Open {v1} and its routing rules", { v1: ifn })} onClick=${() => openIfaceEditor(selNode, ifn)}>${ifn}</button>`)}</div>`
       : html`<span class="lg-unused" title=${T("Held on this node, but no rule on it names this list.")}>${T("not used here")}</span>`; };
   const catInUseFleet = id => (Store.nodes || []).some(n => catInUse(id, n.id));
-  // node's rules. gridKeep holds ids that must stay visible even at 0/N pins (so unpinning doesn't make the row
-  // vanish under the cursor — only × removes it, and only when no rule is holding the list).
   const fleetNodes = Store.nodes || [];
   const catOnNode = (id, nid) => ccOf(nid).includes(id);
   const setCatOnNode = (id, nid, on) => setNV(nid, { catalog_cats: on ? [...new Set([...ccOf(nid), id])] : ccOf(nid).filter(c => c !== id) });
-  const removeCatFleet = id => { fleetNodes.forEach(n => { if (ccOf(n.id).includes(id)) setCatOnNode(id, n.id, false); }); setGridKeep(g => g.filter(x => x !== id)); };   // × drops it everywhere + hides the row
+  const removeCatFleet = id => { fleetNodes.forEach(n => { if (ccOf(n.id).includes(id)) setCatOnNode(id, n.id, false); }); setGridKeep(g => g.filter(x => x !== id)); };
   const provFleetCats = [...new Set([...fleetNodes.flatMap(n => ccOf(n.id)),
-                                     ...fleetNodes.flatMap(n => [...(ruleCats[n.id] || [])]),   // resident because a rule says so
+                                     ...fleetNodes.flatMap(n => [...(ruleCats[n.id] || [])]),
                                      ...gridKeep])].sort((a, b) => catLabelOf(a).toLowerCase().localeCompare(catLabelOf(b).toLowerCase()));
-  // No longer "stop matching": a rule is what makes a list route, and the × is disabled while any rule names
-  // it (§1.4). All this can do is drop the pins — after which the node keeps the list only while a rule wants it.
   const confirmRemoveCat = id => openConfirm({ title: T("Unpin list from the fleet"), confirmLabel: T("Unpin"), warn: true,
     body: Trich("Stop keeping *{v1}* {v2} on *every node*? No rule uses it, so each node drops it on the next sync. You can pin it again from the catalog any time.",
       { v1: catLabelOf(id), v2: html`<span class="faint">(${provLabelOf(id)})</span>` }),
     onConfirm: () => removeCatFleet(id) });
-  const catSaved = id => fleetNodes.some(n => ((orig[n.id] || {}).catalog_cats || []).includes(id));   // present in the last-SAVED fleet state → removing it is a real change (confirm); a draft-only add this session isn't
-  const removeCatRow = id => catSaved(id) ? confirmRemoveCat(id) : removeCatFleet(id);   // × removes a just-added (unsaved) list with no prompt; only saved lists confirm
+  const catSaved = id => fleetNodes.some(n => ((orig[n.id] || {}).catalog_cats || []).includes(id));
+  const removeCatRow = id => catSaved(id) ? confirmRemoveCat(id) : removeCatFleet(id);
   const SECF = { logs: ["log_mb"], routing: ["routing_mode", "ip_learning", "catalog_cats"], mesh: ["endpoint_host", "endpoint_hosts", "default_egress_ip", "panel_ip", "default_exit", "default_routing", "default_routing_exit_ips", "p2p", "p2p_portok"], links: ["mesh_egress_ip", "mesh_subnet", "mesh_port", "mesh_prefix"], exits: ["exits"] };
   const nodeDirty = (nid, sec) => (SECF[sec] || []).some(f => !eq((nodeEdits[nid] || {})[f], (orig[nid] || {})[f]));
   const listsJSON = ls => JSON.stringify((ls || []).map(l => ({ id: l.id || "", title: l.title || "", enabled: l.enabled !== false, targets: customTargets(l).trim() })));
-  // Display is two lines in the confirm list: the zone has a consequence of its own (the charts re-time), so it is named.
   const dispDirty = () => tput !== (ps.throughput_perspective === "peers" ? "peers" : "nodes") || tunit !== (ps.throughput_units === "bits" ? "bits" : "bytes") || staleS !== String(Math.round((adv.node_stale_ms || 30000) / 1000)) || graceS !== String(Math.round((adv.peer_grace_ms || 60000) / 1000)) || topTalk !== String(ps.top_talkers || 10) || topDest !== String(ps.top_destinations || 10) || themeColorS.toLowerCase() !== clampBrand(ps.theme_color || THEME_COLOR_DEFAULT, false).toLowerCase() || themeColorLightS.toLowerCase() !== clampBrand(ps.theme_color_light || THEME_COLOR_LIGHT_DEFAULT, true).toLowerCase();
   const tzDirty = () => tz !== (ps.time_zone || "");
-  // ⚠️ THE THIRD HALF of the settings idiom: without this in the display arm below, Save never enables for these two.
   const dataDirty = () => infHist !== (ps.infinite_history !== false) || histRes !== String(ps.history_resolution || 3600);
-  // Geo data providers, without the Never-block list — which the confirm names on a line of its own (diffList).
   const geoDirty = () => (JSON.stringify(provEnabled) !== JSON.stringify(Object.fromEntries((Store.catalogProviders || []).map(p => [p.id, p.enabled !== false]))) || Object.keys(blockProvEdits).length > 0 || JSON.stringify(provColorOverrides()) !== JSON.stringify(ps.provider_colors || {}) || customEnabled !== (ps.custom_lists_enabled !== false) || String(Math.max(0, parseInt(guEvery) || 0)) !== String(_gu.every_days == null ? 1 : _gu.every_days) || guAt !== (_gu.at || "04:00"));
   const nbDirty = () => normBlockAllow(blockAllow).join(",") !== (ps.block_allow || []).join(",");
   const pokDirty = () => (r => r.bad.length > 0 || !portokSame(r.list, ps.p2p_portok || P2P_PORTOK_DEFAULT))(portokRead(pok));
@@ -1069,7 +984,6 @@ const sectionLabel = k => ({
   const secDirty = sec => glDirty(sec) || (SECF[sec] ? (Store.nodes || []).some(n => nodeDirty(n.id, sec)) : false);
   const badgeDirty = nid => nid === "" ? glDirty(section) : nodeDirty(nid, section);
   const anyDirty = SECTIONS.some(([s]) => secDirty(s));
-  // Unsaved-changes guard: warn before leaving (in-app nav via the router, the Back button, or a browser refresh/close)
   const dirtyRef = useRef(anyDirty); dirtyRef.current = anyDirty;
   useEffect(() => {
     setUnsavedGuard(() => dirtyRef.current);
@@ -1077,8 +991,6 @@ const sectionLabel = k => ({
     window.addEventListener("beforeunload", bu);
     return () => { clearUnsavedGuard(); window.removeEventListener("beforeunload", bu); };
   }, []);
-  // LEAVE_MSG() — it is a function so the lookup happens after loadLang(); passing it uncalled hands
-  // confirm() a function, which it stringifies, and the dialog shows this line's source instead of the question.
   const leaveSettings = () => { if (!anyDirty || confirm(LEAVE_MSG())) { clearUnsavedGuard(); history.back(); } };
   return html`<div class="screen setscreen">
     <div class="sethead">${Trich("*Panel settings*")}</div>
@@ -1094,7 +1006,7 @@ const sectionLabel = k => ({
                   trigger=${html`<button class="rmode-reset-ic" onClick=${() => resetRouting(selNode, nodeRec ? nodeRec.name : T("this node"))}><${Ic} i="refresh"/></button>`}>
                   <div class="rmode-reset-pop-body">${T("Reset this node's smart routing — clear just the learned IPs, or wipe + rebuild + re-pull every list. Use it to recover a stuck node.")}</div>
                 <//>`;
-            const mmRun = MODE_META[savedMode] || MODE_META.kernel;   // runbar reflects the SAVED/running mode, not the draft
+            const mmRun = MODE_META[savedMode] || MODE_META.kernel;
             const caption = html`<div class="rmr-title">${Trich("{v1} currently runs on {v2}", {
       v1: html`<b class="rmr-node">${nodeRec ? nodeRec.name : T("Node")}</b>`,
       v2: html`<b class="rmr-mode">${mmRun.label}</b>`,
@@ -1139,16 +1051,6 @@ const sectionLabel = k => ({
               <div class="rmc-cost"><b>−</b><span>${mm.cost}</span></div>
               ${(Array.isArray(mm.block) ? mm.block : mm.block ? [mm.block] : []).filter(x => x.s === "−").map(x => html`<div class="rmc-cost"><b>−</b><span>${x.t}</span></div>`)}
             </div>
-            ${/* WHAT THIS ENGINE CAN ACTUALLY DO, as three facts rather than prose. The +/− lines above argue
-                  for a choice; these answer the questions an operator asks while making it — which kinds of
-                  rule does it match, what can it block, and who wins when two rules both claim a hostname.
-                  The last one is not obvious and is not the same on every engine (plan §10.4x measured it),
-                  so it is stated per engine instead of assumed from the label over the rules list.
-
-                  BELOW `.rd-lines`, deliberately. `.rd-headside` is absolutely positioned over this card's
-                  top-right, and `.rd-head` reserves its width with a right gutter — but `.rd-lines` and
-                  everything after it are full-width and flow UNDER it. Anything added higher up would slide
-                  beneath the mode buttons the moment its text got long. */""}
             ${mm.routes ? html`<div class="rd-spec">
               <span class="rds-k">${T("Routes")}</span><span class="rds-v">${mm.routes}</span>
               <span class="rds-k">${T("Overlaps")}</span><span class="rds-v">${mm.overlaps}</span>
@@ -1189,10 +1091,6 @@ const sectionLabel = k => ({
               </div>`; })}
           </div>` : html`<div class="hint" style="margin:2px 0 0">${Trich("Nothing held here yet. Lists arrive on their own when an interface's routing rule names one — add them in *Interfaces*, on the interface that needs them.")}</div>`}` : null}
 
-          ${/* The empty state is BACK, because the thing is reachable again. It was removed when nothing
-                could create a list — a heading, a zero and a sentence explaining an absence is noise — and
-                the same reasoning now says the opposite: a section you can add to has to be visible when
-                it is empty, or there is nowhere to press. */""}
           ${(Store.panelSettings || {}).custom_lists_enabled !== false ? html`
           <div class="lgrid-head" style="margin-top:26px">
             <div class="lg-htitle"><span class="seclabel" style="margin:0">${T("Custom lists")}</span><span class="lg-count">${lists.length}</span><span class="faint lg-sub">${T("one set of addresses, reused by rules on any node — edited in one place")}</span></div>
@@ -1235,23 +1133,21 @@ const sectionLabel = k => ({
             const fmtN = n => n == null ? null : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M" : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "k" : String(n);
             const catTotal = c => { const sz = c.size; if (!sz) return null; const t = (sz.host || 0) + (sz.ip || 0); return t ? fmtN(t) : null; };
             const createCat = ({ id, label }) => { setBlockEdits(e => ({ ...e, [id]: { label, sources: [], enabled_nodes: [] } })); setBkOpen(o => ({ ...o, [id]: true })); setBkAutoAdd(id);
-              requestAnimationFrame(() => requestAnimationFrame(() => {   // scroll fully to the bottom so the just-added category (+ its auto-opened picker) is in view
+              requestAnimationFrame(() => requestAnimationFrame(() => {
                 const items = document.querySelectorAll(".bkitem"); const el = items[items.length - 1]; if (!el) return;
                 let p = el.parentElement;
                 while (p) { const st = getComputedStyle(p).overflowY; if ((st === "auto" || st === "scroll") && p.scrollHeight > p.clientHeight + 4) { p.scrollTo({ top: p.scrollHeight, behavior: "smooth" }); break; } p = p.parentElement; }
                 window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" });
               })); };
             const doRemoveCat = c => { setBkOpen(o => ({ ...o, [c.id]: false })); if ((bc.categories || {})[c.id]) setBlockRemoved(r => r.includes(c.id) ? r : [...r, c.id]); setBlockEdits(e => { const n = { ...e }; delete n[c.id]; return n; }); };
-            const removeCat = c => { if ((bc.categories || {})[c.id])   // a SAVED custom category → confirm; an unsaved draft removes with no prompt
+            const removeCat = c => { if ((bc.categories || {})[c.id])
                 openConfirm({ title: T("Delete category · ") + c.label, confirmLabel: T("Delete category"), danger: true,
                   body: T("Nodes stop applying this category after you save and they sync."),
                   onConfirm: () => doRemoveCat(c) });
               else doRemoveCat(c); };
             const availOn = c => (c.enabled_nodes || []).includes(selNode);
             const modeLabel = (MODE_META[nodeMode] || {}).label || T("this mode");
-            const srcAvail = s => !nodeRec || blockSrcOk(nodeMode, bc.providers, s);   // shared rule: IP everywhere, domain needs Force-DNS/Hybrid
-            // A category with NO IP list can't enforce anything in Default (IP-only) or Kernel-SNI — every list shows "not
-            // available". Then the whole category is dead here: show it disabled and don't let it be enabled on this node.
+            const srcAvail = s => !nodeRec || blockSrcOk(nodeMode, bc.providers, s);
             const catDis = c => !!nodeRec && blockCatDisabled(nodeMode, bc.providers, c);
             const srcHost = s => provTier(s.provider) !== "ip";
             const setAvail = (c, on) => { const en = new Set(c.enabled_nodes || []); on ? en.add(selNode) : en.delete(selNode);
@@ -1265,7 +1161,7 @@ const sectionLabel = k => ({
             const setAvailNode = (c, nid, on) => { const en = new Set(c.enabled_nodes || []); on ? en.add(nid) : en.delete(nid);
               setBlockEdits(e => ({ ...e, [c.id]: { ...(e[c.id] || {}), enabled_nodes: [...en] } })); };
             const bkRow = c => { const src = c.sources || []; const nL = src.length; const open = !!bkOpen[c.id]; const dis = catDis(c);
-              const catNm = c.label;   // the whole name on hover — a narrow column cuts a long one off
+              const catNm = c.label;
               return html`<div class=${"bkitem" + (open ? " open" : "") + (dis ? " bk-dis" : "")} key=${c.id}>
                 <div class=${"bkrow" + (open ? " open" : "")} onClick=${() => setBkOpen(o => ({ ...o, [c.id]: !open }))}>
                   <div class="lg-pull" onClick=${e => e.stopPropagation()}>${nodeRec ? html`<${Switch} on=${availOn(c) && !dis} disabled=${dis} title=${dis ? T("No IP list here — can't enforce in {v1}. Add an IP list, or use Hybrid SNI.", { v1: modeLabel }) : T("Filter on {v1}", { v1: nodeRec.name })} onChange=${v => { if (!dis) setAvail(c, v); }}/>` : null}</div>
@@ -1321,7 +1217,7 @@ const sectionLabel = k => ({
             : html`<p class="hint" style="margin:0 0 12px">${Trich("Which forks appear in the *{v1}* picker when you add a proxy to a node, and each fork's colour. Unticking one only *hides it from that list* — it never touches proxies you've already deployed. {v2}", { v1: T("Install a fork"), v2: !turnForksVisible().some(f => turnForks.has(f.id)) ? html`<b>${T("No forks are enabled — the install picker will be empty.")}</b>` : null })}</p>`}
           ${html`<${Fragment}>
           <div class=${"cllist" + (turnEnabledS ? "" : " dimmed")}>${settingsForks().map(f => { const fcol = pickThemed(forkColors[f.id], f.color, f.colorL); return html`<div class=${"cl-row" + (f.hidden || turnForks.has(f.id) ? "" : " off")} key=${f.id}>
-            ${f.hidden   // a hidden fork a node still runs: no install-picker switch (it is offered nowhere) — its row stays for its apps, version and colour
+            ${f.hidden
               ? html`<span class="tg tg-off" title=${T("No longer offered for new proxies — listed while a node still runs it")}>${T("tag|hidden")}</span>`
               : html`<${Switch} on=${turnForks.has(f.id)} title=${T("Offer {v1}", { v1: T("{v1} in the install picker", { v1: f.label }) })} onChange=${v => setTurnForks(s => { const n = new Set(s); v ? n.add(f.id) : n.delete(f.id); return n; })}/>`}
             <${ThemedSwatch} val=${forkColors[f.id]} title=${T("Colour for {v1}", { v1: f.label })} onChange=${nv => setForkColors(c => ({ ...c, [f.id]: nv }))}
@@ -1335,8 +1231,6 @@ const sectionLabel = k => ({
                 : html`<${Fragment}><span class="tg tg-wg">wg</span>${forkSupportsAwg(f.id) ? html`<span class="tg tg-awg">awg</span>` : null}<//>`}
             </span>
             ${(() => {
-              // The label and bubble show every csqtt version a node runs (2.1 and 2.5 side by side); the update check stays
-              // 2.1's (forkVersions / forkNodeStates without `all`): another version updates from its own Version panel.
               const v = forkVersions(f.id, true); const col = fcol;
               if (!v.length) return html`<span class="tf-ver none">${T("not yet used")}</span>`;
               const nodes = forkNodeStates(f.id, true); const ut = turnUpdateTarget[f.id]; const latest = (ut && Date.now() < ut.until) ? ut.ver : ((turnCheck[f.id] || {}).latest || null);
@@ -1357,9 +1251,9 @@ const sectionLabel = k => ({
               return html`<span class="tf-verwrap" style=${"--tfc:" + col}><span class="tf-ver">${ver}</span>${bub}</span>`;
             })()}
             <span class="grow"></span>
-            ${(() => { const cs = turnCheck[f.id]; if (!cs || !cs.status) return null;   // update status — right-aligned, just before the repo URL (like Geo data)
+            ${(() => { const cs = turnCheck[f.id]; if (!cs || !cs.status) return null;
               if (cs.status === "checking") return html`<span class="tf-chk"><span class="tf-arrow"><${Ic} i="refresh"/></span> ${T("checking…")}</span>`;
-              if (cs.status === "updating") return html`<span class="tf-chk"><span class="tf-arrow"><${Ic} i="refresh"/></span> ${T("updating…")}</span>`;   // i18n-keys
+              if (cs.status === "updating") return html`<span class="tf-chk"><span class="tf-arrow"><${Ic} i="refresh"/></span> ${T("updating…")}</span>`;
               if (cs.status === "updated") return html`<span class="tf-chk ok"><${Ic} i="check"/> ${T("updated")}</span>`;
               if (cs.status === "update") return html`<button class="tf-chk upd tf-updbtn" title=${T("Update every deployed {v1} proxy to {v2}", { v1: f.label, v2: cs.latest })} onClick=${() => updateFork(f.id, cs.latest)}><${Ic} i="download"/> ${T("update to")} ${cs.latest}</button>`;
               return html`<span class="tf-chk ok"><${Ic} i="check"/> ${T("up to date")}</span>`; })()}
@@ -1421,10 +1315,6 @@ const sectionLabel = k => ({
               <div class="bprov-top">
                 <span class="prov-name" style=${"color:" + pickThemed(provColors[p.id], _provColDefault(p.id).dark, _provColDefault(p.id).light)}>${provName(p)}</span>
                 <span class="prov-tiers">${capBadges({ host: (p.tiers || []).includes("host"), ip: (p.tiers || []).includes("ip") })}</span>
-                ${/* How far this switch reaches, stated before it is thrown (§6.4). Counts every rule that
-                      NAMES one of this provider's lists, across wg/awg interfaces and the self-contained kinds.
-                      Shown on a DISABLED row too, unlike "updated …" beside it: on a provider that is already
-                      off this is the one line that explains why those rules are routing nothing. */""}
                 ${(() => { const u = providerUsage(p.id); return u.rules ? html`<span class="prov-use"
                   title=${T("Rules on your interfaces that route one of this provider's lists")}>${T("used by {v1} on {v2}", { v1: plural(u.rules, "prep|rule"), v2: plural(u.ifaces, "prep|interface") })}</span>` : null; })()}
                 ${p.enabled === false ? null : html`<span class=${"prov-upd" + (p.last_updated ? "" : " never")} title=${p.last_updated ? T("When this provider's data was last pulled to the panel") : T("No list from this provider has been routed yet — nothing pulled")}>${p.last_updated ? T("updated {v1}", { v1: ago(p.last_updated) }) : T("never updated")}</span>`}
@@ -1435,8 +1325,8 @@ const sectionLabel = k => ({
             ${p.enabled === false ? null
               : (() => { const s = p.status, flashing = provFlash[p.id] > Date.now();
               if (s === "downloading") return html`<${Fragment}><span class="prov-st upd" title=${T("Reading this provider's file list from GitHub. Its lists become searchable when it lands; nothing is routed yet.")}><span class="tf-arrow"><${Ic} i="refresh"/></span> ${T("Downloading…")}</span><button class="btn btn-mini" style="margin-left:8px" title=${T("GitHub allows 60 requests an hour without an account, and a fetch inside that window can sit for a couple of minutes. Cancelling stops the wait and turns the provider off — the request itself finishes on its own and its result is thrown away.")} onClick=${() => cancelProvider(p.id)}>${T("Cancel")}</button></>`;
-              if (s === "updating") return html`<span class="prov-st upd"><span class="tf-arrow"><${Ic} i="refresh"/></span> ${T("updating…")}</span>`;   // i18n-keys
-              if (s === "updated") return flashing ? html`<span class="prov-st ok"><${Ic} i="check"/> ${T("updated")}</span>` : null;   // i18n-keys
+              if (s === "updating") return html`<span class="prov-st upd"><span class="tf-arrow"><${Ic} i="refresh"/></span> ${T("updating…")}</span>`;
+              if (s === "updated") return flashing ? html`<span class="prov-st ok"><${Ic} i="check"/> ${T("updated")}</span>` : null;
               if (s === "uptodate") return flashing ? html`<span class="prov-st ok"><${Ic} i="check"/> ${T("up to date")}</span>` : null;
               if (s === "failed" || p.error) return html`<${Fragment}><span class="prov-st err" title=${srvText(p) || ""}><${Ic} i="warn"/> ${p.last_updated ? T("update failed") : T("download failed")}</span><button class="btn btn-mini" style="margin-left:8px" onClick=${() => retryProvider(p.id)}>${T("Retry")}</button></>`;
               return null; })()}
@@ -1538,8 +1428,6 @@ const sectionLabel = k => ({
           <div class="row2"><div class="field"><label>MTU</label><input value=${mtu} onInput=${e => setMtu(e.target.value)} placeholder="1280"/></div>
             <div class="field"><label>${T("Persistent keepalive (s)")}</label><input value=${ka} onInput=${e => setKa(e.target.value)} placeholder="25"/></div></div>
           ${(() => {
-            // DEVICE ACCESS §10.6 — preselects the level on the create sheet; it never changes an existing interface, and says so
-            // with the number that answers "what did I just not change?" — and the way to those interfaces (§6, §11.2 F6).
             const label = T("Who can open connections to devices on new interfaces");
             const everyone = reachEveryoneRows().length;
             return html`<div class="field reachfield"><label>${label}</label>
@@ -1549,9 +1437,6 @@ const sectionLabel = k => ({
                 ? html`<button type="button" class="linkbtn" onClick=${() => openModal(html`<${ReachEveryoneSheet}/>`)}>${T("Existing interfaces set to “Everyone on this node”: {n}", { n: everyone })}</button>`
                 : T("No existing interface is set to “Everyone on this node”.")}</div></div>`;
           })()}
-          ${/* AmneziaWG 3.1 (docs/AWG3-PLAN.md D-default): which way the create form's version switch starts. A preset, not a
-                parameter — the 2.0 obfuscation below goes to every new AWG interface whatever this says, its 3.1 cells only to one
-                created on 3.1 or switched to it, and a node that cannot run 3.1 still starts on 2.0. */""}
           <${AwgGenField} value=${awgGenDef} onChange=${setAwgGenDef} label=${T("AmneziaWG version for new interfaces")}
             hint=${T("Where the create form's switch starts. A node that cannot run 3.1 starts on 2.0, and existing interfaces keep their version.")}/>
             <${Disclosure} title=${T("AmneziaWG obfuscation")}
@@ -1658,24 +1543,11 @@ const sectionLabel = k => ({
           <div class="row2"><div class="field"><label>${T("Top talkers")}</label><input type="text" inputmode="numeric" value=${topTalk} onDblClick=${e => e.target.select()} onInput=${e => { let v = e.target.value.replace(/[^0-9]/g, ""); if (+v > 50) v = "50"; setTopTalk(v); }} placeholder="10"/><div class="hint">${T("Number of peers in the Top talkers list (max 50).")}</div></div>
             <div class="field"><label>${T("Top destinations")}</label><input type="text" inputmode="numeric" value=${topDest} onDblClick=${e => e.target.select()} onInput=${e => { let v = e.target.value.replace(/[^0-9]/g, ""); if (+v > 50) v = "50"; setTopDest(v); }} placeholder="10"/><div class="hint">${T("Number of categories in the Top destinations list (max 50).")}</div></div></div>
         </div>` : null}
-        ${/* Mesh and egress are one topic — this node's addressing: how other nodes reach it, and what source
-              IP its traffic leaves with. They were two rail entries with identical chrome (both per-node, both
-              a node picker) and egress was two fields. They also interact: cascade sends a node's traffic out
-              through ANOTHER node, and that path rides the mesh. One section, two sub-blocks. */""}
-        ${/* EXTERNAL EXITS — its own rail item since a47abb9's reroute was reversed. It stopped being "one
-              more egress field" the moment it grew three creation paths, a per-provider control, health and
-              an unbounded list: in the Network card it was taller than ingress + egress + mesh combined, a
-              sub-block dominating the section that contained it. The rail's own grammar already has this
-              shape — Turn proxies is create/manage/monitor for a thing interfaces reference, and so is this.
-              Cost, stated because it is real: "how does this node get out?" now has two homes, with the
-              source addresses still under Network. Reversible — the move is five edits. */""}
         ${section === "exits" ? html`<div class="card">
           ${nodeRec ? html`<${Fragment}>
             <div class="seclabel" style="margin-top:0">${T("{v1} — SOCKS5 exits", { v1: nodeRec.name })}</div>
             <${NodeExitsForm} key=${selNode} node=${nodeRec} vals=${nodeEdits[selNode]} set=${p => setNV(selNode, p)}
               goSection=${setSection} escrowOn=${ivkEscrowInit}
-              ${/* Same writer the Network screen uses: exits are saved on the spot and both sides of the
-                    dirty check are re-based, so this section no longer stages anything at all. */""}
               saveExits=${async xs => {
                 const rr = await api.nodeUpdate({ id: selNode, exits: xs });
                 if (!rr || !rr.ok) {
@@ -1693,24 +1565,16 @@ const sectionLabel = k => ({
           <//>`
             : html`<p class="hint" style="margin:0">${T("No nodes yet — enroll a node to give it a way out that isn't its own address.")}</p>`}
         </div>` : null}
-        ${/* Settings → Mesh: what the whole fleet's links are (box 1), then the node picker, then one node's links (box 2).
-              The picker sits BETWEEN them on purpose — box 1 does not depend on the node chosen. */""}
         ${section === "links" ? html`<${Fragment}><div class="card">
-          ${/* Which node pairs get a link. The threshold and the mode in force come from the server (`mesh_auto_max`,
-                `mesh_effective`) — the browser never decides which side of the line a fleet is on. */""}
           <div class="seclabel" style="margin-top:0">${T("Mesh links")}</div>
           <p class="hint" style="margin:0 0 8px">${T("A full mesh links every pair of nodes: every leg is measured and a new forward target works at once, but each node carries one link per other node. On demand links only the pairs a forward or a smart rule routes over, and removes a link nothing has used for an hour.")}</p>
           <div class="field" style="max-width:460px;margin-bottom:6px"><${Dropdown} value=${meshMode} onChange=${v => setMeshMode(v)} options=${
             ["auto", "full", "demand"].map(v => ({ value: v, label: meshModeLabel(v, ps.mesh_auto_max) }))}/></div>
-          ${/* What auto is doing NOW — so only while the dropdown shows the SAVED mode: `mesh_effective` is the server's answer
-                for what is saved, and read against an unsaved pick it would describe a mode the operator is leaving. */""}
           ${meshMode === "auto" && (ps.mesh_mode || "auto") === "auto" && ps.mesh_effective ? html`<p class="hint" style="margin:0 0 14px">${ps.mesh_effective === "demand"
             ? T("This fleet is linked on demand now.")
             : T("Every pair in this fleet is linked now.")}</p>` : html`<div style="height:8px"></div>`}
           <${MeshGenField} label=${T("Default mesh link type")} value=${meshGen} onChange=${setMeshGen}
             hint=${T("What new links are made as. One link can have a type and AWG params of its own — on its card under Node connections, on a node's page. Re-provision a node to move its existing links to this default.")}/>
-          ${/* the fleet's default obfuscation for AmneziaWG links, drawn for the default type (none for WG); a link sets its own
-                on its sheet (plan §8 round 13) */""}
           <${MeshAwgParams} title=${T("Default mesh AWG params")} eff=${meshGen} value=${awg} onChange=${setAwg}
             placeholders=${awgBlankHints(meshGen)} ph3=${mesh3Hints(false)} about=${T("Obfuscation for new AmneziaWG mesh links, unless a link sets its own on its card. Blank = auto (a fresh set per link).")}/>
         </div>
@@ -1721,19 +1585,12 @@ const sectionLabel = k => ({
           : html`<p class="hint" style="margin:0">${T("No nodes yet — enroll a node to link it to the others.")}</p>`}</div><//>` : null}
         ${section === "mesh" ? html`<div class="card">
           ${nodeRec ? html`<${Fragment}>
-            ${/* T-25: THREE sections, not two. The ingress address lived under "mesh" and its own hint
-                  apologised for it — "despite living under Mesh, this is also the host in every client
-                  config" — which is a label admitting it is in the wrong place. In / out / between is how
-                  an operator thinks about a node's connectivity, and each is now findable by its name. */""}
             <div class="seclabel" style="margin-top:0">${T("{v1} — ingress", { v1: nodeRec.name })}</div>
             <${NodeIngressForm} node=${nodeRec} vals=${nodeEdits[selNode]} set=${p => setNV(selNode, p)}/>
             <div class="seclabel">${T("{v1} — outbound addresses", { v1: nodeRec.name })}</div>
             <${NodeEgressForm} node=${nodeRec} vals=${nodeEdits[selNode]} set=${p => setNV(selNode, p)}/>
           <//>`
             : html`<p class="hint" style="margin:0">${T("No nodes yet — enroll a node to configure how it is reached and how it exits.")}</p>`}
-          ${/* FLEET-WIDE, deliberately OUTSIDE the node picker above: "which of my nodes sit on a private network"
-                has no answer on a per-node page — it means opening every node in turn. Reported, never configured:
-                a node discloses the private addresses it holds on devices it does not run as its own tunnels. */""}
           <div class="seclabel lanfleet-head"><span>${T("Local networks")}</span>
             <span class="lanfleet-sw" title=${showLans ? T("Hide these and close them on every node") : T("Show these again — each node's own switch then decides who reaches it")}>
               <span>${T("Display in panel")}</span><${Switch} on=${showLans} onChange=${v => setShowLans(v)}
@@ -1744,11 +1601,6 @@ const sectionLabel = k => ({
               <span class="nm">${n.name}</span>
               <span class="lanfleet-addrs">${(n.lans || []).map(l => html`<span class="lanaddr" key=${l.ip + "|" + (l.iface || "")}><span class="mono">${l.ip}</span>${l.iface ? html`<span class="faint">${l.iface}</span>` : null}</span>`)}</span>
               <span class="grow"></span>
-              ${/* ⚠️ THE NODE'S STATE, NOT THE PANEL'S INTENT. `lan_share` here is what the panel wants; whether the LAN
-                    is actually shut is the node's own word (`lan_block`), and a node too old to close one never will.
-                    Printing "closed" off the intent meant this list asserted a network was shut while its clients were
-                    still reaching it — and with the panel-wide switch off, the node's own page (which is the only screen
-                    that tells that truth) is hidden. Same three states NodeLanPanel shows, in one chip. */""}
               ${(st => html`<span class=${"lanfleet-st" + st.cls}>${st.t}</span>`)(
                 n.lan_share !== false ? { cls: "", t: T("state|open") }
                   : !n.net_capable ? { cls: " warn", t: T("state|can't close") }
@@ -1757,9 +1609,6 @@ const sectionLabel = k => ({
             </div>`)}
             ${!(Store.nodes || []).some(n => (n.lans || []).length) ? html`<p class="hint" style="margin:0">${T("No node reports sitting on a private network.")}</p>` : null}
           </div>
-          ${/* SCAN-GUARD-PLAN: fleet-wide, so it sits with the other fleet-wide network policy here (outside the node
-                picker). The port-scan guard flags a source that sweeps many servers on management ports; our own
-                management box does the same by nature, so it is named here to be left alone. */""}
           <div class="seclabel lanfleet-head"><span>${T("Trusted sources")}</span></div>
           <p class="hint" style="margin:0 0 8px">${T("Addresses the port-scan guard never flags. A management box that reaches many servers looks like a scanner to it — name it here to leave it alone. One IP or range a line; a bare IP means that one host. Everything else is still checked.")}</p>
           <textarea class="ta" rows="3" spellcheck="false" autocomplete="off" placeholder="10.0.0.0/24&#10;198.51.100.7" value=${scanAllow} onInput=${e => setScanAllow(e.target.value)}></textarea>
@@ -1767,10 +1616,7 @@ const sectionLabel = k => ({
         <div class="setfoot">
           ${(Date.now() < saved ? html`<span class="savedflash"><${Ic} i="check"/> ${T("All settings saved")}</span>` : null)}
           <span class="grow"></span>
-          ${/* Back leaves Settings for where the operator came from, on a phone as on a desktop (operator, 2026-10-29: it went to
-                the list of sections, wherever Settings was opened from); the list is the sticky "Panel settings" line above */""}
           <button class="btn btn-ghost btn-dismiss" onClick=${leaveSettings}>${T("Back")}</button>
-          ${/* a phone in a section: the list of sections from the foot too, as the sticky line above opens it (operator) */""}
           ${isMobile() && section ? html`<button class="btn btn-ghost m-setmenu" onClick=${() => { setSection(null); window.scrollTo(0, 0); }}>${T("Open menu")}</button>` : null}
           ${html`<button class="btn btn-primary" disabled=${!!secErr() || !!exitErr() || !anyDirty} title=${secErr() || exitErr() || (!anyDirty ? T("No changes to save") : "")} onClick=${confirmSave}>${T("Save")}</button>`}</div>
       </div>
@@ -1780,16 +1626,13 @@ const sectionLabel = k => ({
 
 export function reachEveryoneRows() {
   const out = [];
-  // A PROMOTED interface is listed like any other: everything on it but its private devices is still reached by everyone.
   for (const nd of (Store.nodes || [])) {
     for (const [ifn, mm] of Object.entries(Store.describe[nd.id] || {})) if (mm && !mm.system && mm.reach === "everyone") out.push({ node: nd.id, iface: ifn });
     for (const [ifn, c] of Object.entries(nd.wdtt_cfg || {})) if (c && c.reach === "everyone") out.push({ node: nd.id, iface: ifn });
     for (const [ifn, c] of Object.entries(nd.csqtt_cfg || {})) if (c && c.reach === "everyone") out.push({ node: nd.id, iface: ifn });
   }
-  return out.sort((a, b) => Store.byNode(a.node, b.node) || a.iface.localeCompare(b.iface));   // the fleet's own order, never alphabetical (node_order_selftest)
+  return out.sort((a, b) => Store.byNode(a.node, b.node) || a.iface.localeCompare(b.iface));
 }
-// The window reads the same with 2 rows or 200: a filter once it pages, 15 rows a page, each row opening that interface's own
-// editor (`openIfaceEditor` picks the WG, WDTT or csqtt sheet). Nothing here is saved, so typing in the filter guards nothing.
 function ReachEveryoneSheet() {
   useStore();
   const [q, setQ] = useState(""), [page, setPage] = useState(1);
@@ -1817,9 +1660,8 @@ export function logBudgetState(r) {
   if (!st) return r.stale ? { tone: "faint", text: T("Offline"), title: T("Not reporting — it applies the budget when it is back.") }
     : r.id === "" ? { tone: "warn", text: T("Waiting"), title: T("The panel's root helper reports within a few seconds of starting.") }
     : { tone: "warn", text: T("Update the node"), title: T("This node's build is too old to keep a log budget. Update it to apply one.") };
-  // the node's (or the root helper's) own `err` is English: said in a sentence of ours, its detail as the value (q189 PLO-12)
   if (st.err) return st.unsupported ? { tone: "bad", text: T("Not supported"), title: T("This server's journald has no namespaces, so swg's logs cannot have a budget of their own here.") }
-    : { tone: "bad", text: T("Not applied"), title: T("The budget could not be applied ({v1}). It is tried again every minute.", { v1: st.err }) };   // a restart that failed
+    : { tone: "bad", text: T("Not applied"), title: T("The budget could not be applied ({v1}). It is tried again every minute.", { v1: st.err }) };
   if (r.stale) return { tone: "faint", text: T("Offline"), title: T("Not reporting — the figures are from its last report.") };
   if (+st.mb !== r.saved) return { tone: "warn", text: T("Pending"), title: r.id === "" ? T("The root helper applies it within 10 seconds.") : T("Applies on the node's next sync.") };
   return { tone: "ok", text: T("Applied"), title: "" };
@@ -1831,8 +1673,6 @@ export const logOffHint = ({ bare, docker, nixos }) => [
   nixos ? T("On NixOS, a node's container logs to the host's system journal, which keeps those lines; a turn container started before Off goes on logging until its next start.") : "",
   T("Failure details go blank: when something breaks, the panel can't say why."),
 ].filter(Boolean).join(" ");
-// How far back a server's logs reach: once its budget is full (the oldest lines go to make room) "N days"; before that
-// nothing has gone yet, so "since <its first line's date>"
 export function logHolds(st) {
   if (!st || !st.oldest || !st.mb) return null;
   if (!(st.used_mb >= st.mb * 0.85)) {
@@ -1887,11 +1727,9 @@ export function CustomListSheet({ list, onSave, onClose }) {
     classifyAll(customTargets(list)).filter(c => c.kind !== "invalid")
       .map(c => ({ t: "target", raw: c.raw, kind: c.kind, value: c.value })));
   const [lint, setLint] = useState(null);
-  // `lint` first: an uncommitted text draft is not "no targets", and saying "add at least one" while the
-  // operator is looking at ten lines they just typed would be the panel disagreeing with the screen.
   const err = lint || (!badges.length ? T("add at least one address, domain or pattern") : null);
   const save = () => { if (err) return; onSave({ ...(list || { _rid: newRid() }),
-    title: title.trim() || "Untitled list",   // i18n-keys: the STORED default — roster data, read back by the nodes
+    title: title.trim() || "Untitled list",
     targets: badges.map(b => b.raw).join(", ") }); onClose(); };
   const foot = html`<span class="grow"></span><button class="btn btn-ghost btn-dismiss" onClick=${onClose}>${T("Cancel")}</button><button class="btn btn-primary" disabled=${!!err} title=${err || ""} onClick=${save}>${list ? T("Save") : T("Add")}</button>`;
   return html`<${Sheet} title=${list ? T("Edit list") : T("New list")} width=${640} onClose=${onClose} foot=${foot}>
@@ -1929,10 +1767,8 @@ export function NodeHostList({ node, value, onChange }) {
 }
 
 const newExitId = () => Array.from(crypto.getRandomValues(new Uint8Array(4)))
-  .map(b => b.toString(16).padStart(2, "0")).join("");   // matches the server's EXIT_ID_RE, so the row keeps one id from birth
+  .map(b => b.toString(16).padStart(2, "0")).join("");
 
-/* What the NODE says about an exit it created — registered, up, and what the internet actually sees.
-   §7.2's one call proves three things, so it is rendered as one line rather than three fields. */
 function ExitEscrow({ node, ex, stored, live, goSection, escrowOn }) {
   const [busy, setBusy] = useState(false);
   if ((ex.producer || "adopted") !== "imported" || exitProv(ex) !== "warp") return null;
@@ -1944,18 +1780,15 @@ function ExitEscrow({ node, ex, stored, live, goSection, escrowOn }) {
     ${" "}${T("It reports: {v1}", { v1: T(restoreErr) })}
     ${" "}${T("Try again from a browser that can open the vault; if this node was rebuilt since the key was sealed, the escrow has to be re-sealed to it.")}</span>`;
   const restore = async (b, ask) => {
-    if (!(await ensureVaultUnlocked(ask))) return;   // the operator chose to skip — the prompt said what that costs
+    if (!(await ensureVaultUnlocked(ask))) return;
     setBusy(true);
     try {
       const sealed = await ivkResealForNodeBlob(node.id, b, T("No escrowed key is stored for this exit."));
-      // ⚠️ the pub travels too: the panel cannot read it out of the ciphertext, and without it the
-      // sync loop cannot tell "the node applied the restore" from "the node has some key of its own".
       const r = await api.exitRestore(node.id, ex.id, sealed, b && b.pub);
       toast(r && r.ok ? T("Restoring — the node applies it on its next sync.") : (srvText(r) || T("Failed")), r && r.ok ? "ok" : "err");
     } catch (e) { toast((e && e.message) || T("Failed"), "err"); }
     setBusy(false);
   };
-  // Two situations, so two reasons — the cost of skipping is not the same thing in both.
   const ASK_BACK = () => ({
     title: T("Unlock to put the old key back"),
     reason: T("This exit's original account is escrowed under your encryption key — the panel only ever held the ciphertext, and only you can open it. Unlock it to put that account back, along with any WARP+ licence on it. Cloudflare picks the exit address, so the old one usually comes back with it."),
@@ -1981,31 +1814,11 @@ function ExitEscrow({ node, ex, stored, live, goSection, escrowOn }) {
   }
   const _restorable = (blob && blob.ct) ? blob : prev;
   if (!_restorable || nodeHasKey) return null;
-  // the node has no key and the panel holds one: this is exactly the rebuilt-node case escrow exists for
   return html`<span>${T("This node has no key for this exit. Restore the escrowed one to keep the same address, or leave it to register a new account.")}
     ${" "}<button class="btn btn-mini" disabled=${busy}
       onClick=${() => restore(_restorable, ASK_FRESH())}>${busy ? T("Restoring…") : T("Restore from vault")}</button></span>`;
 }
 
-/** ── MANAGE EXTERNAL INTERFACES ─────────────────────────────────────────────────────────────────────────
- *  A grid of the devices this node can leave by that the PANEL DID NOT CREATE. WARP accounts and pasted
- *  profiles are deliberately absent: those are made and unmade in Settings → WARP, they carry inputs a grid
- *  row cannot hold (a licence key, a whole profile), and mixing them here would put the same record on two
- *  screens with two ways to edit it.
- *
- *  TWO KINDS OF ROW, and the difference is the whole point of the Type column:
- *    discovered   the node reports the device. Adopting it only means the panel starts KEEPING an opinion
- *                 about it (a name, on/off, a kill-switch); the device runs either way, so there is nothing
- *                 to delete — removing the record just returns it to this list unnamed.
- *    custom       a name the operator typed that the node has NOT reported. Nothing on the box corresponds
- *                 to it yet, so it is the one kind whose row can be deleted outright.
- *
- *  ⚠️ "USED BY" IS THE LOAD-BEARING COLUMN. Switching an exit off is silent and instant — everything
- *  pointing at it falls back to leaving directly, keeping its selection — so the only thing standing
- *  between the operator and "why did three interfaces change egress?" is knowing what is attached BEFORE
- *  they touch the switch. It counts every holder, not just interfaces: an interface pinned to it, a smart
- *  RULE routing one category through it, and the node's own default all break the same way.
- */
 function ExitUsedBy({ node, id }) {
   if (!id) return html`<span class="faint">—</span>`;
   const users = [];
@@ -2020,8 +1833,6 @@ function ExitUsedBy({ node, id }) {
   if (String(node.default_exit || "") === String(id)) users.push([T("This node's default"), T("anything not pinned elsewhere")]);
   if (!users.length) return html`<span class="faint">${T("val|Not used")}</span>`;
   const trig = html`<span class="exu-n">${plural(users.length, "user")}</span>`;
-  // `.deprow` is the shared bubble row — same padding, radius and hover geometry as every other hover list
-  // in the app. Rolling a private one here is what made this bubble look like a different product.
   return html`<${Popover} hoverOnly cls="exu-wrap" popCls="exu-pop" trigger=${trig}>
     ${users.map(([a, b], i) => html`<div class="deprow exu-r" key=${i}>
       <b>${a}</b><span class="grow"></span><span class="faint">${b}</span></div>`)}
@@ -2044,19 +1855,10 @@ function ExitFields({ value, onChange, discovered, devEditable, submitLabel, onS
       onInput=${e => onChange({ device: e.target.value })} onKeyDown=${key}/>`)}
     ${fld("exname-eg", T("Leaves as"), html`<${ExitEgressPick} discovered=${discovered} addrs=${addrs}
       value=${value.egress_ip || ""} onChange=${val => onChange({ egress_ip: val })}/>`)}
-    ${/* ⚠️ THE TYPED GATEWAY, AND IT IS NOT OPTIONAL POLISH. The node detects a card's gateway from its
-          DEFAULT ROUTE, and a second uplink reached only by policy routing has none — measured in the rig,
-          a whole class of two-NIC boxes. Without this field those cards are refused with a sentence telling
-          the operator to set a gateway here, which is a promise the UI could not keep.
-          CARDS ONLY: down a point-to-point tunnel the node ignores it, so offering it there would be a box
-          that reads nothing. The placeholder carries the DETECTED value, so an empty field visibly means
-          "use that one" rather than "unset". */""}
     ${isNic ? fld("exname-gw", T("Gateway"), html`<input class="mono" value=${value.gw || ""}
       spellcheck="false" autocomplete="off"
       placeholder=${gw ? T("Detected: {v1}", { v1: gw }) : "10.0.0.1"}
       onInput=${e => onChange({ gw: e.target.value })} onKeyDown=${key}/>`) : null}
-    ${/* The actions go to the right, where the thing pressed last belongs — and on the CONTROLS' line, not
-          the labels'. */""}
     ${noAct ? null : html`<span class="exname-act">
       <button class="btn btn-mini" onClick=${onSubmit}>${submitLabel}</button>
       <button class="btn btn-mini ghost" onClick=${onCancel}>${T("val|Cancel")}</button>
@@ -2066,7 +1868,6 @@ function ExitFields({ value, onChange, discovered, devEditable, submitLabel, onS
 }
 
 function ExitManageSheet({ node, seed, onSaved, onClose }) {
-  //                     because it carries a licence key and a whole pasted config that belong on the WARP
   const kindOf = (x, isCand) => (x.producer || "adopted") === "imported" ? "imported" : (isCand ? "found" : "custom");
   const isImp = r => r._kind === "imported";
   const isCand = n => !!candOf(node, n);
@@ -2083,10 +1884,9 @@ function ExitManageSheet({ node, seed, onSaved, onClose }) {
   const [adding, setAdding] = useState(false);
   const [nv, setNv] = useState({});
   const dirtyRef = useRef(false);
-  const cleanRef = useRef(null);       // Sheet fills this in — call it once the server has the changes
+  const cleanRef = useRef(null);
   const anyDirty = rows.some(r => r._dt || r._dd || r._df || r._de);
   const put = (i, patch) => { dirtyRef.current = true; setRows(rs => rs.map((r, k) => (k === i ? { ...r, ...patch } : r))); };
-  // its licence and its stored profile — i.e. delete the account while appearing to rename it.
   const wire = r => ({
     ...(r._src || r), id: r.id || newExitId(), label: (r.label || "").trim(),
     producer: (r.producer || "adopted"), device: (r.device || "").trim(),
@@ -2107,7 +1907,7 @@ function ExitManageSheet({ node, seed, onSaved, onClose }) {
     return true;
   };
   const clean = next => { dirtyRef.current = false;
-    if (cleanRef.current) cleanRef.current();   // …and the sheet's OWN input-listener flag, or it guards forever
+    if (cleanRef.current) cleanRef.current();
     setRows(next.map(r => ({ ...r, _dt: false, _dd: false, _df: false, _de: false,
                              ...((r._dt || r._dd || r._df || r._de) ? { _new: false, _src: wire(r) } : {}) }))); };
   const saveAll = async () => { const next = rows.map(r => ((r._dt || r._dd || r._df || r._de) ? { ...r, id: r.id || newExitId() } : r));
@@ -2116,11 +1916,8 @@ function ExitManageSheet({ node, seed, onSaved, onClose }) {
     title: T("Remove this interface?"), confirmLabel: T("Remove"), danger: true,
     body: T("{v1} is a name you added, and this node has never reported a device called that — removing it takes it out of every exit list. Nothing on the box is touched.", { v1: r.label || r.device }),
     onConfirm: async () => { const next = rows.filter((_, k) => k !== i); setRows(next);
-      // Deleting commits ONLY the deletion — every survivor goes as it was saved.
       await commit(next.map(r => ({ ...(r._src || r), id: r.id })), "d" + i, next); },
   });
-  // The phone's sheet hands its own fields; the inline form (desktop) reads its state — called with NO argument there, not as
-  // the Add button's onClick, which would hand it the click event (F1)
   const addRow = v => {
     const r = v || nv;
     const d = String(r.device || "").trim();
@@ -2129,8 +1926,6 @@ function ExitManageSheet({ node, seed, onSaved, onClose }) {
     setRows(rs => [...rs, { id: newExitId(), label: String(r.title || "").trim(), device: d,
                             enabled: true, killswitch: false, producer: "adopted",
                             egress_ip: String(r.egress_ip || "").trim(),
-                            // …and the typed gateway, for the same reason `addDevice` carries it: the form
-                            // asks for it, and a row built without it is refused by the server.
                             gw: String(r.gw || "").trim(),
                             _kind: isCand(d) ? "found" : "custom", _dd: true, _added: true }]);
     setAdding(false); setNv({});
@@ -2161,7 +1956,6 @@ function ExitManageSheet({ node, seed, onSaved, onClose }) {
       <div class="exg-h c">${T("Active")}</div>
       <div class="exg-h"></div></div>
       ${rows.map((r, i) => {
-        // WARP+ — the licence is on the record, so both can see it and both must say the same thing.
         const src = (node.exits || []).find(x => String(x.id) === String(r.id)) || null;
         const [cls, lbl, kind] = (r._added && !r._src) ? TYPE.unsaved
           : isImp(r)
@@ -2175,11 +1969,6 @@ function ExitManageSheet({ node, seed, onSaved, onClose }) {
             <input value=${r.label || ""} placeholder=${T("val|Untitled")} maxlength="40"
               onInput=${e => put(i, { label: e.target.value, _dt: true })}/></div>
           <div class=${"exg-c" + (off ? " dim" : "")}>
-            ${/* HEALTH, AS A DOT ON THE DEVICE. Four states, and they are genuinely different answers:
-                  the panel refuses it (red — it will never carry traffic), the node reports it up (green),
-                  the node reports it down (amber — it exists but is not carrying), and the node does not
-                  mention it at all (hollow — which is normal for a name typed ahead of the device, and is
-                  NOT the same as "down"). Never guessed from the name; each comes from a fact we hold. */""}
             ${(() => {
               if (!src) return null;
               const h = exitHealth(src, node);
@@ -2194,17 +1983,6 @@ function ExitManageSheet({ node, seed, onSaved, onClose }) {
           </div>
           <div class="exg-c"><span class=${"exg-t " + cls}
             title=${[kind || "", (c || {}).address || "", (c || {}).up === false ? T("not up") : ""].filter(Boolean).join(" · ")}>${lbl}</span></div>
-          ${/* ⚠️ THE SOURCE THE TRAFFIC LEAVES WITH, and the three categories answer it differently because
-                they are genuinely different questions:
-                  IMPORTED   the panel made the device and gave it its address — the tunnel's own inside
-                             address IS what the packets carry. Nothing to choose, so it is not a control.
-                  DISCOVERED the node told us the device's address, so "Auto" can be named: it resolves to
-                             that, and it keeps resolving to it after a renumber.
-                  HAND-ADDED we know nothing about the device, so Auto is a real unknown — MASQUERADE asks
-                             the kernel, and on an UNNUMBERED device (measured in a netns) it answers with
-                             the CLIENT subnet's address, so packets leave carrying 10.x, leak the internal
-                             subnet upstream and are dropped there while the device still reads up. That is
-                             why this row keeps a marker: Auto here is a choice, but not a safe default. */""}
           <div class="exg-c" data-lbl=${T("Leaves as")}>${isImp(r)
             ? (() => {
                 const ins = exitInsideAddr(r, ((node.exits || []).find(x => String(x.id) === String(r.id)) || {}).live);
@@ -2223,12 +2001,6 @@ function ExitManageSheet({ node, seed, onSaved, onClose }) {
                 </span>`;
               })()}</div>
           <div class="exg-c" data-lbl=${T("Used by")}><${ExitUsedBy} node=${node} id=${r.id}/></div>
-          ${/* ⚠️ BOTH SWITCHES SAY WHAT THEY DO. These two are the only controls on this screen that change
-                what happens to traffic and to an account, they are deliberately NOT in the editor sheet
-                ("one click in the grid"), and both shipped with no explanation at all — while the latency
-                number beside them carried two sentences of hover. `Active` is the switch that once destroyed
-                the account it claimed to be pausing; that it now keeps it is exactly the fact an operator
-                needs before flipping it. `Switch` already takes a `title`; it was simply never passed. */""}
           <div class="exg-c c" data-lbl=${T("Kill-switch")}><${Switch} on=${!!r.killswitch} title=${KS_TITLE()}
             onChange=${v => put(i, { killswitch: v, _df: true })}/></div>
           <div class="exg-c c" data-lbl=${T("Active")}><${Switch} on=${!off} title=${ACTIVE_TITLE()}
@@ -2253,14 +2025,10 @@ function ExitManageSheet({ node, seed, onSaved, onClose }) {
   <//>`;
 }
 
-/** The stored profile, rendered back as the file it came from — with the key replaced by the sentinel the
- *  server swaps for the one it holds. The operator edits a real config, and the secret never leaves the box. */
 function profileText(ex) {
   const p = ex.profile || {};
   if (!p.address) return "";
-  // ⚠️ A DIAL-IN PROFILE IS A SERVER CONFIG, rendered as one: ListenPort, no Endpoint, no keepalive. Printed with today's
-  // `Endpoint = ` line, the first edit of a dial-in exit sent an empty Endpoint back and the save refused it.
-  const din = !!p.listen_port && !p.endpoint;      // exitIsDialin's own test, inline: the box is only ever a profile's
+  const din = !!p.listen_port && !p.endpoint;
   return ["[Interface]",
           "PrivateKey = " + (Store.exitKeyKeep || "(unchanged)"),
           "Address = " + String(p.address).split("/")[0] + "/32",
@@ -2269,77 +2037,55 @@ function profileText(ex) {
           ...awgConfLines(p.awg),
           "", "[Peer]",
           "PublicKey = " + (p.peer_key || ""),
-          // The PSK is the profile's second secret and is shown the same way the private key is: a sentinel
-          // the operator can leave alone (the stored one is kept) or overwrite (the new one is used).
           ...(p.psk ? ["PresharedKey = " + (Store.exitPskKeep || "(unchanged)")] : []),
           "AllowedIPs = 0.0.0.0/0",
           ...(din ? [] : ["Endpoint = " + (p.endpoint || "")]),
           ...(p.keepalive && !din ? ["PersistentKeepalive = " + p.keepalive] : [])].join("\n") + "\n";
 }
 
-/** ── EDIT ONE EXIT ──────────────────────────────────────────────────────────────────────────────────────
- *  Everything the grid deliberately does not do inline. The grid is for reading a fleet of exits at a
- *  glance; this is for changing one, with room for the two inputs that cannot live in a row — a WARP+
- *  licence key, and a whole WireGuard config edited as text. */
 const exitInsideAddr = (ex, live) => String(((live || (ex || {}).live || {}).address)
   || (((ex || {}).profile || {}).address) || "").split("/")[0].trim();
 
-// A dial-in exit with no title is named by its port, so two untitled ones never read alike in a sheet or a note.
 const exitDefaultTitle = ex => exitProv(ex) === "profile" ? ((ex || {}).dialin || exitIsDialin(ex)
     ? (exitIsDialin(ex) ? T("Dial-in exit :{v1}", { v1: ex.profile.listen_port }) : T("Dial-in exit")) : T("Custom exit"))
   : exitProv(ex) === "warp" ? T("WARP exit") : exitProv(ex) === "socks5" ? T("SOCKS5 exit") : exitProv(ex);
 
-/** The badge for an imported exit: [class, label]. A WARP account with a licence on it is WARP+ — the
- *  operator paid for it and the whole point of the row is knowing which ones did. Taken from the LICENCE
- *  (what was asked for) or from the account Cloudflare reports (what was granted), because those arrive at
- *  different times and either alone would make the badge flicker: the key is entered a sync before the
- *  account changes, and a restored exit has the account before the panel has re-read the key. */
 const badgeLabel = lbl => String(lbl).endsWith("+")
   ? html`${String(lbl).slice(0, -1)}<span class="exg-plus">+</span>`
   : lbl;
 const exitBadgeOf = (ex, live) => exitProv(ex) === "profile"
   ? ((live || {}).awg && awgDict3(((ex || {}).profile || {}).awg)
-      ? ["exawg exawg3", T("val|Custom"), T("AmneziaWG 3.1")]   // i18n-keys: the first of each pair is a CSS class
+      ? ["exawg exawg3", T("val|Custom"), T("AmneziaWG 3.1")]
       : [(live || {}).awg ? "exawg" : "exwg", T("val|Custom")])
-  : exitProv(ex) === "socks5" ? ["exsocks", T("val|SOCKS5")]   // i18n-keys: the first is a CSS class — a userspace path, the relay's violet
+  : exitProv(ex) === "socks5" ? ["exsocks", T("val|SOCKS5")]
   : exitProv(ex) !== "warp" ? ["exwg", exitProv(ex)]
   : (String((ex || {}).licence || "").trim() || /plus/.test(((live || {}).account_type) || ""))
-    ? ["warp plus", badgeLabel(T("val|WARP+"))]   // i18n-keys: the first half of each pair is a CSS class, not display text
+    ? ["warp plus", badgeLabel(T("val|WARP+"))]
     : ["warp", T("val|WARP")];
-// …and a dial-in profile reads "Dial-in", in the colours of what it is.
 const exitBadge = (ex, live) => {
   const b = exitBadgeOf(ex, live);
-  return exitIsDialin(ex) || (ex || {}).dialin ? [b[0], T("val|Dial-in"), ...b.slice(2)] : b;   // `dialin`: a new one, not saved yet
+  return exitIsDialin(ex) || (ex || {}).dialin ? [b[0], T("val|Dial-in"), ...b.slice(2)] : b;
 };
 
 const DIALIN_NOTE = {};
 
-/** The host the router dials — the one a turn link's client dials: the node's ingress address, else its first public one. */
 const nodeDialHost = node => turnDialFallback((node || {}).id);
 
-/** The router's side of a dial-in exit: a client config to the node, built by the client configs' own builder (buildConf)
- *  — its address the other half of the pair, its AllowedIPs the node's /32, keepalive 25 (the router keeps its NAT open). */
 export function routerConf(host, prof, routerPriv, nodePub, psk) {
-  const h = /:/.test(host) && !/^\[/.test(host) ? "[" + host + "]" : host;   // a bare IPv6 literal; one already bracketed stays
+  const h = /:/.test(host) && !/^\[/.test(host) ? "[" + host + "]" : host;
   const o = String(prof.address || "").split("."), ra = o.length === 4 ? [o[0], o[1], o[2], Number(o[3]) ^ 1].join(".") + "/31" : prof.address + "/32";
   return buildConf({ privkey: routerPriv, address: ra, mtu: prof.mtu || 1280,
                      awg_params: prof.awg, server_pubkey: nodePub, psk, allowed: prof.address + "/32",
                      endpoint: h + ":" + prof.listen_port, keepalive: 25 });
 }
-// a title in a QR's zoom card is written into HTML; the router's config is named by what it is, never by free text
 const qrSafe = t => String(t || "").replace(/[<>&"']/g, "");
 
-// The router the "On the router" steps are written for — a view choice that outlives the sheet, not a setting.
 const ROUTER_VIEW = { kind: "keenetic" };
-const ROUTER_KINDS = [["keenetic", "Keenetic"], ["openwrt", "OpenWrt"], ["other", ""]];   // product names, the same in every language
-// A command block with its Copy under it (the `.netsnip` of the networks section).
+const ROUTER_KINDS = [["keenetic", "Keenetic"], ["openwrt", "OpenWrt"], ["other", ""]];
 const cmdBlock = text => html`<div class="netsnip"><pre class="mono nixblock">${text}</pre>
   <button type="button" class="btn btn-ghost btn-mini" onClick=${() => copy(text, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div>`;
-/** Each router's own steps, numbered — they are a sequence. The commands carry the real addresses; Keenetic's interface is
- *  found by the description its import gives it (the file's name, `swg-<id>`). */
 export function routerSteps(kind, ex, conf) {
   const addr = (ex.profile || {}).address || "", tag = "swg-" + ex.id, awg = Object.keys((ex.profile || {}).awg || {}).length > 0;
-  // the commands as the router takes them — not prose, never translated
   const KN_NAT = "interface WireguardN security-level private\nip nat WireguardN\nsystem configuration save",
         KN_POLICY = "ip hotspot policy WireguardN PolicyN\nsystem configuration save",
         LX_MASQ = `UPLINK=eth0\nsysctl -w net.ipv4.ip_forward=1\niptables-restore --noflush <<EOF\n*filter\n:${tag}-fwd - [0:0]\n`
@@ -2373,17 +2119,15 @@ export function routerSteps(kind, ex, conf) {
 }
 
 function RouterConfSheet({ node, ex, conf, kept: kept0, onRegen, changed }) {
-  useStore();   // an unlock in this tab flushes a queued keep and emits: the sheet says what became of it (s9d F11, s9c F60)
+  useStore();
   const ks = kept0 === EXIT_KEEP_LOCKED ? exitKeepState(node.id, ex.id) : undefined;
   const kept = kept0 !== EXIT_KEEP_LOCKED ? kept0 : ks === null ? true : ks === "queued" ? EXIT_KEEP_LOCKED : ks;
   const name = ex.label || exitDefaultTitle(ex);
   const port = (ex.profile || {}).listen_port;
   const [kind, setKind] = useState(ROUTER_VIEW.kind);
   const longest = Math.max(20, ...String(conf).split("\n").map(l => l.length));
-  // Not kept: Esc and a click outside ask first until the config has been downloaded or copied — this is its only copy. Done
-  // closes. Regenerate's confirm opens over the sheet, so its Cancel comes back to it. Kept (`kept === true`): it opens again from the row, so the sheet closes like any other.
   const keep = useRef(kept !== true);
-  if (kept === true) keep.current = false;      // kept after it opened: it closes like any other
+  if (kept === true) keep.current = false;
   const took = () => { keep.current = false; };
   return html`<${Sheet} title=${T("Router config — {v1}", { v1: name })} width=${720} noSwipe=${kept !== true} dirtyRef=${keep}
     foot=${footRow({ onCancel: closeModal, cancelLabel: T("Done"),
@@ -2421,34 +2165,29 @@ function RouterConfSheet({ node, ex, conf, kept: kept0, onRegen, changed }) {
 }
 
 const DIALIN_RANGE = "42821–42899";
-const REGEN_BUSY = { on: false };   // a Regenerate is being asked for (its unlock prompt is up) — module-level: the sheet re-renders
+const REGEN_BUSY = { on: false };
 const DIALIN_PORT_HINT = () => T("Blank: a free port of {v1} — on a node whose firewall is declared (NixOS), inside what it declares. Not 51820, the port every scanner tries first.", { v1: DIALIN_RANGE });
 function dialinTpl(proto) {
   const tpl = ((Store.panelSettings || {}).interface_defaults || {}).awg_params || {};
   return Object.fromEntries(AWG_KEYS.map(k => { const t = String(tpl[k] ?? "").trim();
     return [k, !awgFieldCheck(k, t).ok || (proto === "awg3" && /^S[1-4]$/.test(k) && !(/^[0-9]+$/.test(t) && +t >= 12)) ? "" : t]; }));
 }
-function dialinHints(proto) {     // a blank 2.0 cell: the template's value as the exit takes it, or what the generator does
+function dialinHints(proto) {
   const tpl = dialinTpl(proto), b = awgBlankHints(proto === "awg3" ? "3.1" : "2.0");
   return Object.fromEntries(AWG_KEYS.map(k => [k, tpl[k] === "-" ? T("val|none") : tpl[k] || b[k]]));
 }
-// A drawn S4 fitted to the MTU as the panel fits it (mesh_s4_room / mesh_s4_draw): a full-size packet stays inside 1500
-// bytes; never under `floor` (12 on 3.1). A value that already fits, or one that is not a number, is left as it is.
-const DIN_WIRE = 60;   // twin of the panel's MESH_WIRE_OVERHEAD (tests/spa_dialin_selftest.mjs holds them equal)
+const DIN_WIRE = 60;
 function dialinS4Room(mtu) {
   return /^[0-9]+$/.test(String(mtu ?? "").trim()) ? Math.max(0, 1500 - DIN_WIRE - Number(mtu)) : null;
 }
 function dialinS4(s4, mtu, floor) {
-  // the MTU read as the panel reads it: digits only — "1420x" is not a number there, so it is none here (review F6)
   const room = dialinS4Room(mtu);
   if (room === null || !/^[0-9]+$/.test(String(s4)) || +s4 <= room) return String(s4);
   const lo = Math.max(floor, Math.min(15, room)), hi = Math.max(lo, room);
   return String(lo + Math.floor(Math.random() * (hi - lo + 1)));
 }
-// which protocol a stored set is — the server's own reading: a HeaderProtectionKey is 3.1 (awgDict3), any 2.0 key is 2.0
 const dialinProto = awg => awgDict3(awg) ? "awg3" : AWG_KEYS.some(k => String((awg || {})[k] ?? "").trim() !== "") ? "awg2" : "wg";
-// A blank cell uses the exit template or the selected generator. Fit an automatic S4 to the MTU.
-function dialinDraw(proto, awg, fresh, mtu) {     // `fresh`: S1–S4 and H1–H4 drawn anew too (the edit sheet's Generate)
+function dialinDraw(proto, awg, fresh, mtu) {
   const gen = proto === "awg3" ? "3.1" : "2.0", room = dialinS4Room(mtu || 1280);
   const g = genAwg(gen, room === null ? undefined : Math.max(12, room));
   const h3 = mesh3Hints(false), out = { ...(awg || {}) }, tpl = dialinTpl(proto);
@@ -2464,7 +2203,6 @@ function dialinDraw(proto, awg, fresh, mtu) {     // `fresh`: S1–S4 and H1–H
 }
 function DialinParams({ proto, awg, onAwg, edit, mtu }) {
   const [open, setOpen] = useState(false);
-  // "(auto)" while no cell of the protocol SHOWN holds anything (a 3.1 cell typed before a switch to 2.0 is not shown)
   const a = awg || {}, isSet = [...AWG_KEYS, ...(proto === "awg3" ? AWG3_EDIT_COLS.flat() : [])].some(k => String(a[k] ?? "").trim() !== "");
   if (proto === "wg") return null;
   return html`<div class="dinparams"><button type="button" class="advtoggle" aria-expanded=${open ? "true" : "false"} onClick=${() => setOpen(!open)}>
@@ -2491,18 +2229,15 @@ const confIfLine = (txt, k) => {
   return all.length ? all[all.length - 1][1].replace(/\r$/, "") : null;
 };
 function confIfSet(txt, k, v) {
-  // a trailing space is kept: typing "<r 32>" passes through "<r " (review F9)
   const s = String(txt), [a, b] = confIfSpan(s), sec = s.slice(a, b), val = String(v ?? "").replace(/^[ \t]+/, "");
   const keep = !["", "-"].includes(val.trim()), line = k + " = " + val + "\n", hits = [...sec.matchAll(confIfRe(k))];
-  let out = "", at = 0;                     // the last line rewritten in place, any earlier copy taken out
+  let out = "", at = 0;
   hits.forEach((h, i) => { out += sec.slice(at, h.index) + (keep && i === hits.length - 1 ? line : ""); at = h.index + h[0].length; });
   out += sec.slice(at);
   if (keep && !hits.length) { const body = out.replace(/\n*$/, ""); out = (body ? body + "\n" : "") + line + out.slice(body.length).replace(/^\n/, ""); }
   return s.slice(0, a) + out + s.slice(b);
 }
 
-/** Generate a dial-in exit: a title, the port and the protocol, the parameters under it; the keys are made on Create. The
- *  paste is one click away. */
 function DialinGenSheet({ node, onCreate, onPaste }) {
   const [label, setLabel] = useState("");
   const no31 = node.awg31_no ? srvText(node.awg31_no) : "";
@@ -2512,11 +2247,10 @@ function DialinGenSheet({ node, onCreate, onPaste }) {
   const go = async () => {
     setBusy(true); setMsg("");
     let r;
-    // only what was typed: a blank is the panel's to draw, and the cells of a protocol not chosen are not sent
     const keys = proto === "wg" ? [] : [...AWG_KEYS, ...(proto === "awg3" ? AWG3_EDIT_COLS.flat() : [])];
     const typed = { listen_port: port.trim(), mtu: mtu.trim(),
                     awg: Object.fromEntries(keys.filter(k => String(awg[k] ?? "").trim() !== "").map(k => [k, String(awg[k]).trim()])) };
-    try { r = await onCreate(label.trim(), proto, typed); } catch (e) { r = String((e && e.message) || e); }   // e.g. no X25519 in this browser
+    try { r = await onCreate(label.trim(), proto, typed); } catch (e) { r = String((e && e.message) || e); }
     setBusy(false);
     if (r !== true) setMsg(typeof r === "string" ? r : T("Couldn't save"));
   };
@@ -2544,19 +2278,13 @@ function DialinGenSheet({ node, onCreate, onPaste }) {
   <//>`;
 }
 
-/** The address a stored SOCKS exit shows in its paste field — never its password (the panel does not have it to show). */
 export const socksText = ex => { const s = (ex || {}).socks || {};
   if (!s.host) return "";
-  // a login that holds ':' '@' or '%' is written as a URL, percent-encoded — the one form the panel decodes — so it reads back
-  // as the same user (review F42)
   return s.user && /[:@%]/.test(s.user) ? "socks5://" + encodeURIComponent(s.user) + "@" + s.host + ":" + s.port
     : (s.user ? s.user + "@" : "") + s.host + ":" + s.port; };
-/** The address a proxy sees this node dial from, as far as the panel knows: its first PUBLIC IPv4 (a private one is what NAT
- *  hides — telling the operator to allow-list it would never work, review F31), else none. */
 export const nodePublicIp = node => ((node || {}).ips || []).find(ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip)
   && !/^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(ip)) || "";
 
-/** What a proxy check found, in words — the node's codes (`_socks_check`), one sentence each. */
 export const socksWhy = (code, node) => ({
   unreachable: T("The proxy can't be reached from this node."),
   refused: T("The proxy refused the connection — is the port right?"),
@@ -2570,7 +2298,6 @@ export const socksWhy = (code, node) => ({
   expired: T("The node didn't answer the test in time — is it online?"),
 })[code] || "";
 
-/** One proxy check, as lines: [tone, text]. Shared by the Test result and the stored exit's last check. */
 export const socksSays = (r, node) => {
   if (!r) return [];
   if (r.why) return [["bad", socksWhy(r.why, node) || r.why]];
@@ -2582,11 +2309,8 @@ export const socksSays = (r, node) => {
   return out;
 };
 
-/** Password managers read a text field followed by a password field as a login form and offer to fill or invent an
- *  "email" for the first one (the title). These fields are no login: each manager's own opt-out, on every field of it. */
 const NOT_A_LOGIN = { autocomplete: "off", "data-1p-ignore": "", "data-lpignore": "true", "data-bwignore": "",
                       "data-protonpass-ignore": "", "data-form-type": "other" };
-/** The notes' open/closed state, kept outside the sheet so a poll's re-render does not close them (the SPA's view pattern). */
 const S5X_VIEW = { notes: false };
 
 function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirtyRef }) {
@@ -2596,7 +2320,7 @@ function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirt
   const [tmsg, setTmsg] = useState("");
   const [, bump] = useState(0);
   const pending = !!test && test.state === "pending";
-  useEffect(() => {                              // the answer rides a sync or two; the panel gives up on it at 90 s
+  useEffect(() => {
     if (!pending) return;
     let ok = true, n = 0;
     const h = setInterval(async () => {
@@ -2604,10 +2328,10 @@ function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirt
       try {
         const r = await api.exitTest({ node: node.id, id: test.id });
         if (ok && r && r.ok) setTest(r.data);
-        else if (ok && r && r.code === "not_found") {   // the panel restarted, or dropped it: say so, never spin (review F19)
+        else if (ok && r && r.code === "not_found") {
           clearInterval(h); setTest(null); setTmsg(T("The panel no longer has that test — run it again."));
         }
-      } catch (e) { /* the next tick asks again */ }
+      } catch (e) {   }
     }, 1500);
     return () => { ok = false; clearInterval(h); };
   }, [pending, test && test.id]);
@@ -2624,8 +2348,6 @@ function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirt
   };
   const canTest = !pending && (sTxt.trim() || !isNew);
   const key = e => { if (e.key === "Enter") { e.preventDefault(); if (canTest) run(); } };
-  // The answer in the Networks test's own marks (`.netprobe`): a dot and a sentence per line — green for what works, the
-  // test's failure tone for what does not, grey for a caveat (no UDP) — so it reads like every other test run from a node.
   const says = test && !pending ? socksSays(test.result, node) : [];
   const last = !test && !isNew ? socksSays(live.check, node) : [];
   const line = ([tone, t]) => { const d = tone === "ok" ? "on" : tone === "warn" ? "note" : "blocked";
@@ -2664,8 +2386,6 @@ function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirt
 function ExitEditSheet({ node, ex, isNew, escrowOn, goSection, onSave, onClose }) {
   const [v, setV] = useState(() => ({ ...ex, profile_text: "" }));
   const [txt, setTxt] = useState(() => profileText(ex));
-  // What this sheet OPENED with, so "did anything change" is a comparison rather than a guess. Captured
-  // once: `profileText(ex)` re-renders the stored profile and `ex` is refreshed by the poll underneath us.
   const [txt0] = useState(() => profileText(ex));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -2674,11 +2394,8 @@ function ExitEditSheet({ node, ex, isNew, escrowOn, goSection, onSave, onClose }
   const [sTxt, setSTxt] = useState(() => socksText(ex));
   const [sTxt0] = useState(() => socksText(ex));
   const [sPass, setSPass] = useState("");
-  // a dial-in exit — a new one (the draft says so) or a stored one (its profile does) — dials nothing: no "Connect from"
   const isDialin = !!v.dialin || exitIsDialin(ex);
   const set = patch => { dirtyRef.current = true; setV(x => ({ ...x, ...patch })); };
-  // A dial-in exit's port, MTU and AmneziaWG cells (S9e), read from "This node's end" and written back into it — the text
-  // stays the one thing saved. An absent line reads "-"; a cell the operator clears is drawn on Save, as on create.
   const [dinBlank, setDinBlank] = useState({});
   const dinProto = isDialin ? dialinProto((ex.profile || {}).awg) : "wg";
   const dinKeys = dinProto === "wg" ? [] : [...AWG_KEYS, ...(dinProto === "awg3" ? AWG3_EDIT_COLS.flat() : [])];
@@ -2686,21 +2403,18 @@ function ExitEditSheet({ node, ex, isNew, escrowOn, goSection, onSave, onClose }
   const dinPort0 = String((ex.profile || {}).listen_port || "");
   const dinLine = (k, val) => {
     dirtyRef.current = true;
-    if (dinKeys.includes(k)) setDinBlank(b => ({ ...b, [k]: String(val ?? "").trim() === "" }));   // a cleared cell is drawn on Save
+    if (dinKeys.includes(k)) setDinBlank(b => ({ ...b, [k]: String(val ?? "").trim() === "" }));
     setTxt(t => confIfSet(t, k, val));
   };
   const dinAwgSet = d => { for (const k of dinKeys) if (String(d[k] ?? "") !== String(dinAwg[k] ?? "")) dinLine(k, d[k]); };
   const stored = (node.exits || []).find(x => String(x.id) === String(ex.id)) || {};
-  // The three things this sheet can edit, plus the config box. A NEW exit is always dirty: there is nothing
-  // to compare against and the operator has to be able to press Save.
-  const dirty = isNew || txt !== txt0 || Object.values(dinBlank).some(Boolean)   // a "-" cleared changes no line yet (F12)
+  const dirty = isNew || txt !== txt0 || Object.values(dinBlank).some(Boolean)
     || (isSocks && (sTxt !== sTxt0 || !!sPass))
     || ["label", "dial_src", "licence"].some(k => String(v[k] ?? "") !== String(ex[k] ?? ""));
   const save = async () => {
     setBusy(true); setMsg("");
     if (isProf && isNew && !txt.trim()) { setBusy(false); return setMsg(T("Paste the profile before saving.")); }
     if (isSocks && isNew && !sTxt.trim()) { setBusy(false); return setMsg(T("Paste the proxy's address before saving.")); }
-    // a dial-in exit's cleared cells are drawn now, a cleared MTU is 1280 and a cleared port is the one it has (S9e)
     let out = txt;
     if (isDialin && !isNew) {
       if (confIfLine(out, "MTU") === null) out = confIfSet(out, "MTU", "1280");
@@ -2710,7 +2424,6 @@ function ExitEditSheet({ node, ex, isNew, escrowOn, goSection, onSave, onClose }
     }
     const body = { ...v, ...(isProf && out !== profileText(ex) ? { profile_text: out } : { profile_text: "" }),
                    ...(isDialin || isSocks ? { dial_src: "" } : {}),
-                   // the proxy: the paste only when it changed, the password only when one was typed (else "keep")
                    ...(isSocks ? { socks_text: sTxt !== sTxt0 ? sTxt.trim() : "",
                                    socks_pass: sPass || (((ex || {}).socks || {}).has_pass ? Store.exitPassKeep : "") } : {}) };
     const ok = await onSave(body);
@@ -2731,8 +2444,6 @@ function ExitEditSheet({ node, ex, isNew, escrowOn, goSection, onSave, onClose }
                      action: busy ? T("Saving…") : T("Save changes"), onAction: save,
                      disabled: busy || !dirty,
                      title: !busy && !dirty ? T("No changes to save") : "" })}>
-    ${/* DECISION 7 — which of the node's own addresses dials the exit. Imported only: an adopted device
-          dials on its own and there is nothing for us to pin. */""}
     ${isDialin ? html`<p class="hint" style="margin:0 0 12px">${T("For an upstream that can't be reached — a router behind NAT: it connects to this node.")}</p>` : null}
     <div class=${isDialin ? (isNew ? "" : "row2 dinrow") : "row2"}>
       <div class="field"><label>${T("Title")}</label>
@@ -2769,11 +2480,6 @@ function ExitEditSheet({ node, ex, isNew, escrowOn, goSection, onSave, onClose }
             placeholder=${T("WARP+ licence key — optional")}
             onInput=${e => set({ licence: e.target.value })}/>
           <div class="hint">${T("A free account is registered without one. Paste a key from the WARP mobile app to upgrade this exit to WARP+.")}</div></div>`}
-    ${/* ⚠️ ONLY THE RECOVERY SURVIVES HERE. The escrow STATUS and the "turn it on" button are gone — escrow
-          is on by default and lives on the Interfaces screen, so restating it per exit was noise. But
-          "this node has no key for this exit, restore the escrowed one" is not status: it is the one
-          action that keeps a rebuilt node's egress IP, it has no other entry point in the panel, and it
-          renders only in the state it can be acted on. `ExitEscrow` returns null in every other case. */""}
     <div class="hint exstat" style="margin-top:6px">
       <${ExitEscrow} node=${node} ex=${v} stored=${stored} live=${stored.live} goSection=${goSection} escrowOn=${escrowOn}/>
     </div>
@@ -2784,8 +2490,6 @@ const KS_TITLE = () => T("On: if this exit stops working, traffic using it is re
 const ACTIVE_TITLE = () => T("Off pauses this exit — its account and keys are kept, and anything pointing at it stays pointed at it and uses the node's default meanwhile.");
 
 export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, saveExits }) {
-  // profiles the PANEL creates, which need a licence field and a whole config a grid row cannot hold.
-  // full list rather than replacing it, or saving a licence key here would delete every external interface
   const all = (vals || {}).exits || node.exits || [];
   const isW = x => (x.producer || "adopted") === "imported";
   const exits = all.filter(isW);
@@ -2803,16 +2507,12 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
     const body = { ...rec, profile_text: "", dial_src: "", dialin_gen: { proto, private_key: nk.priv, peer_key: rk.pub, psk, ...(typed || {}) } };
     const isNew = !exits.some(x => String(x.id) === String(rec.id));
     const r = await write(isNew ? [...exits, body] : exits.map(x => (String(x.id) === String(rec.id) ? { ...x, ...body } : x)));
-    // The stored profile THIS save made — its peer is the router key just sent. A poll built before the save landed can
-    // still answer with the old one (or none), and rendering from that would hand the router a config that never works.
     let st = r === true ? fresh(rec.id) : null;
     for (let i = 0; r === true && i < 3 && !(st && st.profile && st.profile.peer_key === rk.pub); i++) {
       await new Promise(ok => setTimeout(ok, 700)); await Store.poll(); st = fresh(rec.id);
     }
     if (r !== true) return T("Couldn't save");
-    // Kept against the record, which the panel checks itself — so a poll that never caught up still leaves the config readable.
     const kept = await exitKeepRouter(node.id, rec.id, rk.pub, rk.priv, nk.pub, nk.priv);
-    // Saved either way: { info } is not a failure, and is never shown as one (s9c F51)
     if (!st || !st.profile || st.profile.peer_key !== rk.pub)
       return kept === true ? { info: T("Saved, but the panel did not return the exit — reload, and the QR button on its row shows the router config.") }
                            : { info: T("Saved, but the panel did not return the exit — reload and regenerate.") };
@@ -2822,9 +2522,7 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
       conf=${routerConf(nodeDialHost(node), st.profile, rk.priv, nk.pub, psk)}/>`);
     return true;
   };
-  // `fromSheet`: the confirm sits over the router sheet it was opened from. Saved without the new config to show, that sheet
-  // holds keys that no longer work — it is closed with the confirm, not left open under the toast (s9c F55).
-  const regenNow = async (ex, fromSheet) => {   // a confirm sheet drops what onConfirm returns: a failure is said here, not lost
+  const regenNow = async (ex, fromSheet) => {
     let r;
     try { r = await generate({ ...ex }, null); } catch (e) { r = String((e && e.message) || e); }
     if (r === true) return;
@@ -2832,28 +2530,23 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
     toast(typeof r === "string" ? r : T("Couldn't save"), "err");
   };
   const REGEN_BODY = () => T("Both sides get new keys. The router stops connecting until it imports the new config.");
-  // one at a time: a second click while the unlock prompt is up stacked a second confirm, and two Regenerates (s9c F59/F61)
   const regen = async ex => {
     if (REGEN_BUSY.on) return;
     REGEN_BUSY.on = true;
     try { await askKeep(false); } finally { REGEN_BUSY.on = false; }
     openConfirm({ title: T("Regenerate the router config?"), confirmLabel: T("Regenerate"), body: REGEN_BODY(), onConfirm: () => regenNow(ex, true) });
   };
-  // The row's QR button: the kept router key, and the config rebuilt from the profile the panel stores NOW.
   const showRouter = async ex => {
     const ask = () => ensureVaultUnlocked({ always: true, title: T("Unlock to show the router config"),
       reason: T("The router's config is kept encrypted with your client configs — only you can read it, with your encryption key."),
       consequence: T("the router config is not shown.") });
-    // the store on: asked first, as a peer's QR asks (a Regenerate from "none kept" then keeps the new key)
     if (Store.storeMode === "encrypted" && !(await ask())) return;
     let st = fresh(ex.id);
     let r = exitIsDialin(st) ? await exitRouterKey(node.id, ex.id) : null;
-    if (r === EXIT_LOCKED) {                    // the store switched off since: what it kept is still there, and still opens
+    if (r === EXIT_LOCKED) {
       if (!(await ask())) return;
       r = await exitRouterKey(node.id, ex.id);
     }
-    // The key is the record's (the panel serves only that); this tab's profile may predate another tab's Regenerate, and
-    // the new key with the old PSK never handshakes.
     if (r && r.k && r.pub !== st.profile.peer_key) { await Store.poll(); st = fresh(ex.id); }
     if (r === CONF_UNREACHABLE || r === EXIT_LOCKED || (r && r.k && !(exitIsDialin(st) && r.pub === st.profile.peer_key))) return toast(T("Couldn't reach the panel just now, so the router config could not be read. It has not been lost — try again in a moment."), "err");
     if (!r || r === CONF_SEALED_OLD) return openConfirm({ title: T("No router config is kept for this exit"),
@@ -2875,9 +2568,8 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
                          : exits.map(x => (String(x.id) === String(ex.id) ? { ...x, ...body } : x));
       const before = (ex.profile && ex.profile.listen_port && !ex.profile.endpoint) ? ex.profile : null;
       const r = await write(next);
-      // What the router has to follow (§2.4a): marked on the exit's row until its router config is opened or regenerated, never stored.
       const after = r === true && before ? (fresh(ex.id) || {}).profile : null;
-      if (after && after.listen_port && !after.endpoint) {      // still dial-in: a paste that made it dial-out has no router
+      if (after && after.listen_port && !after.endpoint) {
         const ch = [];
         if (before.listen_port !== after.listen_port) ch.push(T("port {v1} → {v2}", { v1: before.listen_port, v2: after.listen_port }));
         if (before.address !== after.address) ch.push(T("address {v1} → {v2}", { v1: before.address, v2: after.address }));
@@ -2890,7 +2582,7 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
     }}/>`);
   const openDialin = rec => openModal(html`<${DialinGenSheet} node=${node}
     onCreate=${async (label, proto, typed) => { const r = await generate({ ...rec, label }, proto, typed);
-      if (r && r.info) { closeModal(); toast(r.info); return true; }    // created: said as what it is, not as an error (s9c F51)
+      if (r && r.info) { closeModal(); toast(r.info); return true; }
       return r; }}
     onPaste=${label => { closeModal(); openEdit({ ...rec, label }, true); }}/>`);
   const add = p2 => {
@@ -2899,7 +2591,6 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
     if (p2.provider === "profile" || p2.provider === "socks5") return openEdit(rec, true);
     write([...exits, rec]);
   };
-  // the four ways to add one: the desktop's row of buttons, a phone's sheet (ExitKindSheet), the same records
   const exitKinds = [
     [T("Add a SOCKS5 proxy"), { producer: "imported", provider: "socks5", socks_text: "", socks_pass: "" }, T("A SOCKS5 proxy's address and login")],
   ];
@@ -2914,18 +2605,11 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
       : T("{v1} is removed from this node and its tunnel comes down.", { v1: ex.label || ex.device }),
     onConfirm: () => write(exits.filter(x => String(x.id) !== String(ex.id))),
   });
-  // Health, from what the node reports about the exit it was told to create. Four states, same vocabulary
-  // as the external-interfaces grid so one dot means one thing across the panel.
   const dot = ex => {
     const h = exitHealth(stored(ex.id), node);
     return html`<span class="exg-h8"><span class=${"exg-dot " + h.dot} title=${h.why}></span>
       ${exitHealthMark(h)}</span>`; };
   return html`<div>
-    ${/* §4 — the one thing this UI must never let anyone believe. An exit changes what WEBSITES see; it
-          does not change what the client dials, and the client is holding this node's address in its
-          config. Said here, where the operator decides, rather than nowhere. */""}
-    ${/* The node's name is in the section header two lines up, and where devices live is a fact about a
-          different screen. What is left is the one thing the screen has to say. */""}
     ${isMobile() ? html`<button class="btn btn-primary m-addtop" onClick=${() => openModal(html`<${ExitKindSheet} kinds=${exitKinds} onPick=${add}/>`)}><${Ic} i="plus"/> ${T("Add an exit")}</button>` : null}
     <p class="hint" style="margin:0 0 14px">${T("Configure SOCKS5 proxies here and assign an exit from the user card.")}</p>
     ${exits.length ? html`<div class="exgrid g8">
@@ -2940,8 +2624,6 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
       ${exits.map(ex => {
         const l = stored(ex.id).live || {};
         const off = ex.enabled === false;
-        // ⚠️ THE WHOLE ROW OPENS THE EDITOR, so the cells that are CONTROLS have to stop the click from
-        // reaching it — a switch that also opened a modal would be unusable.
         const stop = e => e.stopPropagation();
         return html`<div class="exg-r" key=${ex.id}>
           <div class=${"exg-c clk" + (off ? " dim" : "")} onClick=${() => openEdit(ex)}>
@@ -2956,21 +2638,7 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
               : T("UDP: not checked yet")) : ""}>
             ${(l.trace || {}).ip || html`<span class="faint">—</span>`}${exitProv(ex) === "socks5" && (l.trace || {}).loc
               ? html` <span class="faint">${l.trace.loc}</span>` : null}</div>
-          ${/* ⚠️ THE HOP TO THE EXIT'S OWN SERVER, not a request made through it. This first showed the time
-                of a full HTTPS request to cloudflare.com via the tunnel, which for a Moscow exit one hop
-                away read 179 ms — because ~169 ms of that is what a TLS handshake to Cloudflare costs from
-                this node whether a tunnel is involved or not. A near-constant offset swamping the part that
-                varies is not a latency column. The through-tunnel figure is still measured and lives in the
-                hover, where it answers the different question it actually answers. An em dash when the node
-                cannot measure it: an invented number is worse than an absent one. */""}
           <div class="exg-c c clk mono" onClick=${() => openEdit(ex)}>
-            ${/* The hover is the panel's own bubble, not a native title (operator, 10-23). An up exit whose ping came back
-                     null: no reply reached this node — most often a firewalled VPS that drops ICMP, and the dash alone read as "custom exits have no latency" (operator, 2026-10-17). ⚠️ `=== null` ON PURPOSE: an older node
-                     sends no field (undefined) and keeps the plain hover. The through-tunnel time, when measured, still follows.
-                     S9e: no ping to be had (no reply, or a dial-in exit with no server) — the trace's TCP handshake through the tunnel
-                     stands in, marked ~ and said in the hover: one round trip to Cloudflare's nearest server, a little over the exit
-                     alone. Only for a pasted WireGuard/AmneziaWG exit (custom or dial-in): a WARP exit's handshake ends at
-                     Cloudflare's edge (~2 ms) and an adopted TUN exit's netstack answers it on the node itself. */""}
             ${(() => { const tcp = exitProv(ex) === "profile" && !Number.isFinite(l.ping_ms) && Number.isFinite((l.trace || {}).tcp_ms);
               const why = tcp
               ? (exitIsDialin(ex)
@@ -3006,22 +2674,15 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
       : null}
     ${exits.length ? null
       : html`<p class="hint" style="margin:0 0 12px">${T("No SOCKS5 exits on this node yet.")}</p>`}
-    ${/* TWO WAYS TO GET ONE, offered as two actions rather than one button and a provider dropdown: the
-          choice is what the operator is actually deciding, and "Register" has to be one click for the path
-          that needs no input at all. wgcf is never named — it is plumbing. */""}
     ${isMobile() ? null : html`<div class="exadd" style="margin-top:14px">
       ${exitKinds.map(([label, rec]) => html`<button class="btn btn-ghost btn-mini" onClick=${() => add(rec)}>
         <${Ic} i="plus"/> ${label}</button>`)}
     </div>`}
   </div>`;
 }
-// A phone adds a device to a node's ways out in a sheet of its own, opened from the top of the list (operator, 2026-10-29): the
-// fields of the desktop's inline row, Cancel and Add on the footer's bottom line. `fields` draws them (they need the node's facts).
 function AddExitDeviceSheet({ onAdd, fields }) {
   const [v, setV] = useState({});
   const ok = !!String(v.device || "").trim();
-  // once: Enter in its field reaches both the field's own submit and the Sheet's Enter (the footer's Add) — a second closeModal
-  // popped the parent Ways out sheet past its unsaved-changes guard (F3)
   const sent = useRef(false);
   const submit = () => { if (!ok || sent.current) return; sent.current = true; onAdd(v); closeModal(); };
   return html`<${Sheet} title=${T("Add an interface by name")} foot=${html`<button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Cancel")}</button>
@@ -3029,8 +2690,6 @@ function AddExitDeviceSheet({ onAdd, fields }) {
     ${fields(v, setV, submit)}
   <//>`;
 }
-// A phone adds an exit from the top of the section, not after the last card (operator, 2026-10-29): one button, and a sheet
-// that asks which kind — the same four the desktop's row of buttons offers.
 function ExitKindSheet({ kinds, onPick }) {
   return html`<${Sheet} title=${T("Add an exit")} foot=${html`<button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Cancel")}</button>`}>
     <div class="m-pick">${kinds.map(([label, rec, about]) => html`<button type="button" class="m-pick-row" onClick=${() => { closeModal(); onPick(rec); }}>
@@ -3045,18 +2704,12 @@ export function NodeIngressForm({ node, vals, set }) {
     <div class="field"><label>${T("Ingress address")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— what peers and clients dial to reach this node")}</span></label>
       <${NodeIpPick} ips=${ipChoices(node)} value=${v.endpoint_host || ""} onChange=${ip => set({ endpoint_host: ip })} auto=${T("Auto (public IP)")} customPlaceholder=${T("Hostname or IP — e.g. node.example.com")}/>
       <div class="hint">${T("This is the host in every client config and turn-proxy link for this node. Prefer a hostname: moving the box then costs one DNS change, and nothing a client already holds has to be re-issued.")}</div></div>
-    ${/* OTHER NAMES THIS NODE ANSWERS TO. Not a second Endpoint — a peer carries exactly one, so this
-          cannot mean "use them all". It is the pool every host picker offers: a second domain, or the new
-          name during a DNS move, typed once here instead of retyped from memory into the interface, the
-          two turn-proxy and the WDTT/csqtt fields (and mistyped into one of them). Each is checked the
-          same way a bind is — against what it actually resolves to — because a name in this list that
-          lands somewhere else is the failure it exists to prevent. */ null}
+    ${
+ null}
     <${NodeHostList} node=${node} value=${v.endpoint_hosts || []} onChange=${hs => set({ endpoint_hosts: hs })}/>
   </div>`;
 }
 
-// A node's own mesh settings: where it dials from, its pool, its names. A node has no mesh type or AWG params of its own — both
-// belong to a link, set on its card under Node connections (plan §8 rounds 12–13).
 export function NodeMeshForm({ node, vals, set }) {
   const rsv = (Store.panelSettings || {}).reserved || {};
   const dSub = rsv.mesh_subnet || "10.255.0.0/16", dPort = String(rsv.mesh_port_base || 9999), dPfx = rsv.iface_prefix || "swg_";
@@ -3066,17 +2719,11 @@ export function NodeMeshForm({ node, vals, set }) {
     <div class="field"><label>${T("Mesh egress IP")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— source to dial other nodes")}</span></label>
       <${NodeIpPick} ips=${node.ips || []} value=${v.mesh_egress_ip || ""} onChange=${ip => set({ mesh_egress_ip: ip })} auto=${T("Auto (default route)")}/>
       <div class="hint">${T("Which of this node's addresses it dials the other nodes' mesh links from. A single connection can still override it on its own card.")}</div></div>
-    ${/* the links that are not the type asked for, and why — derived by the panel from the link records on every poll */""}
     ${(node.mesh_gen_reasons || []).length ? html`<div class="field">${(node.mesh_gen_reasons || []).map(r => html`<div class="hint warnish" key=${r.iface}>
       ${T("Link to {v1} ({v2}) is {v3}: {v4}", { v1: r.peer, v2: r.iface, v3: meshGenLabel(r.type), v4: srvText(r.msg) })}</div>`)}</div>` : null}
     <div class="row2"><div class="field"><label>${T("Mesh subnet")}</label><input value=${v.mesh_subnet || ""} onInput=${e => set({ mesh_subnet: e.target.value })} placeholder=${dSub}/></div>
       <div class="field"><label>${T("Mesh port")}</label><input value=${v.mesh_port || ""} onInput=${e => set({ mesh_port: e.target.value })} placeholder=${dPort}/></div></div>
     <div class="field"><label>${T("Interface name prefix")}</label><input value=${v.mesh_prefix || ""} onInput=${e => set({ mesh_prefix: e.target.value })} placeholder=${dPfx}/></div>
-    ${/* The rebuild these settings trigger, available on its own. Until now it fired only as a SIDE EFFECT of
-          changing the subnet / prefix / AWG, gated on the value differing — so a node whose links are stuck
-          with settings that are already right had no way to ask for it, short of changing the subnet and
-          changing it back. Acts immediately (it is not part of the form's Save), so it confirms first, with
-          the same warning the change-driven path already shows. */ ""}
     ${(Store.nodes || []).length > 1 ? html`<div class="field" style="margin-top:18px">
       <label>${T("Rebuild links")}</label>
       <div style="display:flex;gap:8px;align-items:center">
@@ -3092,25 +2739,18 @@ export function NodeMeshForm({ node, vals, set }) {
   </div>`;
 }
 
-// Per-node egress IP roles, edited in Panel settings → Nodes egress (copied from node settings). Controlled by the parent.
-/** A stored rule list, through the editor's own round trip — the form the draft holds and the save sends, so a list opened
- *  and left alone compares equal to the one on the server. */
 const normRules = rs => { const { rows, catchAll } = rulesToRows(rs || []); return rowsToRules(rows, catchAll); };
 
 export function legRow(parts) {
-  const a = [parts].flat(Infinity).filter(x => x != null && x !== ""), lead = typeof a[0] === "string" ? null : a[0];   // Trich nests: the badge arrives inside the first run's array
+  const a = [parts].flat(Infinity).filter(x => x != null && x !== ""), lead = typeof a[0] === "string" ? null : a[0];
   return html`<div class="lg-leg-row">${lead ? html`${lead}<span>${a.slice(1)}</span>` : html`<span>${a}</span>`}</div>`;
 }
 
 function NodeDefaultRules({ node, nodeExits, base, rules, exitIps, mode, onChange }) {
-  // The rows are kept per node (NODE_LIST_ROWS) and reused for as long as they lower to the draft — as they are, or with an
-  // exit prune applied (`adoptRows`) — and the Save button asks them whether a badge is still being typed (nodeListBlock).
   const live = new Set((nodeExits || []).map(x => String(x.id)));
-  const adopt = (held, rs) => adoptRows(held, rs, live);   // see rulerows.js — the draft's rows, keeping what it can
+  const adopt = (held, rs) => adoptRows(held, rs, live);
   const [st0, setSt] = useState(() => { const c = NODE_LIST_ROWS[node];
     return adopt(c && { ...c, rows: (c.rows || []).map(r => r && r._draft ? (({ _draft, ...x }) => x)(r) : r) }, rules); });
-  // …and when the draft changes from OUTSIDE these rows (Settings re-basing it after an exit write), follow it here too:
-  // the screen must show what Save will post, and the next edit must not put the old rule back (code review, P3).
   const st = adopt(st0, rules);
   if (st !== st0) setSt(st);
   NODE_LIST_ROWS[node] = { base, rows: st.rows, catchAll: st.catchAll, mode };
@@ -3118,33 +2758,25 @@ function NodeDefaultRules({ node, nodeExits, base, rules, exitIps, mode, onChang
     onChange=${(rows, catchAll, xs) => { setSt({ rows, catchAll }); NODE_LIST_ROWS[node] = { base, rows, catchAll, mode };
       onChange(rowsToRules(rows, catchAll), xs); }}/>`;
 }
-/** node id → {base, rows, catchAll, mode}: the default list's rows as last edited (see NodeDefaultRules). */
 const NODE_LIST_ROWS = {};
-/** Why a node's default list cannot be saved yet, or null — what the interface sheets ask `egressSaveBlock`: a badge still
- *  being typed, an empty row, an invalid target, which the rules the Save posts would silently drop. */
 const nodeListBlock = (nid, rules) => { const c = NODE_LIST_ROWS[nid];
   return c && JSON.stringify(rowsToRules(c.rows, c.catchAll)) === JSON.stringify(rules || []) ? egressSaveBlock({ mode: "smart", rows: c.rows, catchAll: c.catchAll }, c.mode || "kernel") : null; };
 
-/* "Whom it affects" (§7.3) — from the last sync's plan (T16: never computed per /api/state), so it shows nothing
-   for one interval after a panel restart rather than a number that is not true. Bounded hovers, as everywhere. */
 function DefaultReach({ node }) {
   const rc = node.default_reach;
-  if (!rc) return null;   // not planned yet (one interval after a panel restart): say nothing rather than a placeholder line
+  if (!rc) return null;
   const auto = rc.auto || [], arr = rc.arr || [];
   const ifTrig = html`<b>${plural(auto.length, "Auto interface")}</b>`;
   const arTrig = html`<b>${plural(arr.length, "interface")}</b>`;
   const hov = (trig, items) => items.length ? html`<${Popover} hoverOnly popCls="netroute-bub" trigger=${trig}>
       ${items.slice(0, 10).map(x => html`<div class="netbub-row">${x}</div>`)}
       ${items.length > 10 ? html`<div class="netbub-row sub">${T("…and {v1} more", { v1: items.length - 10 })}</div>` : null}<//>` : trig;
-  // two styled runs in one translated sentence: split on both markers, in whichever order the translation put them
   const parts = T("Routes {ifaces} here and the traffic {sources} send out through this node.").split(/(\{ifaces\}|\{sources\})/);
   const fill = { "{ifaces}": hov(ifTrig, auto), "{sources}": hov(arTrig, arr.map(([n, S]) => Store.nodeName(n) + " · " + S)) };
   return html`<div class="hint">${parts.map(x => fill[x] || x)}
     ${(rc.dup || []).length ? html` ${T("{v1} arrive from two nodes at once and are left to this node's own route.", { v1: rc.dup.join(", ") })}` : null}</div>`;
 }
 
-// The node-wide torrent policy (docs/P2P-POLICY-PLAN.md): what P2P traffic may do on EVERY way out of this node — its
-// interfaces, traffic other nodes send out through it, and programs running on it. Route via an exit or a node is P3.
 const P2P_OPTS = () => [
   { value: "block", label: T("Block everywhere") },
   { value: "direct", label: T("Allow, only out this server's own address") },
@@ -3169,16 +2801,12 @@ function NodeEgressForm({ node, vals: v, set }) {
       set({ default_routing: on ? [] : null, default_routing_exit_ips: {} });
       setRulesOpen(on);
     }}/><span>${T("Routing (smart cascade)")}</span></label>
-    ${/* D2 — THE DEFAULT, MADE SMART: one rule list for this node's Auto interfaces, its smart interfaces' silence and the
-          traffic other nodes cascade out through it (§3.1, §7.3). Keyed by what the server holds, so a save re-reads it. */""}
     ${isList ? html`<div class="field">
       <${Disclosure} title=${rulesTitle(node.id)} open=${rulesOpen} onToggle=${() => {
-          // Folding unmounts the rows, and the half-typed badge text goes with them — so its flag goes too, or Save would stay
-          // blocked by text nobody can see (nodeListBlock). The same thing a remount already does (NodeDefaultRules).
           const c = NODE_LIST_ROWS[node.id];
           if (rulesOpen && c) NODE_LIST_ROWS[node.id] = { ...c, rows: (c.rows || []).map(r => r && r._draft ? (({ _draft, ...x }) => x)(r) : r) };
           setRulesOpen(o => !o); }}
-        sumCls="route" summary=${(() => { const { rows, catchAll } = rulesToRows(v.default_routing || []);   // the interface sections' own summary:
+        sumCls="route" summary=${(() => { const { rows, catchAll } = rulesToRows(v.default_routing || []);
           return rulesSummary(node.id, rows, catchAll); })()}>
       <${NodeDefaultRules} key=${node.id + ":" + JSON.stringify(node.default_routing || [])} node=${node.id} mode=${v.routing_mode || node.routing_mode}
         nodeExits=${v.exits || node.exits || []}
@@ -3186,12 +2814,12 @@ function NodeEgressForm({ node, vals: v, set }) {
         rules=${v.default_routing} exitIps=${v.default_routing_exit_ips || {}}
         onChange=${(rules, xs) => set({ default_routing: rules, default_routing_exit_ips: xs || {} })}/>
       <${DefaultReach} node=${node}/><//></div>` : null}
-    ${(() => {   // shown as the policy IN FORCE: what is stored, or the computed default the server says applies
+    ${(() => {
       const exits = v.exits || node.exits || [];
       const curRec = (v.p2p && v.p2p.action) ? v.p2p : { action: node.p2p_eff || "block" };
       const cur = p2pVal(curRec), routed = curRec.action === "dev" || curRec.action === "exit";
       const pn = node.p2p_node;
-      const opts = [...P2P_OPTS(), ...p2pTargetOpts(node, exits)];   // the route rows and their refusals: routing.js's, shared
+      const opts = [...P2P_OPTS(), ...p2pTargetOpts(node, exits)];
       return html`<div class="field">
         <${Disclosure} title=${T("Filters & abuse")} sumCls="on" open=${p2pOpen} onToggle=${() => setP2pOpen(o => !o)}
           summary=${p2pNotRunHere(node, curRec) ? T("Torrents / P2P: {v1} — not in force on this node until it is updated", { v1: p2pLabel(curRec, exits, node) })
@@ -3216,7 +2844,6 @@ function NodeEgressForm({ node, vals: v, set }) {
   </div>`;
 }
 
-// What a never-cut ports list cannot take, and the cost of a wide one (S11c) — under both inputs.
 function PortokHints({ text }) {
   const r = portokRead(text);
   return html`${r.bad.length ? html`<div class="hint warnish"><${Ic} i="warn"/> ${T("Not a port or a port range (1-65535): {v1}", { v1: r.bad.slice(0, 5).join(", ") })}</div>` : null}
@@ -3224,14 +2851,3 @@ function PortokHints({ text }) {
     ${!r.bad.length && !r.tooMany && !r.list.length ? html`<div class="hint warnish"><${Ic} i="warn"/> ${T("Keep at least one port, or reset the list to its defaults.")}</div>` : null}
     ${r.ports > PORTOK_WIDE ? html`<div class="hint warnish"><${Ic} i="warn"/> ${T("Ports on the list: {v1} — encrypted torrents get through on them.", { v1: fmtNum(r.ports) })}</div>` : null}`;
 }
-
-// Account form as a modal (opened from the header user icon).
-
-// MODALS / SHEETS
-
-
-
-
-
-
-// Self-contained: setup → scan → verify → recovery codes → enabled/disable.

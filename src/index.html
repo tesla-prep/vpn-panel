@@ -3,35 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- Mount point. Served at "/" by default; the panel rewrites this to the subpath
-     (e.g. /swg/) when SWG_PANEL_BASE is set, so all relative URLs resolve correctly. -->
 <base href="/">
 <title>swgPanel</title>
 <meta name="robots" content="noindex, nofollow">
 <meta name="color-scheme" content="dark light">
-<!-- Description/og are rewritten per request in the panel's index.html handler, in the language the request
-     asks for — the same rule js/i18n.js pick() uses in the browser. These are the English defaults. -->
 <meta name="description" content="Self-hosted control panel for WireGuard and AmneziaWG — add users in the browser, hand them a QR code, and run your VPN across your own servers.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="swgPanel">
 <meta property="og:title" content="swgPanel">
 <meta property="og:description" content="Self-hosted control panel for WireGuard and AmneziaWG — add users in the browser, hand them a QR code, and run your VPN across your own servers.">
 <meta name="twitter:card" content="summary">
-<!-- inline SVG favicon (the cyan indicator-LED mark); offline-safe, no extra request -->
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231FC8D6'/%3E%3Ccircle cx='16' cy='14.5' r='5.5' fill='%230A0E15'/%3E%3C/svg%3E">
 <link rel="stylesheet" href="app.css">
-<!-- The phone UI (docs/MOBILE-PLAN.md): one rule nested under html[data-ui="m"], so nothing in it can match on a desktop.
-     Always loaded, render-blocking like app.css: a phone never paints the desktop layout first. -->
 <link rel="stylesheet" href="m/m.css">
-<!-- Installable as an app from a trusted https:// address. No service worker: a cached shell would run a stale app.js against
-     an updated panel. Relative URLs, so a subpath mount (SWG_PANEL_BASE) needs no rewrite. -->
 <link rel="manifest" href="m/manifest.webmanifest">
 <link rel="apple-touch-icon" href="m/icon-maskable-512.png">
 <meta name="theme-color" content="#10151E">
-<!-- Set the light/dark theme before first paint so there's no dark→light flash. Mirrors app.js's
-     resolvedTheme(): stored mode (else "auto"), auto → prefers-color-scheme. -->
 <script>(function(){try{var m=localStorage.getItem("swg-theme");if(["light","dark"].indexOf(m)<0)m=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=m;}catch(e){document.documentElement.dataset.theme="dark";}})();</script>
-<!-- Language before first paint, mirroring the theme bootstrap above: stored pick, else the browser's. -->
 <script>(function(){try{var l=localStorage.getItem("swg-lang");if(!l){l=(navigator.language||"").slice(0,2).toLowerCase();if(l!=="ru")l="en";}document.documentElement.lang=l;}catch(e){document.documentElement.lang="en";}})();</script>
 <script>(function(){var d=document.documentElement;try{if(window.CSS&&CSS.supports&&CSS.supports("selector(&)")&&CSS.supports("selector(:has(*))")){var u=null;try{u=localStorage.getItem("swg-ui");}catch(e){}if(u!=="m"&&u!=="d")u=matchMedia("(pointer: coarse)").matches&&Math.min(screen.width,screen.height)<600&&d.clientWidth<=Math.max(screen.width,screen.height)+40?"m":"d";if(u==="m"){d.dataset.ui="m";var vp=document.querySelector('meta[name="viewport"]');if(vp)vp.content+=", viewport-fit=cover"+(/iP(hone|ad|od)/.test(navigator.userAgent)?", maximum-scale=1":"");}}var t=document.querySelector('meta[name="theme-color"]');if(t)t.content=d.dataset.theme==="light"?"#FFFFFF":"#10151E";}catch(e){}})();</script>
 </head>
@@ -80,9 +68,7 @@
 <div id="overlay" class="overlay" aria-hidden="true"><div class="sheet" id="sheet" role="dialog" aria-modal="true"></div></div>
 <div id="toasts" class="toasts" aria-live="polite"></div>
 
-<!-- qrcode is a UMD lib: load as a classic script so it sets the global `qrcode`. -->
 <script src="vendor/qrcode.js"></script>
-<!-- shared turn-proxy client-config builders (window.SWGTurn) — one copy for the app + the subscription page. -->
 <script src="turn-artifacts.js"></script>
 <script type="importmap">
 { "imports": {
@@ -126,21 +112,9 @@
     return !!(window.HTMLScriptElement && HTMLScriptElement.supports &&
               HTMLScriptElement.supports("importmap"));
   }
-  /* Which module actually broke? The `error` event fires on the module-graph ROOT (app.js), never on the
-     nested import that 404'd — so the failing URL the browser hands us names the wrong file and would send
-     an operator after a file that is perfectly fine. The shipped manifest is the answer: probe each module
-     listed in it and report the ones that don't answer. Only runs in the already-failed state (so the
-     extra requests cost nothing in normal operation), and only on a modern browser (the old-browser branch
-     never gets here), which is why XHR is safe to use. */
   function nameTheCulprit() {
     var el = document.getElementById("swg-boot-which");
     if (!el || !window.XMLHttpRequest) return;
-    /* The module list comes from this page's own <link rel="modulepreload"> tags — the graph is declared
-       right above, in the file being served, so the list can never be out of date with what the panel
-       ships. It replaced a fetched js/manifest.json of stored hashes, which had to be regenerated on every
-       edit and failed a release build the first time someone forgot. The stylesheets are listed too: once the guard
-       HAS fired (a module failed), a stylesheet missing beside it is named with the rest. A stylesheet missing ALONE does not
-       fire it — app.js still renders, unstyled (review F26). */
     var links = document.querySelectorAll('link[rel="modulepreload"], link[rel="stylesheet"]'), names = [];
     for (var i = 0; i < links.length; i++) {
       var href = links[i].getAttribute("href") || "";
@@ -150,8 +124,6 @@
     var missing = [], done = 0;
     for (var j = 0; j < names.length; j++) (function (n) {
       var r = new XMLHttpRequest();
-      // GET, not HEAD: the panel is a stdlib BaseHTTPRequestHandler and answers HEAD with 501, which would
-      // make every module look missing. Small files, and we are already in the failed state.
       r.open("GET", n, true);
       r.onloadend = function () {
         if (r.status !== 200) missing.push(n);
@@ -164,8 +136,6 @@
             "<br>That is an interrupted or partial update.";
           return;
         }
-        /* Every file answered 200 — nothing is missing, the interface LOADED and then threw while
-           rendering. "Re-run the update" cannot help, so say what actually happened. */
         var h = document.getElementById("swg-boot-head");
         if (h) h.innerHTML = "<b>The panel's interface didn't start.</b>";
         el.innerHTML = "All " + names.length + " of its files loaded, so nothing is missing — it failed " +
@@ -179,15 +149,8 @@
     if (shown || window.__swgBooted) return;
     var view = document.getElementById("view");
     if (!view) return;
-    // "Has a child" is NOT "rendered": app.js puts a `.loading` placeholder ("connecting…") here before
-    // Store.init(), so a crash DURING boot — a module that loads fine and then throws while rendering the
-    // first screen — left that placeholder up forever and this guard stayed silent. That is exactly what a
-    // broken node-detail page looked like in 1.7.0-beta: an eternal "connecting…", no diagnostic.
-    // Treat the placeholder as "not rendered yet"; anything else means the SPA is genuinely up.
     if (view.firstChild && !view.querySelector(".loading")) return;
     shown = true;
-    // HTMLScriptElement.supports only EXISTS on browsers new enough to have import maps, so its
-    // absence is the signal — no user-agent sniffing, and no false positive on a modern browser.
     var old = !importmapOK();
     var h = document.createElement("div");
     h.className = "empty";
@@ -203,19 +166,16 @@
         "Re-run the update on the panel host:<br>" +
         "<code>sudo swg-update</code> &nbsp;or&nbsp; <code>cd /root/swg-panel &amp;&amp; sudo ./update.sh</code>" +
         "<br><br><button type='button' id='swg-boot-retry'>Reload</button>";
-    view.innerHTML = "";        // drop the "connecting…" placeholder — it is all that is in here
+    view.innerHTML = "";
     view.appendChild(h);
     var b = document.getElementById("swg-boot-retry");
     if (b) b.onclick = function () { location.reload(); };
     if (!old) nameTheCulprit();
   }
-  // A failed module/asset fetch fires `error` on the element; it does not bubble, so capture it.
   window.addEventListener("error", function (e) {
     var t = e && e.target;
     if (t && (t.tagName === "SCRIPT" || t.tagName === "LINK")) setTimeout(diagnose, 50);
   }, true);
-  // Backstop for everything an error event can't see (a parse error, a hang, an old browser that
-  // simply ignores the module tag). Generous, so a slow link is never called a failure.
   setTimeout(diagnose, 10000);
 })();
 </script>

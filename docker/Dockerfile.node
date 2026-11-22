@@ -1,11 +1,8 @@
-# The official images come from AWS ECR Public's Docker Hub mirror; CI takes them from Google's (mirror.gcr.io/library)
-# when ECR cannot serve one — for two days in 2026-10 its debian:bookworm-slim index named an amd64 manifest it no longer had.
 ARG BASE_REGISTRY=public.ecr.aws/docker/library
 FROM ${BASE_REGISTRY}/debian:bookworm-slim AS build
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git make build-essential \
  && rm -rf /var/lib/apt/lists/*
 WORKDIR /src
-# awg / awg-quick userspace control tools
 RUN for i in 1 2 3 4 5; do git clone --depth=1 --branch v3.1.20260812 https://github.com/amnezia-vpn/amneziawg-tools && break \
       || { echo "git clone amneziawg-tools failed (attempt $i) — retrying"; sleep 3; rm -rf amneziawg-tools; }; done \
  && make -C amneziawg-tools/src \
