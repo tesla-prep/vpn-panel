@@ -859,7 +859,7 @@ html[data-ui="m"] {
   & .bkrow > .bk-cat { order: 0; flex: 1 1 calc(100% - 60px); min-width: 0; }
   & .bkrow > .lg-pull { order: 1; flex: none; margin-left: auto; align-self: flex-start; }
   & .bkrow > :not(.bk-cat, .lg-pull, .bk-addwrap) { order: 2; }
-  & .bkrow > :is(.bk-kind, .bk-size):empty { display: none; }
+  & .bkrow > .bk-size:empty { display: none; }
   & .bkrow > .bk-defchip { font-size: 12px; padding: 4px 10px; min-height: 28px; }
   & .bkrow > .bk-fleet .fleet-trig { min-height: 28px; }
   & .bkrow > .bk-addwrap { order: 3; display: none; }

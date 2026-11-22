@@ -32,7 +32,7 @@ import {
 import {
   AsnHint, BlockListPicker, CAT_PROVIDER_DEFAULTS, DescInfo, FleetAssign, HostHealth, ListInfo,
   MODE_META, ModeTabs, NewBlockCatSheet, ProvTag, blockCatDisabled, blockSrcOk, capBadges, catCap, catDescOf,
-  blistText, blockCatLabel, catLabelOf, catListUrl, catRawId, catUsableInMode, loadBlockCatalog, newRid,
+  blistText, catLabelOf, catListUrl, catRawId, catUsableInMode, loadBlockCatalog, newRid,
   TargetField, candAddr, cardAddrs, cardGateway, isCardName, candOf, exitHealth, exitIsDialin, exitOptionGroups, exitProv, fleetRuleCats, provLabelOf, provName, providerColor, providerUsage, reportDropped,
   resetRouting, sizeSummary,
   exitHealthMark, RoutingRules, rulesTitle, rulesSummary, egressSaveBlock,
@@ -1232,7 +1232,7 @@ const sectionLabel = k => ({
             const provColor = p => { const bp = (bc.providers || []).find(x => x.id === p) || {}; return pickThemed(provColors[p] || asThemed((ps.provider_colors || {})[p], bp.color, bp.color_l || bp.color), _provColDefault(p).dark, _provColDefault(p).light); };
             const srcLabel = s => { const L = (provList[s.provider] || []).find(x => x.id === (s.list || "")); return (L && blistText(L.label)) || s.list || provLabel(s.provider); };
             const bcat = id => { const b = (bc.categories || {})[id] || {}; return { id, ...b, ...(blockEdits[id] || {}) }; };
-            const allIds = [...new Set([...(bc.cat_order || []), ...Object.keys(bc.categories || {}), ...Object.keys(blockEdits)])];
+            const allIds = [...new Set([...Object.keys(bc.categories || {}), ...Object.keys(blockEdits)])];
             const cats = allIds.map(bcat).filter(c => c.kind !== "mechanism" && !blockRemoved.includes(c.id));
             const caps = c => { const s = c.sources || []; return { host: s.some(x => provTier(x.provider) === "host"), ip: s.some(x => provTier(x.provider) === "ip") }; };
             const fmtN = n => n == null ? null : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M" : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "k" : String(n);
@@ -1247,7 +1247,7 @@ const sectionLabel = k => ({
             const doRemoveCat = c => { setBkOpen(o => ({ ...o, [c.id]: false })); if ((bc.categories || {})[c.id]) setBlockRemoved(r => r.includes(c.id) ? r : [...r, c.id]); setBlockEdits(e => { const n = { ...e }; delete n[c.id]; return n; }); };
             const removeCat = c => { if ((bc.categories || {})[c.id])   // a SAVED custom category → confirm; an unsaved draft removes with no prompt
                 openConfirm({ title: T("Delete category · ") + c.label, confirmLabel: T("Delete category"), danger: true,
-                  body: T("Removes this custom category and its lists. It's deleted from the panel when you Save, and nodes stop filtering it on their next sync. You'd have to recreate it to bring it back."),
+                  body: T("Nodes stop applying this category after you save and they sync."),
                   onConfirm: () => doRemoveCat(c) });
               else doRemoveCat(c); };
             const availOn = c => (c.enabled_nodes || []).includes(selNode);
@@ -1268,7 +1268,7 @@ const sectionLabel = k => ({
             const setAvailNode = (c, nid, on) => { const en = new Set(c.enabled_nodes || []); on ? en.add(nid) : en.delete(nid);
               setBlockEdits(e => ({ ...e, [c.id]: { ...(e[c.id] || {}), enabled_nodes: [...en] } })); };
             const bkRow = c => { const src = c.sources || []; const nL = src.length; const open = !!bkOpen[c.id]; const dis = catDis(c);
-              const catNm = blockCatLabel(c.label);   // the whole name on hover — a narrow column cuts a long one off
+              const catNm = c.label;   // the whole name on hover — a narrow column cuts a long one off
               return html`<div class=${"bkitem" + (open ? " open" : "") + (dis ? " bk-dis" : "")} key=${c.id}>
                 <div class=${"bkrow" + (open ? " open" : "")} onClick=${() => setBkOpen(o => ({ ...o, [c.id]: !open }))}>
                   <div class="lg-pull" onClick=${e => e.stopPropagation()}>${nodeRec ? html`<${Switch} on=${availOn(c) && !dis} disabled=${dis} title=${dis ? T("No IP list here — can't enforce in {v1}. Add an IP list, or use Hybrid SNI.", { v1: modeLabel }) : T("Filter on {v1}", { v1: nodeRec.name })} onChange=${v => { if (!dis) setAvail(c, v); }}/>` : null}</div>
@@ -1276,7 +1276,6 @@ const sectionLabel = k => ({
                     <div class="bk-catline"><span class="lg-title" title=${catNm}>${catNm}</span><span class="bk-chev">▾</span></div>
                     <div class="bk-lists">${nL ? src.map(srcLabel).join(", ") : html`<span class="faint">${T("no lists yet — add one →")}</span>`}</div>
                   </div>
-                  <div class="bk-kind">${!c.predefined ? html`<span class="capb custom" title=${T("A category you created")}>${T("src|Custom")}</span>` : null}</div>
                   <div class="bk-size">${(() => { const t = catTotal(c); return t ? html`<span class="bk-count" title=${T("Total entries across this category’s lists")}>${t}</span>` : null; })()}</div>
                   <div class="bk-fleet" onClick=${e => e.stopPropagation()}><${FleetAssign} nodes=${fleetNodes} isOn=${nid => (c.enabled_nodes || []).includes(nid)} onToggle=${(nid, on) => setAvailNode(c, nid, on)}/></div>
                   <div class="bk-cap">${(() => { const cp = caps(c); return cp.host || cp.ip
@@ -1301,22 +1300,19 @@ const sectionLabel = k => ({
                       <button class="bk-lremove" title=${T("Remove this list from the category")} onClick=${e => { e.stopPropagation(); removeSource(c, i); }}><${Ic} i="x"/></button>
                     </div>`)
                     : html`<div class="bk-empty">${Trich("No lists yet — use *+ Add list* above to add one.")}</div>`}
-                  ${!c.predefined ? html`<div class="bk-catfoot"><span class="grow"></span><button class="bk-delcat" title=${T("Delete this custom category")} onClick=${e => { e.stopPropagation(); removeCat(c); }}><${Ic} i="trash"/>${T("Delete category")}</button></div>` : null}
+                  <div class="bk-catfoot"><span class="grow"></span><button class="bk-delcat" title=${T("Delete category")} onClick=${e => { e.stopPropagation(); removeCat(c); }}><${Ic} i="trash"/>${T("Delete category")}</button></div>
                 </div>` : null}
               </div>`; };
             return html`<${Fragment}>
               <div class="lgrid-head" style="margin-top:16px">
                 <div class="lg-htitle"><span class="seclabel" style="margin:0">${T("Block categories")}</span><span class="lg-count">${cats.length}</span><span class="faint lg-sub">${T("drop ads, malware, adult, threat IPs — by domain or IP")}</span></div>
                 <span class="grow"></span>
-                <button class="btn btn-add" onClick=${() => openModal(html`<${NewBlockCatSheet} existingIds=${allIds} onCreate=${createCat}/>`)}><${Ic} i="plus"/>${T("New category")}</button>
+                <button class="btn btn-add" onClick=${() => openModal(html`<${NewBlockCatSheet} existingNames=${cats.map(c => c.label)} onCreate=${createCat}/>`)}><${Ic} i="plus"/>${T("New category")}</button>
               </div>
-              <div class="lgrid">${cats.map(bkRow)}</div>
+              ${cats.length ? html`<div class="lgrid">${cats.map(bkRow)}</div>` : html`<p class="hint">${T("No block categories yet. Create a category and add the lists it should use.")}</p>`}
               <div class="lg-legend">
                 ${legRow(Trich("{v1} matched by IP address — works in every mode.", { v1: html`<span class="capb ip">IP</span>` }))}
-                ${/* what each engine does with a blocked NAME since 1.8.8 (KSNI-HOSTNAMES D1/D2): Hybrid refuses the connection,
-                      Force-DNS drops the answer's address unless an allowed name shares it — the two stated, not "fills a set" */""}
-                ${legRow(Trich("{v1} matched by domain name — *{v2}* drops what a blocked name resolves to, unless an allowed site uses the same address; *Hybrid-SNI* refuses each connection to a blocked name. IP-only and Kernel-SNI skip domain lists.", { v1: html`<span class="capb host">${T("Host")}</span>`, v2: T("Force-DNS") }))}
-                ${legRow(Trich("{v1} a domain list can't enforce on an IP-only or Kernel-SNI node — it's skipped, never pushed. Switch that node to Hybrid SNI, or add an IP list.", { v1: html`<span class="bk-nabadge">${T("Not available")}</span>` }))}
+                ${legRow(Trich("{v1} matched by domain name — needs Hybrid SNI mode.", { v1: html`<span class="capb host">${T("Host")}</span>` }))}
               </div>
             <//>`;
           })() : null}

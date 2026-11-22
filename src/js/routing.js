@@ -675,14 +675,6 @@ export const MECH_HINT = () => (_mech_hint || (_mech_hint = {   // Torrents / P2
 }));
 let _block_cat_label = null;
 export const blockCatLabel = label => (_block_cat_label || (_block_cat_label = {
-  "Ads & Trackers":           T("bcat|Ads & Trackers"),
-  "Malware, Phishing & C2":   T("bcat|Malware, Phishing & C2"),
-  "Adult":                    T("bcat|Adult"),
-  "Gambling":                 T("bcat|Gambling"),
-  "Social media":             T("bcat|Social media"),
-  "Gaming":                   T("bcat|Gaming"),
-  "Tor exit nodes":           T("bcat|Tor exit nodes"),
-  "Malware / C2 IPs":         T("bcat|Malware / C2 IPs"),
   "Torrents / P2P":           T("bcat|Torrents / P2P"),
   "SMTP :25 (outbound mail)": T("bcat|SMTP :25 (outbound mail)"),
   "Port-scan / Brute-force":  T("bcat|Port-scan / Brute-force"),
@@ -690,76 +682,15 @@ export const blockCatLabel = label => (_block_cat_label || (_block_cat_label = {
 }))[label] || label;
 let _blist = null;
 export const blistText = s => (_blist || (_blist = {
-  "Abuse": T("blist|Abuse"),
-  "Ad servers": T("blist|Ad servers"),
-  "Ads": T("blist|Ads"),
-  "Adult": T("blist|Adult"),
-  "Cryptojacking": T("blist|Cryptojacking"),
-  "Cryptomining": T("blist|Cryptomining"),
-  "DoH resolvers": T("blist|DoH resolvers"),
-  "Drugs": T("blist|Drugs"),
-  "Exit nodes": T("blist|Exit nodes"),
-  "Fake news": T("blist|Fake news"),
-  "Fraud": T("blist|Fraud"),
-  "Gambling": T("blist|Gambling"),
-  "Gaming": T("blist|Gaming"),
-  "Malware": T("blist|Malware"),
-  "Phishing": T("blist|Phishing"),
-  "Porn": T("blist|Porn"),
-  "Ransomware": T("blist|Ransomware"),
-  "Redirect / shorteners": T("blist|Redirect / shorteners"),
-  "Scam": T("blist|Scam"),
-  "Smart-TV telemetry": T("blist|Smart-TV telemetry"),
-  "Social": T("blist|Social"),
-  "Social media": T("blist|Social media"),
-  "Social networks": T("blist|Social networks"),
-  "Tracking": T("blist|Tracking"),
-  "+ adult / pornography": T("blist|+ adult / pornography"),
-  "+ fake-news sites": T("blist|+ fake-news sites"),
-  "+ gambling": T("blist|+ gambling"),
-  "+ social media": T("blist|+ social media"),
-  "Abuse & spam sources": T("blist|Abuse & spam sources"),
-  "Active attackers (recent)": T("blist|Active attackers (recent)"),
-  "Ads + malware (the base list)": T("blist|Ads + malware (the base list)"),
   "Adult / pornographic domains": T("blist|Adult / pornographic domains"),
-  "Adult / pornographic sites": T("blist|Adult / pornographic sites"),
-  "Advertising domains": T("blist|Advertising domains"),
-  "Aggressive — maximum coverage": T("blist|Aggressive — maximum coverage"),
-  "All-in-one: ads, malware, phishing & tracking — low false positives":
-    T("blist|All-in-one: ads, malware, phishing & tracking — low false positives"),
-  "Analytics & tracking domains": T("blist|Analytics & tracking domains"),
+  "All-in-one: ads, malware, phishing & tracking": T("blist|All-in-one: ads, malware, phishing & tracking"),
   "Balanced ads + tracking blocklist": T("blist|Balanced ads + tracking blocklist"),
-  "Balanced — fewest false positives": T("blist|Balanced — fewest false positives"),
-  "Broader attack sources": T("blist|Broader attack sources"),
-  "Crypto-mining & crypto-scam domains": T("blist|Crypto-mining & crypto-scam domains"),
-  "Drug-related sites": T("blist|Drug-related sites"),
-  "Facebook / Meta domains": T("blist|Facebook / Meta domains"),
-  "Fraudulent sites": T("blist|Fraudulent sites"),
-  "Fresh phishing domains (non-commercial)": T("blist|Fresh phishing domains (non-commercial)"),
-  "Gambling & betting sites": T("blist|Gambling & betting sites"),
-  "Gambling sites": T("blist|Gambling sites"),
-  "Game platforms & services": T("blist|Game platforms & services"),
-  "Hand-curated ads + trackers": T("blist|Hand-curated ads + trackers"),
-  "High-confidence hostile IPs — safe default": T("blist|High-confidence hostile IPs — safe default"),
-  "Hijacked / criminal netblocks": T("blist|Hijacked / criminal netblocks"),
-  "In-browser crypto-mining": T("blist|In-browser crypto-mining"),
-  "Known malware hosts": T("blist|Known malware hosts"),
-  "Lighter all-in-one — the essentials only": T("blist|Lighter all-in-one — the essentials only"),
-  "Malware hosts": T("blist|Malware hosts"),
-  "Malware, phishing & C2 domains": T("blist|Malware, phishing & C2 domains"),
-  "Phishing sites": T("blist|Phishing sites"),
-  "Public DNS-over-HTTPS endpoints": T("blist|Public DNS-over-HTTPS endpoints"),
-  "Ransomware infrastructure": T("blist|Ransomware infrastructure"),
-  "Scam sites": T("blist|Scam sites"),
   "Smaller ads list, fewer false positives": T("blist|Smaller ads list, fewer false positives"),
-  "Smart-TV tracking & telemetry": T("blist|Smart-TV tracking & telemetry"),
-  "Social-media platforms": T("blist|Social-media platforms"),
-  "Stronger — more coverage": T("blist|Stronger — more coverage"),
-  "TikTok domains": T("blist|TikTok domains"),
-  "Top attacking subnets (SANS)": T("blist|Top attacking subnets (SANS)"),
-  "Tor network exit-node IPs": T("blist|Tor network exit-node IPs"),
-  "URL shorteners & redirectors": T("blist|URL shorteners & redirectors"),
-  "YouTube domains": T("blist|YouTube domains"),
+  "Compact list of malware, phishing & C2 domains": T("blist|Compact list of malware, phishing & C2 domains"),
+  "Malware, phishing & C2 domains": T("blist|Malware, phishing & C2 domains"),
+  "Gambling & betting sites": T("blist|Gambling & betting sites"),
+  "Public DNS-over-HTTPS endpoints": T("blist|Public DNS-over-HTTPS endpoints"),
+  "Hijacked / criminal netblocks": T("blist|Hijacked / criminal netblocks"),
 }))[s] || s;
 
 // The default block set for a NEW interface on `node`: every default-on category available here — mechanisms are
@@ -867,8 +798,7 @@ export function BlockTraffic({ node, value, onChange, p2p, onP2p }) {
   const active = id => (value || []).includes(id);
   const toggle = id => { const s = new Set(value || []); s.has(id) ? s.delete(id) : s.add(id); onChange([...s]); };
   if (!bc) return html`<div class="blk-field"><div class="hint">${T("Loading block catalog…")}</div></div>`;
-  const cats = bc.categories || {};
-  const list = [...new Set([...(bc.cat_order || []), ...Object.keys(cats)])].map(id => cats[id]).filter(c => c && c.enabled !== false);
+  const list = Object.values(bc.categories || {}).filter(c => c.enabled !== false);
   const availOn = c => (c.enabled_nodes || []).includes(node);
   const content = list.filter(c => (c.kind === "content" || c.kind === "ip") && availOn(c));
   const mech = list.filter(c => c.kind === "mechanism" && !MECH_UNBUILT.has(c.id) && !(onP2p && c.id === "torrents"));   // its own row below
@@ -879,7 +809,7 @@ export function BlockTraffic({ node, value, onChange, p2p, onP2p }) {
       title=${dis ? T("No IP list in this category — domain lists can't match in {mode}. Use Hybrid SNI, or add an IP list.", { mode: (MODE_META[mode] || {}).label || mode })
                  : dead ? T("None of this category's lists is in use — their providers are switched off, or it has no lists yet. It blocks nothing until one is.")
                  : (c.kind === "ip" ? T("Matched by IP address — works in every mode.") : T("Matched by domain name."))}
-      onClick=${() => { if (!dis) toggle(c.id); }}><span class="blkchip-g">⊘</span>${blockCatLabel(c.label)}${!c.predefined ? html`<span class="blkchip-tag">${T("tag|custom")}</span>` : null}</button>`; };
+      onClick=${() => { if (!dis) toggle(c.id); }}><span class="blkchip-g">⊘</span>${c.label}</button>`; };
   const mchip = c => html`<button type="button" key=${c.id} class=${"blkchip mech" + (active(c.id) ? " on" : "")}
       title=${MECH_HINT()[c.id] || ""} onClick=${() => toggle(c.id)}><span class="blkchip-g">⊘</span>${blockCatLabel(c.label)}</button>`;
   return html`<div class="blk-field">
@@ -931,17 +861,22 @@ export function BlockListPicker({ providers, provLists, current, nodeMode, onAdd
 }
 
 // Create a custom block category — just a name. It matches by whatever the lists you add are (domains and/or IPs).
-export function NewBlockCatSheet({ existingIds, onCreate }) {
+export function NewBlockCatSheet({ existingNames, onCreate }) {
   const [name, setName] = useState("");
   const nm = name.trim();
-  const id = "cl_" + nm.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
-  const dup = (existingIds || []).includes(id);
-  const bad = !nm || id === "cl_" || dup;
-  const create = () => { if (bad) return; onCreate({ id, label: nm }); closeModal(); };
+  const dup = existingNames.some(label => label.toLowerCase() === nm.toLowerCase());
+  const bad = !nm || dup;
+  const create = () => {
+    if (bad) return;
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+    const id = "cl_" + Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+    onCreate({ id, label: nm });
+    closeModal();
+  };
   return html`<${Sheet} title=${T("New block category")} onClose=${closeModal}
     foot=${html`<${Fragment}><span class="grow"></span><button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Cancel")}</button><button class="btn btn-primary" disabled=${bad} onClick=${create}>${T("Create")}</button></>`}>
     <div class="field"><label>${T("Name")}</label>
-      <input type="text" autofocus spellcheck="false" value=${name} placeholder=${T("e.g. Corporate block")}
+      <input type="text" autofocus spellcheck="false" maxlength="80" value=${name} placeholder=${T("e.g. Corporate block")}
         onInput=${e => setName(e.target.value)} onKeyDown=${e => { if (e.key === "Enter") create(); }}/>
       <div class="hint">${T("Add lists next — the category matches by domain or IP depending on the lists you pick.")}</div></div>
     ${dup ? html`<div class="hint"><b class="warntext">${T("A category with that name already exists.")}</b></div>` : null}

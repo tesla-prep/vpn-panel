@@ -9320,81 +9320,28 @@ CATALOG_TTL = 86400
 CATALOG_FAIL_TTL = 1800    # after a TOTAL provider failure, don't re-attempt for this long (see catalog_index)
 CATALOG_PATH = "/var/lib/swg-panel/catalog-index.json"          # overridden from the state dir in main()
 
-BLOCK_PROVIDERS = {   # tier host|ip = domains (needs Force-DNS/SNI) or IPs (every mode). color = tag colour. default_on=False → off until enabled. URLs verified on first fetch.
-    "hagezi":  {"label": "HaGeZi", "tier": "host", "color": "#2fb886", "color_l": "#1a9e6e", "url": "https://github.com/hagezi/dns-blocklists",
-                "raw": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/{id}-onlydomains.txt", "fmt": "plain",
-                "note": "The reference DNS blocklist — ads, tracking, malware and phishing, refreshed several times a day (GPL-3.0)."},
-    "blp":     {"label": "The Block List Project", "tier": "host", "color": "#3b82f6", "color_l": "#2563eb", "url": "https://github.com/blocklistproject/Lists",
-                "raw": "https://blocklistproject.github.io/Lists/alt-version/{id}-nl.txt", "fmt": "plain",
-                "note": "Public-domain, per-category domain lists — one clean file each for ads, malware, gambling and more (Unlicense)."},
-    "ut1":     {"label": "UT1 · Toulouse", "tier": "host", "color": "#d99a2b", "color_l": "#b8791a", "url": "https://github.com/olbat/ut1-blacklists",
-                "raw": "https://raw.githubusercontent.com/olbat/ut1-blacklists/master/blacklists/{id}/domains", "fmt": "plain",
-                "note": "Academic categorised lists — the only maintained source with a Gaming category (CC BY-SA, attribute)."},
-    "oisd":    {"label": "OISD", "tier": "host", "color": "#8b5cf6", "color_l": "#7c3aed", "default_on": True, "url": "https://oisd.nl",
-                "raw": "https://{id}.oisd.nl/abp", "fmt": "abp",
-                "note": "One heavily-curated all-in-one list tuned for very few false positives — NOT split by category. Pick Big (ads + malware + phishing + tracking, in one) or the separate NSFW list."},
-    "firehol": {"label": "FireHOL", "tier": "ip", "color": "#e0714a", "color_l": "#c2552f", "url": "https://github.com/firehol/blocklist-ipsets",
+BLOCK_PROVIDERS = {
+    "oisd": {"label": "OISD", "tier": "host", "color": "#8b5cf6", "color_l": "#7c3aed", "url": "https://oisd.nl",
+             "raw": "https://{id}.oisd.nl/abp", "fmt": "abp",
+             "note": "Big covers ads, tracking and threats. NSFW is a separate adult-content list."},
+    "hagezi": {"label": "HaGeZi", "tier": "host", "color": "#2fb886", "color_l": "#1a9e6e", "url": "https://github.com/hagezi/dns-blocklists",
+               "raw": "https://raw.githubusercontent.com/hagezi/dns-blocklists/main/wildcard/{id}-onlydomains.txt", "fmt": "plain",
+               "note": "Choose a combined protection list or a targeted list for threats or content."},
+    "firehol": {"label": "FireHOL", "tier": "ip", "color": "#e0714a", "color_l": "#c2552f", "url": "https://iplists.firehol.org/?ipset=spamhaus_drop",
                 "raw": "https://raw.githubusercontent.com/firehol/blocklist-ipsets/master/{id}.netset", "fmt": "ip",
-                "note": "Curated threat-IP feeds — attackers, C2 and abuse sources, rebuilt daily. Level 1 is the low-false-positive safe default."},
-    "tor":     {"label": "Tor Project", "tier": "ip", "color": "#7d4698", "color_l": "#6b3a86", "url": "https://check.torproject.org",
-                "raw": "https://check.torproject.org/torbulkexitlist", "fmt": "ip", "single": True,
-                "note": "Every Tor network exit relay — the official bulk list, refreshed hourly."},
-    "stevenblack": {"label": "StevenBlack", "tier": "host", "color": "#64748b", "color_l": "#475569", "default_on": False, "url": "https://github.com/StevenBlack/hosts",
-                "raw": "https://raw.githubusercontent.com/StevenBlack/hosts/master/{id}", "fmt": "hosts",
-                "note": "The most popular unified hosts list (ads + malware) plus a few bolt-on category variants."},
-    "peterlowe": {"label": "Peter Lowe", "tier": "host", "color": "#0ea5e9", "color_l": "#0284c7", "default_on": False, "url": "https://pgl.yoyo.org/adservers/",
-                "raw": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=nohtml&showintro=0", "fmt": "plain", "single": True,
-                "note": "A long-running, hand-curated ads + trackers list — small but very low false-positive."},
-    "1hosts":  {"label": "1Hosts", "tier": "host", "color": "#ec4899", "color_l": "#db2777", "default_on": False, "url": "https://github.com/badmojr/1Hosts",
-                "raw": "https://raw.githubusercontent.com/badmojr/1Hosts/master/{id}/wildcards.txt", "fmt": "plain",
-                "note": "A well-made combined ads + tracking + malware list in three strengths (Lite / Pro / Xtra)."},
-    "phisharmy": {"label": "Phishing Army", "tier": "host", "color": "#dc2626", "color_l": "#b91c1c", "default_on": False, "url": "https://phishing.army",
-                "raw": "https://phishing.army/download/phishing_army_blocklist.txt", "fmt": "plain", "single": True,
-                "note": "Fresh phishing domains from PhishTank / OpenPhish. Licensed CC BY-NC — non-commercial use only."},
-}
-BLOCK_PROVIDER_ORDER = ["hagezi", "blp", "ut1", "oisd", "firehol", "tor", "stevenblack", "peterlowe", "1hosts", "phisharmy"]
-
-BLOCK_PROVIDER_LISTS = {   # id → (label, description). description is the "what providers say" blurb shown per list.
-    "hagezi":  {"pro": ("Pro", "Balanced ads + tracking blocklist"), "light": ("Light", "Smaller ads list, fewer false positives"),
-                "tif": ("Threat Intelligence Feed", "Malware, phishing & C2 domains"), "nsfw": ("NSFW", "Adult / pornographic domains"),
-                "gambling": ("Gambling", "Gambling & betting sites"), "doh": ("DoH resolvers", "Public DNS-over-HTTPS endpoints")},
-    "blp":     {"ads": ("Ads", "Advertising domains"), "tracking": ("Tracking", "Analytics & tracking domains"),
-                "malware": ("Malware", "Known malware hosts"), "phishing": ("Phishing", "Phishing sites"),
-                "scam": ("Scam", "Scam sites"), "fraud": ("Fraud", "Fraudulent sites"), "abuse": ("Abuse", "Abuse & spam sources"),
-                "ransomware": ("Ransomware", "Ransomware infrastructure"), "porn": ("Porn", "Adult / pornographic sites"),
-                "gambling": ("Gambling", "Gambling sites"), "social-media": ("Social media", "Social-media platforms"),
-                "crypto": ("Cryptomining", "Crypto-mining & crypto-scam domains"), "drugs": ("Drugs", "Drug-related sites"),
-                "redirect": ("Redirect / shorteners", "URL shorteners & redirectors"), "smart-tv": ("Smart-TV telemetry", "Smart-TV tracking & telemetry"),
-                "tiktok": ("TikTok", "TikTok domains"), "facebook": ("Facebook", "Facebook / Meta domains"), "youtube": ("YouTube", "YouTube domains")},
-    "oisd":    {"big": ("Big", "All-in-one: ads, malware, phishing & tracking — low false positives"),
-                "small": ("Small", "Lighter all-in-one — the essentials only"), "nsfw": ("NSFW", "Adult / pornographic domains")},
-    "firehol": {"firehol_level1": ("Level 1", "High-confidence hostile IPs — safe default"), "firehol_level2": ("Level 2", "Active attackers (recent)"),
-                "firehol_level3": ("Level 3", "Broader attack sources"), "dshield": ("DShield", "Top attacking subnets (SANS)"), "spamhaus_drop": ("Spamhaus DROP", "Hijacked / criminal netblocks")},
-    "tor":     {"": ("Exit nodes", "Tor network exit-node IPs")},
-    "ut1":     {"games": ("Gaming", "Game platforms & services"), "social_networks": ("Social networks", "Social-media platforms"),
-                "adult": ("Adult", "Adult / pornographic domains"), "gambling": ("Gambling", "Gambling & betting sites"),
-                "cryptojacking": ("Cryptojacking", "In-browser crypto-mining"), "malware": ("Malware", "Malware hosts"),
-                "phishing": ("Phishing", "Phishing sites"), "drugs": ("Drugs", "Drug-related sites")},
-    "stevenblack": {"hosts": ("Unified", "Ads + malware (the base list)"), "alternates/porn/hosts": ("Adult", "+ adult / pornography"),
-                "alternates/gambling/hosts": ("Gambling", "+ gambling"), "alternates/social/hosts": ("Social", "+ social media"),
-                "alternates/fakenews/hosts": ("Fake news", "+ fake-news sites")},
-    "peterlowe": {"": ("Ad servers", "Hand-curated ads + trackers")},
-    "1hosts":  {"Lite": ("Lite", "Balanced — fewest false positives"), "Pro": ("Pro", "Stronger — more coverage"), "Xtra": ("Xtra", "Aggressive — maximum coverage")},
-    "phisharmy": {"": ("Phishing", "Fresh phishing domains (non-commercial)")},
+                "note": "FireHOL mirror of the Spamhaus DROP IPv4 networks."},
 }
 
-# Predefined LIST-backed block categories. Each: (label, kind[content|ip], default_on, [(provider, list_id)…]).
-# default_on drives the new-interface default (operator toggles it per-category on the Block-lists screen).
-BLOCK_CATEGORIES = {
-    "ads":       ("Ads & Trackers",               "content", True,  [("hagezi", "light")]),
-    "malware":   ("Malware, Phishing & C2",       "content", True,  [("oisd", "small")]),
-    "adult":     ("Adult",                         "content", False, [("hagezi", "nsfw")]),
-    "gambling":  ("Gambling",                      "content", False, [("ut1", "gambling")]),
-    "social":    ("Social media",                  "content", False, [("ut1", "social_networks")]),
-    "gaming":    ("Gaming",                        "content", False, [("ut1", "games")]),
-    "tor_exit":  ("Tor exit nodes",                "ip",      False, [("tor", "")]),
-    "malware_ip":("Malware / C2 IPs",              "ip",      False, [("firehol", "firehol_level1")]),
+BLOCK_PROVIDER_LISTS = {
+    "oisd": {"big": ("Big", "All-in-one: ads, malware, phishing & tracking"), "nsfw": ("NSFW", "Adult / pornographic domains")},
+    "hagezi": {"pro": ("Pro", "Balanced ads + tracking blocklist"), "light": ("Light", "Smaller ads list, fewer false positives"),
+               "tif.mini": ("TIF Mini", "Compact list of malware, phishing & C2 domains"),
+               "tif": ("Threat Intelligence Feed", "Malware, phishing & C2 domains"),
+               "nsfw": ("NSFW", "Adult / pornographic domains"), "gambling": ("Gambling", "Gambling & betting sites"),
+               "doh": ("DoH resolvers", "Public DNS-over-HTTPS endpoints")},
+    "firehol": {"spamhaus_drop": ("Spamhaus DROP", "Hijacked / criminal netblocks")},
 }
+
 # Predefined MECHANISM block categories (built-in, no feed). Each: (label, default_on, detect, modes).
 # The 7 traffic-&-abuse defaults (confirmed 2026-07-24): torrents/smtp/portscan ON, the rest available-off.
 MECH_CATEGORIES = {
@@ -9407,7 +9354,6 @@ MECH_CATEGORIES = {
     "doh":         ("DoH / DoT / DoQ",             False, "ipset+port",  "all"),   # auto-engages under DNS-filtering
     "webrtc":      ("WebRTC / STUN",               False, "sig+port",    "all"),
 }
-BLOCK_CAT_ORDER = list(BLOCK_CATEGORIES.keys()) + list(MECH_CATEGORIES.keys())
 
 P2P_ACTIONS = ("block", "direct", "iface", "exit")
 
@@ -9504,38 +9450,43 @@ def _block_list_src(pid, lid):
     return raw
 
 def block_providers_enabled(panel_settings):
-    """Which block-feed providers are enabled fleet-wide. Default per provider = its default_on (core = on, optional = off);
-    the operator's panel_settings.block_catalog.providers overrides. Mirrors the geo-provider enable toggle."""
     en = ((panel_settings or {}).get("block_catalog") or {}).get("providers") or {}
-    return {p: bool(en.get(p, BLOCK_PROVIDERS[p].get("default_on", True))) for p in BLOCK_PROVIDER_ORDER}
+    return {p: bool(en.get(p, True)) for p in BLOCK_PROVIDERS}
+
+
+def _block_sources(sources):
+    out = []
+    seen = set()
+    for source in sources if isinstance(sources, list) else ():
+        if not isinstance(source, dict):
+            continue
+        pid = str(source.get("provider") or "").strip()
+        lid = str(source.get("list") or "").strip()
+        if lid in BLOCK_PROVIDER_LISTS.get(pid, {}) and (pid, lid) not in seen:
+            seen.add((pid, lid))
+            out.append({"provider": pid, "list": lid})
+    return out
 
 
 def block_catalog(panel_settings):
-    """Effective block-category catalog = predefined (BLOCK_CATEGORIES + MECH_CATEGORIES) overlaid with the
-    operator's panel_settings.block_catalog.categories deltas (sources / default_on / enabled / enabled_nodes)
-    plus any custom categories. Predefined feed lists are a DEFAULT the operator may extend, replace, or disable.
-    Returns {id: {id,label,kind,predefined,default_on,enabled, sources?|detect?, enabled_nodes?}} in stable order."""
-    over = ((panel_settings or {}).get("block_catalog") or {}).get("categories") or {}
+    """Built-in traffic controls and operator-created list categories."""
+    stored = ((panel_settings or {}).get("block_catalog") or {}).get("categories") or {}
     out = {}
-    for cid, (label, kind, don, srcs) in BLOCK_CATEGORIES.items():
-        out[cid] = {"id": cid, "label": label, "kind": kind, "predefined": True, "default_on": don,
-                    "enabled": True, "enabled_nodes": [],
-                    "sources": [{"provider": p, "list": l} for (p, l) in srcs]}
-    for cid, (label, don, detect, modes) in MECH_CATEGORIES.items():
-        out[cid] = {"id": cid, "label": label, "kind": "mechanism", "predefined": True, "default_on": don,
-                    "enabled": True, "detect": detect, "modes": modes}
-    for cid, ov in over.items():                                # operator overrides + custom categories
+    for cid, (label, default_on, detect, modes) in MECH_CATEGORIES.items():
+        ov = stored.get(cid)
         if not isinstance(ov, dict):
+            ov = {}
+        out[cid] = {"id": cid, "label": label, "kind": "mechanism",
+                    "default_on": ov.get("default_on", default_on), "enabled": ov.get("enabled", True),
+                    "detect": detect, "modes": modes}
+    for cid, ov in stored.items():
+        if cid in out or not isinstance(ov, dict) or not ov.get("label"):
             continue
-        base = out.get(cid)
-        if base is None:                                        # a custom (user-created) category
-            base = {"id": cid, "label": ov.get("label") or cid, "kind": ov.get("kind") or "content",
-                    "predefined": False, "default_on": False, "enabled": True, "sources": [], "enabled_nodes": []}
-            out[cid] = base
-        for k in ("label", "default_on", "enabled", "sources", "enabled_nodes"):
-            if k in ov:
-                base[k] = ov[k]
+        out[cid] = {"id": cid, "label": ov["label"], "kind": ov.get("kind") or "content",
+                    "default_on": ov.get("default_on", False), "enabled": ov.get("enabled", True),
+                    "sources": _block_sources(ov.get("sources")), "enabled_nodes": ov.get("enabled_nodes") or []}
     return out
+
 
 # Turn-proxy catalog — the SINGLE source of truth
 TURN_CLIENTS = {
@@ -11411,15 +11362,6 @@ def _line_host_plain(raw):
         return ln
     return ln if zone and _zone_label_ok(ln) else None          # `+.ru` — a declared zone, so a bare TLD counts
 
-def _line_hosts(raw):
-    ln = raw.split("#", 1)[0].strip().lower()
-    if not ln:
-        return None
-    parts = ln.split()
-    d = parts[1] if len(parts) >= 2 and parts[0] in ("0.0.0.0", "127.0.0.1", "::", "::1") else parts[0]
-    d = d.lstrip(".")
-    return d if (d not in ("localhost", "localhost.localdomain", "broadcasthost") and _PDOM_RE.match(d)) else None
-
 def _line_abp(raw):
     ln = raw.strip().lower()
     if not ln or ln[0] in "!#" or ln.startswith("@@") or "##" in ln or "/" in ln or "*" in ln:
@@ -11451,10 +11393,6 @@ def _norm_set(text, line_fn):
 def _norm_host_plain(text):
     """Plain domain list (one host/line; MetaCubeX '+.' / 1Hosts '*.' wildcard prefixes → bare)."""
     return _norm_set(text, _line_host_plain)
-
-def _norm_hosts(text):
-    """Hosts-file blocklist (`0.0.0.0 domain` …, StevenBlack/blocklistproject/URLhaus) → bare domains; superset of plain."""
-    return _norm_set(text, _line_hosts)
 
 def _norm_abp(text):
     """Adblock-Plus / AdGuard syntax (`||domain^`) → bare domains; element-hiding/regex/option/exception rules dropped."""
@@ -11560,9 +11498,9 @@ def _block_source_resolve(cat, tier):
     except ValueError:
         return None
     cfg = BLOCK_PROVIDERS.get(provider)
-    if not cfg:
+    if not cfg or lid not in BLOCK_PROVIDER_LISTS[provider]:
         return None
-    ptier = cfg.get("tier", "host")
+    ptier = cfg["tier"]
     if tier != ptier:
         return []                                              # this feed only carries its own tier
     tmpl = cfg.get("raw") or ""
@@ -11578,8 +11516,6 @@ def _block_source_resolve(cat, tier):
     fmt = cfg.get("fmt", "plain")
     if fmt == "abp":
         return _norm_abp(txt)
-    if fmt == "hosts":
-        return _norm_hosts(txt)
     return _norm_host_plain(txt)
 
 def block_source_size(provider, lid):
@@ -11693,9 +11629,9 @@ def _host_stream_spec(cat, tier):
         except ValueError:
             return None
         cfg = BLOCK_PROVIDERS.get(provider)
-        if not cfg or cfg.get("tier", "host") != "host" or not cfg.get("raw"):
+        if not cfg or cfg["tier"] != "host" or lid not in BLOCK_PROVIDER_LISTS[provider]:
             return None
-        line_fn = {"abp": _line_abp, "hosts": _line_hosts}.get(cfg.get("fmt", "plain"), _line_host_plain)
+        line_fn = _line_abp if cfg["fmt"] == "abp" else _line_host_plain
         return cfg["raw"].replace("{id}", lid or ""), line_fn
     if ":" in cat and not cat.startswith("blku:"):
         prov, rid = cat.split(":", 1)
@@ -14039,7 +13975,7 @@ def _ar_except_index(roster, entries):
 def _validate_block(block, panel_settings):
     """Clean an interface's active block-category list → known block-category ids only, in order, deduped.
     Unknown/removed ids are DROPPED (never an error) so a category deleted on the Block-lists screen can't lock
-    an interface out. The ids reference the effective block_catalog (predefined + operator customs)."""
+    an interface out. The ids reference the effective block_catalog."""
     cat = block_catalog(panel_settings)
     out = []
     for b in (block or []):
@@ -14242,32 +14178,19 @@ def _blk_file_has(path, target):
     return False
 
 
-def _blk_cat_srcpaths(deps):
-    """[(cid, [host-tier source list paths])] for the ENABLED content block categories — the corpus a blocked
-    hostname is bucketed against. Deterministic BLOCK_CAT_ORDER (first match wins for a domain on several lists)."""
-    cat = block_catalog(deps.get("panel_settings"))
-    enabled = set()
-    for n in (deps.get("nodes") or {}).values():
-        if not isinstance(n, dict):
-            continue
-        for ov in (n.get("ifaces") or {}).values():
-            for cid in (ov.get("block") or []):
-                c = cat.get(cid) or {}
-                if c.get("kind") != "mechanism" and c.get("enabled", True):
-                    enabled.add(cid)
+def _blk_cat_srcpaths(deps, nid, node):
+    """Host-list files for categories applied to this node's interfaces."""
+    ps = deps.get("panel_settings")
+    cat = block_catalog(ps)
+    selected = {cid for ids in _node_block_lists(node) for cid in ids}
+    feeds, _ = _block_feeds(cat, block_providers_enabled(ps), nid, node.get("routing_mode") or "kernel",
+                           [cid for cid in cat if cid in selected])
     out = []
-    for cid in BLOCK_CAT_ORDER:
-        if cid not in enabled:
-            continue
-        paths = []
-        for s in ((cat.get(cid) or {}).get("sources") or []):
-            prov = (s.get("provider") or "").strip(); lst = (s.get("list") or "").strip()
-            if not prov or (BLOCK_PROVIDERS.get(prov) or {}).get("tier", "host") == "ip":
-                continue                             # domains bucket against host-tier lists only
-            paths.append(_list_path("blk:%s:%s" % (prov, lst), "host"))
+    for cid, pairs in feeds.items():
+        paths = tuple(_list_path(sid, tier) for sid, tier in pairs if tier == "host")
         if paths:
             out.append((cid, paths))
-    return out
+    return tuple(out)
 
 
 def _blk_bucket(cache, srcpaths, host):
@@ -18630,70 +18553,52 @@ def api(method, path, qs, body, deps):
             _c["size"] = ({"host": th, "ip": ti} if known else None)
         return 200, {"ok": True, "data": {
             "categories": _bcats,
-            "cat_order": BLOCK_CAT_ORDER,
             "providers": [{"id": p, "label": BLOCK_PROVIDERS[p]["label"], "tier": BLOCK_PROVIDERS[p].get("tier", "host"),
                            "color": BLOCK_PROVIDERS[p].get("color", ""), "color_l": BLOCK_PROVIDERS[p].get("color_l", BLOCK_PROVIDERS[p].get("color", "")),
                            "url": BLOCK_PROVIDERS[p].get("url", ""),
-                           "note": BLOCK_PROVIDERS[p].get("note", ""), "enabled": en.get(p, True)} for p in BLOCK_PROVIDER_ORDER],
+                           "note": BLOCK_PROVIDERS[p].get("note", ""), "enabled": en.get(p, True)} for p in BLOCK_PROVIDERS],
             "provider_lists": {p: [{"id": lid, "label": v[0], "desc": v[1], "src": _block_list_src(p, lid)} for lid, v in BLOCK_PROVIDER_LISTS.get(p, {}).items()]
-                               for p in BLOCK_PROVIDER_ORDER}}}
+                               for p in BLOCK_PROVIDERS}}}
 
     if method == "POST" and path == "/api/block-catalog/save":  # staged commit from the Block-lists screen (category deltas + provider toggles)
-        node_ids = set(nodes_load(deps["nodes_path"]) or {})
-        cats_in, provs_in, removed = body.get("categories") or {}, body.get("providers") or {}, body.get("removed") or []
+        cats_in, provs_in, removed = body.get("categories", {}), body.get("providers", {}), body.get("removed", [])
         if not isinstance(cats_in, dict) or not isinstance(provs_in, dict) or not isinstance(removed, list):
             return 400, {"ok": False, "error": "categories/providers must be objects, removed a list", "code": "bad_request"}
-        clean_cats = {}
-        for cid, ov in cats_in.items():
-            cid = str(cid).strip()
-            if not cid or not isinstance(ov, dict):
-                continue
-            predefined = cid in BLOCK_CATEGORIES or cid in MECH_CATEGORIES
-            d = {}
-            if "label" in ov:
-                d["label"] = str(ov.get("label") or "").strip()[:80]
-            if ov.get("kind") in ("content", "ip"):
-                d["kind"] = ov["kind"]
-            if "default_on" in ov:
-                d["default_on"] = bool(ov["default_on"])
-            if "enabled" in ov:
-                d["enabled"] = bool(ov["enabled"])
-            if isinstance(ov.get("enabled_nodes"), list):
-                d["enabled_nodes"] = [n for n in ov["enabled_nodes"] if n in node_ids]
-            if isinstance(ov.get("sources"), list):
-                srcs = []
-                for s in ov["sources"]:
-                    if not isinstance(s, dict):
-                        continue
-                    p = str(s.get("provider") or "").strip()
-                    lid = str(s.get("list") or "").strip()
-                    if p in BLOCK_PROVIDERS and (not lid or lid in BLOCK_PROVIDER_LISTS.get(p, {})) \
-                            and {"provider": p, "list": lid} not in srcs:
-                        srcs.append({"provider": p, "list": lid})
-                d["sources"] = srcs
-            if not predefined:                              # a custom category needs a label + kind
-                d.setdefault("label", cid); d.setdefault("kind", "content")
-            if d:
-                clean_cats[cid] = d
-        cur = dict(deps.get("panel_settings") or {})
+        cur = dict(panel_settings)
         bc = dict(cur.get("block_catalog") or {})
         cats_store = dict(bc.get("categories") or {})
-        for cid, d in clean_cats.items():                   # MERGE each delta into the stored override — the screen sends only
-            cats_store[cid] = {**(cats_store.get(cid) or {}), **d}   # the fields it touched this session, so a sources-only save must
-            #                                                          NOT wipe enabled_nodes (and an enable-only save must keep sources)
-        for cid in removed:                                 # remove a CUSTOM category's override entirely; predefined can only be disabled
-            cid = str(cid).strip()
-            if cid not in BLOCK_CATEGORIES and cid not in MECH_CATEGORIES:
+        for cid, ov in cats_in.items():
+            if not cid or not isinstance(ov, dict):
+                continue
+            d = dict(cats_store.get(cid) or {})
+            for field in ("default_on", "enabled"):
+                if field in ov:
+                    d[field] = bool(ov[field])
+            if cid not in MECH_CATEGORIES:
+                if "label" in ov:
+                    d["label"] = str(ov["label"] or "").strip()[:80]
+                if not d.get("label"):
+                    return 400, {"ok": False, **perr("A block category needs a name."), "code": "bad_request"}
+                if ov.get("kind") in ("content", "ip"):
+                    d["kind"] = ov["kind"]
+                if isinstance(ov.get("enabled_nodes"), list):
+                    d["enabled_nodes"] = list(dict.fromkeys(
+                        n for n in ov["enabled_nodes"] if isinstance(n, str) and n in nodes))
+                if isinstance(ov.get("sources"), list):
+                    d["sources"] = _block_sources(ov["sources"])
+            cats_store[cid] = d
+        for cid in removed:
+            if isinstance(cid, str) and cid not in MECH_CATEGORIES:
                 cats_store.pop(cid, None)
         bc["categories"] = cats_store
-        provs_store = dict(bc.get("providers") or {}); provs_store.update({p: bool(provs_in[p]) for p in provs_in if p in BLOCK_PROVIDERS})
+        provs_store = dict(bc.get("providers") or {})
+        provs_store.update({p: bool(provs_in[p]) for p in provs_in if p in BLOCK_PROVIDERS})
         bc["providers"] = provs_store
         cur["block_catalog"] = bc
+        save_critical(deps["panel_settings_path"], json.dumps(cur, indent=2) + "\n")
         deps["panel_settings"] = cur
-        with contextlib.suppress(Exception):
-            save_critical(deps.get("panel_settings_path") or "", json.dumps(cur, indent=2) + "\n")
         ev_append(roster_path, "panel", "routing", "Updated block lists", "")
-        return 200, {"ok": True, "data": {"categories": block_catalog(cur), "cat_order": BLOCK_CAT_ORDER}}
+        return 200, {"ok": True, "data": {"categories": block_catalog(cur)}}
 
     if method == "POST" and path == "/api/geo/update":          # "Update all lists now": re-fetch every routed list on the panel (host bucket)
         provider_update_all(deps["nodes_path"])
@@ -22841,8 +22746,12 @@ class Handler(BaseHTTPRequestHandler):
                             atomic_write(os.path.join(stats_dir, "offenders.json"), json.dumps(_off), mode=0o640)
             _bd = _sr.get("blk_domains") or {}
             if _bd:
-                _srcp = _blk_cat_srcpaths(Handler.deps)
-                _cache = Handler.deps.setdefault("_blk_d2c", {})
+                _srcp = _blk_cat_srcpaths(Handler.deps, nid, node)
+                _buckets = Handler.deps.setdefault("_blk_d2c", {})
+                _cached_paths, _cache = _buckets.get(nid, (None, None))
+                if _cached_paths != _srcp:
+                    _cache = {}
+                    _buckets[nid] = (_srcp, _cache)
                 _percat = {}
                 for _host in _bd:                                    # top-K keys are distinct hostnames → count = distinct sites/category
                     _cc = _blk_bucket(_cache, _srcp, str(_host))
@@ -23618,8 +23527,8 @@ class Handler(BaseHTTPRequestHandler):
                 continue
             if _isblk:
                 if not _isblku:                                    # a bare block feed is gated by its block provider; a union isn't
-                    _bprov = _c.split(":", 2)[1] if _c.count(":") >= 2 else ""
-                    if not block_providers_enabled(_ps).get(_bprov, True):   # block feed's provider disabled → omit (node deletes the set)
+                    _bprov, _, _blid = _c[4:].partition(":")
+                    if _blid not in BLOCK_PROVIDER_LISTS.get(_bprov, {}) or not block_providers_enabled(_ps)[_bprov]:
                         continue
                 _caps = {(_blk_srcs.get(_c) or "host"): True}
             elif not _curated and not _enabled_prov.get(_c.split(":", 1)[0], False):   # routing provider not enabled → omit (node deletes the set)
@@ -23911,8 +23820,10 @@ class Handler(BaseHTTPRequestHandler):
         if tier not in ("ip", "host") or (not _isblk and ":" not in cat and not _curated):
             return self._send(400, {"error": "bad cat/tier"})
         if _isblk and not _isblku:
-            _bprov = cat.split(":", 2)[1] if cat.count(":") >= 2 else ""
-            if not block_providers_enabled(Handler.deps.get("panel_settings")).get(_bprov, True):
+            _bprov, _, _blid = cat[4:].partition(":")
+            if _blid not in BLOCK_PROVIDER_LISTS.get(_bprov, {}):
+                return self._send(404, {"error": "unknown block list"})
+            if not block_providers_enabled(Handler.deps.get("panel_settings"))[_bprov]:
                 return self._send(403, {"error": "provider disabled"})           # never serve a disabled block feed
         elif not _isblk and not _curated and not ((Handler.deps.get("panel_settings") or {}).get("providers") or {}).get(cat.split(":", 1)[0], False):
             return self._send(403, {"error": "provider disabled"})   # never serve a not-enabled provider's list
