@@ -13,8 +13,8 @@ valid_port() {
 }
 
 valid_https_url() {
-    local pattern='^https://([[:alnum:]][[:alnum:].-]*|\[[[:xdigit:]:.]+\])(:([0-9]+))?(/[[:alnum:]._%+~/-]*)?$'
-    [[ $1 =~ $pattern ]] || return 1
+    local pattern='^([[:alnum:]][[:alnum:].-]*|\[[[:xdigit:]:.]+\])(:([0-9]+))?(/[[:alnum:]._%+~/-]*)?$'
+    [[ ${1#https://} =~ $pattern ]] || return 1
     [[ -z ${BASH_REMATCH[3]} ]] || valid_port "${BASH_REMATCH[3]}"
 }
 
@@ -23,12 +23,11 @@ prompt_setting() {
     local answer prompt="$label"
     [[ -z $default ]] || prompt+=" [$default]"
     while true; do
-        printf '%s: ' "$prompt" >&2
         if "$secret"; then
-            IFS= read -rs answer || die 'Installation cancelled before saving settings.'
+            read -rs -p "$prompt: " answer || die 'Installation cancelled before saving settings.'
             printf '\n' >&2
         else
-            IFS= read -r answer || die 'Installation cancelled before saving settings.'
+            read -er -p "$prompt: " answer || die 'Installation cancelled before saving settings.'
         fi
         answer=${answer:-$default}
         if "$validator" "$answer"; then
@@ -39,21 +38,26 @@ prompt_setting() {
     done
 }
 
+prompt_https_url() {
+    local name=$1 address
+    prompt_setting "$name" "$2" valid_https_url "${3:-}"
+    address=${!name}
+    address=${address#https://}
+    printf -v "$name" 'https://%s' "${address%/}"
+}
+
 valid_node_token() { [[ $1 =~ ^[a-zA-Z0-9_-]+$ ]]; }
 valid_node_endpoint() { [[ $1 =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]; }
 
 configure_installation() (
     local role=$1 PANEL_URL SUB_URL PANEL_PORT SUB_PORT NODE_TOKEN NODE_ENDPOINT settings
     [[ -t 0 ]] || die "Initial setup requires a terminal or a prepared $install_dir/.env."
-    prompt_setting PANEL_URL 'Public HTTPS URL of the panel' valid_https_url
-    PANEL_URL=${PANEL_URL%/}
+    prompt_https_url PANEL_URL 'Public panel address (e.g. panel.example.org)'
     if [[ $role == panel ]]; then
-        prompt_setting SUB_URL 'Public HTTPS URL for subscriptions' valid_https_url "$PANEL_URL/subs"
-        SUB_URL=${SUB_URL%/}
+        prompt_https_url SUB_URL 'Public subscription address' "${PANEL_URL#https://}/subs"
         while [[ $SUB_URL == "$PANEL_URL" ]]; do
             printf 'Use a separate URL for subscriptions.\n' >&2
-            prompt_setting SUB_URL 'Public HTTPS URL for subscriptions' valid_https_url "$PANEL_URL/subs"
-            SUB_URL=${SUB_URL%/}
+            prompt_https_url SUB_URL 'Public subscription address' "${PANEL_URL#https://}/subs"
         done
         prompt_setting PANEL_PORT 'Local HTTP port for the panel' valid_port 6741
         prompt_setting SUB_PORT 'Local HTTP port for subscriptions' valid_port 8444
@@ -202,7 +206,7 @@ trap 'rm -f -- "$candidate"' EXIT
     sed "s/SWG_REVISION/$image_tag/g" "$source_dir/docker/compose.$role.yml"
 } > "$candidate"
 
-compose=(docker compose --env-file .env -f "$candidate")
+compose=(docker compose --ansi never --env-file .env -f "$candidate")
 "${compose[@]}" config --quiet
 "${compose[@]}" pull
 
@@ -231,7 +235,7 @@ fi
 if ! "${compose[@]}" up -d --wait --wait-timeout 90; then
     if [[ $action == update ]]; then
         echo 'Deployment failed. Restoring the previous Compose specification.' >&2
-        docker compose --env-file .env -f compose.yml up -d --wait --wait-timeout 90 ||
+        docker compose --ansi never --env-file .env -f compose.yml up -d --wait --wait-timeout 90 ||
             die "Rollback failed. Inspect Docker Compose logs in $install_dir."
     fi
     die "SWG $role failed to start. Inspect Docker Compose logs in $install_dir."
