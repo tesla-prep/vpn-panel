@@ -23,8 +23,8 @@ import {
 import { RailCustom } from "./traffic-ui.js";
 import { panelToday, chartsFirstDay, trafficTotals, talkerGroups } from "./traffic.js";
 import {
-  DASH_RANGES, OnlineUsersTag, onlinePeerRows, SVC_KINDWORD, dashKey, dashNodes, dashSave, dashState, isCustomKey, customKeyWindow, openLiveTab, rangeLabel, rangeWord, recentActivity,
-  revealOrphans, revealPeer, revealPeersFiltered, revealUser, serviceIssues, svcKey, svcSaveSilence,
+  DASH_RANGES, OnlineUsersTag, onlinePeerRows, SVC_KINDWORD, dashKey, dashNodes, dashSave, dashState, isCustomKey, customKeyWindow, openUsers, rangeLabel, rangeWord, recentActivity,
+  revealOrphans, revealPeer, revealUser, serviceIssues, svcKey, svcSaveSilence,
   svcSilence, svcSilencedSet,
 } from "./views.js";
 import {
@@ -1334,9 +1334,9 @@ export function Overview() {
     ${m ? null : html`<${DashRail}/>`}
     ${isCustomKey(dKey) && rangeHist.range === dKey && rangeHist.err ? html`<div class="notice warn">${srvText(rangeHist.err)}</div>` : null}
     <div class="statgrid">
-      <a class="stat accent clk" href="#/connections" onClick=${openLiveTab("peers")}><span class="stat-ic"><${Ic} i="activity"/></span><div class="stat-c"><div class="k">${T("Online now")}</div><div class="v">${online}<small> / ${sPeers.length}</small></div><div class="sub">${T("live connections →")}</div></div></a>
+      <a class="stat accent clk" href="#/users" onClick=${e => { e.preventDefault(); openUsers({ online: true }); }}><span class="stat-ic"><${Ic} i="activity"/></span><div class="stat-c"><div class="k">${T("Online now")}</div><div class="v">${online}<small> / ${sPeers.length}</small></div><div class="sub">${T("Online users →")}</div></div></a>
       <a class="stat clk" href="#/users"><span class="stat-ic"><${Ic} i="users"/></span><div class="stat-c"><div class="k">${T("Users")}</div><div class="v">${sUsers.length}</div><div class="sub">${scoped ? T("{v1} here", { v1: plural(sPeers.length, "peer") }) : T("{v1} total", { v1: plural(sPeers.length, "peer") })}</div></div></a>
-      <a class="stat clk" href="#/peers"><span class="stat-ic"><${Ic} i="device"/></span><div class="stat-c"><div class="k">${T("Peers")}</div><div class="v" style="font-size:19px"><span style="color:var(--ink)">${pAssigned}</span> · <span style="color:var(--dim)">${pUnassigned}</span></div><div class="sub">${T("assigned · unassigned")}</div>${orphans.length ? html`<div class="sub" style="color:#E8912D;font-weight:600">${T("Orphan peers {n}", { n: orphans.length })}</div>` : ""}</div></a>
+      <a class="stat clk" href="#/users" onClick=${e => { e.preventDefault(); openUsers(); }}><span class="stat-ic"><${Ic} i="device"/></span><div class="stat-c"><div class="k">${T("Peers")}</div><div class="v" style="font-size:19px"><span style="color:var(--ink)">${pAssigned}</span> · <span style="color:var(--dim)">${pUnassigned}</span></div><div class="sub">${T("assigned · unassigned")}</div>${orphans.length ? html`<div class="sub" style="color:#E8912D;font-weight:600">${T("Orphan peers {n}", { n: orphans.length })}</div>` : ""}</div></a>
       <a class="stat clk" href="#/nodes"><span class="stat-ic"><${Ic} i="server"/></span><div class="stat-c"><div class="k">${T("col|Nodes")}</div><div class="v">${liveNodes}<small> / ${fleetSel.length}</small></div><div class="sub">${plural(ifaceCount, "interface")}</div>${nodesAlerting ? html`<div class="sub" style="color:var(--dangling)">${T("{n} alerting", { n: nodesAlerting })}</div>` : ""}</div></a>
       <div class="stat"><span class="stat-ic"><${Ic} i="gauge"/></span><div class="stat-c"><div class="k">${T("Throughput")}</div><div class="v" style=${"font-size:19px;color:" + (rx + tx > 0 ? "var(--online)" : "var(--faint)")}>↓ ${rate(dlul(rx, tx)[0])}</div><div class="sub"><span style=${"color:" + (rx + tx > 0 ? "var(--ready)" : "var(--faint)")}>↑ ${rate(dlul(rx, tx)[1])}</span>${" " + (scoped ? T("sum|selected") : T("sum|aggregate"))}</div></div></div>
     </div>
@@ -1418,10 +1418,10 @@ export function Overview() {
             <span class=${"svc-badge " + is.sev}><${Ic} i="warn"/>${is.sev === "critical" ? T("sev|Critical") : T("sev|Warning")}</span>
             <span class="name">${is.label} — ${SVC_KINDWORD[is.kind] || is.kind}</span>
             <span class="why">${is.msg}</span><span class="grow"></span><span class="rowarrow"><${Ic} i="arrow"/></span>${attnAct("svc" + svcKey(is), awaySet)}</div>`]),
-        ...statusGroups.map(g => ["s" + g.status + ":" + g.peers.length, html`<div class="attn-row" key=${"s" + g.status} onClick=${() => revealPeersFiltered({ status: g.status })}>
+        ...statusGroups.map(g => ["s" + g.status + ":" + g.peers.length, html`<div class="attn-row" key=${"s" + g.status} onClick=${() => openUsers({ status: g.status })}>
             <${Badge} s=${g.status}/><span class="name">${Trich("*{v1}* {v2}", { v1: plural(g.peers.length, "peer"), v2: STATUS_WORD[g.status] || g.status })}</span>
             <span class="why">${why[g.status] || ""}</span><span class="grow"></span><span class="rowarrow"><${Ic} i="arrow"/></span>${attnAct("s" + g.status + ":" + g.peers.length, awaySet)}</div>`]),
-        ...unGroups.map(g => ["u" + g.node + ":" + g.peers.size, html`<div class="attn-row" key=${"u" + g.node} onClick=${() => revealPeersFiltered({ node: g.node, status: "unassigned" })}>
+        ...unGroups.map(g => ["u" + g.node + ":" + g.peers.size, html`<div class="attn-row" key=${"u" + g.node} onClick=${() => openUsers({ node: g.node, status: "unassigned" })}>
             <${Badge} s="unassigned"/><span class="name">${Trich("*{v1}* unassigned on {v2} on {v3}", { v1: plural(g.peers.size, "peer"), v2: ifCountPhrase(g), v3: Store.nodeName(g.node) })}</span>
             <span class="grow"></span><span class="rowarrow"><${Ic} i="arrow"/></span>${attnAct("u" + g.node + ":" + g.peers.size, awaySet)}</div>`]),
         ...orphGroups.map(g => ["o" + g.node + g.iface + ":" + g.n, html`<div class="attn-row" key=${"o" + g.node + g.iface} onClick=${() => revealOrphans(g.node, g.iface)}>

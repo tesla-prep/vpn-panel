@@ -64,9 +64,8 @@ export function ReachField({ node, iface, value, onChange, create, unvouched, un
   </div>`;
 }
 
-export const peersView = { node: "", iface: "", q: "", sort: "status", dir: -1, status: null, group: false };
-export const PEER_STATUS_KEYS = ["", "online", "ready", "unassigned", "disabled", "expired", "expiring", "blocking",
-  "restoring", "dangling", "broken", "partial", "blocked", "pending", "unknown"];   // i18n-keys
+const PEER_STATUS_KEYS = ["", "online", "ready", "unassigned", "disabled", "expired", "expiring", "blocking",
+  "restoring", "dangling", "broken", "partial", "blocked", "faulty", "pending", "unknown"];   // i18n-keys
 export const pageSizeOpts = () => [20, 30, 50, 100].map(n => ({ value: n, label: String(n) }));
 export const peerStatusFilters = () => PEER_STATUS_KEYS.map(k => ({ value: k, label: k ? statusLabel(k) : T("All statuses") }));
 // Prominent warning when the panel keeps no client configs at rest — QRs/downloads then only work
@@ -185,24 +184,21 @@ export function pageScroll(e, dir) {
   }));
 }
 
-export const connView = { mode: "peers", node: "", iface: "", q: "", online: true, page: 1, pageSize: 20, sort: "status", dir: -1, usort: "status", udir: -1 };   // Online filter ON by default → the Live view leads with what's connected now
 
 // Independent view-state per grid so search / server / interface / page never bleed across them.
-export const usersView = { q: "", node: "", iface: "", page: 1, pageSize: 20, sort: "status", dir: -1, expanded: {},   // node/iface filter the LIST (expand shows all peers)
+export const usersView = { q: "", status: "", node: "", iface: "", page: 1, pageSize: 20, sort: "status", dir: -1, expanded: {},   // node/iface filter the LIST (expand shows all peers)
   mode: "users", group: "", online: false,   // Users or Groups; `group` narrows the users list to one group ("" = all); Online
   gq: "", gpage: 1, gpageSize: 20, gsort: "name", gdir: 1, gexpanded: {} };   // the groups grid's own search, page, sort, open rows
 // Landing on a user (a reveal, a user just created) clears what could hide them: the group, node, interface and Online filters
 // all narrow the list, and userPageOf() counts the page over the whole of it.
-export function clearUserFilters() { usersView.group = ""; usersView.node = ""; usersView.iface = ""; usersView.online = false; }
+export function clearUserFilters() { usersView.group = ""; usersView.node = ""; usersView.iface = ""; usersView.online = false; usersView.status = ""; }
 export const groupMemberViews = {};   // gid -> { page, pageSize, sort, dir } for that group's expanded members list
 export const unassignedView = { node: "", iface: "", q: "", page: 1, pageSize: 20, sort: "status", dir: -1 };
 export const userPeerViews = {};   // uid -> its own { node, iface, q, page, pageSize, sort, dir } for the expanded grid
 
 // User-row status: a BARE tag (dot + uppercase mono label), same style as the node "reporting/offline"
 // status, just smaller — not the pill Badge used inside the grids.
-export function userStatTag(user, live) {
-  // Live monitor: a user is simply online (has an online peer, green) or offline (grey) — no ready/partial/etc.
-  if (live) { const on = user.onlineCount > 0; return html`<span class=${"ustat s-" + (on ? "online" : "off")}>${on ? T("status|Online") : T("Offline")}</span>`; }
+export function userStatTag(user) {
   const s = user.peerCount ? user.status : "empty";
   return html`<span class=${"ustat s-" + s}>${s === "empty" ? T("No peers") : statusLabel(s)}</span>`;
 }
@@ -672,34 +668,26 @@ export function revealUser(userId, peerId) {
 // Clicking a PEER anywhere reveals its OWNER on the Users screen (row expanded, that peer's row glowing) — there
 // is no standalone peer page. An unassigned peer (no owner) just lands on the Users screen with its row glowing.
 export function revealPeer(peer) {
-  if (!peer) { usersView.mode = "users"; return go("#/users"); }
+  if (!peer) return openUsers();
   if (peer.user_id != null) { revealUser(peer.user_id, peer.id); return; }
-  usersView.mode = "users"; clearUserFilters();
-  Object.assign(unassignedView, { node: "", iface: "", q: "", page: 1 });   // the peer glows in the unassigned grid: nothing there may hide it
-  Store.recentlyCreated[peer.id] = Date.now(); go("#/users");
-}
-// Land on the PEERS screen with a specific peer visible + its row flashing (activity-feed clicks). Filters
-// the grid to that peer (unique IP) so it's guaranteed on-page, then scrolls to + glows it for ~2.5s.
-export function revealPeerInPeers(peer) {
-  if (!peer) return go("#/peers");
-  const ip = (peer.targets && peer.targets[0] && peer.targets[0].ip) || "";
-  peersView.node = "*"; peersView.iface = "*"; peersView.status = null;
-  peersView.q = ip || peer.title || peer.name || ""; peersView.page = 1;
   Store.recentlyCreated[peer.id] = Date.now();
-  go("#/peers");
-  setTimeout(() => {
-    Store.apply();
-    requestAnimationFrame(() => { const el = document.querySelector('[data-peer="' + peer.id + '"]'); if (el) el.scrollIntoView({ behavior: "smooth", block: "center" }); });
-  }, 240);
+  openUsers({ status: "unassigned" });
 }
-export function revealPeerInPeersById(id) { revealPeerInPeers((Store.recon.peers || []).find(p => p.id === id)); }
-// Land on the PEERS screen filtered to a status (a grouped Needs-attention click) — optionally scoped to
-// one node. status "unassigned" is a synthetic filter (peers with no owner); the rest match a peer status.
-export function revealPeersFiltered({ node, status }) {
-  peersView.node = node || "*"; peersView.iface = "*";
-  peersView.status = status || null; peersView.q = ""; peersView.page = 1;
-  go("#/peers");
+export function peerInRosterStatus(peer, status) {
+  if (!status) return true;
+  if (status === "unassigned") return peer.unassigned;
+  return status === "partial" ? peer.status === "partial" : peer.targets.some(t => t.status === status);
 }
+
+export function openUsers({ node = "", status = "", online = false } = {}) {
+  clearUserFilters();
+  Object.assign(usersView, { mode: "users", q: "", node, status, online, page: 1 });
+  Object.assign(unassignedView, { node, iface: "", q: "", page: 1 });
+  go("#/users");
+  bus.emit();
+  if (status === "unassigned") requestAnimationFrame(() => document.getElementById("unassigned-peers")?.scrollIntoView({ block: "start" }));
+}
+
 // Land on an interface detail and scroll to its unmanaged/orphan panel (a grouped-orphans click).
 export function revealOrphans(node, iface) {
   go("#/node/" + encodeURIComponent(node) + "/" + encodeURIComponent(iface));
@@ -767,7 +755,6 @@ export function wdttConnRows(nodeId, iface) {
 }
 
 export function OnlPop({ title, rows, peer, orphans, orphHref, trigger, cls, count, hoverOnly }) {
-  const tab = peer ? "peers" : "users";                  // this bubble lists peers, or users
   const n = count != null ? count : rows.length;         // the headline number (users tag overrides it: users + loose peers, not row count)
   const src = useRef(null);
   if (isMobile()) {
@@ -779,10 +766,10 @@ export function OnlPop({ title, rows, peer, orphans, orphHref, trigger, cls, cou
     ? r => html`<div class=${"onrow" + (r.unassigned ? " un" : "")}><span class="on-name">${r.title}</span><span class="on-user faint">${r.user}${r.iface ? " · " + r.iface : ""}${r.ip ? " · " + r.ip : ""}</span></div>`
     : r => html`<div class=${"onrow" + (r.unassigned ? " un" : "")}><span class="on-name">${r.name}</span><span class="on-ct">${r.count} <span class="faint">${pluralWord(r.count, "peer")}</span></span></div>`;
   return html`<${Popover} cls=${"onlinetag " + (cls || "")} hoverOnly=${hoverOnly} trigger=${trigger(n)}>
-    <a class="onpop-h onpop-link" href="#/connections" onClick=${openLiveTab(tab)}>${title} · ${n} →</a>
+    <a class="onpop-h onpop-link" href="#/users" onClick=${e => { e.stopPropagation(); e.preventDefault(); openUsers({ online: true }); }}>${title} · ${n} →</a>
     ${rows.length ? rows.slice(0, 10).map(renderRow) : html`<div class="onrow faint">${peer ? T("no peers online") : T("no one online")}</div>`}
-    ${orphans ? html`<a class="onpop-orph" href=${orphHref || "#/connections"} onClick=${openLiveTab("peers")}>${T("{v1} unmanaged orphan", { v1: plural(orphans, "peer") })}</a>` : null}
-    ${rows.length > 10 ? html`<a class="onpop-viewall" href="#/connections" onClick=${openLiveTab(tab)}>${T("view all {n} connections →", { n: rows.length })}</a>` : null}
+    ${orphans ? html`<a class="onpop-orph" href=${orphHref || "#/nodes"} onClick=${e => e.stopPropagation()}>${T("{v1} unmanaged orphan", { v1: plural(orphans, "peer") })}</a>` : null}
+    ${rows.length > 10 ? html`<a class="onpop-viewall" href="#/users" onClick=${e => { e.stopPropagation(); e.preventDefault(); openUsers({ online: true }); }}>${T("view all {n} connections →", { n: rows.length })}</a>` : null}
   </${Popover}>`;
 }
 
@@ -1069,8 +1056,8 @@ function onsheetRows(rows, peers) {
     </div>`; })}</div>
     ${rows.length > ONLINE_SHEET_CAP ? html`<div class="hint">${T("and {n} more", { n: rows.length - ONLINE_SHEET_CAP })}</div>` : null}`;
 }
-const onsheetFoot = tab => html`<button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Close")}</button>
-  <button class="btn btn-primary" onClick=${() => { closeModal(); openLiveTab(tab)({ stopPropagation() {} }); go("#/connections"); }}>${T("Open Live")}</button>`;
+const onsheetFoot = () => html`<button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Close")}</button>
+  <button class="btn btn-primary" onClick=${() => { closeModal(); openUsers({ online: true }); }}>${T("Open Users")}</button>`;
 // `nodeId`: one node's (a fleet card's count), else the whole fleet's (the app bar)
 export function OnlineSheet({ nodeId = null } = {}) {
   useStore();
@@ -1079,7 +1066,7 @@ export function OnlineSheet({ nodeId = null } = {}) {
   const rows = peers ? onlinePeerRows(nodeId, null) : onlineUserRows(nodeId);
   const count = peers ? rows.length : onlineUserCount(rows);
   const name = nodeId ? Store.nodeName(nodeId) : null;
-  return html`<${Sheet} title=${(name ? name + " · " : "") + T("Online now · {n}", { n: count })} noGuard=${true} foot=${onsheetFoot(mode)}>
+  return html`<${Sheet} title=${(name ? name + " · " : "") + T("Online now · {n}", { n: count })} noGuard=${true} foot=${onsheetFoot()}>
     <div class="dpsw netsw-share onsheet-sw" role="radiogroup" aria-label=${T("Users or peers")}>${[["users", T("Users")], ["peers", T("Peers")]].map(([v, l]) =>
       html`<button type="button" role="radio" aria-checked=${mode === v} class=${mode === v ? "on" : ""} onClick=${() => setMode(v)}>${l}</button>`)}</div>
     ${!rows.length ? html`<div class="empty"><b>${peers ? T("No connections online") : T("No users online")}</b></div>` : onsheetRows(rows, peers)}
@@ -1091,7 +1078,7 @@ const _onlSrc = new WeakMap();   // keyed by each count's own ref object: a coun
 function OnlineListSheet({ src }) {
   useStore();
   const d = _onlSrc.get(src) || { title: T("Online peers"), rows: [], peer: true, n: 0 };
-  return html`<${Sheet} title=${d.title + " · " + d.n} noGuard=${true} foot=${onsheetFoot(d.peer ? "peers" : "users")}>
+  return html`<${Sheet} title=${d.title + " · " + d.n} noGuard=${true} foot=${onsheetFoot()}>
     ${!d.rows.length ? html`<div class="empty"><b>${d.peer ? T("no peers online") : T("no one online")}</b></div>` : onsheetRows(d.rows, d.peer)}
     ${d.orphans ? html`<div class="hint">${T("{v1} unmanaged orphan", { v1: plural(d.orphans, "peer") })}</div>` : null}
   <//>`;
@@ -1106,12 +1093,6 @@ export function OnlinePeersTag({ nodeId, iface, total, cls, trigger, orphans, or
   return html`<${OnlPop} peer title=${T("Online peers")} rows=${onlinePeerRows(nodeId, iface)} orphans=${orphans} orphHref=${orphHref} cls=${cls}
     trigger=${trigger || (c => html`<b class=${"oncount" + (c ? " on" : "")}>${c}</b>${(total != null ? " / " + total : "") + " " + T("val|online")}`)}/>`;
 }
-
-export const openLiveTab = mode => e => {
-  e.stopPropagation();
-  connView.mode = mode; connView.page = 1;
-  if (location.hash === "#/connections") bus.emit();     // already there: no hashchange to re-render us
-};
 
 export const DASH_RANGES = [["live", "Live"], ["hour", "Hour"], ["day", "Day"], ["week", "Week"], ["month", "Month"]];   // i18n-keys: canonical (persisted range key + English label)
 /* The range word, translated. Two forms because the dashboard uses both: capitalised on the rail buttons,
@@ -1196,7 +1177,7 @@ export function evAction(e) {
 // (flash + scroll), or null for non-actionable rows (a version bump, an update-lifecycle note).
 export function evClick(e) {
   const item = evItem(e), v = e.verb || "", gone = /\bdeleted\b/i.test(v);
-  if (item === "Peer") return gone ? { href: "#/peers" } : { href: "#/peers", on: () => revealPeerInPeersById(e.id) };   // i18n-keys: canonical EV_ITEMS value
+  if (item === "Peer") return gone ? { href: "#/users" } : { href: "#/users", on: () => revealPeer((Store.recon.peers || []).find(p => p.id === e.id)) };   // i18n-keys: canonical EV_ITEMS value
   // a group's id is not a user's: it opens Users → Groups, never revealUser
   if (e.kind === "group") return { href: "#/users", on: () => { usersView.mode = "groups"; usersView.gq = ""; usersView.gpage = 1; clearUserFilters(); go("#/users"); Store.apply(); } };
   if (item === "User") return gone ? { href: "#/users" } : { href: "#/users", on: () => revealUser(e.id) };

@@ -1,4 +1,4 @@
-import { $, esc, tkey, ipOf, isPrivIp, fmtBytes, rateIn, niceScaleCeilIn, seen, panelNowS, isMobile } from "./util.js";
+import { $, esc, tkey, isPrivIp, fmtBytes, rateIn, niceScaleCeilIn, seen, panelNowS, isMobile } from "./util.js";
 import { Store, api, bus, useStore } from "./store.js";
 import { go } from "./router.js";
 import { lang, setLang, LANGS, nextLang, T, Tsplit, srvText, srvVars } from "./i18n.js";
@@ -932,21 +932,9 @@ export function turnProxyTitle(node, service) {
   const tp = ((Store.stats[node] || {}).turn_proxies || []).find(x => x && x.service === service);
   return (tp && tp.title) || "";
 }
-// The interface badge for one peer-grid row (protocol + iface name). `notip` where it sits inside a status bubble's trigger.
-export function gridIfaceTag(t, notip) {
-  return html`<${Tag} kind=${targetType(t)} label=${t.iface} muted=${!t.online} gen3=${tgt3(t)} notip=${notip}/>`;
-}
-export function gridIfacesTag(prim, all) {
-  const ds = (all || []).filter(Boolean);
-  if (ds.length < 2) return gridIfaceTag(prim);
-  return html`<${Popover} hoverOnly cls="tgt-frontpop" popCls="iflistbub"
-    trigger=${html`<${Tag} kind=${targetType(prim)} label=${T("{n} interfaces", { n: ds.length })} muted=${!ds.some(d => d.online)} gen3=${tgt3(prim)} notip=${true}/>`}>
-    <span class="tgt-frontlbl">${T("This peer's interfaces")}</span>
-    ${ds.map(d => html`<div class="deprow" key=${tkey(d.node, d.iface)}>
-      <span class="dep-name" style=${"color:" + (Store.nodeColor(d.node) || "var(--ink)")}>${Store.nodeName(d.node)}</span>
-      <${Tag} kind=${targetType(d)} label=${d.iface} muted=${!d.online} gen3=${tgt3(d)}/>
-      <span class="dep-ip addr">${d.ip || "—"}</span></div>`)}
-  <//>`;
+// The interface badge for one peer-grid row (protocol and interface name).
+export function gridIfaceTag(t) {
+  return html`<${Tag} kind=${targetType(t)} label=${t.iface} muted=${!t.online} gen3=${tgt3(t)}/>`;
 }
 const STATUS_REASONS = once(() => ({
   blocked: blockedReason(null),
@@ -1013,37 +1001,12 @@ export function badgeWithReason(st, reason) {
   }
   return html`<${Badge} s=${st} title=${reason}/>`;
 }
-export function connDot(r) {
-  if (r.online && r.viaTurn) {
-    const tf = turnFork(r.viaTurn), tn = forkLabel(tf), tc = turnColor(tf), ptitle = turnProxyTitle(r.node, r.viaTurn);
-    return html`<span class="turnwrap" title="">
-      <span class="condot turn" style=${"--tfc:" + tc}></span>
-      <span class="turnbub">${T("Connected via")} <span class="tg tg-turn" style=${"--tfc:" + tc}>${tn}</span>${ptitle ? html` <b class="turnbub-t">${ptitle}</b>` : null}</span></span>`;
-  }
-  return html`<span class=${"condot " + (r.online ? "on" : "off")} title=${r.online ? "online" : "idle"}></span>`;
-}
 function keylessVia(t) {
   const k = t.type;
   if (k !== "csqtt" && k !== "wdtt") return null;
   const r = ((Store.stats[t.node] || {})[k] || []).find(x => x && x.iface === t.iface);
   const fork = r ? (r.fork || (k === "csqtt" ? "csqtt" : "amurcanov")) : null, line = r && k === "csqtt" ? (r.line || CSQTT_DEFAULT_LINE) : "";
   return { fork, label: fork ? forkLabel(fork) + (line ? " " + line : "") : null };
-}
-export function endpointCell(t) {
-  const obs = t.observed;
-  const kv = keylessVia(t), ks = kv && (t.status === "online" || (t.status === "ready" && !!t.kwXfer)) ? kv : null;
-  if (t.via === "turn" || ks) {
-    const tf = ks ? ks.fork : t.viaTurn ? turnFork(t.viaTurn) : null, tn = ks ? ks.label : tf ? forkLabel(tf) : null;
-    const tc = tf ? turnColor(tf) : "var(--dim)";
-    const ptitle = !ks && t.viaTurn ? turnProxyTitle(t.node, t.viaTurn) : null;
-    const verb = t.online ? T("Connected via") : ks ? "" : T("Last connected via");
-    return html`<span class="turnwrap" title="">
-      <span class=${"addr turnep" + (t.online ? "" : " off")} style=${"color:" + (t.online ? tc : "var(--dim)")}>${T("turn-proxy")}</span>
-      <span class="turnbub">${verb ? verb + " " : null}${tn
-          ? html`<span class="tg tg-turn" style=${"--tfc:" + tc}>${tn}</span>`
-          : html`<span class="faint">${T("a turn-proxy")}</span>`}${ptitle ? html` <b class="turnbub-t">${ptitle}</b>` : null}</span></span>`;
-  }
-  return html`<span class="addr" title=${(obs && obs.endpoint) || ""}>${(obs && ipOf(obs.endpoint)) || "—"}</span>`;
 }
 export const dlul = (rx, tx) => ((Store.panelSettings || {}).throughput_perspective === "peers") ? [tx || 0, rx || 0] : [rx || 0, tx || 0];
 export const rateUnits = () => ((Store.panelSettings || {}).throughput_units === "bits" ? "bits" : "bytes");
@@ -1620,9 +1583,8 @@ export const meshGenLabel = g => ({ wg: "WG", "2.0": "AWG 2.0", "3.1": "AWG 3.1"
 export const meshGenColor = g => ifaceColor(g === "wg" ? "wg" : g === "3.1" ? "awg3" : "awg");
 export function ifaceColor(type) {
   const t = (type || "").toLowerCase();
-  const ov = (Store.panelSettings && Store.panelSettings.iface_colors) || {};
-  const k = t === "awg" ? "awg" : t === "awg3" ? "awg3" : t === "wdtt" ? "wdtt" : t === "csqtt" ? "csqtt" : "wg";   // WDTT + csqtt (keyless proxy targets) are operator-tunable too
-  return pickThemed(ov[k], IFACE_COLOR_DEFAULTS[k].dark, IFACE_COLOR_DEFAULTS[k].light);
+  const k = t === "awg" ? "awg" : t === "awg3" ? "awg3" : t === "wdtt" ? "wdtt" : t === "csqtt" ? "csqtt" : "wg";
+  return pickThemed(null, IFACE_COLOR_DEFAULTS[k].dark, IFACE_COLOR_DEFAULTS[k].light);
 }
 // perceived brightness (0–1) of a #rrggbb / #rgb colour — used to pick a contrasting ink for text on the brand.
 // the brand accent for the ACTIVE light/dark mode — each mode has its own picker (else its built-in default).

@@ -8,7 +8,7 @@ import {
   LEAVE_MSG, clearUnsavedGuard, setUnsavedGuard,
 } from "./router.js";
 import {
-  IFACE_COLOR_DEFAULTS, THEME_COLOR_DEFAULT, THEME_COLOR_LIGHT_DEFAULT, clampBrand, pickThemed,
+  THEME_COLOR_DEFAULT, THEME_COLOR_LIGHT_DEFAULT, clampBrand, pickThemed,
 } from "./theme.js";
 import {
   Store, api, bus, useStore,
@@ -495,16 +495,9 @@ export function PanelSettingsScreen() {
   const _tu = ps.turn_update || {};   // turn-proxy auto-update schedule: every_days (0=off) + node-checked panel-local hour
   const [tuEvery, setTuEvery] = useState(String(_tu.every_days == null ? 0 : _tu.every_days));
   const [tuAt, setTuAt] = useState(_tu.at || "04:00");
-  const [ifaceColors, setIfaceColors] = useState(() => ({
-    wg: asThemed((ps.iface_colors || {}).wg, IFACE_COLOR_DEFAULTS.wg.dark, IFACE_COLOR_DEFAULTS.wg.light),
-    awg: asThemed((ps.iface_colors || {}).awg, IFACE_COLOR_DEFAULTS.awg.dark, IFACE_COLOR_DEFAULTS.awg.light),
-    awg3: asThemed((ps.iface_colors || {}).awg3, IFACE_COLOR_DEFAULTS.awg3.dark, IFACE_COLOR_DEFAULTS.awg3.light),
-    wdtt: asThemed((ps.iface_colors || {}).wdtt, IFACE_COLOR_DEFAULTS.wdtt.dark, IFACE_COLOR_DEFAULTS.wdtt.light),
-    csqtt: asThemed((ps.iface_colors || {}).csqtt, IFACE_COLOR_DEFAULTS.csqtt.dark, IFACE_COLOR_DEFAULTS.csqtt.light) }));
-  const [themeColorS, setThemeColorS] = useState(clampBrand(ps.theme_color || THEME_COLOR_DEFAULT, false));         // dark-mode accent (shown = applied)
-  const [themeColorLightS, setThemeColorLightS] = useState(clampBrand(ps.theme_color_light || THEME_COLOR_LIGHT_DEFAULT, true));   // light-mode accent
-  const themeVal = { dark: themeColorS, light: themeColorLightS };   // the theme accent as one themed swatch
-  // peer-health DETECTION toggles (not colours): each condition ON by default; unchecking stops it flagging the status.
+  const [themeColorS, setThemeColorS] = useState(clampBrand(ps.theme_color || THEME_COLOR_DEFAULT, false));
+  const [themeColorLightS, setThemeColorLightS] = useState(clampBrand(ps.theme_color_light || THEME_COLOR_LIGHT_DEFAULT, true));
+  const themeVal = { dark: themeColorS, light: themeColorLightS };
   const _sc = ps.status_conditions || {};
   const [statusConds, setStatusConds] = useState({ blocked: _sc.blocked !== false, faulty: _sc.faulty !== false });
   // interface-key escrow (Interfaces section): staged like a field — the toggle sets a pending value; Save applies it.
@@ -515,9 +508,7 @@ export function PanelSettingsScreen() {
   // overrides derived from a raw source (state OR the stored panel-settings), normalized identically so a legacy
   // single-colour value in panel-settings compares equal to its normalized {dark,light} form (no phantom "dirty").
   const forkOvFrom = src => { const o = {}; for (const f of turnForkList()) { const t = asThemed((src || {})[f.id], f.color, f.colorL); if (!sameThemed(t, f.color, f.colorL)) o[f.id] = t; } return o; };
-  const ifaceOvFrom = src => { const o = {}; for (const k of ["wg", "awg", "awg3", "wdtt", "csqtt"]) { const t = asThemed((src || {})[k], IFACE_COLOR_DEFAULTS[k].dark, IFACE_COLOR_DEFAULTS[k].light); if (!sameThemed(t, IFACE_COLOR_DEFAULTS[k].dark, IFACE_COLOR_DEFAULTS[k].light)) o[k] = t; } return o; };
   const forkColorOverrides = () => forkOvFrom(forkColors);
-  const ifaceColorOverrides = () => ifaceOvFrom(ifaceColors);
   const statusCondsOut = () => ({ blocked: statusConds.blocked, faulty: statusConds.faulty });
   const themeColorOut = () => themeColorS.toLowerCase() === THEME_COLOR_DEFAULT.toLowerCase() ? "" : themeColorS;
   const themeColorLightOut = () => themeColorLightS.toLowerCase() === THEME_COLOR_LIGHT_DEFAULT.toLowerCase() ? "" : themeColorLightS;
@@ -647,7 +638,6 @@ export function PanelSettingsScreen() {
   const [secUser, setSecUser] = useState(""); const [secOrigUser, setSecOrigUser] = useState("");
   const [secCur, setSecCur] = useState(""); const [secNp, setSecNp] = useState(""); const [secNp2, setSecNp2] = useState("");
   const [secAuth, setSecAuth] = useState(true);   // false = panel has no login configured (fields disabled)
-  useEffect(() => { api.account().then(r => { if (r && r.ok) { setSecAuth(r.data.auth_enabled !== false); setSec2fa(!!r.data.twofa_enabled); if (r.data.username) { setSecUser(r.data.username); setSecOrigUser(r.data.username); } } }); }, []);
   useEffect(() => { api.account().then(r => { if (r && r.ok) { setSecAuth(r.data.auth_enabled !== false); if (r.data.username) { setSecUser(r.data.username); setSecOrigUser(r.data.username); } } }); }, []);
   const secChanged = () => secAuth && (secUser.trim() !== secOrigUser || !!secNp);
   const [exitWhy, setExitWhy] = useState({});
@@ -700,6 +690,10 @@ export function PanelSettingsScreen() {
     return () => clearTimeout(t);
   }, [routeTab, Store.blockCatalog]);
   const [blockProvEdits, setBlockProvEdits] = useState({});   // staged Filters-providers toggle deltas {prov_id:bool} → panelSettings.block_providers (committed by the shared Save)
+  const blockCatalogStatus = loading => Store.blockCatalogError ? html`<div class="hint warnish">
+    ${T("Could not load the block-list catalog.")}
+    <button class="btn btn-mini" onClick=${() => loadBlockCatalog(true)}>${T("Retry")}</button>
+  </div>` : html`<div class="hint">${loading}</div>`;
   const [geoTab, setGeoTab] = useState("routing");   // Geo-data providers card: Routing (list providers) | Blocking (content-filter feeds)
   const [blockEdits, setBlockEdits] = useState({});   // staged block-category deltas {id:{enabled_nodes?,default_on?,sources?,…}} → api.blockCatalogSave (committed by the shared Save)
   const [bkOpen, setBkOpen] = useState({});   // expanded block-category rows (id→bool) — the expand shows/edits the category's lists
@@ -760,7 +754,7 @@ export function PanelSettingsScreen() {
   const [orig, setOrig] = useState(() => Object.fromEntries((Store.nodes || []).map(n => [n.id, nFields(n)])));
   const [gridKeep, setGridKeep] = useState([]);   // provider-list rows kept visible after toggling to 0/N nodes (until × removes them)
   const setNV = (nid, patch) => setNodeEdits(e => ({ ...e, [nid]: { ...nFields((Store.nodes || []).find(n => n.id === nid) || {}), ...(e[nid] || {}), ...patch } }));
-  const nv = (nid, f) => (nodeEdits[nid] || {})[f];
+  const nv = (nid, f) => (nodeEdits[nid] || nFields((Store.nodes || []).find(n => n.id === nid) || {}))[f];
   const rebaseDefault = (nid, fresh) => {
     const live = new Set((fresh.exits || []).map(x => String(x.id)));
     setNodeEdits(e => { const cur = e[nid] || {}, o = orig[nid] || {};
@@ -814,7 +808,6 @@ export function PanelSettingsScreen() {
         turn_update: { every_days: Math.max(0, Math.min(30, parseInt(tuEvery) || 0)), at: tuAt },
         enabled_turn_forks: [...turnForks],
         turn_fork_colors: forkColorOverrides(),
-        iface_colors: ifaceColorOverrides(),
         status_conditions: statusCondsOut(),
         theme_color: themeColorOut(),
         theme_color_light: themeColorLightOut(),
@@ -1014,9 +1007,10 @@ const sectionLabel = k => ({
   integrations: T("Integrations"), logs: T("Logs"),
 }[k] || k);   // i18n-keys
   // per-node context: the node whose mode/lists/mesh/egress we're editing — defaults to the first node (no "default")
-  const [selNode, setSelNode] = useState(() => ((Store.nodes || [])[0] || {}).id || "");
+  const [selectedNode, setSelNode] = useState("");
   const perNodeSection = section === "routing" || section === "mesh" || section === "links" || section === "exits";
-  const nodeRec = (Store.nodes || []).find(n => n.id === selNode);
+  const nodeRec = (Store.nodes || []).find(n => n.id === selectedNode) || (Store.nodes || [])[0];
+  const selNode = nodeRec ? nodeRec.id : "";
   const nodeMode = nv(selNode, "routing_mode") || "kernel";       // DRAFT mode being edited (drives the mode card + tabs)
   const setMode = m => setNV(selNode, { routing_mode: m });
   const savedMode = (nodeRec && nodeRec.routing_mode) || "kernel"; // what the node is ACTUALLY running (drives the status runbar — only changes on Save)
@@ -1068,7 +1062,7 @@ const sectionLabel = k => ({
     sec === "turn" ? (turnEnabledS !== (ps.turn_enabled !== false) || [...turnForks].sort().join() !== (ps.enabled_turn_forks || TURN_FORKS_DEFAULT).slice().sort().join() || JSON.stringify(forkColorOverrides()) !== JSON.stringify(forkOvFrom(ps.turn_fork_colors)) || String(Math.max(0, parseInt(tuEvery) || 0)) !== String((ps.turn_update || {}).every_days == null ? 0 : (ps.turn_update || {}).every_days) || tuAt !== ((ps.turn_update || {}).at || "04:00")) :
     sec === "security" ? secChanged() :
     sec === "geo" ? geoDirty() || nbDirty() || pokDirty() :
-    sec === "defaults" ? (dns !== (idf.dns || []).join(", ") || mtu !== String(idf.mtu || 1280) || ka !== String(idf.keepalive || 25) || JSON.stringify(ifaceColorOverrides()) !== JSON.stringify(ifaceOvFrom(ps.iface_colors)) || JSON.stringify(statusCondsOut()) !== JSON.stringify({ blocked: (ps.status_conditions || {}).blocked !== false, faulty: (ps.status_conditions || {}).faulty !== false }) || JSON.stringify(awgTrim(awgDef)) !== JSON.stringify(awgTrim(idf.awg_params || {})) || JSON.stringify(awg3Trim(awg3Def)) !== JSON.stringify(awg3Trim(idf.awg3_params)) || reachDef !== (idf.reach || "user") || awgGenDef !== (idf.awg_gen || DEFAULT_AWG_GEN) || (ivkEscrow !== null && ivkEscrow !== ivkEscrowInit)) :
+    sec === "defaults" ? (dns !== (idf.dns || []).join(", ") || mtu !== String(idf.mtu || 1280) || ka !== String(idf.keepalive || 25) || JSON.stringify(statusCondsOut()) !== JSON.stringify({ blocked: (ps.status_conditions || {}).blocked !== false, faulty: (ps.status_conditions || {}).faulty !== false }) || JSON.stringify(awgTrim(awgDef)) !== JSON.stringify(awgTrim(idf.awg_params || {})) || JSON.stringify(awg3Trim(awg3Def)) !== JSON.stringify(awg3Trim(idf.awg3_params)) || reachDef !== (idf.reach || "user") || awgGenDef !== (idf.awg_gen || DEFAULT_AWG_GEN) || (ivkEscrow !== null && ivkEscrow !== ivkEscrowInit)) :
     sec === "configs" ? (sc !== _scMode) :
     sec === "subs" ? (subsOn !== !!subCfg.enabled || autoGen !== !!subCfg.auto_generate || warnDays !== String(ps.expiry_warn_days == null ? 3 : ps.expiry_warn_days) || JSON.stringify([...subLangs].sort()) !== JSON.stringify([...(subLangCfg.enabled || ["en"])].sort()) || subLangDef !== (subLangCfg.default || "en")) :
     sec === "display" ? (dispDirty() || tzDirty() || dataDirty()) :
@@ -1098,7 +1092,7 @@ const sectionLabel = k => ({
         ${isMobile() && section ? html`<button class="m-setback" onClick=${() => { setSection(null); window.scrollTo(0, 0); }}><${Ic} i="back"/> ${T("Panel settings")}<span class="m-setcur">${sectionLabel(section)}</span></button>` : null}
         ${perNodeSection && section !== "links" && (Store.nodes || []).length ? html`<div class="setnodes">${(Store.nodes || []).map(n => html`<button class=${"snbadge" + (selNode === n.id ? " on" : "") + (badgeDirty(n.id) ? " dirty" : "")} style=${"--c:" + Store.nodeColor(n.id)} onClick=${() => setSelNode(n.id)}><span class="ndot"></span>${n.name}</button>`)}</div>` : null}
         ${section === "routing" ? html`<div class="card rcard">
-          ${(() => { const mm = MODE_META[nodeMode] || MODE_META.kernel;
+          ${nodeRec ? (() => { const mm = MODE_META[nodeMode] || MODE_META.kernel;
             const resetBtn = html`<${Popover} hoverOnly cls="rmode-resetwrap" popCls="rmode-reset-pop"
                   trigger=${html`<button class="rmode-reset-ic" onClick=${() => resetRouting(selNode, nodeRec ? nodeRec.name : T("this node"))}><${Ic} i="refresh"/></button>`}>
                   <div class="rmode-reset-pop-body">${T("Reset this node's smart routing — clear just the learned IPs, or wipe + rebuild + re-pull every list. Use it to recover a stuck node.")}</div>
@@ -1163,13 +1157,13 @@ const sectionLabel = k => ({
               <span class="rds-k">${T("Overlaps")}</span><span class="rds-v">${mm.overlaps}</span>
             </div>` : null}
             <div class="rmode-desc">${mm.exp}</div>
-          </div>`; })()}
+          </div>`; })() : html`<p class="hint">${T("Add a node to configure its routing mode.")}</p>`}
 
           <div class="rltabs">
-            <div class="rltab-cap">${Trich("{v1} for {v2}", {
+            <div class="rltab-cap">${nodeRec ? Trich("{v1} for {v2}", {
               v1: routeTab === "blocking" ? T("Content filters") : T("Routing lists"),
-              v2: html`<b style=${"color:" + (Store.nodeColor(selNode) || "var(--ink)")}>${nodeRec ? nodeRec.name : T("this node")}</b>`,
-            })}</div>
+              v2: html`<b style=${"color:" + (Store.nodeColor(selNode) || "var(--ink)")}>${nodeRec.name}</b>`,
+            }) : (routeTab === "blocking" ? T("Content filters") : T("Routing lists"))}</div>
             <div class="rltab-group" role="tablist">
               <button role="tab" aria-selected=${routeTab === "routing"} class=${"rltab" + (routeTab === "routing" ? " on" : "")} onClick=${() => setRouteTab("routing")}><${Ic} i="cascade"/>${T("Routing")}</button>
               <button role="tab" aria-selected=${routeTab === "blocking"} class=${"rltab" + (routeTab === "blocking" ? " on" : "")} onClick=${() => setRouteTab("blocking")}><${Ic} i="shield"/>${T("Blocking")}</button>
@@ -1179,7 +1173,7 @@ const sectionLabel = k => ({
           ${routeTab === "blocking" ? html`<div class="hint rltab-warn"><${Ic} i="warn"/><span>${Trich("Large lists are memory-hungry — every enabled list is loaded into RAM on *each* entry node that uses it, roughly *130 MB per 1M domains*. Keep your smallest node's memory in mind before turning on big lists.")}</span></div>` : null}
 
           ${routeTab === "routing" ? html`
-          <div class="lgrid-head">
+          ${nodeRec ? html`<div class="lgrid-head">
             <div class="lg-htitle"><span class="seclabel" style="margin:0">${T("Provider lists")}</span><span class="lg-count">${provFleetCats.length}</span><span class="faint lg-sub">${T("held on this node, and the interfaces that ask for them")}</span></div>
             <span class="grow"></span>
           </div>
@@ -1196,7 +1190,7 @@ const sectionLabel = k => ({
                   title=${T("A leftover pin — no rule names this list. Clear it from every node.")}
                   onClick=${() => removeCatRow(id)}><${Ic} i="x"/></button>` : null}</div>
               </div>`; })}
-          </div>` : html`<div class="hint" style="margin:2px 0 0">${Trich("Nothing held here yet. Lists arrive on their own when an interface's routing rule names one — add them in *Interfaces*, on the interface that needs them.")}</div>`}
+          </div>` : html`<div class="hint" style="margin:2px 0 0">${Trich("Nothing held here yet. Lists arrive on their own when an interface's routing rule names one — add them in *Interfaces*, on the interface that needs them.")}</div>`}` : null}
 
           ${/* The empty state is BACK, because the thing is reachable again. It was removed when nothing
                 could create a list — a heading, a zero and a sentence explaining an absence is noise — and
@@ -1231,7 +1225,7 @@ const sectionLabel = k => ({
 
           ${routeTab === "blocking" ? (() => {
             const bc = Store.blockCatalog;
-            if (!bc) return html`<div class="hint" style="margin:8px 0 0">${T("Loading block lists…")}</div>`;
+            if (!bc) return blockCatalogStatus(T("Loading block lists…"));
             const provList = bc.provider_lists || {};
             const provLabel = p => ((bc.providers || []).find(x => x.id === p) || {}).label || p;
             const provTier = p => ((bc.providers || []).find(x => x.id === p) || {}).tier || "host";
@@ -1258,10 +1252,10 @@ const sectionLabel = k => ({
               else doRemoveCat(c); };
             const availOn = c => (c.enabled_nodes || []).includes(selNode);
             const modeLabel = (MODE_META[nodeMode] || {}).label || T("this mode");
-            const srcAvail = s => blockSrcOk(nodeMode, bc.providers, s);   // shared rule: IP everywhere, domain needs Force-DNS/Hybrid
+            const srcAvail = s => !nodeRec || blockSrcOk(nodeMode, bc.providers, s);   // shared rule: IP everywhere, domain needs Force-DNS/Hybrid
             // A category with NO IP list can't enforce anything in Default (IP-only) or Kernel-SNI — every list shows "not
             // available". Then the whole category is dead here: show it disabled and don't let it be enabled on this node.
-            const catDis = c => blockCatDisabled(nodeMode, bc.providers, c);
+            const catDis = c => !!nodeRec && blockCatDisabled(nodeMode, bc.providers, c);
             const srcHost = s => provTier(s.provider) !== "ip";
             const setAvail = (c, on) => { const en = new Set(c.enabled_nodes || []); on ? en.add(selNode) : en.delete(selNode);
               setBlockEdits(e => ({ ...e, [c.id]: { ...(e[c.id] || {}), enabled_nodes: [...en] } })); };
@@ -1277,7 +1271,7 @@ const sectionLabel = k => ({
               const catNm = blockCatLabel(c.label);   // the whole name on hover — a narrow column cuts a long one off
               return html`<div class=${"bkitem" + (open ? " open" : "") + (dis ? " bk-dis" : "")} key=${c.id}>
                 <div class=${"bkrow" + (open ? " open" : "")} onClick=${() => setBkOpen(o => ({ ...o, [c.id]: !open }))}>
-                  <div class="lg-pull" onClick=${e => e.stopPropagation()}><${Switch} on=${availOn(c) && !dis} disabled=${dis} title=${dis ? T("No IP list here — can't enforce in {v1}. Add an IP list, or use Hybrid SNI.", { v1: modeLabel }) : T("Filter on {v1}", { v1: nodeRec ? nodeRec.name : T("this node") })} onChange=${v => { if (!dis) setAvail(c, v); }}/></div>
+                  <div class="lg-pull" onClick=${e => e.stopPropagation()}>${nodeRec ? html`<${Switch} on=${availOn(c) && !dis} disabled=${dis} title=${dis ? T("No IP list here — can't enforce in {v1}. Add an IP list, or use Hybrid SNI.", { v1: modeLabel }) : T("Filter on {v1}", { v1: nodeRec.name })} onChange=${v => { if (!dis) setAvail(c, v); }}/>` : null}</div>
                   <div class="bk-cat">
                     <div class="bk-catline"><span class="lg-title" title=${catNm}>${catNm}</span><span class="bk-chev">▾</span></div>
                     <div class="bk-lists">${nL ? src.map(srcLabel).join(", ") : html`<span class="faint">${T("no lists yet — add one →")}</span>`}</div>
@@ -1289,7 +1283,7 @@ const sectionLabel = k => ({
                     ? html`<${Fragment}>${cp.host ? html`<span class="capb host" title=${T("Matched by domain — needs Hybrid SNI mode")}>${T("Host")}</span>` : null}${cp.ip ? html`<span class="capb ip" title=${T("Matched by IP — works in every mode")}>IP</span>` : null}<//>`
                     : html`<span class="bk-nocap" title=${T("No lists yet")}>—</span>`; })()}</div>
                   <button class=${"bk-defchip" + (c.default_on ? " on" : "")} onClick=${e => { e.stopPropagation(); setDefault(c, !c.default_on); }} title=${T("Turn this category on automatically for every new interface (still toggled per interface)")}>${c.default_on ? T("Default ON") : T("Default OFF")}</button>
-                  <${BlockListPicker} providers=${bc.providers} provLists=${provList} current=${src} nodeMode=${nodeMode} onAdd=${(p, l) => addSource(c, p, l)} autoOpen=${bkAutoAdd === c.id}/>
+                  <${BlockListPicker} providers=${bc.providers} provLists=${provList} current=${src} nodeMode=${nodeRec ? nodeMode : "sni"} onAdd=${(p, l) => addSource(c, p, l)} autoOpen=${bkAutoAdd === c.id}/>
                 </div>
                 ${open ? html`<div class="bk-expand">
                   ${src.length ? src.map((s, i) => html`<div class=${"bk-lrow" + (srcAvail(s) ? "" : " bk-ldis")} key=${i}>
@@ -1489,9 +1483,9 @@ const sectionLabel = k => ({
               </div>
               <span class="grow"></span>
               ${p.url ? html`<a class="prov-repo" href=${p.url} target="_blank" rel="noopener" title=${T("Open {v1}", { v1: p.label })}>${(p.url || "").replace(/^https?:\/\/(github\.com|raw\.githubusercontent\.com)\//, "").replace(/^www\./, "")}</a>` : null}
-            </div>`; })}</div>` : html`<div class="hint">${T("Loading providers…")}</div>`; })()}
+            </div>`; })}</div>` : blockCatalogStatus(T("Loading providers…")); })()}
           <div class="seclabel" style="margin-top:20px">${T("Never block")}</div>
-          <p class="hint" style="margin:0 0 8px">${T("Never blocked by any block list, on every interface and node — and still routed by your routing rules. Your own Block rules and the abuse protections are not affected. Addresses come out of every address list; site names out of the site lists, on Force-DNS and Hybrid SNI. A name and an address are separate: a site name does not unblock an address an address list holds, and an address stays blocked by a site list while a blocked site resolves to it — list both when you need both. One site name, IP or range a line.")}</p>
+          <p class="hint" style="margin:0 0 8px">${T("Never blocked by any block list, on every interface and node — and still routed by your routing rules. Your own Block rules and the abuse protections are not affected. Addresses come out of every address list; site names out of the site lists, in Hybrid SNI mode. A name and an address are separate: a site name does not unblock an address an address list holds, and an address stays blocked by a site list while a blocked site resolves to it — list both when you need both. One site name, IP or range a line.")}</p>
           <textarea class="ta" rows="4" spellcheck="false" autocomplete="off" placeholder=${"example.com\n203.0.113.7\n198.51.100.0/24"} value=${blockAllow} onInput=${e => setBlockAllow(e.target.value)}></textarea>
           ${(bad => bad.length ? html`<div class="hint warnish"><${Ic} i="warn"/> ${T("Not taken — site names and IPv4 addresses or ranges (/8 or narrower) only: {v1}", { v1: bad.slice(0, 5).map(c => c.raw).join(", ") })}</div>` : null)(nbRead(blockAllow).filter(c => !c.ok))}
           <p class="hint" style="margin:6px 0 0">${T("To stop the port-scan guard flagging one of your own machines, use Trusted sources (Settings → Network).")}</p>
@@ -1547,21 +1541,6 @@ const sectionLabel = k => ({
         </div>` : null}
         ${section === "logs" ? html`<${LogViewer}/>` : null}
         ${section === "defaults" ? html`<div class="card">
-          <div class="seclabel turnhead" style="margin-top:0">${T("Interface colours")}<span class="grow"></span>
-            ${Object.keys(ifaceColorOverrides()).length ? html`<button class="btn btn-mini" onClick=${() => setIfaceColors({ wg: { ...IFACE_COLOR_DEFAULTS.wg }, awg: { ...IFACE_COLOR_DEFAULTS.awg }, awg3: { ...IFACE_COLOR_DEFAULTS.awg3 }, wdtt: { ...IFACE_COLOR_DEFAULTS.wdtt }, csqtt: { ...IFACE_COLOR_DEFAULTS.csqtt } })}><${Ic} i="refresh"/>${T("Reset")}</button>` : null}</div>
-          <p class="hint" style="margin:0 0 12px">${T("The colour each protocol's tags take everywhere — a value per theme. Hover a swatch to preview it.")}</p>
-          <div class="palrow">
-            <span class="palcell sw1"><${ThemedSwatch} val=${ifaceColors.wg} title="WG" onChange=${nv => setIfaceColors(c => ({ ...c, wg: nv }))}
-              sample=${(c) => html`<span class="tg" style=${"background:color-mix(in srgb," + c + " 15%,transparent);color:" + c}>wg</span>`}/><span class="pallbl">WG</span></span>
-            <span class="palcell sw1"><${ThemedSwatch} val=${ifaceColors.awg} title="AWG 2.0" onChange=${nv => setIfaceColors(c => ({ ...c, awg: nv }))}
-              sample=${(c) => html`<span class="tg" style=${"background:color-mix(in srgb," + c + " 15%,transparent);color:" + c}>awg</span>`}/><span class="pallbl">AWG 2.0</span></span>
-            <span class="palcell sw1"><${ThemedSwatch} val=${ifaceColors.awg3} title="AWG 3.1" onChange=${nv => setIfaceColors(c => ({ ...c, awg3: nv }))}
-              sample=${(c) => html`<span class="tg" style=${"background:color-mix(in srgb," + c + " 15%,transparent);color:" + c}>awg</span>`}/><span class="pallbl">AWG 3.1</span></span>
-            <span class="palcell sw1"><${ThemedSwatch} val=${ifaceColors.wdtt} title=WDTT onChange=${nv => setIfaceColors(c => ({ ...c, wdtt: nv }))}
-              sample=${(c) => html`<span class="tg" style=${"background:color-mix(in srgb," + c + " 15%,transparent);color:" + c}>WDTT</span>`}/><span class="pallbl">WDTT</span></span>
-            <span class="palcell sw1"><${ThemedSwatch} val=${ifaceColors.csqtt} title=CSQTT onChange=${nv => setIfaceColors(c => ({ ...c, csqtt: nv }))}
-              sample=${(c) => html`<span class="tg" style=${"background:color-mix(in srgb," + c + " 15%,transparent);color:" + c}>CSQTT</span>`}/><span class="pallbl">CSQTT</span></span>
-          </div>
           <div class="seclabel">${T("Peer health detection")}</div>
           <p class="hint" style="margin:0 0 10px">${Trich("Two ways a peer can be under a filter, each independently switchable. Both raise the same {v1} badge — one is blocked at the door, the other gets in and can't stay. A peer that simply has nothing to send is never flagged.", { v1: html`<span class="b-blocked" style="padding:1px 6px;border-radius:6px">${T("tag|restricted")}</span>` })}</p>
           <div class="condrow"><${Switch} on=${statusConds.blocked} onChange=${v => setStatusConds(c => ({ ...c, blocked: v }))}/>

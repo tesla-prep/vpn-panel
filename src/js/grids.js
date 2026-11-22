@@ -1,15 +1,15 @@
 import { esc, tkey, seen, dur, fmtBytes, isMobile } from "./util.js";
 import { T } from "./i18n.js";
 import { Store, api, useStore } from "./store.js";
-import { targetType, nodeStale, ghostIface, ifaceIsAll, ifaceMatch, tgtXfer, tgtSeenAge, peerUncategorised } from "./model.js";
+import { targetType, nodeStale, ghostIface, ifaceIsAll, ifaceMatch, tgtXfer, tgtSeenAge } from "./model.js";
 import {
   Ic, Tag, Badge, Dropdown, SearchBox, secTitle, footRow, Popover, toast, openModal, openConfirm,
-  rowSingle, rowDouble, rowNoSelect, RowError, connDot, endpointCell, rateCell, xferCell, DepBadge,
-  gridIfaceTag, gridIfacesTag, gridStatusBadge, uncatPop, badgeWithReason, lifecycleIcon, statusLabel, dlul, rowError, statusReason,
+  rowSingle, rowDouble, rowNoSelect, RowError, rateCell, xferCell, DepBadge,
+  gridIfaceTag, gridStatusBadge, lifecycleIcon, statusLabel, dlul, rowError,
   Portal, Sheet, closeModal,
 } from "./ui.js";
 import {
-  peersView, sortPeerRows, peerSortBy, pageScroll, pageSizeOpts, searchMatch, peerMatchesQ, ifaceOptGroups,
+  sortPeerRows, peerSortBy, pageScroll, pageSizeOpts, searchMatch, peerMatchesQ, ifaceOptGroups,
   nodeFilterOptions, ifaceFilterOptions, orphCount, OnlinePeersTag, revealUser,
   dashNodes, dashNodeOn, dashToggleNode, trafficRangeLabel, PEER_DEFDIR,
 } from "./views.js";
@@ -34,43 +34,24 @@ const gwTag = (p, t) => html`<${Popover} hoverOnly cls="grp-pop" popCls="netrout
   <${ReachedByBody} peer=${p} blocked=${!!(p.selfDisabled || p.userDisabled) || p.status === "expired"} down=${!t.online} onView=${() => openPeerNetworks(p)}/>
 <//>`;
 
-export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hideUser, loc, live, grouped, sort, dir, onSort, ranged, owner }) {
+export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hideUser, loc, sort, dir, onSort, ranged, owner }) {
   const arrow = c => sort === c ? (dir < 0 ? "↓ " : "↑ ") : "";
   const th = (c, label, cls) => onSort ? html`<th class=${(cls ? cls + " " : "") + "clk"} onClick=${() => onSort(c)}>${arrow(c)}${label}</th>` : html`<th class=${cls || ""}>${label}</th>`;
   const matchedOf = p => (p.targets || []).filter(d => (node === "*" || d.node === node) && ifaceMatch(d.iface, iface, d));
-  return html`<div class="tablewrap"><table class=${"peergrid" + (live ? " live" : "") + (loc ? " loc" : "")}>
-    <thead><tr>${th("status", live ? "" : T("col|Status"), "h-status")}${loc
-      ? html`${hideUser ? null : th("user", T("col|User"), "h-user")}${th("title", T("col|Title"), "h-title")}${live ? th("endpoint", T("col|Endpoint"), "h-ep") : null}${th("address", T("col|Address"), "h-addr")}${th("server", T("col|Node"), "h-node")}`
-      : html`${hideUser ? null : th("user", T("col|User"), "h-user")}${th("title", T("col|Title"), "h-title")}${agg ? th("server", node === "*" ? T("col|Node") : T("col|IF"), "h-node") : null}${th("address", T("col|Address"), "h-addr")}${live ? th("endpoint", T("col|Endpoint"), "h-ep") : null}`
-    }${th("online", T("col|Online"), "h-online")}${th("rate", T("col|Rate") + " ↓↑", "h-rate")}${ranged && !live ? th("rtotal", trafficRangeLabel() + " ↓↑", "h-total") : th("total", T("col|Total") + " ↓↑", "h-total")}${live ? null : html`<th class="h-acts"></th>`}</tr></thead>
+  return html`<div class="tablewrap"><table class=${"peergrid" + (loc ? " loc" : "")}>
+    <thead><tr>${th("status", T("col|Status"), "h-status")}${loc
+      ? html`${hideUser ? null : th("user", T("col|User"), "h-user")}${th("title", T("col|Title"), "h-title")}${th("address", T("col|Address"), "h-addr")}${th("server", T("col|Node"), "h-node")}`
+      : html`${hideUser ? null : th("user", T("col|User"), "h-user")}${th("title", T("col|Title"), "h-title")}${agg ? th("server", node === "*" ? T("col|Node") : T("col|IF"), "h-node") : null}${th("address", T("col|Address"), "h-addr")}`
+    }${th("online", T("col|Online"), "h-online")}${th("rate", T("col|Rate") + " ↓↑", "h-rate")}${ranged ? th("rtotal", trafficRangeLabel() + " ↓↑", "h-total") : th("total", T("col|Total") + " ↓↑", "h-total")}<th class="h-acts"></th></tr></thead>
     <tbody>
       ${rows.length ? rows.map(({ p, t }) => {
-        const obs = t.observed;
         const u = p.user_id ? Store.user(p.user_id) : null;
         const hidden = p.targets.filter(d => !(shownByPeer[p.id] || new Set()).has(tkey(d.node, d.iface)));   // this peer's deployments not shown in the grid
         const fresh = Store.recentlyCreated[p.id] && (Date.now() - Store.recentlyCreated[p.id] < 2500);   // just-created → one-shot glow
         const re = rowError("peer:" + p.id);   // pinned action failure → shown on the status hover bubble, not inline
         const gw = (p.routes || []).length ? gwTag(p, t) : null;   // beside the interface tag, wherever this layout puts it
         return html`<tr key=${p.id + "|" + tkey(t.node, t.iface)} data-peer=${p.id} class=${"clk" + (fresh ? " pcreate" : "")} title=${T("Double-click for QR / configs")} onMouseDown=${rowNoSelect} onClick=${e => rowSingle(e, () => openPeerView(p.id, t.node, t.iface))} onDblClick=${e => rowDouble(e, () => openPeerConfigs(p))}>
-          <td data-label=${T("col|Status")} class="c-status">${(() => {
-            const ifaceB = loc ? gridIfaceTag(t, live) : null;   // live: inside the status bubbles below — no native tooltip over them
-            const gwB = loc ? gw : null;   // the Private tag is not here: it rides the title — see titleCell
-            if (!live) return html`${gridStatusBadge(t, p, re)}${ifaceB}${gwB}`;
-            const dot = html`<span class=${"condot " + (t.status === "faulty" ? "faulty" : t.status === "blocked" ? "blocked" : t.online ? "on" : "off")}></span>`;
-            if (re) {
-              return html`<span class="turnwrap" title="">${dot}${ifaceB}
-                <span class="turnbub statusbub err"><span class="statusbub-h" style="color:var(--dangling)"><${Ic} i="err"/>${T("Error")}</span>${re.msg}</span></span>${gwB}`;
-            }
-            if (peerUncategorised(t) && t.status !== "faulty" && t.status !== "blocked") {
-              return html`${uncatPop(html`<span class="condot uncat"></span>${ifaceB}`)}${gwB}`;
-            }
-            // faulty / blocked → the "why" bubble on hovering the dot OR the interface badge (same as the peer-grid badge)
-            if (t.status === "faulty" || t.status === "blocked") {
-              return html`<span class="turnwrap" title="">${dot}${ifaceB}
-                <span class="turnbub statusbub"><span class="statusbub-h" style="color:var(--fault)"><${Ic} i="warn"/>${t.status === "blocked" ? T("status|Restricted") : T("status|Faulty")}</span>${statusReason(t.status)}</span></span>${gwB}`;
-            }
-            return html`<span class=${"condot " + (t.online ? "on" : "off")} title=${t.online ? T("status|Online") : T("Offline")}></span>${ifaceB}${gwB}`;
-          })()}</td>
+          <td data-label=${T("col|Status")} class="c-status">${gridStatusBadge(t, p, re)}${loc ? gridIfaceTag(t) : null}${loc ? gw : null}</td>
           ${(() => {
             const titleCell = html`<td data-label=${T("col|Title")} class="c-name">${lifecycleIcon(p, t.status)}${(() => {
               const nm = p.title ? html`<b>${p.title}</b>` : html`<span class="faint">${T("Untitled")}</span>`;
@@ -80,34 +61,31 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
               const chip = !loc && !agg && gw ? gw : null;
               return priv || rtr || chip ? html`<span class="namewrap">${nm}${priv}${rtr}${chip}</span>` : nm;
             })()}</td>`;
-            // c-addr / c-ep and the actions' data-lbl are what the phone's card layout reads (m/m.css); nothing styles them on a desktop
+            // c-addr and the actions' data-lbl are what the phone's card layout reads (m/m.css); nothing styles them on a desktop
             const addrCell = html`<td data-label=${T("col|Address")} class="c-addr"><span class="addr">${t.ip || "—"}</span>${hidden.length ? html`<${DepBadge} others=${hidden}/>` : null}</td>`;
-            const epCell = html`<td data-label=${T("col|Endpoint")} class="c-ep">${endpointCell(t)}</td>`;
             const nodeCell = html`<td data-label=${T("col|Node")} class="c-node"><div class="srvcell"><span class="srv-name" style=${"color:" + (Store.nodeColor(t.node) || "var(--ink)")}>${Store.nodeName(t.node)}</span></div></td>`;
             const userCell = hideUser ? null : html`<td data-label=${T("col|User")} class=${"usercell" + (u ? " linked" : "")}
-              title=${u ? T("Click to open this user's details") : (live ? "" : T("Assign this peer to a user"))}
+              title=${u ? T("Click to open this user's details") : T("Assign this peer to a user")}
               onClick=${u ? (e => { e.stopPropagation(); revealUser(u.id); }) : (e => e.stopPropagation())}>
               ${u ? html`<a class="namecell" href="#/users" onClick=${e => { e.preventDefault(); e.stopPropagation(); revealUser(u.id); }}><span>${u.name}</span><${Ic} i="user"/></a>`
-                  : (live ? html`<span class="faint">${T("status|Unassigned")}</span>` : html`<div class="assigncell"><${UserCombo} onPick=${uid => assignPeer(p, uid)}/></div>`)}</td>`;
-            // embedded / live-peers: Status · [User] · Title · [Endpoint (live)] · Address · Node — iface badge sits by the status
-            if (loc) return html`${userCell}${titleCell}${live ? epCell : null}${addrCell}${nodeCell}`;
+                  : html`<div class="assigncell"><${UserCombo} onPick=${uid => assignPeer(p, uid)}/></div>`}</td>`;
+            if (loc) return html`${userCell}${titleCell}${addrCell}${nodeCell}`;
             const srvAgg = agg ? html`<td data-label=${node === "*" ? T("col|Node") : T("col|IF")} class="c-node"><div class="srvcell">
               ${node === "*" ? html`<span class="srv-name" style=${"color:" + (Store.nodeColor(t.node) || "var(--ink)")}>${Store.nodeName(t.node)}</span>` : null}
-              ${gw ? html`<span class="srvtags">${ifaceIsAll(iface) ? (grouped ? gridIfacesTag(t, matchedOf(p)) : gridIfaceTag(t)) : null}${gw}</span>`
-                : (ifaceIsAll(iface) ? (grouped ? gridIfacesTag(t, matchedOf(p)) : gridIfaceTag(t)) : null)}
+              ${gw ? html`<span class="srvtags">${ifaceIsAll(iface) ? gridIfaceTag(t) : null}${gw}</span>`
+                : (ifaceIsAll(iface) ? gridIfaceTag(t) : null)}
             </div></td>` : null;
-            return html`${userCell}${titleCell}${srvAgg}${addrCell}${live ? epCell : null}`;
+            return html`${userCell}${titleCell}${srvAgg}${addrCell}`;
           })()}
           <td data-label=${T("col|Online")} class="c-online"><span class="when">${seen(tgtSeenAge(t))}</span></td>
           ${(() => { const xf = tgtXfer(t); return html`
           <td data-label=${T("col|Rate")} class="c-rate">${rateCell(xf ? xf.rx_speed : 0, xf ? xf.tx_speed : 0)}</td>
-          <td data-label=${T("col|Total")} class="c-total">${ranged && !live
+          <td data-label=${T("col|Total")} class="c-total">${ranged
             ? html`<${PeerTrafficCell} pid=${p.id} owner=${owner} wire=${xf} iface=${t.iface}
-                ungrouped=${!grouped && !loc && p.targets.length > 1}
-                filtered=${(grouped || loc) && matchedOf(p).length < p.targets.length}/>`
+                ungrouped=${!loc && p.targets.length > 1}
+                filtered=${loc && matchedOf(p).length < p.targets.length}/>`
             : xferCell(...dlul(xf ? xf.rx_bytes : 0, xf ? xf.tx_bytes : 0))}</td>`; })()}
-          ${/* Live draws no controls on a desktop; a phone keeps them behind the row's swipe, as on every list (operator, 2026-10-29) */""}
-          ${live && !isMobile() ? null : html`<td data-label="" class="rowacts" onClick=${e => e.stopPropagation()}>
+          <td data-label="" class="rowacts" onClick=${e => e.stopPropagation()}>
             ${(() => { const gh = ghostIface(t.node, t.iface); return (gh && gh.ripe)
               ? html`<button class="iconbtn ghost" data-lbl=${T("Recreate")} title=${T("Recreate & rekey — {iface} is gone with no recoverable key; recreate it fresh and reissue every client's config", { iface: t.iface })} onClick=${() => openRecreateRekey(t.node, t.iface)}><${Ic} i="refresh"/></button>`
               : t.restorable
@@ -119,19 +97,19 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
             ${p.unassigned
               ? html`<button class="iconbtn danger" disabled=${blocked} data-lbl=${T("Delete")} title=${blocked ? T("Unavailable while the node is down / converting") : T("Delete peer")} onClick=${() => confirmDeletePeer(p)}><${Ic} i="trash"/></button>`
               : html`<button class="iconbtn danger" disabled=${blocked} data-lbl=${T("Unassign")} title=${blocked ? T("Unavailable while the node is down / converting") : T("Unassign peer")} onClick=${() => confirmUnassign(p)}><${Ic} i="link"/></button>`}
-          </td>`}</tr>`;
+          </td></tr>`;
       }) : html`<tr><td colspan=${((agg || loc) ? 9 : 8) - (hideUser ? 1 : 0)} class="empty"><b>${q ? T("No matches") : T("No peers here")}</b>${q ? T("Try a different search.") : (!agg ? T("Create one, or copy an existing peer onto this interface.") : T("No peers deployed yet."))}</td></tr>`}
     </tbody></table></div>`;
 }
 
 // The sortable header line above a users list — same grid columns as .urow-head so the titles (which the rows no
 // longer repeat inline) sit over their columns.
-export function UsersHeader({ sort, dir, onSort, live }) {
+export function UsersHeader({ sort, dir, onSort }) {
   const arrow = c => sort === c ? (dir < 0 ? "↓ " : "↑ ") : "";
   const th = (c, label, cls) => html`<span class=${"clk" + (cls ? " " + cls : "")} onClick=${() => onSort(c)}>${arrow(c)}${label}</span>`;
   return html`<div class="uhead">
     <span></span>${th("status", T("col|Status"))}${th("name", T("col|User"))}
-    <span class=${"u-right" + (live ? " live" : "")}>${th("peers", T("col|Peers"), "uh-pc")}${th("nodes", T("col|Nodes"), "uh-srv")}${th("last", T("col|Online"))}${th("rate", T("col|Rate") + " ↓↑", "uh-r uh-rate")}${live ? th("total", T("col|Total") + " ↓↑", "uh-r") : th("rtotal", trafficRangeLabel() + " ↓↑", "uh-r")}${live ? null : html`<span></span>`}</span>
+    <span class="u-right">${th("peers", T("col|Peers"), "uh-pc")}${th("nodes", T("col|Nodes"), "uh-srv")}${th("last", T("col|Online"))}${th("rate", T("col|Rate") + " ↓↑", "uh-r uh-rate")}${th("rtotal", trafficRangeLabel() + " ↓↑", "uh-r")}<span></span></span>
   </div>`;
 }
 
@@ -156,8 +134,8 @@ export function sortField(view, sk, dk, cols, defdir, reset) {
 }
 export const PEER_SORT = () => [["status", T("col|Status")], ["title", T("col|Title")], ["user", T("col|User")], ["server", T("col|Node")],
   ["address", T("col|Address")], ["online", T("col|Online")], ["rate", T("col|Rate")], ["total", T("col|Total")]];
-export const USER_SORT = live => [["status", T("col|Status")], ["name", T("col|User")], ["peers", T("col|Peers")], ["nodes", T("col|Nodes")],
-  ["last", T("col|Online")], ["rate", T("col|Rate")], ...(live ? [["total", T("col|Total")]] : [])];
+export const USER_SORT = () => [["status", T("col|Status")], ["name", T("col|User")], ["peers", T("col|Peers")], ["nodes", T("col|Nodes")],
+  ["last", T("col|Online")], ["rate", T("col|Rate")]];
 export const GROUP_SORT = () => [["name", T("col|Group")], ["members", T("col|Members")], ["peers", T("col|Peers")], ["nodes", T("col|Nodes")],
   ["nets", T("col|Networks")], ["rate", T("col|Rate")]];
 export const filterBtn = (on, controls, key) => {
@@ -166,7 +144,7 @@ export const filterBtn = (on, controls, key) => {
   return html`<button class=${"iconbtn mfilter-btn" + (on ? " on" : "")} title=${T("Filters")} aria-label=${T("Filters")}
     onClick=${() => { _fsKey = k; _fsCtl = controls; openModal(html`<${FilterSheet} controls=${controls}/>`); }}><${Ic} i="sliders"/></button>`; };
 
-export function EmbeddedPeers({ peers, view, onNew, newLabel, hideUser, hideToolbar, collapse, live, onlineOnly, freezeKey, owner }) {
+export function EmbeddedPeers({ peers, view, onNew, newLabel, hideUser, hideToolbar, collapse, onlineOnly, freezeKey, owner }) {
   const [, force] = useState(0);
   const bump = () => force(x => x + 1);
   const nodeSet = new Set(), ifByNode = {};
@@ -234,7 +212,7 @@ export function EmbeddedPeers({ peers, view, onNew, newLabel, hideUser, hideTool
         return isMobile() ? filterBtn(node !== (multiServer ? "*" : (nodes[0] || "*")) || iface !== ifaceDefault(), r => html`${dd(r)}${sortField(view, "sort", "dir", PEER_SORT(), PEER_DEFDIR, () => { view.page = 1; bump(); r(); })}`, view) : dd(); })()}
       ${onNew ? html`<span class="grow"></span><button class="btn btn-primary btn-mini" onClick=${onNew}><${Ic} i="plus"/> ${newLabel || T("New peer")}</button>` : null}
     </div>`}
-    <${PeerGrid} rows=${pageRows} agg=${agg} node=${node} iface=${iface} shownByPeer=${shownByPeer} q=${view.q} hideUser=${hideUser} loc=${collapse} live=${live} ranged=${!live && !isMobile()} owner=${owner} sort=${view.sort} dir=${view.dir} onSort=${c => { peerSortBy(view, c); view.page = 1; bump(); }}/>
+    <${PeerGrid} rows=${pageRows} agg=${agg} node=${node} iface=${iface} shownByPeer=${shownByPeer} q=${view.q} hideUser=${hideUser} loc=${collapse} ranged=${!isMobile()} owner=${owner} sort=${view.sort} dir=${view.dir} onSort=${c => { peerSortBy(view, c); view.page = 1; bump(); }}/>
     ${rows.length > pageSize ? html`<div class="pager">
       <label class="pager-size">${T("Rows per page")}
         <${Dropdown} className="selwrap" ariaLabel=${T("Rows per page")} value=${pageSize} options=${pageSizeOpts()}

@@ -293,33 +293,6 @@ export function confirmCorrectDeployment(peer, t, back) {
       onOk: r => toast(T("Address fixed{to}.", { to: (r && r.data && r.data.ip) ? " → " + r.data.ip : "" }), "ok") }) });
 }
 
-// Batch (grid button next to the status dropdown). `rows` = the currently-filtered {p, t} rows.
-export function confirmRestoreAll(rows, back) {
-  const seen = new Set(), targets = [];
-  for (const { t } of rows) { if (!t.restorable) continue; const k = t.node + "|" + t.iface; if (seen.has(k)) continue; seen.add(k); targets.push(t); }
-  if (!targets.length) { toast(T("Nothing to restore yet — a missing interface must persist a couple of minutes before it's offered."), "info"); return; }
-  const dirty = targets.filter(t => { const mi = _missingIface(t.node, t.iface); return !mi || !mi.key_source; }).length;
-  const n = targets.length, one = n === 1;
-  const dirtyNote = !dirty ? T(" Existing clients keep working — no re-distribution.")
-    : dirty === 1 ? T(" One has no recoverable key, so it gets a new one and those clients must re-import.")
-    : T(" {n} have no recoverable key, so they get a new one and those clients must re-import.", { n: dirty });
-  openConfirm({ title: T("Restore {count} missing", { count: plural(n, "interface") }), confirmLabel: T("Restore {n}", { n }), danger: dirty > 0, back,
-    body: T("Recreate {count} missing with saved settings and, where recoverable, the ORIGINAL server key — every dangling peer on {them} re-converges.{dirty} Only interfaces missing long enough to be a real outage are included.",
-      { count: plural(n, "interface"), them: one ? T("ref|it") : T("ref|them"), dirty: dirtyNote }),
-    note: html`<ul class="restore-list">${targets.map(t => html`<li>${Store.nodeName(t.node)} · ${t.iface}${_missingIface(t.node, t.iface) && !_missingIface(t.node, t.iface).key_source ? html` <span class="rl-new">${T("new key")}</span>` : null}</li>`)}</ul>`,
-    onConfirm: async () => { let ok = 0; for (const t of targets) { const r = await mutate({ call: () => api.ifaceRecreate({ node: t.node, iface: t.iface }) }); if (r && r.ok) ok++; } toast(T("Restoring {count} — peers re-converge over the next syncs.", { count: plural(ok, "interface") }), "ok"); } });
-}
-export function confirmCorrectAll(rows, back) {
-  const seen = new Set(), items = [];
-  for (const { p, t } of rows) { if (!t.correctable) continue; const k = p.id + "|" + t.iface; if (seen.has(k)) continue; seen.add(k); items.push({ p, t }); }
-  if (!items.length) { toast(T("Nothing to fix yet — a broken address must persist a couple of minutes before it's offered."), "info"); return; }
-  openConfirm({ title: T("Fix {count}", { count: plural(items.length, "broken address") }), confirmLabel: T("Fix {n}", { n: items.length }), back,
-    body: T("Reassign each of these {count} the LOWEST free address in its interface's subnet (the next one not already taken on that interface), then let the nodes re-converge. Keys and PSK are unchanged. Only records wrong long enough to be a real mismatch are included.",
-      { count: plural(items.length, "peer") }),
-    note: html`<${Fragment}><ul class="restore-list">${items.map(({ p, t }) => html`<li>${p.title || p.name || T("kind|peer")} · ${Store.nodeName(t.node)} · ${t.iface} <span class="faint">(${t.ip || "—"})</span></li>`)}</ul><${SubAutoNote}/></>`,
-    onConfirm: async () => { let ok = 0; for (const { p, t } of items) { const r = await mutate({ key: "peer:" + p.id, call: () => api.peerCorrect({ peer_id: p.id, target: { node: t.node, iface: t.iface } }) }); if (r && r.ok) ok++; } toast(T("Fixed {count}.", { count: plural(ok, "address") }), "ok"); } });
-}
-
 export const now_s = () => Math.floor(Date.now() / 1000);
 const _peerName = p => p.title ? " · " + p.title : p.name ? " · " + p.name : "";
 export function confirmBlockPeer(peer, back) {

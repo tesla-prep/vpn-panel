@@ -2,7 +2,6 @@ import { T, Trich, Tsplit, plural, pluralWord, srvText, fmtNum } from "./i18n.js
 import { esc, tkey, seen, dur, ago, fmtBytes, ipOf, ipChoices, portOf, listenAddr, ipPickerVal, V, agoAge, isMobile } from "./util.js";
 import { Store, api, bus, useStore } from "./store.js";
 import { go } from "./router.js";
-import { pickThemed, toThemed, IFACE_COLOR_DEFAULTS } from "./theme.js";
 import {
   kindOf, iTypeOf, targetType, nodeStale, ifaceNotUp, wdttOn, ghostIface, ghostPeers, turnProxiesFor,
   suggestIface, suggestSubnet, suggestPort, portHolder, portErrMsg, subnetFleetConflict, subnetServerAddr,
@@ -16,7 +15,7 @@ import { EgressPicker, NatSourcePick, natPinApplies, egressInit, egressSaveBlock
          SMART_CAT_LABEL, defaultBlockFor, loadBlockCatalog, reportDropped, rulesSummary, targetLabel } from "./routing.js";
 import { rulesToRows } from "./rulerows.js";
 import { MIMIC_KEYS, MIMIC_PRESETS, MIMIC_BUILTIN_SIZE, mimicOf, mimicCheck, awgFieldCheck, mimicRender, mimicLines, mimicFill, mimicAfter } from "./mimic.js";
-import { orphCount, OnlinePeersTag, peersView, searchMatch, DropsPop, DropsFigure, LossPop, meshHealth, ReachField } from "./views.js";
+import { orphCount, OnlinePeersTag, searchMatch, DropsPop, DropsFigure, LossPop, meshHealth, ReachField } from "./views.js";
 import { confirmRestoreInterface, confirmRestoreAllInterfaces, confirmRebuildInterface, brokenIface, openRecreateRekey, fmtDate } from "./peer-actions.js";
 import { TurnProxiesBlock, turnEnabled, WDTT_COLOR, wdttRestoreIdentity, wdttRecreateFresh,
          WdttDeleteSheet, openEditWdtt, CsqttDeleteSheet, openEditCsqtt, ForkTag, shownTitle,

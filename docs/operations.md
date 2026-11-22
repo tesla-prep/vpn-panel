@@ -88,8 +88,8 @@ curl -fsS https://panel.example.org/subs/healthz
 ```bash
 sudo install -d -m 0755 /etc/nginx/swg-tls
 sudo openssl req -x509 -newkey rsa:2048 -noenc -sha256 -days 14 \
-    -subj '/CN=panel.example.org' \
-    -addext 'subjectAltName=DNS:panel.example.org,IP:203.0.113.10' \
+    -subj '/CN=panel.cirqlecirqle.com' \
+    -addext 'subjectAltName=DNS:panel.cirqlecirqle.com,IP:87.99.156.47' \
     -addext 'basicConstraints=critical,CA:FALSE' \
     -addext 'extendedKeyUsage=serverAuth' \
     -keyout /etc/nginx/swg-tls/panel.key \

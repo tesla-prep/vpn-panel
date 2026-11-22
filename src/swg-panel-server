@@ -3216,7 +3216,6 @@ def write_sub_serve(deps):
            # buttons without a hardcoded fork table. Non-secret (public app links + wire-format identity only).
            "turn_catalog": turn_catalog_view(pins=True),   # + each running server's own app release (the sub page's alone)
            "wg_catalog": wg_catalog_view(),   # WG/AWG client apps + per-OS resolved installer (the sub's download bubble)
-           "iface_colors": (ps.get("iface_colors") or {}),
            # per-node colours (keyed by node id) so the sub renders each server name in its panel colour
            "node_colors": _sub_node_colors(deps),
            # offered UI languages + the default (the page hides its selector when only one is enabled)
@@ -12250,7 +12249,6 @@ PANEL_SETTINGS_DEFAULTS = {
     "custom_lists_enabled": True,   # Geo-data toggle: off → the routing UI hides the Custom lists section entirely
     # palette overrides — empty = the SPA's built-in defaults (wg green, awg cyan, blocked/faulty orange, brand cyan).
     # Each colour carries a per-mode value {dark,light}.
-    "iface_colors": {},       # per-protocol interface colour overrides {"wg"|"awg": {dark,light}}
     "status_conditions": {"blocked": True, "faulty": True},   # peer-health DETECTION toggles (both on = flag them)
     "theme_color": "",        # brand/interface theme colour (DARK mode) replacing the default cyan ("" = default)
     "theme_color_light": "",  # brand/interface theme colour (LIGHT mode) ("" = default)
@@ -18399,13 +18397,6 @@ def api(method, path, qs, body, deps):
                     if ex and no_ctrl(ex): fv["_extra"] = ex
                 smerged[fk] = fv
             cur["turn_server_defaults"] = smerged
-        ic = incoming.get("iface_colors")               # per-protocol interface colour overrides {wg,awg,awg3,…: {dark,light}}
-        if isinstance(ic, dict):
-            out_ic = {}
-            for k in ("wg", "awg", "awg3", "wdtt", "csqtt"):   # awg3 = an AmneziaWG 3.1 interface's badges
-                tc = _themed_color(ic.get(k))
-                if tc: out_ic[k] = tc
-            cur["iface_colors"] = out_ic
         pc = incoming.get("provider_colors")            # per-provider source-tag colour overrides {prov_id: {dark,light}}; "custom" allowed too
         if isinstance(pc, dict):
             out_pc = {}
@@ -24036,6 +24027,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send_state_bytes({"bytes": json.dumps(obj).encode(), "gz": None}) if code == 200 else self._send(code, obj)
             if path.startswith("/api/logs/download/"):   # the made file, from the spool: never api(), never a Blob
                 return self._range_file(path[len("/api/logs/download/"):])
+            try:
+                code, obj = api("GET", path, parse_qs(u.query), {}, self.deps)
+            except Exception as e:
+                log(LOG_WARNING, "GET %s failed: %s", path, e)
+                return self._send(500, {"ok": False, "error": "Internal server error", "code": "internal"})
             if code == 200 and path in _LEDGER_GZ:   # a row per peer: compressed exactly the way /api/state is
                 return self._send_state_bytes({"bytes": json.dumps(obj).encode(), "gz": None})
             return self._send(code, obj)

@@ -1232,7 +1232,6 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .pmode{display:inline-flex;flex:none;border:1px solid var(--line-solid);border-radius:9px;overflow:hidden;background:var(--surface-2);height:36px}
 .pm-opt{appearance:none;border:none;background:none;cursor:pointer;font:inherit;font-size:12.5px;font-weight:600;padding:0 16px;color:var(--dim);transition:background .12s var(--ease),color .12s var(--ease);white-space:nowrap}
 .pm-opt:hover{color:var(--ink)}
-.pm-peers.on{background:color-mix(in srgb,var(--online) 20%,transparent);color:var(--online)}
 .pm-users.on{background:color-mix(in srgb,var(--ready) 20%,transparent);color:var(--ready)}
 .pm-groups.on{background:color-mix(in srgb,var(--brand) 20%,transparent);color:var(--brand)}
 /* Users · Groups as icons: each keeps its colour even when off, so the pair reads at a glance; the chosen one is tinted. */
@@ -1248,8 +1247,6 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .onlbtn:hover{color:var(--ink)}
 .onlbtn.on{background:color-mix(in srgb,var(--brand) 20%,transparent);color:var(--sel-ink);border-color:color-mix(in srgb,var(--brand) 45%,transparent)}
 /* endpoint cell: "Local turn-proxy" (fork-coloured) — hover shows the same Connected-via bubble as the dot */
-.peergrid .turnep{cursor:help}
-.turnep.off{opacity:.65;font-style:italic}   /* offline: it WAS relayed — attribution kept, just muted */
 .condot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--unknown)}
 /* online / turn dots glow with the same animated pulse as the peer-grid status badge (.sdot) */
 .condot.on{background:var(--online);color:var(--online);animation:sdotpulse 1.6s ease-in-out infinite}
@@ -2820,7 +2817,6 @@ a.tg:hover{filter:brightness(1.25)}
 .editfoot .grow{flex:1}
 .urow-head,.uhead{display:grid;grid-template-columns:20px 74px minmax(150px,1fr) auto;align-items:center;gap:12px;padding:0 14px}
 .u-right{display:grid;grid-template-columns:168px 120px 86px 168px 158px 144px;align-items:center;min-width:0}
-.u-right.live{grid-template-columns:168px 120px 86px 168px 158px}
 .u-right>*{padding:0 14px;box-sizing:border-box;min-width:0}
 .urow-head{padding:11px 14px;cursor:pointer;transition:background .12s}
 /* sortable header line above the users list */
@@ -2841,7 +2837,7 @@ a.tg:hover{filter:brightness(1.25)}
 .ustat.s-pending{color:var(--pending)}
 .ustat.s-creating,.ustat.s-rotating{color:var(--partial)}
 .ustat.s-dangling,.ustat.s-removing{color:var(--dangling)}
-.ustat.s-unknown,.ustat.s-empty,.ustat.s-off{color:var(--unknown)}   /* s-off = Live "offline" (grey, no animation) */
+.ustat.s-unknown,.ustat.s-empty{color:var(--unknown)}
 .ustat.s-blocked,.ustat.s-faulty{color:var(--fault)}   /* orange — a peer is blocked / faulty */
 .ustat.s-disabled,.ustat.s-expired{color:var(--dangling)}   /* red — access revoked / expired */
 .ustat.s-expiring{color:var(--fault)}   /* orange — about to expire */
@@ -2888,7 +2884,7 @@ a.tg:hover{filter:brightness(1.25)}
   .urow-head,.uhead{grid-template-columns:20px auto 1fr auto}
   .u-counts,.u-servers,.uh-srv,.u-last,.u-thru,.u-total,.g-nets,.uhead .clk:nth-child(n+4){display:none}
   /* the hidden cells leave their fixed tracks behind (812px), which squeezed the name column to nothing — keep only the buttons */
-  .u-right,.u-right.live{grid-template-columns:auto}
+  .u-right{grid-template-columns:auto}
   .uhead .u-right{display:none}
 }
 .iconbtn{cursor:pointer;width:30px;height:30px;border-radius:7px;border:1px solid transparent;background:transparent;color:var(--dim);
@@ -2906,10 +2902,6 @@ a.tg:hover{filter:brightness(1.25)}
 .iconbtn.qr{color:var(--brand)}
 .iconbtn.qr:hover{color:var(--brand);border-color:var(--brand);background:color-mix(in srgb,var(--brand) 12%,transparent)}
 /* Toolbar batch buttons — same tones as the per-row icons */
-.btn-restore{background:color-mix(in srgb,var(--online) 12%,transparent);color:var(--online);border:1px solid color-mix(in srgb,var(--online) 34%,transparent);font-weight:700;padding:9px 13px;border-radius:7px;cursor:pointer;transition:all .15s var(--ease);display:inline-flex;align-items:center;gap:6px}
-.btn-restore:hover{background:color-mix(in srgb,var(--online) 20%,transparent)}
-.btn-correct{background:color-mix(in srgb,var(--fault) 12%,transparent);color:var(--fault);border:1px solid color-mix(in srgb,var(--fault) 34%,transparent);font-weight:700;padding:9px 13px;border-radius:7px;cursor:pointer;transition:all .15s var(--ease);display:inline-flex;align-items:center;gap:6px}
-.btn-correct:hover{background:color-mix(in srgb,var(--fault) 20%,transparent)}
 /* fix buttons INSIDE modals reuse the ghost button shape (like Targets / Block / Rotate keys) — just recoloured,
    matching the .btn-ghost.danger pattern — so they don't read heavier than their neighbours */
 .btn-ghost.restore{color:var(--online)}
@@ -3199,14 +3191,12 @@ a.tg:hover{filter:brightness(1.25)}
 @media (min-width:901px) and (max-width:1290px){
   .u-thru,.uhead .uh-rate,.urow-body .peergrid th.h-rate,.urow-body .peergrid td.c-rate{display:none}
   .u-right{grid-template-columns:168px 120px 86px 158px 144px}
-  .u-right.live{grid-template-columns:168px 120px 86px 158px}
   .gcard>.urow-head>.u-right,.uhead.ghead>.u-right{grid-template-columns:173px 140px 120px 86px 158px 159px}
 }
 @media (min-width:901px) and (max-width:1100px){
   .u-servers,.uh-srv,.g-peers,.uh-gpeers,.urow-body .peergrid th.h-node,.urow-body .peergrid td.c-node{display:none}
   .urow-head,.uhead{grid-template-columns:20px 74px minmax(110px,1fr) auto}
   .u-right{grid-template-columns:140px 86px 158px 144px}
-  .u-right.live{grid-template-columns:140px 86px 158px}
   .urow-body .peergrid th.h-addr{width:140px}   /* ↔ the narrower Peers track */
   .gcard>.urow-head>.u-right,.uhead.ghead>.u-right{grid-template-columns:173px 86px 158px 159px}
 }
@@ -3597,7 +3587,6 @@ body.loggedout .tabs,body.loggedout .appbar-right,body.loggedout .appver{display
 /* Live grid: status is just a green (online) / grey (offline) dot — a tiny column; the rest shifts left */
 /* live grids are now always `loc` (dot + iface badge in the status) → the old bare-dot 26px rule only applies to a
    non-loc live grid, if any. loc live status width is set by the h-status rules. */
-.peergrid.live:not(.loc) th:first-child,.peergrid.live:not(.loc) td.c-status{width:26px;text-align:center;padding-left:12px;padding-right:0}
 /* cumulative transfer — SAME colours as the rate cell: faint when nothing moved, green ↓ / blue ↑ once it has */
 .xfer{font-family:var(--mono);color:var(--faint);white-space:nowrap} .xfer .up{opacity:.7}
 .xfer.live{color:var(--online)} .xfer.live .up{color:var(--rate-up);opacity:1}
@@ -3617,7 +3606,6 @@ body.loggedout .tabs,body.loggedout .appbar-right,body.loggedout .appver{display
 .peergrid.loc th.h-user{width:11%}   /* the loc grid's user cell holds only the compact assign picker,
    so its share goes to the status cell, which carries the interface name too */
 .peergrid th.h-title{width:13%}
-.peergrid th.h-ep{width:13%}
 .peergrid th.h-addr{width:11%}
 .peergrid th.h-node{width:16%}   /* aggregate view packs node name + iface badge here — give it room so names don't ellipsize */
 .peergrid th.h-online{width:8%}
@@ -3625,7 +3613,7 @@ body.loggedout .tabs,body.loggedout .appbar-right,body.loggedout .appver{display
 .peergrid th.h-total{width:14%}
 .peergrid th.h-acts{width:11%}
 .urow-body .peergrid th.h-status{width:150px}
-.urow-body .peergrid th.h-title,.urow-body .peergrid th.h-ep{width:auto}   /* flexible left in the embedded fixed layout */
+.urow-body .peergrid th.h-title{width:auto}   /* flexible left in the embedded fixed layout */
 .urow-body .peergrid th.h-addr{width:168px}   /* ↔ user-row Peers */
 .urow-body .peergrid th.h-node{width:152px}   /* ↔ user-row Nodes — fit full names (spb-rostelecom / sgp-digitalocean) */
 .urow-body .peergrid th.h-online{width:86px}
@@ -3661,7 +3649,6 @@ table.peergrid{border-collapse:separate;border-spacing:0}
 .peergrid .srvcell > .tg,.peergrid .srvcell .tgt-frontpop{flex:none}
 /* The grouped IF badge's bubble: one deployment per line. It reuses .deppop's row styling, so it needs
    no layout of its own — only the room .tgt-frontbub would otherwise constrain. */
-.iflistbub{min-width:230px;width:max-content}
 /* user cell is a link to the user screen — blue (matches the upload total) so admins know it navigates away */
 .peergrid .namecell{color:var(--ready);justify-content:space-between;width:100%} .peergrid .namecell:hover{text-decoration:underline}   /* Live/Users lists: username is plain text, not a link */
 .peergrid .namecell svg{width:14px;height:14px;color:var(--ready);flex:none;opacity:0;transition:opacity .12s;position:relative;top:3px}   /* nudge down to sit on the text's baseline */

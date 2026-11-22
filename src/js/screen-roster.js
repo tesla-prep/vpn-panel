@@ -1,41 +1,23 @@
-import {
-  ago, seen, tkey, isPrimaryTarget, isMobile,
-} from "./util.js";
+import { ago, seen, isMobile } from "./util.js";
 import { T, Tsplit, Trich, plural, srvVerb, srvDetail, srvName } from "./i18n.js";
+import { Store, api, bus, useStore } from "./store.js";
+import { ifaceIsAll, targetType } from "./model.js";
 import {
-  Store, api, bus, useStore,
-} from "./store.js";
-import {
-  ifaceIsAll, ifaceMatch, targetType, awgGen,
-} from "./model.js";
-import {
-  CapList, Dropdown, Ic, Popover, RowError, SearchBox, Sheet, StoreOffBanner, Tag, closeModal, dlul, lifecycleIcon, openConfirm, openModal,
-  rateCell, rowDouble, rowNoSelect, rowSingle, secTitle, xferCell, tgt3,
+  CapList, Dropdown, Ic, Popover, RowError, SearchBox, Sheet, StoreOffBanner, Tag, closeModal,
+  lifecycleIcon, openConfirm, openModal, rateCell, rowDouble, rowNoSelect, rowSingle, secTitle, tgt3,
 } from "./ui.js";
 import {
-  EV_ACTIONS, EV_ITEMS, evItemLabel, evActionLabel, peerStatusFilters, USER_DEFDIR, activityView, connView, evDecorate,
-  ifaceFilterOptions, ifaceOptGroups, nodeFilterOptions, pageScroll, pageSizeOpts, peerMatchesQ, peerSortBy, peersView,
-  searchMatch, sortColToggle, sortPeerRows, sortUsers, unassignedView, userIdentityMatchesQ, userMatchesQ,
-  userOnNodeIface, userPeerViews, userStatTag, userStats, usersView, groupShares, shareDeviceName,
-  groupMemberViews, groupStats, sortGroups, GROUP_DEFDIR, PEER_DEFDIR, trafficRangeLabel,
+  EV_ACTIONS, EV_ITEMS, evItemLabel, evActionLabel, USER_DEFDIR, GROUP_DEFDIR, activityView, evDecorate,
+  ifaceFilterOptions, nodeFilterOptions, pageScroll, pageSizeOpts, peerMatchesQ, peerInRosterStatus,
+  peerStatusFilters, searchMatch, sortColToggle, sortUsers, unassignedView, userIdentityMatchesQ,
+  userMatchesQ, userOnNodeIface, userPeerViews, userStatTag, userStats, usersView, groupShares,
+  shareDeviceName, groupMemberViews, groupStats, sortGroups, trafficRangeLabel,
 } from "./views.js";
-import {
-  confirmCorrectAll, confirmRestoreAll,
-} from "./peer-actions.js";
-import {
-  openUserConfigs, openUserEdit, openGroup, openCreateGroup, confirmDeleteGroup, UserCounts,
-} from "./peer-ui.js";
-import {
-  openAddPeers, openCreatePeer, openCreateUser, openUserView, openGroupView,
-} from "./sheets-crud.js";
+import { openUserConfigs, openUserEdit, openGroup, openCreateGroup, confirmDeleteGroup, UserCounts } from "./peer-ui.js";
+import { openAddPeers, openCreateUser, openUserView, openGroupView } from "./sheets-crud.js";
 import { TrafficRail, TrafficCell, UserTrafficCell } from "./traffic-ui.js";
 import { trafficTotals } from "./traffic.js";
-import {
-  EmbeddedPeers, PeerGrid, UsersHeader, filterBtn, sortField, PEER_SORT, USER_SORT, GROUP_SORT,
-} from "./grids.js";
-import {
-  OrphanRow,
-} from "./iface.js";
+import { EmbeddedPeers, UsersHeader, filterBtn, sortField, USER_SORT, GROUP_SORT } from "./grids.js";
 import { h, Fragment } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import htm from "htm";
@@ -56,122 +38,6 @@ function RowsPager({ total, page, pageSize, onPage, onSize }) {
   </div>`;
 }
 
-// One fleet entry: main block (identity/traffic/sync) on the left, health block on the right.
-export function PeersScreen() {
-  useStore();
-  const [, force] = useState(0);
-  const fleet = Store.fleet;
-  const multiServer = fleet.length > 1;
-  // "*" = aggregate (all). With more than one server, default to fleet-wide so search spans it.
-  if (!peersView.node) peersView.node = multiServer ? "*" : (fleet[0] ? fleet[0].id : "");
-  if (peersView.node !== "*" && !fleet.some(n => n.id === peersView.node)) peersView.node = multiServer ? "*" : (fleet[0] ? fleet[0].id : "");
-  const node = peersView.node;   // node = id, or "*" for all servers
-
-  const allIfaces = Array.from(new Set(Object.keys(Store.describe).flatMap(n => Store.userIfacesOf(n)))).sort();   // user ifaces only — mesh links (swg_*) are not peer-bearing
-  const ifaceOpts = node === "*" ? allIfaces : Store.userIfacesOf(node);
-  // default interface: aggregate when several exist (or all-servers); else the only one.
-  const ifaceDefault = () => (node === "*" || ifaceOpts.length > 1) ? "*" : (ifaceOpts[0] || "");
-  if (!peersView.iface) peersView.iface = ifaceDefault();
-  if (!ifaceIsAll(peersView.iface) && !ifaceOpts.includes(peersView.iface)) peersView.iface = ifaceDefault();
-  const iface = peersView.iface;
-  const agg = node === "*" || ifaceIsAll(iface);
-  const itype = (!agg && Store.ifaceMeta(node, iface) && Object.keys(Store.ifaceMeta(node, iface).awg_params || {}).length) ? "awg" : "wg";
-
-  const q = peersView.q.toLowerCase();
-  const grouped = !!peersView.group;
-  // one row per matching (peer, target) DEPLOYMENT, so a fleet-wide view shows where each peer lives —
-  // unless Group is on, which collapses to one row per PEER (its primary deployment, the rest as +N).
-  let rows = [];
-  for (const p of Store.recon.peers) {
-    const ts = p.targets.filter(t => (node === "*" || t.node === node) && ifaceMatch(t.iface, iface, t));
-    if (!ts.length) continue;
-    if (!grouped) { for (const t of ts) rows.push({ p, t }); continue; }
-    const rep = ts.find(t => isPrimaryTarget(p.targets, t)) || ts.find(t => t.online) || ts[0];
-    rows.push({ p, t: rep });
-  }
-  // freeze the order over this view's full row set (per node/iface), THEN apply search/status filters — so
-  // filtering or editing never reshuffles the frozen rows
-  rows = sortPeerRows(rows, peersView.sort, peersView.dir, "peers|" + node + "|" + iface);
-  if (q) rows = rows.filter(({ p, t }) => searchMatch((p.title || "") + " " + (p.name || "") + " " + (t.ip || "") + " " + Store.nodeName(t.node) + " " + t.iface, q));
-  if (peersView.status) {
-    const f = peersView.status;
-    rows = rows.filter(({ p, t }) =>
-      f === "unassigned" ? p.unassigned
-      : f === "partial" ? (p.status === "partial" && (t.status === "dangling" || t.status === "broken"))
-      : t.status === f);
-  }
-  // batch Restore/Correct affordance: how many of the currently-shown rows are actionable. Restore is
-  // per-interface (dedupe node|iface — one recreate fixes every dangling peer on it); Correct is per-peer.
-  const restorableCount = peersView.status === "dangling" ? new Set(rows.filter(({ t }) => t.restorable).map(({ t }) => t.node + "|" + t.iface)).size : 0;
-  const correctableCount = peersView.status === "broken" ? rows.filter(({ t }) => t.correctable).length : 0;
-  // which of each peer's deployments are actually visible as rows here — so a row can flag the rest
-  // (filtered out by server/interface or search) with a "+N" the operator can hover/tap.
-  const shownByPeer = {};
-  for (const { p, t } of rows) (shownByPeer[p.id] = shownByPeer[p.id] || new Set()).add(tkey(t.node, t.iface));
-  const orphans = !agg ? Store.recon.orphans.filter(o => o.node === node && o.iface === iface) : [];
-
-  // pagination — default 20/page; the +N badge still reflects ALL rows (shownByPeer above), not the page.
-  const pageSize = peersView.pageSize || 20;
-  const totalPages = Math.max(1, Math.ceil(rows.length / pageSize));
-  const page = Math.min(Math.max(1, peersView.page || 1), totalPages);
-  const pageRows = rows.slice((page - 1) * pageSize, page * pageSize);
-  const setPage = p => { peersView.page = p; force(x => x + 1); };
-
-  // The toolbar's pieces, drawn once for both layouts: a phone keeps the search and New peer, and puts the grouping and the
-  // three filters behind its Filters button (MOBILE-PLAN, Peers promoted to T1 on 2026-10-29). `r` redraws that sheet.
-  const re = r => { peersView.page = 1; force(x => x + 1); if (r) r(); };
-  const groupBtn = html`<button class=${"onlbtn" + (grouped ? " on" : "")}
-        title=${grouped ? T("One row per peer — its other deployments are behind the +N") : T("Collapse each peer's deployments into one row")}
-        onClick=${() => { peersView.group = !peersView.group; re(); }}>${grouped ? T("btn|Grouped") : T("btn|Group")}</button>`;
-  const filters = r => html`<${Fragment}>
-      ${isMobile() ? null : groupBtn}
-      ${search(false)}
-      <${Dropdown} className="selwrap" ariaLabel=${T("All nodes")} value=${node}
-        onChange=${v => { peersView.node = v; peersView.iface = ""; re(r); }}
-        options=${[...(multiServer ? [{ value: "*", label: T("All nodes") }]
-                     : !fleet.length ? [{ value: "*", label: T("No nodes") }] : []),
-                   ...fleet.map(n => ({ value: n.id, label: n.name }))]}/>
-      <${Dropdown} className="selwrap" ariaLabel=${T("All interfaces")} value=${iface}
-        onChange=${v => { peersView.iface = v; re(r); }}
-        options=${[...(ifaceOpts.length && (node === "*" || ifaceOpts.length > 1) ? [{ value: "*", label: T("All interfaces") }] : []),
-                   ...(ifaceOpts.length ? ifaceOptGroups(ifaceOpts) : [{ value: "", label: T("No interfaces") }])]}/>
-      <${Dropdown} className="selwrap" ariaLabel=${T("All statuses")} value=${peersView.status || ""}
-        onChange=${v => { peersView.status = v || null; re(r); }}
-        options=${peerStatusFilters()}/><//>`;
-  // the desktop draws the search between the grouping and the filters; a phone, in the toolbar (`on` = where it goes)
-  const search = on => on === isMobile() ? html`<${SearchBox} placeholder=${T("Search title, user, address…")} value=${peersView.q} onInput=${e => { peersView.q = e.target.value; re(); }}/>` : null;
-
-  return html`<div class="screen">
-    <${StoreOffBanner}/>
-    ${isMobile() ? null : html`<${TrafficRail}/>`}
-    <div class=${"toolbar" + (isMobile() ? " mtoolbar" : "")}>
-      ${isMobile() ? groupBtn : null}
-      ${search(true)}
-      ${/* "set" = not the screen's own default: a one-node fleet defaults to its node and its only interface (F22) */""}
-      ${isMobile() ? filterBtn(node !== (multiServer ? "*" : (fleet[0] ? fleet[0].id : "")) || iface !== ifaceDefault() || !!peersView.status,
-        r => html`${filters(r)}${sortField(peersView, "sort", "dir", PEER_SORT(), PEER_DEFDIR, () => re(r))}`) : filters()}
-      ${restorableCount ? html`<button class="btn btn-restore" title=${T("Recreate every missing interface shown here with its original identity")} onClick=${() => confirmRestoreAll(rows)}><${Ic} i="refresh"/> ${T("Restore all dangling")}${restorableCount > 1 ? " · " + restorableCount : ""}</button>` : null}
-      ${correctableCount ? html`<button class="btn btn-correct" title=${T("Assign each broken peer shown here the next free in-subnet address")} onClick=${() => confirmCorrectAll(rows)}><${Ic} i="check"/> ${T("Fix all broken")}${correctableCount > 1 ? " · " + correctableCount : ""}</button>` : null}
-      <button class=${"btn btn-primary" + (isMobile() ? " mfab" : "")} onClick=${() => openCreatePeer(agg ? {} : { node, iface })}><span class="plus"><${Ic} i="plus"/></span> ${T("New peer")}</button>
-    </div>
-
-    <div class="section-title"><h2>${agg ? T("Peers") : T("Peers on")}</h2><span class="tags">
-      ${node !== "*" ? html`<${Tag} kind="iface" label=${Store.nodeName(node) || "—"} color=${Store.nodeColor(node)}/>` : null}
-      ${iface !== "*" && iface ? html`<${Tag} kind=${itype} label=${iface} gen3=${itype === "awg" && awgGen(node, iface) === "3.1"}/>` : null}
-    </span><span class="count">${rows.length}</span></div>
-    <${PeerGrid} rows=${pageRows} agg=${agg} node=${node} iface=${iface} shownByPeer=${shownByPeer} q=${peersView.q} grouped=${grouped} ranged=${!isMobile()} sort=${peersView.sort} dir=${peersView.dir} onSort=${c => { peerSortBy(peersView, c); peersView.page = 1; force(x => x + 1); }}/>
-    <${RowsPager} total=${rows.length} page=${page} pageSize=${pageSize} onPage=${setPage}
-      onSize=${v => { peersView.pageSize = v; peersView.page = 1; force(x => x + 1); }}/>
-
-    ${orphans.length ? html`<${Fragment}>
-      <div class="section-title"><h2 style="color:var(--orphan)">${T("Unmanaged here")}</h2></div>
-      <div class="tablewrap"><table><tbody>${orphans.map(o => html`<${OrphanRow} key=${o.node + "|" + o.iface + "|" + o.pubkey} o=${o}/>`)}</tbody></table></div>
-    <//>` : null}
-  </div>`;
-}
-
-// "No peers yet — add one." The call to action is a BUTTON mid-sentence, so the sentence is translated whole
-// and split on its marker (see Tsplit) rather than glued together around it.
 function noPeersYet(onAdd) {
   const [before, after] = Tsplit("No peers yet — {add}.", "add");
   return html`<${Fragment}>${before}<button class="linkbtn" onClick=${onAdd}>${T("add one")}</button>${after}<//>`;
@@ -244,100 +110,6 @@ export function ActivityHistoryScreen() {
   </div>`;
 }
 
-// SCREEN: LIVE (Peers / Users monitor)
-
-export function ConnectionsScreen() {
-  useStore();
-  const [, force] = useState(0);
-  const bump = () => force(x => x + 1);
-  const reset = () => { connView.page = 1; bump(); };   // any filter/mode change → back to page 1
-  const mode = connView.mode, q = connView.q.toLowerCase();
-  const allIfaces = Array.from(new Set(Object.keys(Store.describe).flatMap(n => Store.userIfacesOf(n)))).sort();
-  const ifaceOpts = connView.node ? Store.userIfacesOf(connView.node) : allIfaces;
-  if (!ifaceIsAll(connView.iface) && !ifaceOpts.includes(connView.iface)) connView.iface = "";
-  const setMode = m => { connView.mode = m; reset(); };
-  const setPage = p => { connView.page = p; bump(); };
-  // shared pager (both modes) — mirrors the Peers/Users screens
-  const pager = (total) => {
-    const pageSize = connView.pageSize || 20, totalPages = Math.max(1, Math.ceil(total / pageSize));
-    const page = Math.min(Math.max(1, connView.page || 1), totalPages);
-    return total > pageSize ? html`<div class="pager">
-      <label class="pager-size">${T("Rows per page")}
-        <${Dropdown} className="selwrap" ariaLabel=${T("Rows per page")} value=${pageSize} options=${pageSizeOpts()}
-          onChange=${v => { connView.pageSize = v; reset(); }}/></label>
-      <span class="pager-info">${T("{from}–{to} of {total}", { from: (page - 1) * pageSize + 1, to: Math.min(page * pageSize, total), total })}</span>
-      <button class="btn btn-ghost" disabled=${page <= 1} onClick=${() => setPage(page - 1)}>${T("‹ Prev")}</button>
-      <span class="pager-pg">${page} / ${totalPages}</span>
-      <button class="btn btn-ghost" disabled=${page >= totalPages} onClick=${() => setPage(page + 1)}>${T("Next ›")}</button>
-    </div>` : null;
-  };
-  const paginate = (list) => { const pageSize = connView.pageSize || 20, totalPages = Math.max(1, Math.ceil(list.length / pageSize));
-    const page = Math.min(Math.max(1, connView.page || 1), totalPages); return list.slice((page - 1) * pageSize, page * pageSize); };
-
-  const filters = redraw => { const r = () => { reset(); if (redraw) redraw(); };
-    return html`<${Fragment}>
-    <${Dropdown} className="selwrap" ariaLabel=${T("All nodes")} value=${connView.node}
-      onChange=${v => { connView.node = v; connView.iface = ""; r(); }} options=${nodeFilterOptions("")}/>
-    <${Dropdown} className="selwrap" ariaLabel=${T("All interfaces")} value=${connView.iface}
-      onChange=${v => { connView.iface = v; r(); }} options=${ifaceFilterOptions(connView.node ? Store.userIfacesOf(connView.node) : allIfaces, "")}/>
-    <button class=${"onlbtn" + (connView.online ? " on" : "")} title=${T("Show only online connections")} onClick=${() => { connView.online = !connView.online; r(); }}>${T("status|Online")}</button><//>`; };
-  const toolbar = html`<div class=${"toolbar" + (isMobile() ? " mtoolbar" : "")}>
-    <div class="pmode">
-      ${/* a phone: the device and person icons, the words kept for a screen reader (operator, 2026-10-29: "to save space") */""}
-      <button class=${"pm-opt pm-peers" + (mode === "peers" ? " on" : "") + (isMobile() ? " pm-ico" : "")} aria-label=${isMobile() ? T("Peers") : null} onClick=${() => setMode("peers")}>${isMobile() ? html`<${Ic} i="device"/>` : T("Peers")}</button>
-      <button class=${"pm-opt pm-users" + (mode === "users" ? " on" : "") + (isMobile() ? " pm-ico" : "")} aria-label=${isMobile() ? T("Users") : null} onClick=${() => setMode("users")}>${isMobile() ? html`<${Ic} i="user"/>` : T("Users")}</button>
-    </div>
-    <${SearchBox} placeholder=${mode === "users" ? T("Search users, tags, peers…") : T("Search peer, user, endpoint, IP…")} value=${connView.q} onInput=${e => { connView.q = e.target.value; reset(); }}/>
-    ${isMobile() ? filterBtn(!!(connView.node || connView.iface || connView.online), r => html`${filters(r)}${mode === "users"
-        ? sortField(connView, "usort", "udir", USER_SORT(true), USER_DEFDIR, () => { reset(); if (r) r(); })
-        : sortField(connView, "sort", "dir", [...PEER_SORT().slice(0, 4), ["endpoint", T("col|Endpoint")], ...PEER_SORT().slice(4)], PEER_DEFDIR, () => { reset(); if (r) r(); })}`) : filters()}
-  </div>`;
-
-  if (mode === "users") {
-    // filter the user LIST by node/iface (has a peer there) + search + Online; the expanded grid still shows ALL peers
-    const users = sortUsers(Store.recon.users, connView.usort, connView.udir, "live").filter(u => userMatchesQ(u, q) && userOnNodeIface(u, connView.node, connView.iface) && (!connView.online || u.onlineCount > 0));
-    return html`<div class="screen">
-      ${toolbar}
-      <div class="section-title"><h2 class="live-users">${T("Users")}</h2><span class="count">${users.length}</span></div>
-      ${users.length ? html`<${Fragment}>
-        <${UsersHeader} live=${true} sort=${connView.usort} dir=${connView.udir} onSort=${c => { sortColToggle(connView, "usort", "udir", c, USER_DEFDIR); connView.page = 1; bump(); }}/>
-        <div class="urows">${paginate(users).map(u => html`<${UserRow} key=${u.id} user=${u} live=${true} onlineOnly=${connView.online} q=${q}/>`)}</div>
-      <//>`
-        : html`<div class="empty"><b>${connView.online ? T("No users online") : T("Nothing matches")}</b>${connView.online ? T("No user has an online peer right now.") : T("Clear the filters.")}</div>`}
-      ${pager(users.length)}
-    </div>`;
-  }
-
-  // peers mode — one row per deployment, rendered via the shared PeerGrid in live mode. Lists ALL deployments with a
-  // live online/offline badge (matching Users mode, which lists every user); the Online filter narrows to live ones.
-  let rows = [];
-  for (const p of Store.recon.peers) for (const t of p.targets) {
-    if (connView.node && t.node !== connView.node) continue;
-    if (!ifaceMatch(t.iface, connView.iface, t)) continue;
-    if (connView.online && !t.online) continue;                        // Online filter → only live connections
-    rows.push({ p, t });
-  }
-  if (q) rows = rows.filter(({ p, t }) => { const u = p.user_id ? Store.user(p.user_id) : null; const o = t.observed || {};
-    return searchMatch((p.title || "") + " " + (p.name || "") + " " + (u ? u.name : "") + " " + (t.ip || "") + " " + Store.nodeName(t.node) + " " + t.iface + " " + (o.endpoint || ""), q); });
-  rows = sortPeerRows(rows, connView.sort, connView.dir, "livepeers");
-  const shownByPeer = {};
-  for (const { p, t } of rows) (shownByPeer[p.id] = shownByPeer[p.id] || new Set()).add(tkey(t.node, t.iface));
-  const onlineCount = rows.filter(r => r.t.online).length;
-
-  return html`<div class="screen">
-    ${toolbar}
-    <div class="section-title"><h2 class="live-peers">${T("Peers")}</h2><span class="count">${T("{n} shown · {online} online", { n: rows.length, online: onlineCount })}</span></div>
-    ${rows.length
-      ? html`<${PeerGrid} rows=${paginate(rows)} agg=${true} node="*" iface="*" shownByPeer=${shownByPeer} q=${connView.q} live=${true} loc=${true} hideUser=${false} sort=${connView.sort} dir=${connView.dir} onSort=${c => { peerSortBy(connView, c); connView.page = 1; bump(); }}/>`
-      : html`<div class="empty"><b>${connView.online ? T("No connections online") : T("Nothing matches")}</b>${connView.online ? T("No peer is online with these filters.") : T("Clear the filters.")}</div>`}
-    ${pager(rows.length)}
-  </div>`;
-}
-
-// ═════════════════════════ SCREEN: USERS ═════════════════════════
-
-
-
 // The nodes a set of peers lives on, each node's interfaces listed ONCE with a peer count — the Nodes column's hover bubble.
 function nodesOfPeers(peers) {
   const nm = {};
@@ -385,52 +157,50 @@ function nodesChip(srvNodes) {
   </span>`;
 }
 
-export function UserRow({ user, live, onlineOnly, q, nested }) {
+export function UserRow({ user, onlineOnly, q, nested }) {
   const [, force] = useState(0);
   const searching = !!q;
   const idMatch = userIdentityMatchesQ(user, q);
   const expanded = searching ? (usersView.expanded[user.id] !== false) : !!usersView.expanded[user.id];
   const toggle = () => { usersView.expanded[user.id] = !expanded; force(x => x + 1); };
   const allPeers = Store.peersByUser(user.id);
-  const shownPeers = (searching && !idMatch) ? allPeers.filter(p => peerMatchesQ(p, q)) : allPeers;
+  const shownPeers = allPeers.filter(p => (!searching || idMatch || peerMatchesQ(p, q))
+    && peerInRosterStatus(p, nested ? "" : usersView.status));
   const srvNodes = nodesOfPeers(allPeers);
   const st = userStats(user.id);
-  const [db, ub] = dlul(st.rxb, st.txb);
   const view = userPeerViews[user.id] || (userPeerViews[user.id] = { node: "", iface: "", q: "", page: 1, pageSize: 20, sort: "status", dir: -1 });
   // a member row inside an open group carries no id: the users list's own row is the one revealUser() scrolls to
   return html`<div class=${"urow" + (expanded ? " open" : "")} id=${nested ? null : "urow-" + user.id}>
     <div class="urow-head" title=${T("Double-click for QR / configs")} onMouseDown=${rowNoSelect} onClick=${e => rowSingle(e, toggle)} onDblClick=${e => rowDouble(e, () => openUserConfigs(user))}>
       <span class="u-exp"><${Ic} i="arrow"/></span>
-      ${userStatTag(user, live)}
+      ${userStatTag(user)}
       <span class="u-name">${lifecycleIcon(user, user.peerCount ? user.status : "empty")}<span class="un">${user.name}</span>${user.tag ? html`<span class="tagchip">${user.tag}</span>` : null}${user.note ? html`<span class="u-note" title=${user.note}>${user.note}</span>` : null}<${UserCounts} user=${user}/></span>
-      <span class=${"u-right" + (live ? " live" : "")}>
+      <span class="u-right">
         <span class="u-counts">${(() => {
           const onc = html`<span class=${"u-onc" + (user.onlineCount ? " on" : "")}>${T("{n} Online", { n: user.onlineCount })}</span>`;
           const pc = html`<span class="u-pc">${plural(user.peerCount, "cap|Peer")}</span>`;
           const sep = html`<span class="u-dot"> · </span>`;
-          return live ? html`${onc}${sep}${pc}` : html`${pc}${user.peerCount ? html`${sep}${onc}` : null}`;
+          return html`${pc}${user.peerCount ? html`${sep}${onc}` : null}`;
         })()}</span>
         <span class="u-servers">${nodesChip(srvNodes)}</span>${nodesTap(srvNodes, user.name)}
         <span class="u-last">${st.last == null ? html`<span class="u-never">${T("Never")}</span>` : html`<span class="when">${seen(st.last)}</span>`}</span>
         <span class="u-thru">${rateCell(st.rx, st.tx)}</span>
-        ${live ? html`<span class="u-total">${xferCell(db, ub)}</span>`
-          // a phone draws no traffic window, so no figure from one (MOBILE-PLAN hook 4): the ledger is not fetched there
-          : isMobile() ? null
+        ${/* a phone draws no traffic window, so no figure from one (MOBILE-PLAN hook 4): the ledger is not fetched there */ isMobile() ? null
           // the user's figure opens the user's view — their graph and every device they had (O12)
           : html`<span class="u-total clk" role="button" tabindex="0" title=${T("Open this user's traffic — graph and devices")}
               onClick=${e => { e.stopPropagation(); openUserView(user.id); }} onDblClick=${e => e.stopPropagation()}
               onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); openUserView(user.id); } }}><${UserTrafficCell} uid=${user.id}/></span>`}
-        ${live && !isMobile() ? null : html`<span class="u-acts" onClick=${e => e.stopPropagation()}>
+        <span class="u-acts" onClick=${e => e.stopPropagation()}>
           ${/* data-lbl: the word a phone shows under each icon, where the row's swipe reveals them (m/m.css); nothing on a desktop */""}
           <button class="iconbtn qr" title=${T("Show QR / configs")} data-lbl="QR" onClick=${() => openUserConfigs(user)}><${Ic} i="qr"/></button>
           <button class="iconbtn" title=${T("Traffic — graph and devices")} aria-label=${T("Traffic — graph and devices")} data-lbl=${T("Traffic")} onClick=${() => openUserView(user.id)}><${Ic} i="bars"/></button>
           <button class="iconbtn" title=${T("Edit user")} data-lbl=${T("Edit")} onClick=${() => openUserEdit(user)}><${Ic} i="pencil"/></button>
           <button class="iconbtn iconbtn-add" title=${T("Add peer")} data-lbl=${T("rowact|Device")} onClick=${() => openAddPeers(user.id, user.name)}><${Ic} i="plus"/></button>
-        </span>`}
+        </span>
       </span>
     </div>
     ${expanded ? html`<div class="urow-body">
-      ${shownPeers.length ? html`<${EmbeddedPeers} peers=${shownPeers} view=${view} hideUser=${true} hideToolbar=${true} collapse=${true} live=${live} onlineOnly=${onlineOnly} owner=${user.id} freezeKey=${"uembed|" + user.id}/>`
+      ${shownPeers.length ? html`<${EmbeddedPeers} peers=${shownPeers} view=${view} hideUser=${true} hideToolbar=${true} collapse=${true} onlineOnly=${onlineOnly} owner=${user.id} freezeKey=${"uembed|" + user.id}/>`
         : html`<div class="ug-empty">${user.peerCount ? T("No peers match.") : noPeersYet(() => openAddPeers(user.id, user.name))}</div>`}
     </div>` : null}
     <${RowError} k=${"user:" + user.id}/>
@@ -520,7 +290,7 @@ function GroupRow({ g, st, q }) {
 }
 
 const memberPasses = u => userOnNodeIface(u, usersView.node, usersView.iface) && (!usersView.online || u.onlineCount > 0);
-const filtersOn = () => !!(usersView.node || usersView.iface || usersView.online);
+const filtersOn = () => !!(usersView.node || usersView.iface || usersView.online || (usersView.mode === "users" && usersView.status));
 function RosterFilters({ reset }) {
   const allIfaces = Array.from(new Set(Object.keys(Store.describe).flatMap(n => Store.userIfacesOf(n)))).sort();
   const ifaceOpts = usersView.node ? Store.userIfacesOf(usersView.node) : allIfaces;
@@ -532,6 +302,8 @@ function RosterFilters({ reset }) {
     <${Dropdown} className="selwrap" ariaLabel=${T("All interfaces")} value=${usersView.iface}
       onChange=${v => { usersView.iface = v; reset(); }}
       options=${ifaceFilterOptions(ifaceOpts, "")}/>
+    ${usersView.mode === "users" ? html`<${Dropdown} className="selwrap" ariaLabel=${T("All statuses")} value=${usersView.status}
+      onChange=${v => { usersView.status = v; reset(); }} options=${peerStatusFilters()}/>` : null}
     <button class=${"onlbtn" + (usersView.online ? " on" : "")} aria-pressed=${!!usersView.online} title=${T("Show only users with a device online")}
       onClick=${() => { usersView.online = !usersView.online; reset(); }}>${T("status|Online")}</button>
   <//>`;
@@ -587,8 +359,10 @@ export function UsersScreen() {
   const allUsers = Store.recon.users;
   // node/iface filter the user LIST (has a peer there); each expanded row still shows ALL of that user's peers
   // freeze the order over the FULL list, then filter — so searching/clearing never reshuffles the frozen rows
-  const users = sortUsers(allUsers, usersView.sort, usersView.dir, "users").filter(u => (!inGroup || inGroup.has(u.id)) && userMatchesQ(u, q) && memberPasses(u));
-  const unassigned = Store.unassignedPeers();
+  const users = sortUsers(allUsers, usersView.sort, usersView.dir, "users").filter(u => (!inGroup || inGroup.has(u.id)) && userMatchesQ(u, q) && memberPasses(u)
+    && (!usersView.status || Store.peersByUser(u.id).some(p => peerInRosterStatus(p, usersView.status))));
+  const unassigned = Store.unassignedPeers().filter(p => peerInRosterStatus(p, usersView.status)
+    && (!usersView.online || p.targets.some(t => t.online)));
 
   const pageSize = usersView.pageSize || 20;
   const totalPages = Math.max(1, Math.ceil(users.length / pageSize));
@@ -608,7 +382,7 @@ export function UsersScreen() {
             onChange=${v => { usersView.group = v; reset(); }}
             options=${[{ value: "", label: T("All groups") }, ...Store.groups().map(g => ({ value: g.id, label: g.name }))]}/>
           <${RosterFilters} reset=${reset}/>
-          ${sortField(usersView, "sort", "dir", USER_SORT(false), USER_DEFDIR, reset)}<//>`; })}
+          ${sortField(usersView, "sort", "dir", USER_SORT(), USER_DEFDIR, reset)}<//>`; })}
       <button class="btn btn-primary mfab" onClick=${openCreateUser}><span class="plus"><${Ic} i="plus"/></span> ${T("New user")}</button>
     </div>` : html`<div class="toolbar">
       <${Dropdown} className="selwrap grpsel" ariaLabel=${T("Groups")} value=${usersView.group}
@@ -621,7 +395,7 @@ export function UsersScreen() {
     </div>`}
 
     ${secTitle(inGroup ? T("{name} users", { name: Store.group(usersView.group).name }) : T("Total users"), users.length, false)}
-    ${!allUsers.length ? html`<div class="empty"><b>${T("No users yet")}</b>${T("Create a user, then add devices for them — or create a peer on the Peers screen and assign it later.")}</div>`
+    ${!allUsers.length ? html`<div class="empty"><b>${T("No users yet")}</b>${T("Create a user, then add their devices.")}</div>`
       : !users.length ? html`<div class="empty"><b>${T("Nothing matches")}</b>${inGroup || filtersOn() ? T("Clear the filters.") : T("Clear the search.")}</div>`
       : html`<${Fragment}>
         <${UsersHeader} sort=${usersView.sort} dir=${usersView.dir} onSort=${c => { sortColToggle(usersView, "sort", "dir", c, USER_DEFDIR); usersView.page = 1; force(x => x + 1); }}/>
@@ -631,7 +405,7 @@ export function UsersScreen() {
       onSize=${v => { usersView.pageSize = v; usersView.page = 1; force(x => x + 1); }}/>
 
     ${unassigned.length ? html`<${Fragment}>
-      <div class="section-title"><h2 style="color:var(--faint)">${T("Unassigned peers")}</h2><span class="count">${unassigned.length}</span></div>
+      <div class="section-title" id="unassigned-peers"><h2 style="color:var(--faint)">${T("Unassigned peers")}</h2><span class="count">${unassigned.length}</span></div>
       <${EmbeddedPeers} peers=${unassigned} view=${unassignedView} collapse=${true} freezeKey=${"unassigned-embed"}/>
     <//>` : null}
   </div>`;

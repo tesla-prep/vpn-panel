@@ -1484,6 +1484,14 @@ export const STR = {
   "Custom lists": "Свои списки",
   "Delete this list": "Удалить этот список",
   // budget-ok: empty state, own block
+  "Could not load the block-list catalog.": "Не удалось загрузить списки блокировок.",
+  "The panel returned an invalid response (HTTP {v1}).": "Панель вернула некорректный ответ (HTTP {v1}).",
+  "Add a node to configure its routing mode.": "Добавьте ноду, чтобы настроить режим маршрутизации.",
+  "Create a user, then add their devices.": "Создайте пользователя, затем добавьте его устройства.",
+  "Open Users": "Открыть пользователей",
+  "Online users →": "Пользователи онлайн →",
+  "{v1} matched by domain name — needs Hybrid SNI mode.": "{v1} по имени домена — нужен режим Hybrid SNI.",
+  "Greyed rows are Host-only — this node is IP-only, so they can't match here. The pull stays remembered; switch to Hybrid SNI to activate them.": "Серым отмечены доменные списки. Чтобы они заработали, включите на ноде Hybrid SNI.",
   "Loading block lists…": "Загружаю списки блокировок…",
   "Delete category · ": "Удалить категорию · ",
   "Delete category": "Удалить категорию",
@@ -2023,8 +2031,8 @@ export const STR = {
   "Too many trusted sources — {v1} over the limit of 256.": "Слишком много доверенных источников — на {v1} больше лимита в 256.",
   // ── the Never-block list (docs/NEVER-BLOCK-AND-PORT-RULES-PLAN.md A.5) ──
   "Never block": "Не блокировать",
-  "Never blocked by any block list, on every interface and node — and still routed by your routing rules. Your own Block rules and the abuse protections are not affected. Addresses come out of every address list; site names out of the site lists, on Force-DNS and Hybrid SNI. A name and an address are separate: a site name does not unblock an address an address list holds, and an address stays blocked by a site list while a blocked site resolves to it — list both when you need both. One site name, IP or range a line.":
-    "Никакой список блокировок не блокирует их — ни на одном интерфейсе и ни на одной ноде, — а маршрутизируются они по вашим правилам, как прежде. Ваши собственные правила «Заблокировать» и защита от злоупотреблений не затрагиваются. Адреса убираются из всех списков адресов, имена сайтов — из списков сайтов, в Force-DNS и Hybrid SNI. Имя и адрес — разные записи: имя сайта не разблокирует адрес, который держит список адресов, а адрес остаётся заблокированным списком сайтов, пока в него разрешается заблокированный сайт, — если нужно и то и другое, добавьте оба. Одно имя, IP или диапазон на строку.",
+  "Never blocked by any block list, on every interface and node — and still routed by your routing rules. Your own Block rules and the abuse protections are not affected. Addresses come out of every address list; site names out of the site lists, in Hybrid SNI mode. A name and an address are separate: a site name does not unblock an address an address list holds, and an address stays blocked by a site list while a blocked site resolves to it — list both when you need both. One site name, IP or range a line.":
+    "Никакой список блокировок не блокирует их — ни на одном интерфейсе и ни на одной ноде, — а маршрутизируются они по вашим правилам, как прежде. Ваши собственные правила «Заблокировать» и защита от злоупотреблений не затрагиваются. Адреса убираются из всех списков адресов, имена сайтов — из списков сайтов в режиме Hybrid SNI. Имя и адрес — разные записи: имя сайта не разблокирует адрес, который держит список адресов, а адрес остаётся заблокированным списком сайтов, пока в него разрешается заблокированный сайт, — если нужно и то и другое, добавьте оба. Одно имя, IP или диапазон на строку.",
   "Not taken — site names and IPv4 addresses or ranges (/8 or narrower) only: {v1}": "Не принято — только имена сайтов и IPv4-адреса или диапазоны (/8 или уже): {v1}",
   "To stop the port-scan guard flagging one of your own machines, use Trusted sources (Settings → Network).": "Чтобы защита от сканов портов не отмечала вашу собственную машину, используйте «Доверенные источники» (Настройки → Сеть).",
   "Never-block list updated": "Список «Не блокировать» обновлён",
@@ -4231,8 +4239,6 @@ export const STR = {
   // budget-ok: icon-button tooltip, no box
   "Add peer": "Добавить пира",
   "Delete entry": "Удалить запись",
-  "Restore all dangling": "Восстановить потерянные",
-  "Fix all broken": "Исправить неверные",
   // budget-ok: hover caption on a toolbar button, no box
   "Recreate every missing interface shown here with its original identity":
     "Пересоздать каждый показанный здесь пропавший интерфейс с его исходной идентичностью",
@@ -4257,9 +4263,7 @@ export const STR = {
   "Clear all activity?": "Очистить всю историю?",
   // budget-ok: empty-state block, wraps
   "No users online": "Нет пользователей онлайн",
-  "No user has an online peer right now.": "Сейчас ни у кого нет активных пиров.",
   "No connections online": "Нет активных соединений",
-  "No peer is online with these filters.": "С этими фильтрами нет активных пиров.",
   // budget-ok: button tooltip, no box
   "Hide client (peer) traffic": "Скрыть клиентский трафик (пиры)",
   // budget-ok: button tooltip, no box
@@ -4576,9 +4580,6 @@ export const STR = {
     "Ваши списки адресов и доменов — выключите, чтобы скрыть раздел своих списков в маршрутизации.",
   "Re-fetch every routed list from its provider now (updates the panel; nodes pull the changes on their schedule)":
     "Подтянуть все маршрутные списки у провайдеров (обновится панель; ноды подтянут изменения по расписанию)",
-  "Interface colours": "Цвета интерфейсов",
-  "The colour each protocol's tags take everywhere — a value per theme. Hover a swatch to preview it.":
-    "Каким цветом метки каждого протокола показываются в панели. Наведите на образец для примерки к светлому и тёмному стилю.",
   "Applied when creating a new interface — you can still override per interface.":
     "Подставляется при создании интерфейса — у каждого можно задать своё.",
   "Backup each server's interface key so a wiped / rebuilt node restores its interfaces with their original identities.":
@@ -5405,10 +5406,8 @@ export const STR = {
   "no one online": "никого в сети",
   // budget-ok: the app-bar tabs — measured in the real header, not estimated (see below)
   "nav|Overview": "Обзор",
-  "nav|Live": "Онлайн",
   "nav|Users": "Пользователи",
   "nav|Nodes": "Ноды",
-  "nav|Peers": "Пиры",
   "How this panel is deployed": "Как развёрнута эта панель",
   "Lock encryption key": "Запереть ключ шифрования",
   "Language": "Язык",
@@ -5469,7 +5468,6 @@ export const STR = {
   "btn|Grouped": "Объединено",
   // the grouped row's IF badge: the row stands for several deployments, so it counts them
   "{n} interfaces": "{n} интерф.",
-  "This peer's interfaces": "Интерфейсы этого пира",
   "Other interfaces of this peer": "Другие интерфейсы этого пира",
   "Collapse each peer's deployments into one row": "Свернуть развёртывания каждого пира в одну строку",
   "One row per peer — its other deployments are behind the +N": "По строке на пира — остальные его развёртывания за +N",
@@ -7528,7 +7526,6 @@ export const STR = {
   "Fix": "Исправить",
   "App routing: {v1} has www. twice — drop one": "Маршрутизация приложений: в {v1} дважды www. — уберите один",
   "Online now · {n}": "Сейчас онлайн · {n}",
-  "Open Live": "Открыть «Онлайн»",
   "Dismissed": "Скрытое",
   "Up to date": "Актуален",
   "Open node": "Открыть ноду",

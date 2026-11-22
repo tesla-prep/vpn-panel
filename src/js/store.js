@@ -38,7 +38,12 @@ export function rangeQ(k) {
   return "range=custom&from=" + w.from + "&to=" + w.to;
 }
 export const api = {
-  async get(p) { const r = await _fetch(url(p)); if (r.status === 401) return _on401(); return r.json(); },
+  async get(p) {
+    const r = await _fetch(url(p));
+    if (r.status === 401) return _on401();
+    try { return await r.json(); }
+    catch (_) { throw new Error(T("The panel returned an invalid response (HTTP {v1}).", { v1: r.status })); }
+  },
   async post(p, b, ms) { const r = await _fetch(url(p), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b || {}) }, ms); if (r.status === 401 && !/\/api\/login$/.test(p)) return _on401(); return r.json(); },
   login(b) { return this.post("/api/login", b); },
   logout() { return this.post("/api/logout", {}); },

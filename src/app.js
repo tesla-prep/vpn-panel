@@ -45,7 +45,7 @@ import {
   Overview, ServiceIssueSheet, maybeAlertServices, recordDashTick, setAppReady,
 } from "./js/screen-overview.js";
 import {
-  ActivityHistoryScreen, ConnectionsScreen, PeersScreen, UsersScreen,
+  ActivityHistoryScreen, UsersScreen,
 } from "./js/screen-roster.js";
 import {
   AccountScreen, PanelSettingsScreen,
@@ -109,11 +109,9 @@ const html = htm.bind(h);
 // ═════════════════════════ ROUTER + APP ═════════════════════════
 const ROUTES = [
   { re: /^\/$/, fn: Overview, tab: "overview" },
-  { re: /^\/connections$/, fn: ConnectionsScreen, tab: "connections" },
   { re: /^\/node\/([^/]+)\/([^/]+)$/, fn: IfaceDetail, tab: "nodes", keys: ["node", "iface"] },
   { re: /^\/node\/(.+)$/, fn: NodeDetail, tab: "nodes", keys: ["node"] },
   { re: /^\/nodes$/, fn: NodesScreen, tab: "nodes" },
-  { re: /^\/peers$/, fn: PeersScreen, tab: "peers" },
   { re: /^\/activity$/, fn: ActivityHistoryScreen, tab: "overview" },
   { re: /^\/users$/, fn: UsersScreen, tab: "users" },
   { re: /^\/account$/, fn: AccountScreen, tab: "account" },
@@ -338,8 +336,7 @@ function doLogout() {
 const viewEl = $("#view");
 viewEl.innerHTML = `<div class="loading"><span class="spin"></span>${T("connecting…")}</div>`;
 function paintChrome() {
-  const tab = { overview: T("nav|Overview"), connections: T("nav|Live"), users: T("nav|Users"),
-                nodes: T("nav|Nodes"), peers: T("nav|Peers") };
+  const tab = { overview: T("nav|Overview"), users: T("nav|Users"), nodes: T("nav|Nodes") };
   $$("#tabs a").forEach(a => { const k = a.dataset.tab; if (tab[k]) a.textContent = tab[k]; });
   const brand = $(".brand"); if (brand) brand.setAttribute("aria-label", T("nav|Overview"));
   const hint = [["#host-tport", T("How this panel is deployed")], ["#vaultlock-btn", T("Lock encryption key")],

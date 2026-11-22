@@ -963,7 +963,7 @@ def read_data(state, token):
             "vk_links": (user.get("vk_links") if isinstance(user.get("vk_links"), list) else ([user.get("vk_link")] if user.get("vk_link") else [])),   # all of the user's VK links (primary first); every client that takes a list embeds all
 
             "theme_color": subs.get("theme_color") or "", "theme_color_light": subs.get("theme_color_light") or "",
-            "turn_fork_colors": subs.get("turn_fork_colors") or {}, "iface_colors": subs.get("iface_colors") or {},
+            "turn_fork_colors": subs.get("turn_fork_colors") or {},
             "turn_client_default": subs.get("turn_client_default") or {},   # admin's END-USER default app per (fork, OS) → the page hands out THIS app instead of the compat-ranked top one
             "turn_client_settings": subs.get("turn_client_settings") or {},   # SETTINGS SPLIT: admin's per-fork client (app) values → the sub page generates configs with them (encoder fills any unset with defaults)
             "turn_catalog": _own_pins(subs.get("turn_catalog") or {}, peers_out),   # AXIS-3: server→client/app/scheme/store metadata so the page can offer "Get the app" install links (public app links only, no secrets)

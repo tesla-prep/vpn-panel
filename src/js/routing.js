@@ -625,13 +625,28 @@ export function loadCatalogIndex() {
 
 // Block-list catalog (Blocking tab): categories + providers + pickable lists. Loaded on demand and cached, then
 // mirrored onto Store.blockCatalog so screens can read it synchronously; pass force=true to refetch after a save.
-let _BLOCK_CATALOG = null;
+let _blockCatalogRequest = null;
 export function loadBlockCatalog(force) {
-  if (_BLOCK_CATALOG && !force) return Promise.resolve(_BLOCK_CATALOG);
-  return api.blockCatalog().then(r => {
-    if (r && r.ok) { _BLOCK_CATALOG = r.data; Store.blockCatalog = r.data; bus.emit(); }
-    return _BLOCK_CATALOG || null;
-  }).catch(() => null);
+  if (!force) {
+    if (_blockCatalogRequest) return _blockCatalogRequest;
+    if (Store.blockCatalog) return Promise.resolve(Store.blockCatalog);
+  }
+  Store.blockCatalogError = false;
+  const request = api.blockCatalog().then(r => {
+    if (_blockCatalogRequest !== request) return;
+    if (r && r.ok && r.data) Store.blockCatalog = r.data;
+    else Store.blockCatalogError = true;
+  }).catch(() => {
+    if (_blockCatalogRequest === request) Store.blockCatalogError = true;
+  }).then(() => {
+    if (_blockCatalogRequest !== request) return _blockCatalogRequest || Store.blockCatalog || null;
+    _blockCatalogRequest = null;
+    bus.emit();
+    return Store.blockCatalog || null;
+  });
+  _blockCatalogRequest = request;
+  bus.emit();
+  return request;
 }
 
 export const blockTierOk = (mode, tier) => tier === "ip" || (mode !== "kernel" && mode !== "sni_kernel");

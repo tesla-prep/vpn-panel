@@ -1365,7 +1365,7 @@
     "anton48": { dark: "#D9CF5F", light: "#8E8420" },
     "WDTT": { dark: "#A78BFA", light: "#7C3AED" } };   // WDTT (amurcanov) — a turn-family server; violet, kin to the Turn group accent
   var IFACE_COLORS = { wg: { dark: "#3FD89A", light: "#0E9E63" }, awg: { dark: "#1FC8D6", light: "#0E9BB0" }, wdtt: { dark: "#81B512", light: "#5EAF0E" }, csqtt: { dark: "#F97316", light: "#E5620C" } };
-  var THEME = { color: "", light: "", forkOv: {}, ifaceOv: {}, nodeOv: {} };   // set from the served subscription data
+  var THEME = { color: "", light: "", forkOv: {}, nodeOv: {} };   // set from the served subscription data
   function isLight() {
     var d = document.documentElement.getAttribute("data-theme");   // manual override wins; else the OS preference
     if (d === "light") return true; if (d === "dark") return false;
@@ -1387,7 +1387,7 @@
   // Self-contained turn-family kinds (own their interface, keyless, address minted on connect) — one place, mirrors
   // the app's isSelfContainedKind. Every shared gate on the sub page reads this so a new such kind is one edit.
   function isSelfContained(type) { var k = (type || "").toLowerCase(); return k === "wdtt" || k === "csqtt"; }
-  function ifaceColor(type) { var k = (type || "").toLowerCase(); if (k !== "awg" && !isSelfContained(k)) k = "wg"; return pickThemed(THEME.ifaceOv[k], IFACE_COLORS[k].dark, IFACE_COLORS[k].light); }
+  function ifaceColor(type) { var k = (type || "").toLowerCase(); if (k !== "awg" && !isSelfContained(k)) k = "wg"; return pickThemed(null, IFACE_COLORS[k].dark, IFACE_COLORS[k].light); }
   function nodeColor(nodeId, fallback) { var c = THEME.nodeOv[nodeId]; return (c && (c.dark || c.light)) ? pickThemed(c, fallback, fallback) : fallback; }   // server name in its panel colour
   function modeColor(m) { return m === "turn" ? "#7C5CFF" : ifaceColor(m); }   // Turn = the panel's turn-proxy accent (violet)
   function applyFavicon(accent, light) {
@@ -2393,7 +2393,7 @@
     LANG_DEFAULT = (data.langs && data.langs.default) || "en";
     resolveLang(); wireControls(); paintCtl();     // the admin controls which languages are offered + the default
     THEME.color = data.theme_color || ""; THEME.light = data.theme_color_light || "";
-    THEME.forkOv = data.turn_fork_colors || {}; THEME.ifaceOv = data.iface_colors || {};   // panel colour overrides
+    THEME.forkOv = data.turn_fork_colors || {};   // panel colour overrides
     THEME.nodeOv = data.node_colors || {};   // per-node server colours
     applyBrand();                                    // logo + favicon follow the panel's theme colour
     var who = document.getElementById("who");
