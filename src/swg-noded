@@ -9442,7 +9442,7 @@ def _dialin_cut(entries, exit_, troutes, net_tables):
     return out
 
 
-EXIT_KINDS = ("warp", "profile", "socks5")
+EXIT_KINDS = ("socks5",)
 HEV_TAG = "2.18.0"
 HEV_OWNER = "heiher/hev-socks5-tunnel"
 HEV_SHA256 = {"amd64": "1903b23869cbd12b7b57045ca161c0f90314d9c4ef2835e7a9e4a3179bf7d925",
@@ -11231,14 +11231,10 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                                     "table": int(_ie["table"]), "gw": _dxgw.get(_ie["via_iface"], ""),
                                     "_noroute": _withheld(_ie["via_iface"])}]
     _ROUTED["pending"] = {d: v for d, v in _lst.items() if d}   # every device this pass judged (the last `_withheld` is above)
-    mode = (smart or {}).get("mode") or "kernel"               # kernel | forcedns | sni | sni_kernel — the CONFIGURED host-match mode
+    mode = "sni" if (smart or {}).get("mode") == "sni" else "kernel"               # kernel | forcedns | sni | sni_kernel — the CONFIGURED host-match mode
     _SMART_MODE["m"] = mode                                     # report the configured mode for the panel's host-layer health
-    # Resolve the ACTUAL host-fill engine; degrade kernel-SNI → userspace SNI if xt_string/ipset are missing on this box.
-    if mode == "forcedns":     host_engine = "dns"
-    elif mode == "sni":        host_engine = "sni_user"
-    elif mode == "sni_kernel": host_engine = "sni_kernel" if _kernel_sni_ok() else "sni_user"
-    else:                      host_engine = "none"
-    is_sni = host_engine in ("sni_user", "sni_kernel")         # both SNI engines share the nft ct-restore/QUIC-drop/reset setup
+    host_engine = "sni_user" if mode == "sni" else "none"
+    is_sni = mode == "sni"
     _SMART_MODE["engine"] = host_engine                        # the ACTUAL running engine → smart_status reports its liveness
     _reset_ran = _apply_routing_reset((smart or {}).get("routing_reset"), res, (smart or {}).get("routing_reset_learned"))   # operator resets: full wipe+re-pull, or learned-IPs-only
     _engine_change_reset(host_engine, res, already=_reset_ran)  # a mode switch starts the new engine from its own learning
@@ -16053,8 +16049,6 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
             _fk = _turn_fork(_tp.get("service") or "")
             if _fk and _fk not in _tflags:
                 _tflags[_fk] = _turn_discover_flags(_tp.get("service") or "")
-    _uref = update_ref_shown(node_cfg)            # the Update button's branch or tag when it is not main (snap["update_ref"])
-    _ucustom = update_custom_shown(node_cfg)      # …or that it runs an operator's own command (snap["update_custom"])
     snap = {"hostname": socket.gethostname(), "generated_at": now,
             "interfaces": interfaces, "turn_proxies": _tps, "turn_flags": _tflags,
             "turn_drops": proxy_drops(_tps + _selfcontained_listeners()),
@@ -16063,9 +16057,6 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
             "noded_version": NODED_VERSION, "kind": NODE_KIND, "net_mode": NODE_NET,
             "turn_manage": TURN_MANAGE, "cmd_errors": dict(NODE_ERRORS), "cmd_progress": dict(NODE_PROGRESS),
             "turn_bind_any": True,   # a turn listener whose host is not on this box binds every address (turn_bind), not a crash loop
-            "update_auto": update_auto(),   # can the panel's Update button do anything here? (see update_auto)
-            **({"update_ref": _uref} if _uref else {}),
-            **({"update_custom": True} if _ucustom else {}),
             # Informational, NOT failures: an adoption that succeeded but not from the source the operator named.
             # cmd_errors is the wrong channel for it (it renders as a failure and is cleared on success).
             "onboard_notes": dict(NODE_NOTES),
@@ -18765,14 +18756,34 @@ def apply_turn(turn, turn_onboard):
                     _TURN_INSTALLING.add(svc)       # mark "installing/updating" for the docker card (attach_running keys off this set,
                                                     # overriding load_turn_proxies' job flag) — cleared in the done handler below
                     _pin = req.get("pin")           # panel checksum gate — capture before the thread (req isn't in the closure's scope later)
-                    def _work(svc=svc, tp=tp, pin=_pin):      # runs in a thread — download fresh + (re)create the container
-                        with _turn_fork_lock(_turn_fork(svc)):   # serialise same-fork refreshes; atomic-swap the shared binary
-                            with contextlib.suppress(OSError): os.remove(_turn_bin_local_legacy(svc))   # drop a stale pre-dedup copy
-                            derr = _dturn_force_download(svc, tp["owner"], pin)
-                        if derr: return derr
-                        r = _dturn_run(tp)
-                        if r.returncode != 0: return (r.stderr or "container start failed").strip()[:120]
-                        return _dturn_verify(svc)
+                    def _work(svc=svc, tp=tp, pin=_pin):
+                        with _turn_fork_lock(_turn_fork(svc)):
+                            binary, version = _turn_bin_local(svc), _turn_ver_path(svc)
+                            old_tag = ""
+                            if os.path.isfile(version):
+                                with open(version) as source:
+                                    old_tag = source.read().strip()
+                            backup = binary + ".previous"
+                            if os.path.isfile(binary):
+                                shutil.copy2(binary, backup)
+                            try:
+                                error = _dturn_force_download(svc, tp["owner"], pin)
+                                if error:
+                                    return error
+                                result = _dturn_run(tp)
+                                error = ((result.stderr or "container start failed").strip()[:120]
+                                         if result.returncode else _dturn_verify(svc))
+                                if error and os.path.isfile(backup):
+                                    os.replace(backup, binary)
+                                    _turn_write_version(svc, old_tag)
+                                    restored = _dturn_run(tp)
+                                    if restored.returncode or _dturn_verify(svc):
+                                        return error + "; previous version failed to restart"
+                                    return error + "; previous version restored"
+                                return error
+                            finally:
+                                with contextlib.suppress(FileNotFoundError):
+                                    os.unlink(backup)
                     _turn_job_launch(svc, tp, _work)
                     continue                                 # in flight now — don't report done yet (card shows "updating")
                 if act == "title":            # cosmetic label only → update the record, DON'T touch the container
@@ -22224,197 +22235,6 @@ def csqtt_snapshot():
     return out
 
 
-UPDATE_CMD_TMPL = (
-    'B=$(mktemp) && trap \'rm -f "$B"\' EXIT && '
-    '{{ curl -fsSL --connect-timeout 20 --max-time 120 -o "$B" '
-    'https://raw.githubusercontent.com/tesla-prep/vpn-panel/{ref}/bootstrap.sh '
-    '|| {{ echo "could not fetch bootstrap.sh from raw.githubusercontent.com — trying api.github.com" >&2; '
-    'curl -fsSL --connect-timeout 20 --max-time 120 -o "$B" -H "Accept: application/vnd.github.raw" '
-    '"https://api.github.com/repos/tesla-prep/vpn-panel/contents/bootstrap.sh?ref={ref}"; }}; }} && '
-    'SWG_REF={ref} bash "$B" update -y --no-components --node-only')
-DEFAULT_UPDATE_REF = "main"
-
-
-def update_ref(node_cfg):
-    """The branch (or tag) this box's self-update follows: the one it was installed or last updated from, else main."""
-    _n = (node_cfg or {}).get("node") or {}
-    _ref = str(_n.get("update_ref") or DEFAULT_UPDATE_REF).strip() or DEFAULT_UPDATE_REF
-    # A ref is a git branch/tag name and is spliced into a URL and a shell command — keep it to the
-    # characters those can carry safely rather than trusting whatever landed in the config.
-    if not re.fullmatch(r"[A-Za-z0-9._/-]{1,100}", _ref):
-        _ref = DEFAULT_UPDATE_REF
-    return _ref
-
-
-def own_update_cmd(node_cfg):
-    """The operator's own `update_cmd`, which wins over the template (run_self_update), else None."""
-    return ((node_cfg or {}).get("node") or {}).get("update_cmd") or None
-
-
-def _own_updater_runs():
-    """Does the panel's Update button run this daemon's updater here? Not with a trigger, in a container or on a
-    declarative host — those are updated by other means."""
-    return update_auto() and not os.environ.get("SWG_UPDATE_TRIGGER")
-
-
-def update_ref_shown(node_cfg):
-    """The snapshot's `update_ref`: the branch or tag the panel's Update button installs from when it is not main, else "".
-    Only where that button runs this daemon's updater with the template — an operator's own `update_cmd` is reported
-    as `update_custom` instead."""
-    if not _own_updater_runs() or own_update_cmd(node_cfg):
-        return ""
-    ref = update_ref(node_cfg)
-    return "" if ref == DEFAULT_UPDATE_REF else ref
-
-
-def update_custom_shown(node_cfg):
-    """The snapshot's `update_custom`: the Update button runs an operator's own `update_cmd`, not the release updater.
-    Shown as such, never parsed: what a hand-written shell command installs cannot be read off its text (quoting, sudo's
-    env_reset, another repository's URL), and a guessed ref is worse than none. swgt's msk-main carried a hand-set
-    dev-pinned command that hid exactly this (2026-10-20)."""
-    return bool(_own_updater_runs() and own_update_cmd(node_cfg))
-
-
-def default_update_cmd(node_cfg):
-    """The template's self-update command, pinned to the ref this box follows (update_ref). An operator's own
-    `update_cmd` (own_update_cmd) wins over it — run_self_update applies that, not this."""
-    return UPDATE_CMD_TMPL.format(ref=update_ref(node_cfg))
-
-
-# the updater's verdict has to outlive the updater
-def _self_update_wrapper(cmd):
-    """Shell that runs `cmd`, then records what it did where the next daemon can find it.
-
-    Runs as the updater's own transient service (run_self_update), so it survives the restart the updater performs and
-    writes its verdict afterwards. `rm -f` on the result FIRST: if this wrapper dies mid-way, the next sync must find
-    nothing rather than report a previous run's verdict as this one's. It starts by taking swg-noded's environment for
-    whatever its own lacks (_self_update_env), and removes that file at once."""
-    inner = cmd if isinstance(cmd, str) else " ".join(shlex.quote(c) for c in cmd)
-    if os.geteuid() != 0:
-        inner = "sudo -n bash -c " + shlex.quote(inner)
-    return (
-        "umask 027\n"
-        'E={env}\n[ -f "$E" ] && . "$E"\nrm -f "$E"\n'
-        "R={res}\nL={res}.log\nV={ver}\n"
-        'rm -f "$R" "$L"\n'
-        'B=$(cat "$V" 2>/dev/null)\n'
-        '( {inner} ) > "$L" 2>&1\n'
-        "rc=$?\n"
-        'A=$(cat "$V" 2>/dev/null)\n'
-        'if [ "$rc" -ne 0 ]; then S=update-failed\n'
-        'elif [ -n "$A" ] && [ "$A" != "$B" ]; then S=updated\n'
-        "else S=uptodate; fi\n"
-        # 20 lines, the same tail every other lifecycle failure in this project reports. It is the actionable
-        # half — "could not fetch $REPO @ $REF" names a blocked box; a failed unit restart names itself.
-        "printf '%s\\n%s\\n' \"$S\" \"$(tail -n 20 \"$L\" 2>/dev/null)\" > \"$R.tmp\"\n"
-        'mv -f "$R.tmp" "$R"\n'
-        'rm -f "$L"\n'
-        'exit "$rc"\n'
-    ).format(env=shlex.quote(UPDATE_ENV_FILE), res=shlex.quote(UPDATE_RESULT_FILE), ver=shlex.quote(_noded_version_path()),
-             inner=inner)
-
-
-def _self_update_env():
-    """swg-noded's environment, kept for the updater, which starts with PID 1's (run_self_update) — swg's own settings among
-    it (SWG_TURN_MIRROR, which the panel sets here and the amneziawg-go fetch uses), a proxy, a drop-in's variables. One
-    line per variable, applied by the wrapper only where its own environment lacks it, in a file only its owner reads: a
-    unit's Environment= is readable by every local user over D-Bus, and a proxy URL can carry a password."""
-    tmp = UPDATE_ENV_FILE + ".tmp"
-    with contextlib.suppress(OSError):
-        os.remove(tmp)
-    with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f:
-        for k, v in sorted(os.environ.items()):
-            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", k):
-                f.write('[ -n "${%s+x}" ] || export %s=%s\n' % (k, k, shlex.quote(v)))
-    os.replace(tmp, UPDATE_ENV_FILE)
-
-
-def run_self_update(node_cfg, want):
-    """Run the in-place updater, detached so it survives swg-noded's own restart. Only ever called on a valid sync
-    reply that carries an 'update'. Updates swg-noded/swg-agent (and a co-located panel), and — `--no-components`
-    notwithstanding — heals the AmneziaWG datapath, follows the amnezia packages (apt, DKMS) and installs swg-logs;
-    never WireGuard's own packages nor the turn-proxies. The panel clears the request once we report the new version."""
-    cmd = own_update_cmd(node_cfg) or default_update_cmd(node_cfg)
-    base = ["bash", "-c", _self_update_wrapper(cmd)]
-    try:
-        with contextlib.suppress(OSError):
-            _self_update_env()
-        if os.path.exists("/run/systemd/system") and shutil.which("systemd-run"):
-            # Every `$` as `$$`: PID 1 expands ${VAR} and turns $$ into $ in a service's command line (systemd-run(1)), so an
-            # operator's own update_cmd holding them ran mangled — `--scope` had run it as given (round-2 review of IN-13)
-            r = subprocess.run(["systemd-run", "--unit", "swg-self-update", "--collect", "--quiet",
-                                "--description", "swg self-update (started by swg-noded, outside its sandbox)"]
-                               + [a.replace("$", "$$") for a in base],
-                               stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
-            if r.returncode != 0:
-                log(LOG_ERR, "self-update failed to start: %s", (r.stderr or "").strip()[:300] or "systemd-run exited %d" % r.returncode)
-                return False
-            how = "as swg-self-update.service, outside swg-noded's sandbox"
-        else:
-            subprocess.Popen(base, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                             stderr=subprocess.DEVNULL, start_new_session=True)
-            how = "as a child of swg-noded (no systemd)"
-        log(LOG_INFO, f"self-update started → {want.get('to')} ({how})")
-        return True
-    except Exception as e:
-        log(LOG_ERR, 'self-update failed to start: %s', e)
-        return False
-
-
-UPDATE_RESULT_FILE = os.path.join(STATE_DIR, ".update-result")
-UPDATE_ENV_FILE = os.path.join(STATE_DIR, ".update-env")
-
-
-def update_auto():
-    """Can the panel's Update button actually do anything on this node?
-
-    ⚠️ MIRRORS THE BRANCH ORDER IN THE SYNC LOOP, and must keep mirroring it: a trigger wins outright;
-    without one a declarative host and a container both refuse — a container cannot recreate its own
-    image, and a declarative host's installation belongs to the configuration that built it. Reported
-    as a capability (like `turn_manage`) so the panel can refuse UP FRONT instead of staging a request
-    whose only possible outcome is a red tag on this node.
-
-    Unconditional in the snapshot, so it is a fact about every node and not a Nix-shaped exception."""
-    return bool(os.environ.get("SWG_UPDATE_TRIGGER")) or (not NODE_DECLARATIVE and NODE_KIND != "docker")
-
-
-def report_update_result(panel):
-    """Relay the outcome of an update this daemon could not watch.
-
-    On a declaratively-managed host the panel/node does not run the updater — it touches a trigger and a root
-    unit rebuilds the system. That rebuild can fail for reasons that have nothing to do with us (a broken
-    unrelated flake input, an out-of-tree kernel module against a new kernel), and it fails AFTER this process
-    has been restarted or replaced, so nothing here ever sees it. The unit writes its verdict to
-    `.update-result` — one line of state, then the command's output tail — and we forward it on the next sync
-    and delete it. That is the difference between "the button is broken" and "your kernel pin needs bumping".
-
-    Read-and-delete BEFORE the POST would lose the message if the panel is unreachable; delete after, and a
-    panel that never comes back leaves one small file behind. The second is the cheaper failure."""
-    try:
-        with open(UPDATE_RESULT_FILE) as f:
-            state = (f.readline() or "").strip()
-            err = f.read().strip()
-    except OSError:
-        return
-    if state:
-        report_proc(panel, state, err or None)
-    with contextlib.suppress(OSError):
-        os.unlink(UPDATE_RESULT_FILE)
-
-
-def report_proc(panel, state, err=None):
-    """Best-effort POST of a lifecycle proc-status (e.g. 'update-failed' + reason) to the panel, so a failure
-    that never reaches the normal script-side lifecycle reporting still surfaces as a red tag on the node."""
-    try:
-        u = panel["url"].rstrip("/") + "/api/node/proc-status"
-        post_json(u, panel["token"], {"state": state, "err": (err or "")[:2000]}, panel)
-        log(LOG_INFO, f"proc-status → {state}")
-    except Exception as e:
-        log(LOG_WARNING, 'proc-status report failed: %s', e)
-
-
-# ───────────────────────── main loop ─────────────────────────
-
 ROUTING_RECONCILE_EVERY_S = 60
 
 VERIFY_EVERY_S = 1800
@@ -22586,7 +22406,6 @@ def main():
     with contextlib.suppress(OSError):              # resume a mid-swap candidate after a restart (external nodes have no loopback _heal)
         _SWAP["cand"] = open(os.path.join(STATE_DIR, "panel-url-cand")).read().strip()
     _load_transfer()                                # …and a mid-flight TRANSFER candidate, same reason
-    update_fired = ""
     log(LOG_INFO, f"swg-noded: panel={panel['url']} interval={interval}s "
           f"ifaces={list((node_cfg.get('interfaces') or {}).keys())}")
     # BEFORE the first sync: if a previous run-model left its servers running here, stop them by the names
@@ -22619,7 +22438,6 @@ def main():
             last_verify_t = t0
             log(LOG_DEBUG, "reverify: re-asserting routing chains against live state")
         try:
-            report_update_result(panel)             # a declarative rebuild finished while we were restarting — say how it went
             snap = build_snapshot(node_cfg, online_max, last_samples)
             use_ip = panel_ip if (panel_ip and panel_ip != bad_pip) else ""
             status, reply = post_json(url, panel["token"], {"snapshot": snap}, panel, source_ip=use_ip,
@@ -22646,6 +22464,10 @@ def main():
                 _CTR_ADOPT.clear()
             if status == 200 and isinstance(reply.get("desired"), dict):
                 _relay_plan, _relay_sync_ok = reply.get("relay"), True
+                if NODE_KIND == "docker":
+                    with contextlib.suppress(OSError):
+                        with open("/run/swg-node-sync", "w"):
+                            pass
                 _newurl = apply_panel_hints(panel, node_cfg, reply)   # pin-gated auto-repoint on a panel host/port change
                 _newurl = _promote_transfer(panel, node_cfg) or _newurl
                 if _newurl:
@@ -22658,45 +22480,6 @@ def main():
                 with contextlib.suppress(Exception):
                     exit_vault_process(reply.get("iface_vault_pub"), reply.get("exit_vault_want"))   # …and imported-exit keys (same vault, same relay)
                 wdtt_vault_process(reply.get("iface_vault_pub"), reply.get("wdtt_vault_want"))   # seal WDTT server identities (owner pw + wg-keys.dat) to the same vault
-                _upd0 = reply.get("update")
-                _at = (str(_upd0.get("at") or "") if isinstance(_upd0, dict) else "") or "no-at"
-                if _upd0 and _at != update_fired:   # already fired THIS exact request (a recreate restarted us)? then DON'T re-fire — else the update loops forever (recreate → restart → re-trigger → recreate …)
-                    _marker = os.path.join(STATE_DIR, ".update-done")   # persists across the container recreate (bind-mounted to data/node)
-                    try: _prev = open(_marker).read().strip()
-                    except Exception: _prev = ""
-                    if _at == _prev: update_fired = _at
-                if _upd0 and _at != update_fired:        # panel asked us to self-update (and we haven't fired this one yet)
-                    _trig = os.environ.get("SWG_UPDATE_TRIGGER")
-                    if _trig:   # docker node: a container can't recreate its own image — touch the HOST trigger
-                        try:    # instead; its swg-update.path runs `compose pull && up` on the host (swg images only)
-                            with open(_trig, "w") as _f: _f.write(str(int(time.time())) + "\n")
-                            try: open(_marker, "w").write(_at)   # remember the request we fired so a recreate-restart won't re-fire it
-                            except Exception: pass
-                            update_fired = _at; log(LOG_INFO, f"update trigger written → {_trig}")
-                        except Exception as _e:
-                            log(LOG_ERR, 'update trigger failed: %s', _e)
-                            report_proc(panel, "update-failed", f"swg-noded could not write the update trigger {_trig}: {_e}")
-                            update_fired = _at   # reported the failure — don't retry the bad write every sync
-                    elif NODE_DECLARATIVE:
-                        log(LOG_WARNING, "update requested but this node is managed declaratively")
-                        report_proc(panel, "update-failed",
-                                    "This node is managed declaratively, so an update is a rebuild of its "
-                                    "configuration — not something the panel can start. Update the swg input and "
-                                    "rebuild on the box (`nixos-rebuild switch`), or enable the module's "
-                                    "selfUpdate option to wire this button to that rebuild.")
-                        update_fired = _at
-                    elif NODE_KIND == "docker":
-                        # docker node with NO host updater wired: a container can't recreate its own image, so
-                        # run_self_update can do nothing. Report a clear failure instead of silently no-op'ing.
-                        log(LOG_WARNING, "update requested but no host updater is wired (docker)")
-                        report_proc(panel, "update-failed",
-                                    "This docker node has no one-click host updater wired. Re-install it "
-                                    "(bootstrap docker node) to enable the panel's Update button, or update on the box: "
-                                    "cd /opt/swg-panel-docker && docker compose --profile node pull && docker compose --profile node up -d")
-                        update_fired = _at
-                    else:
-                        if run_self_update(node_cfg, reply["update"]):   # a failed START is retried on the next sync
-                            update_fired = _at
                 cr = create_ifaces(node_cfg, reply.get("create"), agent, sudo)   # create new interfaces
                 # …plus any mesh link left behind by a panel this node used to sync with — see orphan_mesh_links.
                 _orph = orphan_mesh_links(node_cfg, reply.get("owned_ifaces"), reply.get("delete"))

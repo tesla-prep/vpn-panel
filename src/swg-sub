@@ -1135,53 +1135,6 @@ class _QuietServer(ThreadingHTTPServer):
         return threading.active_count() <= self.max_conns     # the serve loop's own thread + one per connection
 
 
-class _TLSServer(_QuietServer):
-    daemon_threads = True
-    ssl_ctx = None
-
-    def get_request(self):
-        sock, addr = self.socket.accept()
-        sock.settimeout(60)
-        return sock, addr
-
-    def finish_request(self, request, client_address):
-        if self.ssl_ctx is not None:
-            request = self.ssl_ctx.wrap_socket(request, server_side=True)
-        super().finish_request(request, client_address)
-
-
-def _serve_config(state):
-    """Listener host/port/TLS. Read once at startup — changing the bind or TLS needs a restart; the
-    master enable flag is what's re-read live per request.
-
-    Precedence is env-FIRST, then the panel's `subscriptions.serve`, then a default. The bind is an
-    infrastructure fact — the systemd unit's SWG_SUB_PORT, or the port the docker container publishes
-    (fixed at 8444 inside the container) — so it MUST win over a panel field; otherwise changing the
-    port in the panel would bind a port the container never published. The panel's serve.* is the
-    fallback for a hand-run bare-metal process with no unit, and the source of the TLS cert when the
-    infra didn't pin one (e.g. reusing the panel's cert)."""
-    serve = state.subscriptions().get("serve") if isinstance(state.subscriptions().get("serve"), dict) else {}
-    host = (os.environ.get("SWG_SUB_HOST") or serve.get("host") or "0.0.0.0").strip() or "0.0.0.0"
-    try:
-        port = int(os.environ.get("SWG_SUB_PORT") or serve.get("port") or 8444)
-    except (TypeError, ValueError):
-        port = 8444
-    port = max(1, min(65535, port))
-    env_cert, env_key = os.environ.get("SWG_SUB_TLS_CERT"), os.environ.get("SWG_SUB_TLS_KEY")
-    if env_cert and env_key:
-        cert, key = env_cert.strip(), env_key.strip()          # infra pinned a cert (e.g. bare-metal internal mode)
-    elif serve.get("tls_mode") == "reverse-proxy":
-        cert, key = "", ""                                      # operator terminates TLS upstream → plain HTTP here
-    else:
-        # swg-sub terminates its own TLS: an explicit path from the panel, else its standard cert location
-        # (swg-netctl installs the acme cert there). Missing file → plain HTTP, so a proxy can still front it.
-        cert = (serve.get("cert_path") or "").strip() or DEFAULT_SUB_CERT
-        key = (serve.get("key_path") or "").strip() or DEFAULT_SUB_KEY
-    if cert and key and os.path.exists(cert) and os.path.exists(key):
-        return host, port, cert, key
-    return host, port, None, None                              # no usable cert → plain HTTP (front with a proxy)
-
-
 LOG_REREAD = 5
 _LOG_SERVE = {"path": None, "at": -LOG_REREAD}
 
@@ -1238,79 +1191,12 @@ def main():
         return b, (ba if ba and ba != b else "")
     SUB_BASE, SUB_BASE_ALT = _read_bases()
 
-    host, port, cert, key = _serve_config(state)
-    _sv = (state.subscriptions().get("serve") or {})
-    if not (cert and key) and _sv.get("tls_mode") not in (None, "", "reverse-proxy") \
-            and not (os.environ.get("SWG_SUB_TLS_CERT") and os.environ.get("SWG_SUB_TLS_KEY")):
-        log(LOG_WARNING, "swg-sub: direct-TLS (%s) but no certificate yet — waiting for the panel to issue it…" % _sv.get("tls_mode"))
-        with contextlib.suppress(Exception):
-            signal.signal(signal.SIGHUP, signal.SIG_IGN)
-        for _ in range(45):                       # ~90s ceiling — a Cloudflare DNS-01 issue+install
-            time.sleep(2)
-            state = State(fleet); Handler.state = state
-            host, port, cert, key = _serve_config(state)
-            if cert and key:
-                log(LOG_INFO, "swg-sub: certificate ready — serving HTTPS"); break
-        else:
-            log(LOG_WARNING, "swg-sub: no certificate after ~90s — serving plain HTTP (front with a TLS proxy / Cloudflare Flexible)")
-    scheme = "http"
-    if cert and key:
-        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        ctx.load_cert_chain(cert, key)
-        srv = _TLSServer((host, port), Handler)
-        srv.ssl_ctx = ctx
-        scheme = "https"
-    else:
-        srv = _QuietServer((host, port), Handler)
-
-    def _reload(_sig, _frm):
-        global SUB_BASE, SUB_BASE_ALT
-        try:
-            nb, nba = _read_bases()
-            if (nb, nba) != (SUB_BASE, SUB_BASE_ALT):
-                SUB_BASE, SUB_BASE_ALT = nb, nba
-                log(LOG_INFO, "swg-sub: reloaded config (SIGHUP) — base %s%s", SUB_BASE or "/", (" (+ old base %s during migration)" % SUB_BASE_ALT) if SUB_BASE_ALT else "")
-        except Exception as e:
-            log(LOG_ERR, f"swg-sub: config reload failed: {e}")
-        if getattr(srv, "ssl_ctx", None) is not None:
-            _swap_cert("SIGHUP")
-
-    def _cert_sig():
-        if not (cert and key):
-            return ()                     # plain HTTP: no certificate to watch (the watch is not started either)
-        sig = []
-        for p in (cert, key):
-            try:
-                st = os.stat(p)
-                sig.append((st.st_ino, st.st_size, st.st_mtime_ns))
-            except OSError:
-                sig.append(None)
-        return tuple(sig)
-    _seen = [_cert_sig()]
-
-    def _swap_cert(why):
-        _seen[0] = _cert_sig()          # a pair that fails is tried again when its files change again, not every minute
-        try:
-            nctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            nctx.load_cert_chain(cert, key)
-            srv.ssl_ctx = nctx
-            log(LOG_INFO, "swg-sub: reloaded TLS certificate (%s)", why)
-        except Exception as e:
-            log(LOG_ERR, f"swg-sub: TLS reload failed (keeping old cert): {e}")
-
-    def _watch_cert():
-        while True:
-            time.sleep(_CERT_WATCH_S)
-            with contextlib.suppress(Exception):
-                if _cert_sig() != _seen[0]:
-                    _swap_cert("its files changed")
-    with contextlib.suppress(ValueError, OSError, AttributeError):
-        signal.signal(signal.SIGHUP, _reload)
-    if getattr(srv, "ssl_ctx", None) is not None:
-        threading.Thread(target=_watch_cert, name="cert-watch", daemon=True).start()
+    host = os.environ.get("SWG_SUB_HOST", "127.0.0.1")
+    port = int(os.environ.get("SWG_SUB_PORT", "8444"))
+    srv = _QuietServer((host, port), Handler)
 
     on = "enabled" if state.enabled() else "disabled (all requests 404 until turned on in the panel)"
-    log(LOG_INFO, f"swg-sub {VERSION} on {scheme}://{host}:{port}{SUB_BASE or ''} — subscriptions {on}")
+    log(LOG_INFO, f"swg-sub {VERSION} on http://{host}:{port}{SUB_BASE or ''} — subscriptions {on}")
     with contextlib.suppress(KeyboardInterrupt):
         srv.serve_forever()
 

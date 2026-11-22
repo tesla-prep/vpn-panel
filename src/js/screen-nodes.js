@@ -28,7 +28,7 @@ import { PeerGrid, NodeRail, NodesRailPanel } from "./grids.js";
 import { IgnoredIfacesCard, openOnboardIface, openEditIface, openConnectionEdit, OrphanRow,
          AdoptIfaceSheet, AdoptDormantWdttSheet, AdoptCsqttSheet } from "./iface.js";
 import { openNodeCreate, openNodeEdit, openNodeRemove, openNodeRecover, openNodeRotate, openNodeRollback, openNodeTransferWatch,
-         openNodeMigrate, openNodeTransfer, unflagNode, bootCmd } from "./sheets-crud.js";
+         openNodeMigrate, openNodeTransfer, unflagNode } from "./sheets-crud.js";
 import { confirmRestoreInterface, confirmRestoreAllInterfaces, openRecreateRekey } from "./peer-actions.js";
 import { h, Fragment } from "preact";
 import { useState, useEffect, useRef, useMemo } from "preact/hooks";
@@ -203,8 +203,6 @@ export function NodeDetail({ node: rawName }) {
   const down = !live && !inProc(nrec.proc_status);      // genuinely not reporting (not just mid-convert) → offer one-click Recover in place of rotate-token
   // the header's "update node to" button (updateNode: the node's own updater) — the one condition both that button and the
   // "from <ref>" / "own update command" label beside the version read, so the label always names what the button runs
-  const nodeUpd = nrec.outdated && !(nrec.local && Store.panelOutdated);
-  const dhUpdating = nrec.updating || (nrec.local && (hostUpdating || inProc(Store.hostProc) || inProc(nrec.proc_status)));  // the dh-ver pill already shows "updating…" — so suppress a duplicate "updating" proc-tag next to the title
   const snap = Store.stats[name];
   // turn-proxies present (installed, a pending install, or onboarding) → show the Turn-proxies block;
   // none → hide that block and surface a "Setup turn-proxy" button in the Interfaces header instead.
@@ -230,36 +228,10 @@ export function NodeDetail({ node: rawName }) {
     <${NodeRail} active=${name}/>
     <div class="crumb"><a href="#/nodes">${T("col|Nodes")}</a><span class="sep">/</span><b>${dname}</b></div>
     <div class="detail-head">
-      <div class="title">${(nrec.outdated || (nrec.local && Store.panelOutdated)) && !nrec.updating ? html`<span class="upd-dot" title=${T("Update available")}><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v4h-4"/></svg></span>` : null}<h1>${dname}</h1>${nrec.kind ? html`<span class=${"tport " + nrec.kind}>${kindLabel(nrec.kind, nrec.runtime)}</span>` : null}${platformPill(nrec)}${nrec.uninstalled ? html`<span class="nstat uninst"><${Ic} i="info"/> ${T("tag|uninstalled")}</span>` : live ? html`<span class="reporting">${T("reporting")}</span>` : nrec.status === "dangling" ? html`<span class="nstat enroll"><${Ic} i="clock"/> ${T("awaiting enroll")}</span>` : html`<span class="nstat stale"><${Ic} i="info"/> ${T("stale")}</span>`}${nrec.proc_status && !isUpdateState(nrec.proc_status) && !_CTR_PROC.has(nrec.proc_status) ? procTag(nrec.proc_status, () => dismissNodeProc(nrec.id), procErr(nrec), !live && nrec.status === "dangling") : null}${nrec.superseded_box ? html`<${SupersededTag} n=${nrec} onClick=${() => openNodeRollback(nrec)}/>` : null}${nrec.transfer ? html`<${TransferTag} n=${nrec} onClick=${() => openNodeTransferWatch(nrec)}/>` : null}${nrec.transferred_from ? html`<${ArrivedTag} n=${nrec}/>` : null}<${HealthDot} issues=${nrec.issues} i18n=${nrec.issues_i18n}/></div>
+      <div class="title"><h1>${dname}</h1>${nrec.kind ? html`<span class=${"tport " + nrec.kind}>${kindLabel(nrec.kind, nrec.runtime)}</span>` : null}${platformPill(nrec)}${nrec.uninstalled ? html`<span class="nstat uninst"><${Ic} i="info"/> ${T("tag|uninstalled")}</span>` : live ? html`<span class="reporting">${T("reporting")}</span>` : nrec.status === "dangling" ? html`<span class="nstat enroll"><${Ic} i="clock"/> ${T("awaiting enroll")}</span>` : html`<span class="nstat stale"><${Ic} i="info"/> ${T("stale")}</span>`}${nrec.proc_status && !isUpdateState(nrec.proc_status) && !_CTR_PROC.has(nrec.proc_status) ? procTag(nrec.proc_status, () => dismissNodeProc(nrec.id), procErr(nrec), !live && nrec.status === "dangling") : null}${nrec.superseded_box ? html`<${SupersededTag} n=${nrec} onClick=${() => openNodeRollback(nrec)}/>` : null}${nrec.transfer ? html`<${TransferTag} n=${nrec} onClick=${() => openNodeTransferWatch(nrec)}/>` : null}${nrec.transferred_from ? html`<${ArrivedTag} n=${nrec}/>` : null}<${HealthDot} issues=${nrec.issues} i18n=${nrec.issues_i18n}/></div>
       <div class="grow"></div>
       <div class="dh-ver">
         ${nrec.version && !nrec.uninstalled ? html`<span class=${"nm-ver" + (nrec.ahead ? " out" : "")} title=${nrec.ahead ? T("Node is running a newer version than the panel — update the panel to catch up") : ""}>v${nrec.version}</span>` : null}
-        ${(() => {   /* what the Update button installs when it is not a release. A hand-update from a branch or tag is
-              remembered for good. A master's own node updates with the panel host (the host updater's ref,
-              Store.panelUpdateRef) — except when the header offers "update node to" below (the node lags a current
-              panel): that button runs the node's own updater, its ref or an operator's own update_cmd */
-          if (nrec.uninstalled) return null;
-          const viaHost = nrec.local && !nodeUpd;
-          const ref = viaHost ? Store.panelUpdateRef : nrec.update_ref;
-          if (ref) return html`<span class="nm-ver out" title=${viaHost ? T("Update installs {ref}, not the latest release — this host's updater (/usr/local/bin/swg-update) was installed or last updated from it. Run `sudo bash -c \"SWG_REF=main swg-update\"` once to follow releases again.", { ref }) : T("Update installs {ref}, not the latest release — this node was installed or last updated from it. Run its update once with SWG_REF=main to follow releases again.", { ref })}>${T("from {ref}", { ref })}</span>`;
-          if (nrec.update_custom && !viaHost) return html`<span class="nm-ver out" title=${T("Update runs this node's own update command (update_cmd in its agent config, /etc/swg-agent/config.json by default), not the release updater. Remove it there and restart swg-noded to follow releases again.")}>${T("own update command")}</span>`;
-          return null;
-        })()}
-        ${nrec.uninstalled ? null : dhUpdating ? html`<span class="livepill upd-busy">${T("updating…")} <svg class="updspin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v4h-4"/></svg></span>`
-          : (nrec.proc_status && isUpdateState(nrec.proc_status)) ? procTag(nrec.proc_status, () => dismissNodeProc(nrec.id), procErr(nrec))
-          : (nrec.local && Store.panelOutdated) ? html`<button class="livepill updpill" disabled=${blocked} onClick=${() => updateHost()} title=${T("Update this master (panel + co-located node) to the latest release")}>${T("update to")} <b>${Store.latestRemote || "?"}</b></button>`
-          : nodeUpd ? html`<button class="livepill updpill" disabled=${blocked} onClick=${() => updateNode(nrec)} title=${blocked ? T("Unavailable while the node is down / converting") : T("Update this node")}>${T("update node to")} <b>${nrec.latest || "?"}</b></button>`
-          : nrec.repairable ? html`<button class="livepill updpill fixpill" disabled=${blocked} onClick=${() => nrec.local ? updateHost() : updateNode(nrec)} title=${(nrec.kind === "docker" ? T("A container or the datapath isn't running on this node — recreating it should fix it. ")
-            // D2: repairable no longer means DOWN. A node with the userspace fallback keeps its interfaces up; only
-            // datapath_broken (no module AND no fallback — or a node too old to say) keeps the "can't come up" sentence.
-            : nrec.datapath_broken ? T("The AmneziaWG kernel module isn't built or loaded on this node — awg interfaces can't come up. ")
-            : T("AmneziaWG on this node is running on the slower fallback datapath — its kernel module isn't loaded, or its interfaces haven't moved back to it yet. ")) + (nrec.local ? T("Re-run the updater to repair.") : T("Update this node to repair."))}><${Ic} i="warn"/> ${T("repair node")}</button>`
-          : (nrec.local ? (Store.updFlash && Date.now() < Store.updFlash) : (Store.nodeUpdFlash && Store.nodeUpdFlash.id === nrec.id && Date.now() < Store.nodeUpdFlash.until))
-          // a phone keeps the Check cell where it is (the row of four): its icon a green check, its word "Up to date"
-          ? (isMobile() ? html`<button class="iconbtn m-uptodate" data-lbl=${T("Up to date")} title=${nrec.local ? T("This master is on the latest version") : T("This node is on the latest version")}
-                onClick=${e => checkForUpdate(e, nrec.local ? undefined : nrec.id)}><${Ic} i="check"/></button>`
-            : html`<span class="livepill upd-uptodate" title=${nrec.local ? T("This master is on the latest version") : T("This node is on the latest version")}><${Ic} i="check"/> ${T("up to date")}</span>`)
-          : html`<button class="iconbtn" disabled=${blocked} data-lbl=${T("Check")} title=${blocked ? T("Unavailable while the node is down / converting") : T("Check status")} onClick=${e => checkForUpdate(e, nrec.local ? undefined : nrec.id)}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v4h-4"/></svg></button>`}
         <span class="dh-sep"></span>
         <button class="iconbtn" disabled=${blocked} data-lbl=${T("Settings")} title=${blocked ? T("Unavailable while the node is down / converting") : T("Node settings")} onClick=${() => openNodeEdit(nrec)}><${Ic} i="gear"/></button>
         <button class="iconbtn" data-lbl=${T("Logs")} title=${T("This node's live logs")} onClick=${() => openLogs({ nodes: [nrec.id], src: NODE_SOURCES })}><${Ic} i="doc"/></button>
@@ -278,14 +250,8 @@ export function NodeDetail({ node: rawName }) {
               and having to open Settings first to find them made them read as a sub-setting of something.
               Transfer follows the sheet's own rule: while one is in flight the button WATCHES it rather
               than starting a second. */ null}
-        <button class="iconbtn" disabled=${blocked} title=${blocked ? T("Unavailable while the node is down / converting") : T("Move this node to another server — the panel gives you a command that rebuilds it there from what it holds")} onClick=${() => openNodeMigrate(nrec)}><${Ic} i="server"/></button>
-        <button class="iconbtn" disabled=${blocked} title=${blocked ? T("Unavailable while the node is down / converting") : T("Hand this node to another panel — the box keeps running exactly as it is and starts syncing there instead")} onClick=${() => (nrec.transfer ? openNodeTransferWatch(nrec) : openNodeTransfer(nrec))}><${Ic} i="link"/></button>
         <button class="iconbtn danger" title=${nrec.removing ? T("Force remove node") : T("Remove node")} onClick=${() => openNodeRemove(nrec)}><${Ic} i="trash"/></button>
         <//>`}
-        ${/* §3.1: the door for a node that is NOT reporting — and it says "or migrate" because not
-              reporting is not the same as gone for good: the same command rebuilds this node on the same
-              box, a damaged one, or a brand-new one. The reporting node's door is "Migrate", in its settings. */
-          down ? html`<button class="iconbtn recover" title=${T("Rebuild this node from what the panel holds — a paste-on-the-server command that brings back its interfaces, keys and turn-proxies, on this box or a new one")} onClick=${() => openNodeRecover(nrec)}><${Ic} i="refresh"/> ${T("Restore or migrate")}</button>` : null}
       </div>
     </div>
 
@@ -1049,8 +1015,6 @@ function NodeMoreSheet({ id }) {
   return html`<${Sheet} title=${Store.nodeName(id)} noGuard=${true}>
     <div class="msheet"><div class="msheet-g">
       ${row("key", T("Rotate token"), () => openNodeRotate(nrec))}
-      ${row("server", T("Migrate"), () => openNodeMigrate(nrec), blocked)}
-      ${row("link", T("Transfer"), () => (nrec.transfer ? openNodeTransferWatch(nrec) : openNodeTransfer(nrec)), blocked)}
       ${/* flagged for removal: the way back, which the desktop has on the Health panel (F5) */""}
       ${nrec.removing ? row("refresh", T("Cancel removal — keep this node"), () => unflagNode(nrec)) : null}
       ${row("trash", nrec.removing ? T("Force remove node") : T("Remove node"), () => openNodeRemove(nrec), false, "danger")}
@@ -1141,9 +1105,6 @@ export function NodeHealth({ health, node, compact, history, range, nodeHist }) 
   </div>`;
 }
 
-export let hostUpdating = false;                 // once Update is clicked, lock the header pill into "updating"
-export let hostUpdRepairing = false;             // that update was a REPAIR (triggered while up to date) → pill says "repairing…"
-export let pendingUpdateDone = null;             // [from,to] of a panel version bump, held until the WHOLE host update finishes (a master's panel restarts mid-update, before the node phase — don't pop the "updated" dialog yet)
 // the circular-arrow glyph (same as the check icon), spun in yellow while an update runs
 export const UPD_SPIN_SVG = `<svg class="updspin" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v4h-4"/></svg>`;
 export const WARN_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>`;
@@ -1152,91 +1113,6 @@ export const CHECK_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="
 export const INFO_SVG = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`;
 // The App header drives this from the poll: an imported binding is read-only, so the version-bump
 // bookkeeping goes through setters rather than assignment at a distance.
-export function noteHostUpdateDone(from, to) { hostUpdating = false; pendingUpdateDone = [from, to]; }
-export function setSeenPanelVer(v) { seenPanelVer = v; }
-export function takePendingUpdateDone() { const u = pendingUpdateDone; pendingUpdateDone = null; return u; }
-
-export function setHostUpdating() {
-  hostUpdating = true;
-  hostUpdRepairing = !Store.panelOutdated;   // up to date when triggered ⇒ it's a repair (Fix / re-run), not a version update
-  const slot = $("#updslot");
-  if (slot) slot.innerHTML = `<span class="livepill upd-busy">${esc(hostUpdRepairing ? T("repairing…") : T("updating…"))} ${UPD_SPIN_SVG}</span>`;
-  Store.apply();   // re-render the whole SPA so a co-located (local) node tile flips at the SAME instant, not on the next poll
-}
-export let seenPanelVer = null;   // detect the panel coming back on a new version (after an update), to prompt a hard reload
-export function openUpdateDone(from, to) {
-  openModal(html`<${Sheet} title=${T("Panel updated")}
-    foot=${html`<${Fragment}><span class="grow"></span><button class="btn btn-primary" onClick=${() => location.reload()}>${T("Reload now")}</button></>`}>
-    <div class="updone">
-      <p>${updatedFromTo(from, to)}</p>
-      <p>${T("To be sure every change takes effect, give the panel a hard reload — it drops the cached app so the new version loads cleanly.")}</p>
-      <p class="updone-hint">${T("Press")} <kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>R</kbd></p>
-    </div>
-  <//>`);
-}
-export function openUpdateModal({ title, side, onConfirm, declarative, cmd, auto }) {
-  // `cmd` undefined = "no opinion, use the default"; cmd === "" = "there is no command I can honestly
-  // print here", which is not the same thing and must not fall back to the bootstrap one.
-  const full = cmd === undefined ? bootCmd("update") : cmd;   // the sudo-rs-safe one-liner, built in one place
-  const go = async () => { closeModal(); await onConfirm(); };
-  openModal(html`<${Sheet} title=${title}
-    foot=${declarative && !auto
-      ? footRow({ onCancel: closeModal, cancelLabel: T("Close") })
-      : footRow({ onCancel: closeModal, onAction: go, action: T("Update now") })}>
-    <div class="iface-intro" style="font-size:14px;line-height:1.55"><div>${declarative ? declUpdateIntro(side, !!full) : fullUpdateIntro(side)}</div></div>
-    ${full ? html`<div class="field"><div class="ipk-field"><span class="ipk-val" style="text-align:left">${full}</span><button class="copybtn" onClick=${() => copy(full, T("Command copied"))}><${Ic} i="copy"/></button></div></div>` : null}
-    <div class="iface-intro" style="font-size:14px;line-height:1.55;margin-top:26px;margin-bottom:2px"><div>${declarative ? declAutoIntro(auto) : autoUpdateIntro(side)}</div></div>
-  <//>`);
-}
-export function updateNode(n) {
-  const cmd = n.declarative ? (n.platform === "nixos" ? "sudo nixos-rebuild switch" : "") : undefined;
-  openUpdateModal({
-    title: T("Update {name}", { name: n.name }), side: T("node's"),
-    declarative: !!n.declarative, cmd, auto: n.update_auto !== false,
-    onConfirm: async () => {
-      const r = await api.nodeSelfUpdate({ node: n.id });
-      if (!r.ok) return toast(srvText(r) || T("Failed to request update."), "err");
-      if (r.data && r.data.manual) return toast(srvText(r) || T("This node can't be updated from the panel — run the command shown in the dialog on the box."), "err");
-      await Store.poll(); toast(T("Update requested — applies on the node's next sync."), "ok");
-    },
-  });
-}
-export function updateHost() {
-  const env = Store.env || {};
-  openUpdateModal({
-    title: T("Update this server"), side: T("panel's"),
-    declarative: !!env.declarative, cmd: env.update_cmd, auto: !!env.update_auto,
-    onConfirm: async () => {
-      const r = await api.hostUpdate();
-      if (!r.ok) return toast(srvText(r) || T("Failed to start update."), "err");
-      if (r.data && r.data.manual) return toast(T("Automatic update isn't wired on this install — run the command shown in the dialog on the host."), "err");
-      setHostUpdating();
-      const _n = ((r.data || {}).nodes || {}).started || [];
-      toast(_n.length
-        ? T("Update started — the panel will restart shortly. The nodes ({v1}) follow on their next sync.", { v1: plural(_n.length, "node") })
-        : T("Update started — the panel will restart shortly."), "ok");
-    },
-  });
-}
-export async function checkForUpdate(e, nodeId) {
-  const btn = e && e.currentTarget;                  // spin + cyan it while we poll, so it reads as "searching"
-  if (btn) btn.classList.add("checking");
-  if (!nodeId) { Store.hostChecking = true; Store.apply(); }   // panel-header check → show a "checking…" pill
-  try {
-    const r = await api.checkUpdate();
-    await Store.poll();
-    if (!r.ok) toast(srvText(r) || T("Couldn't check for updates."), "err");
-    else if (r.data && !r.data.checked) toast(r.data.why_key ? T(r.data.why_key, srvVars(r.data.why_vars))
-                                                             : T("Couldn't reach the repo to check for updates."), "err");
-    else if (nodeId) {                               // invoked from a NODE header → show the result THERE, not on the panel header
-      const n = (Store.nodes || []).find(x => x.id === nodeId);   // outdated → its "update node" button appears; up-to-date → flash on the node row
-      if (!(n && n.outdated)) { Store.nodeUpdFlash = { id: nodeId, until: Date.now() + 5000 }; Store.apply(); setTimeout(() => Store.apply(), 5100); }
-    }
-    else if (r.data && r.data.panel_outdated) toast(T("Update available — v{ver}", { ver: r.data.latest_remote }), "ok");
-    else if (serviceIssues().some(i => i.fix !== false)) toast(T("{v1} can be repaired — click “Fix”", { v1: plural(serviceIssues().filter(i => i.fix !== false).length, "issue") }), "ok");   // up to date, but self-heals are pending
-    else { Store.updFlash = Date.now() + 15000; Store.apply(); setTimeout(() => Store.apply(), 15100); }   // panel up to date + healthy → T("up to date") pill (clickable to re-run/repair) for 15s
-  } finally { if (btn) btn.classList.remove("checking"); if (!nodeId) { Store.hostChecking = false; Store.apply(); } }
-}
 function dismissOnOutsideTap(el, anchor, hide) {
   const onDown = ev => {
     if (el.contains(ev.target) || (anchor && anchor.contains(ev.target))) return;
@@ -1390,25 +1266,6 @@ export function hubEntryHtml({ titleHtml, date, notes, emptyNote, footer, nav, a
     + `<div class="hub-list">${rows}</div>`
     + (footer ? `<div class="hub-foot">${esc(footer)}</div>` : "");
 }
-export function updBubbleHtml(repaint) {
-  const want = Store.latestRemote || "";
-  const e = changelogEntry(want);
-  // Not in hand yet: ask (the shared loader decides whether that is a fetch), and repaint when it lands. Until then
-  // the bubble says it is loading; if the changelog still has no entry for this version, it points to the changelog.
-  let loading = false;
-  if (!e && want) { loading = !_changelogCache || _changelogReq != null || Date.now() - _changelogAt >= CHANGELOG_WANT_RETRY;
-    if (loading) loadChangelog(want).then(() => { if (repaint) repaint(); }); }
-  const [wnA, wnB] = Tsplit("What's new in {v}", "v");
-  return hubEntryHtml({ titleHtml: `${esc(wnA)}<b>${esc(want || "?")}</b>${esc(wnB)}`, date: e ? e.date : "",
-    notes: e ? e.notes : [], emptyNote: loading ? T("Loading changelog…") : T("See the changelog for what's new."),
-    action: { label: T("Update now"), title: T("Update this server") } });
-}
-export function fixBubbleHtml() {
-  const iss = serviceIssues().filter(i => i.fix !== false); if (!iss.length) return "";   // only what the repair repairs
-  const head = `<div class="hub-h">${T("{v1} to fix", { v1: plural(iss.length, "issue") })}</div>`;
-  const body = iss.map(i => `<div class="hub-row"><span class="hub-dot ${i.sev}"></span><span><b>${esc(i.label)}</b> — ${esc(i.msg)}</span></div>`).join("");
-  return head + body + `<div class="hub-foot">${esc(T("Click to review & run the repair."))}</div>`;
-}
 export function turnUpdBubbleHtml() {
   const rows = Store.turnUpdates || []; if (!rows.length) return "";
   // Grouped by fork, one line each, so the bubble's height tracks how many FORKS are behind and not how big
@@ -1455,14 +1312,11 @@ export function NodeCard({ n, reorder }) {
   const nblocked = st !== "online" || inProc(n.proc_status);  // down OR mid convert/re-install
   // list-card update tag: a co-located node updates WITH the panel (its "updating" comes from hostUpdating, not
   // its own proc_status) — mirror the detail's dh-ver so the LIST shows "updating" too, while a terminal wins.
-  const nUpdating = n.updating || (n.local && (hostUpdating || inProc(Store.hostProc)));
   const _proc0 = _CTR_PROC.has(n.proc_status) ? null : n.proc_status;   // one interface's outcome, not the node's
-  const procEff = (_proc0 && !inProc(_proc0)) ? _proc0 : (nUpdating ? "updating" : _proc0);   // i18n-keys
   const nav = () => go("#/node/" + encodeURIComponent(n.id));
   return html`<div class=${"ncard clk" + (removing ? " removing" : "") + (it ? it.cls : "")} onClick=${nav} data-rid=${it ? it.rid : null}>
     <div class="nc-gutter">${reorder ? html`<span class="drag-grip" title=${T("Drag to reorder")} onClick=${e => e.stopPropagation()} ...${reorder.grip(n.id)} dangerouslySetInnerHTML=${{ __html: GRIP_SVG }}></span>` : null}</div>
     <div class="nc-name">
-      ${!n.uninstalled && (n.outdated || (n.local && Store.panelOutdated)) && !n.updating ? html`<span class="upd-dot" title=${T("Update available — open the node to update")}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v4h-4"/></svg></span>` : null}
       <span class="nname">${n.name}</span>
       ${n.kind ? html`<span class=${"tport " + n.kind}>${kindLabel(n.kind, n.runtime)}</span>` : null}
       ${platformPill(n)}

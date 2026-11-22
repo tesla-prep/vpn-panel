@@ -2,22 +2,9 @@
 ARG BASE_REGISTRY=public.ecr.aws/docker/library
 FROM ${BASE_REGISTRY}/python:3.12-slim
 
-# С версии 3.1.4 acme.sh проверяет тип содержимого ответа CA перед сохранением сертификата.
-ARG ACME_VERSION=3.1.4
 RUN apt-get update \
- && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssl ca-certificates curl socat tar tzdata \
- && rm -rf /var/lib/apt/lists/* \
- && curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \
-      "https://github.com/acmesh-official/acme.sh/archive/refs/tags/${ACME_VERSION}.tar.gz" -o /tmp/acme.tar.gz \
- && mkdir -p /tmp/acme && tar -xzf /tmp/acme.tar.gz -C /tmp/acme --strip-components=1 \
- && ( cd /tmp/acme && ./acme.sh --install --home /opt/acme.sh --nocron --noprofile ) \
- # bundle the DNS plugins so 'cloudflare' (DNS-01) never has to fetch dns_cf.sh from GitHub at
- # runtime (which fails on networks that can't reach GitHub); verify the cf plugin is present.
- && mkdir -p /opt/acme.sh/dnsapi && cp -rf /tmp/acme/dnsapi/. /opt/acme.sh/dnsapi/ \
- && ln -sf /opt/acme.sh/acme.sh /usr/local/bin/acme.sh \
- && /opt/acme.sh/acme.sh --version \
- && test -f /opt/acme.sh/dnsapi/dns_cf.sh \
- && rm -rf /tmp/acme /tmp/acme.tar.gz
+ && apt-get install -y --no-install-recommends ca-certificates curl tzdata \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /opt/swg-panel
 COPY src/swg-panel-server src/app.css src/app.js src/index.html src/reconcile.js src/turn-artifacts.js VERSION ./
@@ -60,11 +47,7 @@ ENV SWG_PANEL_WEB=/opt/swg-panel \
     SWG_PANEL_HOST=0.0.0.0 \
     SWG_PANEL_PORT=8443 \
     SWG_PANEL_AUTH=/etc/swg-panel/auth \
-    SWG_PANEL_TLS_CERT=/etc/swg-panel/tls/fullchain.pem \
-    SWG_PANEL_TLS_KEY=/etc/swg-panel/tls/key.pem \
-    STATS_DIR=/var/www/wgstats \
-    PANEL_USER=admin \
-    TLS=selfsigned
+    STATS_DIR=/var/www/wgstats
 
 EXPOSE 8443
 ENTRYPOINT ["/entrypoint.sh"]

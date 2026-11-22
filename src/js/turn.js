@@ -625,8 +625,7 @@ export function rawOwnerOn(node, iface) {
   return "";
 }
 export function turnEnabled() { return !(Store.panelSettings && Store.panelSettings.turn_enabled === false); }
-export const TURN_FORKS_DEFAULT = ["WINGS-N", "MYSOREZ", "samosvalishe", "anton48", "Moroka8",
-                            "amurcanov", "ildarmaga", "wdttplus", "xxcipherx", "csqtt", "qwdtt"];
+export const TURN_FORKS_DEFAULT = ["samosvalishe", "WINGS-N"];
 export function enabledTurnForkIds() {
   const ids = new Set((Store.panelSettings && Store.panelSettings.enabled_turn_forks) || TURN_FORKS_DEFAULT);
   for (const f of turnForkList()) if (f.hidden) ids.add(f.id);

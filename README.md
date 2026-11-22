@@ -1,39 +1,21 @@
 # swgPanel
 
-Панель управления WireGuard и AmneziaWG с отдельными нодами, пользовательскими подписками и привязками к статическим SOCKS5-выходам.
+Панель управления WireGuard и AmneziaWG с отдельными нодами, персональными подписками и выходами SOCKS5. Для TURN доступны FreeTurn и WINGS V.
 
-## Где что лежит
+## Быстрый старт
 
-| Путь | Содержимое |
-| --- | --- |
-| `src/` | Панель, агент ноды, сервер подписок и ресурсы веб-интерфейса |
-| `scripts/` | Реализация установки, обновления, удаления и перехода между Docker и systemd |
-| `docker/` | Dockerfile, Compose, пример `.env` и точки запуска контейнеров |
-| `docs/` | Руководства, справочник API, скриншоты и лицензии зависимостей |
-| `forks/` | Патчи и сборка сторонних компонентов |
-
-## Установка
-
-Скачайте установщик. Для панели в Docker используйте роль `host`. Для отдельной ноды под systemd укажите `node` вместо `docker host -role host` и возьмите токен из **Ноды → Добавить ноду**.
+Подготовьте Ubuntu 24.04 LTS или новее, Docker Engine с Compose и Nginx с HTTPS для веб-доступа. Панель и подписки работают в одном Compose-проекте, каждая VPN-нода устанавливается отдельно.
 
 ```bash
-curl -fsSLo install.sh https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/install.sh
-sudo bash install.sh docker host -role host --dry-run
-sudo bash install.sh docker host -role host
+curl -fsSLo swg.sh https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/swg.sh
+sudo bash swg.sh install panel --dry-run
+sudo bash swg.sh install panel
 ```
 
-## Обновление
+Первый запуск создаёт `/opt/swg-panel/.env`. Заполните его и запустите установщик ещё раз. Настройте проксирование панели и подписок по примеру в руководстве.
 
-Скачайте `update.sh` в каталог вне клона, чтобы он при запуске забирал текущую сборку. Скрипт определит роль и способ установки на сервере.
-
-```bash
-curl -fsSLo update.sh https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/update.sh
-sudo bash update.sh --dry-run
-sudo bash update.sh
-```
-
-- [Руководство пользователя](docs/guide.md)
-- [Установка и эксплуатация](docs/operations.md)
-- [API](docs/api.md)
+- [Установка, Nginx и обновление](docs/operations.md)
+- [Пользователи, подписки и ноды](docs/guide.md)
+- [Внешний API](docs/api.md)
 - [История изменений](CHANGELOG.md)
 - [Лицензия](LICENSE) и [сторонние компоненты](docs/THIRD-PARTY.md)

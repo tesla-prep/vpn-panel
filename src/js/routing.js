@@ -61,7 +61,7 @@ export function catLabelOf(c) {   // built-in label · custom-list title (keyed 
 }
 // Host/IP capability flags for a list — ALWAYS Host first, IP second (house rule).
 export const capBadges = caps => html`<span class="capbs">
-  ${caps && caps.host ? html`<span class="capb host" title=${T("Matchable by domain — needs Force-DNS or SNI mode")}>${T("Host")}</span>` : null}
+  ${caps && caps.host ? html`<span class="capb host" title=${T("Matchable by domain — needs Hybrid SNI")}>${T("Host")}</span>` : null}
   ${caps && caps.ip ? html`<span class="capb ip" title=${T("Matchable by IP range — works in every mode")}>${T("cap|IP")}</span>` : null}</span>`;
 // A provider-catalog id is "<prov>:<rawid>"; return the provider's display label (MetaCubeX / v2fly / …) for the source tag.
 export const isProviderCat = c => typeof c === "string" && c.includes(":") && !String(c).startsWith("custom");
@@ -364,7 +364,7 @@ export function rulesSummary(nodeId, rows, catchAll) {
 
 export function ModeTabs({ value, onChange }) {
   return html`<div class="rmode-tabs" role="radiogroup">
-    ${["kernel", "forcedns", "sni_kernel", "sni"].map(m => { const mm = MODE_META[m], on = m === value;
+    ${["kernel", "sni"].map(m => { const mm = MODE_META[m], on = m === value;
       return html`<button type="button" role="radio" aria-checked=${on} key=${m} title=${mm.label}
         class=${"rmtab m-" + m + (on ? " on" : "")} onClick=${() => onChange(m)}><${Ic} i=${mm.icon}/></button>`; })}
   </div>`;
@@ -496,7 +496,7 @@ const _shippedOn = (kind, mode) => { const v = PATTERN_SHIPPED[kind];
   return !!v && (v === 1 || !mode || !!v[mode]); };   // no mode known → gate nothing, as everywhere else
 // Preference order for "switch this node to…" — Force-DNS first (cheapest host layer, and the switch the panel
 // already offers), then Hybrid SNI, which is the only engine that runs every kind.
-const _FIX_MODES = ["forcedns", "sni", "sni_kernel"];
+const _FIX_MODES = ["sni"];
 const ENGINE_NO = { kernel: "engine", forcedns: "whole", sni_kernel: "anchor" };
 export function targetGate(mode, kind) {
   if (!kind || kind === "invalid") return { ok: false, why: "invalid" };
@@ -785,7 +785,7 @@ export function p2pTargetOpts(node, exits) {
   const viaNode = (Store.nodes || []).filter(n => n.id !== node.id).map(n => ({ value: "exit:" + n.id,
     label: T("Route through node {v1}", { v1: n.name }),
     ...(!linked.has(n.id) ? { refuse: T("There is no mesh link to {v1}.", { v1: n.name }), className: "dim" } : {}) }));
-  return [...exitOptionGroups({ ...node, exits }, { prefix: "dev:", stored: node.exits || [] })
+  return [...exitOptionGroups({ ...node, exits: [] }, { prefix: "dev:", stored: [] })
       .map(g => ({ ...g, items: g.items.map(it => ({ ...it, label: T("Route through {v1}", { v1: it.label }) })) })),
     ...(viaNode.length ? [{ group: T("Through another node"), items: viaNode }] : [])];
 }
@@ -861,7 +861,7 @@ export function BlockTraffic({ node, value, onChange, p2p, onP2p }) {
     const dead = !dis && !blockCatLive(mode, bc.providers, c);   // enforceable in this mode, but none of its lists is switched on / present
     return html`<button type="button" key=${c.id} disabled=${dis}
       class=${"blkchip" + (active(c.id) && !dis && !dead ? " on" : "") + (dis || dead ? " inert" : "")}
-      title=${dis ? T("No IP list in this category — domain lists can't match in {mode}. Use Force-DNS / Hybrid-SNI, or add an IP list.", { mode: (MODE_META[mode] || {}).label || mode })
+      title=${dis ? T("No IP list in this category — domain lists can't match in {mode}. Use Hybrid SNI, or add an IP list.", { mode: (MODE_META[mode] || {}).label || mode })
                  : dead ? T("None of this category's lists is in use — their providers are switched off, or it has no lists yet. It blocks nothing until one is.")
                  : (c.kind === "ip" ? T("Matched by IP address — works in every mode.") : T("Matched by domain name."))}
       onClick=${() => { if (!dis) toggle(c.id); }}><span class="blkchip-g">⊘</span>${blockCatLabel(c.label)}${!c.predefined ? html`<span class="blkchip-tag">${T("tag|custom")}</span>` : null}</button>`; };
@@ -1719,7 +1719,6 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
       : withDefault && _dflt ? [{ value: "__dflt__",
       label: T("Node default ({v1})", { v1: _dflt.label || _dflt.device || _dflt.id }) }] : []),
     { value: "direct", label: T("Direct (this node)") },
-    ...exitOptionGroups(_nrec, { prefix: "dev|", devices: true }),
     ...(others.length ? [{ group: T("Forward to node (cascade)"),
                            items: others.map(n => ({ value: "exit|" + n.id, label: T("Forward to {node}", { node: n.name }) })) }] : []),
     // LAST, and outside every group. Block is not a place traffic goes, it is traffic not going — so it
@@ -2206,7 +2205,6 @@ export function EgressPicker({ node, value, onChange, noRules }) {
         { value: "auto", label: _dflt ? T("Auto ({v1})", { v1: _dflt.label || _dflt.device || _dflt.id })
                                       : T("Auto (MASQUERADE)") },
         { value: "smart", label: T("Routing (smart cascade)"), className: "egopt-mode" },
-        ...exitOptionGroups(nrec, { prefix: "exit|", devices: true }),
         ...(others.length ? [{ group: T("Forward to node (cascade)"), items: others.map(n => ({ value: "forward|" + n.id, label: T("Forward to {node}", { node: n.name }) })) }] : []),
         ...(_selfFwd ? [{ value: ifSel, label: T("This node itself"), className: "bad",
                           refuse: T("This interface is set to forward everything to the node it is already on, which cannot work — the traffic would leave by this node's own address anyway. Choose another destination.") }] : []),
@@ -2313,8 +2311,8 @@ export function egressSaveBlock(eg, mode) {
       if (doms.length) {
         const list = doms.slice(0, 3).join(", ") + (doms.length > 3 ? "…" : "");
         return doms.length > 1
-          ? T("IP-only mode routes by IP only — remove the domains ({list}), or switch this node to Force-DNS.", { list })
-          : T("IP-only mode routes by IP only — remove the domain ({list}), or switch this node to Force-DNS.", { list });
+          ? T("IP-only mode routes by IP only — remove the domains ({list}), or switch this node to Hybrid SNI.", { list })
+          : T("IP-only mode routes by IP only — remove the domain ({list}), or switch this node to Hybrid SNI.", { list });
       }
     }
   }

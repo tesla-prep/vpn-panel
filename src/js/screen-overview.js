@@ -40,7 +40,7 @@ import {
   NodesRailPanel,
 } from "./grids.js";
 import {
-  NodeHealth, healthAlerts, updateHost,
+  NodeHealth, healthAlerts,
 } from "./screen-nodes.js";
 import { h, Fragment } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
@@ -949,23 +949,11 @@ export function maybeAlertServices() {
 export function ServiceIssueSheet({ issues }) {
   const list = (issues || []).filter(Boolean);
   if (!list.length) { closeModal(); return null; }
-  const certOnly = list.every(i => i.id === "subcert");
-  const noUpdate = list.every(i => i.id === "subcert" || i.fix === false);   // nothing here that "Run update" repairs
-  const reissue = async () => {
-    try { await api.post("/api/access/apply-sub", {}); toast(T("Issuing the subscription certificate…"), "ok"); }
-    catch (e) { toast((e && e.message) || T("Failed"), "err"); }
-    closeModal();
-  };
   return html`<${Sheet} noGuard=${true} onClose=${closeModal}
       title=${list.length === 1 ? T("{v1} needs attention", { v1: list[0].label }) : T("Panel services need attention")}
       foot=${html`<${Fragment}>
         <button class="btn btn-ghost" onClick=${() => { list.forEach(svcSilence); closeModal(); }}>${T("Silence")}</button>
         <span class="grow"></span>
-        ${list.some(i => i.id === "subcert")
-          ? html`<button class="btn btn-primary" onClick=${reissue}>${T("Reissue certificate")}</button>` : null}
-        ${noUpdate ? null
-          : html`<button class=${"btn " + (list.some(i => i.id === "subcert") ? "btn-ghost" : "btn-primary")}
-                    onClick=${() => { closeModal(); updateHost(); }}>${T("Run update")}</button>`}
       <//>`}>
     <div class="svc-modal">
       ${list.map(i => html`<div class=${"svc-item " + i.sev} key=${svcKey(i)}>

@@ -7644,3 +7644,13 @@ export const PLURALS = {
   source: ["источник", "источника", "источников"],   // T-10's transfer summary counts stored client configs
 
 };
+
+Object.assign(STR, {
+  "SOCKS5 exits": "Выходы SOCKS5",
+  "{v1} — SOCKS5 exits": "{v1} — выходы SOCKS5",
+  "Configure SOCKS5 proxies here and assign an exit from the user card.": "Настройте прокси здесь и назначьте выход в карточке пользователя.",
+  "No SOCKS5 exits on this node yet.": "На этой ноде пока нет выходов SOCKS5.",
+  "Set PANEL_URL, NODE_TOKEN and the public NODE_ENDPOINT in /opt/swg-node/.env.": "Укажите PANEL_URL, NODE_TOKEN и публичный NODE_ENDPOINT в /opt/swg-node/.env.",
+  "After saving .env, run the installer again.": "Сохраните .env и запустите установщик повторно.",
+  "After saving .env, run sudo docker compose up -d in /opt/swg-node.": "Сохраните .env и выполните sudo docker compose up -d в /opt/swg-node.",
+});

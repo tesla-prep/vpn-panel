@@ -241,14 +241,13 @@ export function UserPeerCard({ peer, onOpen }) {
   </div>`;
 }
 export function userVkLink(user) {
-  return (((user && user.vk_link) || "").trim()) || (((Store.panelSettings || {}).vk_link || "").trim());
+  return userVkLinks(user)[0] || "";
 }
 // ALL of a user's VK call links (primary first) for the forks that embed several; falls back to the single link,
 // then the panel test link (panel-side only — subscriptions never fall back).
 export function userVkLinks(user) {
   let arr = (user && Array.isArray(user.vk_links) && user.vk_links.length) ? user.vk_links.slice()
           : (user && (user.vk_link || "").trim() ? [user.vk_link] : []);
-  if (!arr.length) { const t = ((Store.panelSettings || {}).vk_link || "").trim(); if (t) arr = [t]; }
   return arr.map(s => (s || "").trim()).filter(Boolean);
 }
 export function vkOwnHash(peer, user) {
@@ -323,16 +322,12 @@ export function VkLinkField({ user }) {
 // Manage ALL of a user's VK call links (grid CRUD + which is primary). The primary is the one single-link apps use;
 // FreeTurn passes them all. Reordered so the primary is first on save (vk_links[0] = primary; vk_link mirrors it).
 export function VkLinksSheet({ user }) {
-  useStore();   // re-render on each poll so a link just taken from the pool shows as a POOL link, not a personal one
+  useStore();
   const lu = (Store.recon.users || []).find(x => x.id === user.id) || user;   // live user — the modal's `user` prop is a stale snapshot
   const start = (lu.vk_links && lu.vk_links.length ? lu.vk_links : (lu.vk_link ? [lu.vk_link] : [])).slice();
-  const poolUrls = new Set(Object.values(lu.vk_pool || {}));
-  const fromPool = (url) => poolUrls.has(url);
   const [rows, setRows] = useState(start.length ? start.map(u => ({ url: u })) : [{ url: "" }]);
-  // The links as they were when the rows were seeded. A pool change (the alive check's cascade) can replace one while
-  // the sheet is open, and saving the rows back would restore the dead link as a personal one and drop its replacement.
+  // Detect edits from another open tab before saving the draft.
   const seeded = useRef(start);
-  const [adding, setAdding] = useState(false);
   const [primary, setPrimary] = useState(0);
   const [busy, setBusy] = useState(false);
   const setUrl = (i, v) => setRows(rs => rs.map((r, j) => j === i ? { url: v } : r));
@@ -341,24 +336,6 @@ export function VkLinksSheet({ user }) {
     setPrimary(p => (i === p ? 0 : i < p ? p - 1 : p)); };
   const norm = rows.map(r => normVkLink(r.url));                       // add https:// where missing
   const bad = norm.some(u => u && !_VK_CALL_RE.test(u));
-  // Links this user could still be given: the live count the poll carries, less the pool links still in this sheet.
-  // Exact, because the cascade never leaves anyone holding a dead pool link. (The pool itself is not in the poll.)
-  const poolLeft = Math.max(0, ((Store.panelSettings || {}).vk_pool_live || 0) - norm.filter(u => u && poolUrls.has(u)).length);
-  // The pick happens on the server (it holds the pool and excludes what they already have). Unsaved edits in
-  // this sheet would be lost by the round trip, so save them first when there are any.
-  const addFromPool = async () => {
-    setAdding(true);
-    if (dirty) { const ok = await persist(false); if (!ok) { setAdding(false); return; } }
-    const r = await api.userVkPoolAdd(user.id);
-    setAdding(false);
-    if (!r || !r.ok) return toast(srvText(r) || T("Couldn't add a link from the pool"), "err");
-    const got = (r.data || {}).vk_links || [];
-    seeded.current = got;
-    setRows(got.map(u => ({ url: u })));
-    await Store.poll().catch(() => {});             // the live user catches up before a Save compares against it
-    Store.configEpoch++; bus.emit();
-    toast(T("Added a link from the pool."), "ok");
-  };
   const dirty = JSON.stringify(norm.filter(Boolean)) !== JSON.stringify(start);
   const persist = async (close) => {
     if (JSON.stringify(start) !== JSON.stringify(seeded.current)) {
@@ -385,9 +362,6 @@ export function VkLinksSheet({ user }) {
   const save = () => persist(true);
   return html`<${Sheet} title=${html`${T("VK call links")} <span class="faint" style="text-transform:none;letter-spacing:0">— ${user.name}</span>`} width=${560} onClose=${closeModal}
     foot=${html`<${Fragment}><button class="btn btn-ghost" onClick=${addRow}><${Ic} i="plus"/> ${T("Add link")}</button>
-      <button class="btn btn-ghost" disabled=${adding || busy || !poolLeft} onClick=${addFromPool}
-        title=${poolLeft ? T("Give this user one more link from the shared pool") : T("No unused link left in the shared pool")}>
-        <${Ic} i="users"/> ${adding ? T("Adding…") : T("Add from pool")}</button>
       <span class="grow"></span><button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Cancel")}</button>
       <button class="btn btn-primary" disabled=${busy || bad} onClick=${save}>${busy ? T("Saving…") : T("Save")}</button></>`}>
     <div class="iface-intro" style="margin-top:2px"><div>${vkLinksIntro()}</div></div>
@@ -397,14 +371,9 @@ export function VkLinksSheet({ user }) {
           <button type="button" class=${"primtog vklinks-star" + (primary === i ? " on" : "")}
             title=${primary === i ? T("The primary link — single-link apps use this one") : T("Set as the primary link")}
             onClick=${() => setPrimary(i)}><span class="primstar">${primary === i ? "★" : "☆"}</span></button>
-          <div class=${"vkbox" + (fromPool(r.url) ? " frompool" : "")} style="flex:1">
-            <${Ic} i=${fromPool(r.url) ? "users" : "link"}/>
-            ${/* A pool link is the POOL's to edit: retyping it here would silently detach this user from the
-                  pool entry, and the next edit or mark-dead would no longer reach them. Read-only, and the
-                  tooltip says where to change it. Personal links stay fully editable. */ ""}
+          <div class="vkbox" style="flex:1">
+            <${Ic} i="link"/>
             <input class="vkbox-input" value=${r.url} placeholder=${T("A hash, or vk.ru/call/join/…")}
-              readOnly=${fromPool(r.url)}
-              title=${fromPool(r.url) ? T("From the shared pool — change it in Settings → Turn proxies, or remove it here") : ""}
               onInput=${e => setUrl(i, e.target.value)}/>
           </div>
           <button class="iconbtn" title=${T("Remove this link")} onClick=${() => delRow(i)}><${Ic} i="trash"/></button>

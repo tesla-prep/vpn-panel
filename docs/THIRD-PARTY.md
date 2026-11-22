@@ -25,19 +25,19 @@
 
 | Сервер | Апстрим | Лицензия | Зафиксированный коммит | Наш патч и рецепт | Релиз |
 |---|---|---|---|---|---|
-| WDTT (оригинал) | [amurcanov/proxy-turn-vk-android](https://github.com/amurcanov/proxy-turn-vk-android) | **GPL-3.0** | `51057cc` (v1.2.4) | [`forks/wdtt/`](../forks/wdtt/) | `wdtt-amurcanov-1.2.4-3` |
-| WDTT — ildarmaga | [ildarmaga/wdtt](https://github.com/ildarmaga/wdtt) | **GPL-3.0** ‡ | `ef697994` (v1.5.0 ‡) | [`forks/wdtt/ildarmaga/`](../forks/wdtt/ildarmaga/) | `wdtt-ildarmaga-1.5.0-4` |
-| WDTT-Plus | [Ivan4537/WDTT-Plus](https://github.com/Ivan4537/WDTT-Plus) | **GPL-3.0** | `d450e132` (v20) | [`forks/wdtt/wdttplus/`](../forks/wdtt/wdttplus/) | `wdtt-wdttplus-20-1` |
-| qWDTT — SpaceNeuroX | [SpaceNeuroX/proxy-turn-vk-android](https://github.com/SpaceNeuroX/proxy-turn-vk-android) | **GPL-3.0** | `a296c57e` (v1.4.4) | [`forks/qwdtt/`](../forks/qwdtt/) | `wdtt-qwdtt-1.4.4-2` |
-| csqtt | [amurcanov/csqtt](https://github.com/amurcanov/csqtt) | **PolyForm Noncommercial 1.0.0** | `446293aa` (v2.1.9) | [`forks/csqtt/`](../forks/csqtt/) | `csqtt-2.1.9-4` |
-| csqtt 2.5 | [Afteroid/csqttr](https://github.com/Afteroid/csqttr) (csqtt 2.5 от amurcanov) | **PolyForm Noncommercial 1.0.0** | `001caa4` | [`forks/csqtt/`](../forks/csqtt/) | `csqtt-2.5.3` ¶ |
+| WDTT (оригинал) | [amurcanov/proxy-turn-vk-android](https://github.com/amurcanov/proxy-turn-vk-android) | **GPL-3.0** | `51057cc` (v1.2.4) | [`forks/wdtt/`](https://github.com/tesla-prep/vpn-panel/tree/e7f16dc/forks/wdtt/) | `wdtt-amurcanov-1.2.4-3` |
+| WDTT — ildarmaga | [ildarmaga/wdtt](https://github.com/ildarmaga/wdtt) | **GPL-3.0** ‡ | `ef697994` (v1.5.0 ‡) | [`forks/wdtt/ildarmaga/`](https://github.com/tesla-prep/vpn-panel/tree/e7f16dc/forks/wdtt/ildarmaga/) | `wdtt-ildarmaga-1.5.0-4` |
+| WDTT-Plus | [Ivan4537/WDTT-Plus](https://github.com/Ivan4537/WDTT-Plus) | **GPL-3.0** | `d450e132` (v20) | [`forks/wdtt/wdttplus/`](https://github.com/tesla-prep/vpn-panel/tree/e7f16dc/forks/wdtt/wdttplus/) | `wdtt-wdttplus-20-1` |
+| qWDTT — SpaceNeuroX | [SpaceNeuroX/proxy-turn-vk-android](https://github.com/SpaceNeuroX/proxy-turn-vk-android) | **GPL-3.0** | `a296c57e` (v1.4.4) | [`forks/qwdtt/`](https://github.com/tesla-prep/vpn-panel/tree/e7f16dc/forks/qwdtt/) | `wdtt-qwdtt-1.4.4-2` |
+| csqtt | [amurcanov/csqtt](https://github.com/amurcanov/csqtt) | **PolyForm Noncommercial 1.0.0** | `446293aa` (v2.1.9) | [`forks/csqtt/`](https://github.com/tesla-prep/vpn-panel/tree/e7f16dc/forks/csqtt/) | `csqtt-2.1.9-4` |
+| csqtt 2.5 | [Afteroid/csqttr](https://github.com/Afteroid/csqttr) (csqtt 2.5 от amurcanov) | **PolyForm Noncommercial 1.0.0** | `001caa4` | [`forks/csqtt/`](https://github.com/tesla-prep/vpn-panel/tree/e7f16dc/forks/csqtt/) | `csqtt-2.5.3` ¶ |
 | Приложение csqtt 2.5 для Android (наша сборка приложения amurcanov) | [Afteroid/csqttr](https://github.com/Afteroid/csqttr) `app/` | **PolyForm Noncommercial 1.0.0** | `001caa4` | в релизе: `csqtt-app-2.5.3.patch`, `Dockerfile.android`, `build-apk.sh` | `csqtt-app-2.5.3` ¶ |
 | Приложение csqtt 2.1.9 для Android (APK amurcanov без изменений) | [amurcanov/csqtt](https://github.com/amurcanov/csqtt) v2.1.9 | **PolyForm Noncommercial 1.0.0** | v2.1.9 | — (зеркало: его подписанные APK, хэши сверены) | `csqtt-app-2.1.9` ¶ |
-| amneziawg-go (датапас AmneziaWG в пользовательском пространстве — запасной вариант bare-metal-нод) | [amnezia-vpn/amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) | MIT | `b5928efb` (v3.1.20260828) § | [`forks/amneziawg-go/`](../forks/amneziawg-go/) | `amneziawg-go-3.1.20260828` § |
+| amneziawg-go (датапас AmneziaWG в пользовательском пространстве — запасной вариант bare-metal-нод) | [amnezia-vpn/amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) | MIT | `b5928efb` (v3.1.20260828) § | [`forks/amneziawg-go/`](https://github.com/tesla-prep/vpn-panel/tree/e7f16dc/forks/amneziawg-go/) | `amneziawg-go-3.1.20260828` § |
 
 В каждой строке указан самый новый релиз; более старые сборки форка остаются опубликованными для отката. Сервер WDTT
 XXcipherX, скрытый в панели с 1.8.9, больше не предлагается: мы публиковали его сборки до 2026-10-14, а их рецепт и патч
-остаются в [`forks/wdtt/xxcipherx/`](../forks/wdtt/xxcipherx/).
+остаются в [`forks/wdtt/xxcipherx/`](https://github.com/tesla-prep/vpn-panel/tree/e7f16dc/forks/wdtt/xxcipherx/).
 
 § **amneziawg-go — не пропатченный форк.** Он собирается из апстрима без изменений: рецепт лишь фиксирует коммит,
 инструментарий Go (go1.27.1) и флаги сборки, поэтому бинарник воспроизводится байт в байт — с тем же sha256, который
@@ -94,29 +94,11 @@ csqtt в личных или иных некоммерческих целях л
 
 ---
 
-## Что входит в Docker-образы
+## Компоненты текущей поставки
 
-Наши образы на GHCR содержат сторонние программы, скомпилированные во время сборки:
+В образ `swg-node` входят `awg` и `awg-quick` из [amneziawg-tools v3.1.20260812](https://github.com/amnezia-vpn/amneziawg-tools/tree/v3.1.20260812), GPL-2.0. Модуль [AmneziaWG v3.1.20260906](https://github.com/amnezia-vpn/amneziawg-linux-kernel-module/tree/v3.1.20260906), GPL-2.0, собирается на хосте через DKMS.
 
-| Образ | Компонент | Лицензия | Исходники |
-|---|---|---|---|
-| `swg-node` | amneziawg-go (датапас в пользовательском пространстве) | MIT | [amnezia-vpn/amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) |
-| `swg-node` | amneziawg-tools (`awg`, `awg-quick`) | **GPL-2.0** | [amnezia-vpn/amneziawg-tools](https://github.com/amnezia-vpn/amneziawg-tools) |
-| `swg-panel` | acme.sh (выпуск и продление TLS) | **GPL-3.0** | [acmesh-official/acme.sh](https://github.com/acmesh-official/acme.sh) |
-
-Каждый собирается из ветки по умолчанию своего апстрима, без изменений — точные шаги см. в
-[`Dockerfile.node`](../docker/Dockerfile.node) и [`Dockerfile`](../docker/Dockerfile). Поскольку мы их не меняем, полным
-соответствующим исходным кодом является апстрим.
-
----
-
-## Форки turn-прокси
-
-Форки turn-прокси мы **не** собираем и **не** распространяем. Нода скачивает релизный бинарник каждого форка
-напрямую из GitHub releases его автора, поэтому эти проекты распространяют свою работу сами, и их лицензии
-действуют между вами и ними. Они указаны в README. Панель показывает, какой форк работает в каждом прокси.
-Форки, скрытые в панели с 1.8.9, — cacggghp, MYSOREZ и Moroka8 — больше не предлагаются; нода, которая ещё запускает
-такой форк, сохраняет его.
+Нода получает готовые TURN-серверы из релизов [FreeTurn](https://github.com/hackdiaz-dev/free-turn-proxy/releases) и [WINGS-N](https://github.com/WINGS-N/vk-turn-proxy/releases). Для личных выходов SOCKS5 используется [hev-socks5-tunnel](https://github.com/heiher/hev-socks5-tunnel).
 
 ---
 

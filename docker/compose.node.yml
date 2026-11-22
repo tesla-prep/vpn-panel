@@ -1,0 +1,34 @@
+name: swg-node
+
+services:
+  swg-node:
+    image: ghcr.io/tesla-prep/swg-node:SWG_REVISION
+    container_name: swg-node
+    restart: unless-stopped
+    init: true
+    network_mode: host
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os, time; assert time.time() - os.stat('/run/swg-node-sync').st_mtime < 45"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      PANEL_URL: "${PANEL_URL:?Set PANEL_URL in .env}"
+      NODE_TOKEN: "${NODE_TOKEN:?Set NODE_TOKEN in .env}"
+      NODE_ENDPOINT: "${NODE_ENDPOINT:?Set NODE_ENDPOINT in .env}"
+      NODE_NET: host
+      TURN_MANAGE: panel
+      SWG_HOST_NODE_DIR: /opt/swg-node/data/node
+      SWG_TURN_IMAGE: "ghcr.io/tesla-prep/swg-node:SWG_REVISION"
+    volumes:
+      - ./data/node:/var/lib/swg-noded
+      - ./data/awg:/etc/amnezia/amneziawg
+      - ./data/wg:/etc/wireguard
+      - /var/run/docker.sock:/var/run/docker.sock

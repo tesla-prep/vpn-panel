@@ -39,9 +39,7 @@ import {
   IfaceDetail, LoadIfaceSheet,
 } from "./js/iface.js";
 import {
-  CHECK_SVG, INFO_SVG, NodeDetail, NodesScreen, UPD_SPIN_SVG, WARN_SVG, X_SVG, checkForUpdate, fixBubbleHtml,
-  hostHoverBubble, hostUpdRepairing, hostUpdating, noteHostUpdateDone, openUpdateDone, pendingUpdateDone,
-  seenPanelVer, setSeenPanelVer, takePendingUpdateDone, turnUpdBubbleHtml, updBubbleHtml, updateHost, versionHoverBubble,
+  NodeDetail, NodesScreen, hostHoverBubble, turnUpdBubbleHtml,
 } from "./js/screen-nodes.js";
 import {
   Overview, ServiceIssueSheet, maybeAlertServices, recordDashTick, setAppReady,
@@ -251,22 +249,8 @@ function App() {
         render(html`<${Fragment}><span class="dot"></span><b id="kpi-online">${onlineUserCount(onlineUserRows(null))}</b> ${T("val|online")}<//>`, lp); }
       else render(html`<${OnlineUsersTag} nodeId=${null} cls="bare" trigger=${c => html`<span class="dot"></span><b id="kpi-online">${c}</b> ${T("val|online")}`}/>`, lp);
     }
-    const v = Store.versions || {}, el = $("#appver");
-    if (v.panel) {            // panel came back on a different version → it was updated; prompt a hard reload
-      if (seenPanelVer && seenPanelVer !== v.panel) noteHostUpdateDone(seenPanelVer, v.panel);
-      setSeenPanelVer(v.panel);
-    }
-    if (pendingUpdateDone && !inProc(Store.hostProc)) { const _u = takePendingUpdateDone(); openUpdateDone(_u[0], _u[1]); }
-    if (el && v.panel) {        // panel version + info icon → the changelog hover bubble (reuses the update-bubble look)
-      el.innerHTML = `<span class="appver-wrap"><b>${esc(v.panel)}</b><span class="appver-info" aria-label="${esc(T("Changelog"))}">${INFO_SVG}</span></span>`;
-      if (!el._verWired) { el._verWired = true; versionHoverBubble(el); }   // wire once — #appver persists across polls
-    }
-    const ar = $("#appref");          // the host updater's branch, when it is not main: header Update installs it, not releases
-    if (ar) {
-      const ref = Store.panelUpdateRef || "";
-      ar.hidden = !ref;
-      if (ref) { ar.textContent = T("from {ref}", { ref }); ar.title = T("Update installs {ref}, not the latest release — this host's updater (/usr/local/bin/swg-update) was installed or last updated from it. Run `sudo bash -c \"SWG_REF=main swg-update\"` once to follow releases again.", { ref }); }
-    }
+    const el = $("#appver");
+    if (el) el.textContent = (Store.versions || {}).panel || "";
     const ht = $("#host-tport");      // how the PANEL itself is deployed (docker / bare-metal)
     if (ht && Store.env && ("docker" in Store.env)) {
       const dk = !!Store.env.docker;
@@ -279,38 +263,13 @@ function App() {
     }
     const slot = $("#updslot");
     if (slot) {
-      let body;
-      const _hl = esc((hostUpdRepairing && ({ updating: T("repairing"), updated: T("repaired"), "update-failed": T("repair failed") }[Store.hostProc]))
-                      || procLabel(Store.hostProc) || "");   // a Fix/re-run reads as "repairing…" / "repaired", not "updating"
-      const _healN = serviceIssues().filter(i => i.fix !== false).length;   // self-healable issues (not Secure Boot's: no update enrols a key) (missing/broken swg units + AmneziaWG datapath) → the updater repairs them
-      const _checkBtn = `<button class="iconbtn lg" id="upd-check" title="${esc(T("Check status"))}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v4h-4"/></svg></button>`;
-      if (inProc(Store.hostProc)) body = `<span class="hostproc-tag ${procInClass(Store.hostProc)}">${UPD_SPIN_SVG} ${_hl}</span>`;
-      else if (procSuccess(Store.hostProc)) body = `<span class="hostproc-tag ok">${CHECK_SVG} ${_hl}</span>`;   // green, auto-clears (no ×)
-      else if (procAborted(Store.hostProc)) body = `<span class="hostproc-tag aborted">${INFO_SVG} ${_hl}<button class="xbtn" id="hostproc-x" title="${esc(T("Dismiss"))}">${X_SVG}</button></span>`;
-      else if (procFailed(Store.hostProc)) body = `<span class="hostproc-tag fail${Store.hostProcErr ? ' tg-click' : ''}" id="hostproc-tag">${WARN_SVG} ${_hl}<button class="xbtn" id="hostproc-x" title="${esc(T("Dismiss"))}">${X_SVG}</button></span>`;   // whole tag clickable → error popup
-      else if (hostUpdating) body = `<span class="livepill upd-busy">${esc(hostUpdRepairing ? T("repairing…") : T("updating…"))} ${UPD_SPIN_SVG}</span>`;
-      else if (Store.hostChecking) body = `<span class="livepill upd-busy">${esc(T("checking…"))} ${UPD_SPIN_SVG}</span>`;   // Check status click → brief "checking…" pill (updates + issues)
-      // Priority: a real upgrade first (updating heals too, so no "Fix" then) → else self-healable issues → else up-to-date / check.
-      else if (Store.panelOutdated) body = `<button class="livepill updpill" id="host-upd">${esc(T("update to"))} <b>${esc(Store.latestRemote || "?")}</b></button>`;
-      // data-n: the count alone, which a phone's one-line app bar shows in place of the words (m/m.css); a desktop draws nothing of it
-      else if (_healN > 0) body = `<button class="livepill updpill fixpill" id="host-fix" data-n="${_healN}">${WARN_SVG} ${esc(fixLabel(_healN))}</button>`;
-      else if (Store.updFlash && Date.now() < Store.updFlash) body = `<button class="livepill upd-uptodate" id="host-repair" title="${esc(T("This panel is on the latest version"))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> ${esc(T("up to date"))}</button>`;
-      else body = _checkBtn;
-      if (/id="host-(upd|fix|repair)"/.test(body)) body += _checkBtn;
-      const _turnN = new Set((Store.turnUpdates || []).map(r => r.fork)).size;
-      const _turnBadge = (_turnN && !/hostproc-tag|upd-busy/.test(body))
-        ? `<button class="livepill updpill turnpill" id="turn-upd" data-n="${_turnN}">${esc(plural(_turnN, "update"))}</button>` : "";
-      // Left of the check button in BOTH layouts: the badges read as a row of things that are true, and the
-      // check is the verb that refreshes them — a verb belongs at the end of the row, not between two facts.
-      if (_turnBadge) body = body.includes(_checkBtn) ? body.replace(_checkBtn, _turnBadge + _checkBtn) : body + _turnBadge;
-      slot.innerHTML = body;
-      const b = $("#host-upd"); if (b) { b.onclick = updateHost; hostHoverBubble(b, updBubbleHtml, updateHost); }   // version + date + changelog on hover; the bubble's own Update button runs the SAME action (on touch the anchor is underneath it)
-      const rp = $("#host-repair"); if (rp) rp.onclick = updateHost;   // up-to-date → still allow a re-run/repair (heals the datapath even with no new version)
-      const fx = $("#host-fix"); if (fx) { fx.onclick = () => openModal(html`<${ServiceIssueSheet} issues=${serviceIssues().filter(i => i.fix !== false)}/>`); hostHoverBubble(fx, fixBubbleHtml); }   // the issue(s) on hover; click = review + run the repair
-      const tu = $("#turn-upd"); if (tu) { tu.onclick = openTurnUpdates; hostHoverBubble(tu, turnUpdBubbleHtml, openTurnUpdates); }   // forks + versions on hover; the bubble's own foot is the action (and reachable on touch, where the anchor is underneath it)
-      const c = $("#upd-check"); if (c) c.onclick = checkForUpdate;
-      const hx = $("#hostproc-x"); if (hx) hx.onclick = e => { e.stopPropagation(); dismissHostProc(); };
-      const htg = $("#hostproc-tag"); if (htg && Store.hostProcErr) htg.onclick = () => openConfirm({ title: procLabel(Store.hostProc), log: Store.hostProcErr, confirmLabel: T("Close") });
+      const updates = new Set((Store.turnUpdates || []).map(row => row.fork)).size;
+      slot.innerHTML = updates ? `<button class="livepill updpill turnpill" id="turn-upd" data-n="${updates}">${esc(plural(updates, "update"))}</button>` : "";
+      const button = $("#turn-upd");
+      if (button) {
+        button.onclick = openTurnUpdates;
+        hostHoverBubble(button, turnUpdBubbleHtml, openTurnUpdates);
+      }
     }
     $$("#tabs a").forEach(a => a.classList.toggle("active", a.dataset.tab === route.tab));
     const acct = $("#acct-btn"); if (acct) acct.onclick = () => doLogout();   // header logout icon → straight to the confirm
@@ -340,7 +299,6 @@ const brandMark = () => html`<span class="brand-mark" aria-hidden="true"></span>
 
 // ───────────────────────── auth: login page + logout ─────────────────────────
 let _loginShown = false;
-// Two-factor (TOTP / Google Authenticator) card for Settings → Authentication.
 function require401() { showLogin(); throw new Error("unauthorized"); }   // i18n-keys: a control-flow sentinel, never displayed
 function showLogin() { if (_loginShown) return; _loginShown = true; document.body.classList.add("loggedout"); try { render(h(LoginScreen), viewEl); } catch (_) {} }
 function VaultRelinkCard({ panelPw, onDone }) {
@@ -374,16 +332,15 @@ function VaultRelinkCard({ panelPw, onDone }) {
 }
 function LoginScreen() {
   const [u, setU] = useState(""); const [p, setP] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
-  const [twofa, setTwofa] = useState(false); const [code, setCode] = useState("");
   const [relink, setRelink] = useState(null);   // set to the NEW panel password when the vault needs reconnecting first
   const focusRef = useRef(null);
-  useEffect(() => { if (!isMobile() && focusRef.current) focusRef.current.focus(); }, [twofa]);   // a phone: no keyboard until a tap
+  useEffect(() => { if (!isMobile() && focusRef.current) focusRef.current.focus(); }, []);   // a phone: no keyboard until a tap
   const submit = async e => {
     if (e) e.preventDefault();
     if (busy) return;
     setBusy(true); setErr("");
     try {
-      const r = await api.login({ username: u, password: p, code: twofa ? code.trim() : undefined });
+      const r = await api.login({ username: u, password: p });
       if (r && r.ok) {
         let unlocked = true;
         try { await subUnlock(p); } catch (_) {
@@ -404,34 +361,17 @@ function LoginScreen() {
         }
         location.reload(); return;
       }
-      if (r && r.twofa_required) {                       // password OK — panel wants the 6-digit code
-        const msg = srvText(r) || "";
-        setTwofa(true); setErr(msg);
-        if (msg) {                                       // a REJECTED code: clear it (else the next digits append) and
-          setCode("");                                   // take focus back from the Verify button so retyping just works.
-          focusRef.current && focusRef.current.focus();  // same DOM node — `twofa` didn't flip, so it is not remounted
-        }
-        setBusy(false); return;
-      }
       setErr(srvText(r) || T("Login failed.")); setBusy(false);
     } catch (_) { setErr(T("Couldn't reach the panel.")); setBusy(false); }
   };
   if (relink) return html`<${VaultRelinkCard} panelPw=${relink} onDone=${() => location.reload()}/>`;
   return html`<div class="login-wrap"><form class="login-card" onSubmit=${submit}>
     <div class="login-brand">${brandMark()}</div>
-    <h2>${twofa ? T("Two-factor") : T("Sign in")}</h2>
-    ${twofa ? html`
-      <p class="muted" style="margin:-4px 0 12px">${T("Enter the 6-digit code from your authenticator app, or a recovery code.")}</p>
-      <div class="field"><label>${T("Authentication code")}</label><input ref=${focusRef} value=${code} onInput=${e => setCode(e.target.value)} inputmode="text" autocomplete="one-time-code" placeholder="123 456"/></div>
-      ${err ? html`<div class="formmsg err">${err}</div>` : null}
-      <button class="btn btn-primary" type="submit" disabled=${busy} style="width:100%;justify-content:center;margin-top:4px">${busy ? T("Verifying…") : T("Verify")}</button>
-      <button class="btn btn-ghost" type="button" onClick=${() => { setTwofa(false); setCode(""); setErr(""); }} style="width:100%;justify-content:center;margin-top:8px">${T("Back")}</button>
-    ` : html`
+    <h2>${T("Sign in")}</h2>
       <div class="field"><label>${T("Username")}</label><input ref=${focusRef} value=${u} onInput=${e => setU(e.target.value)} autocomplete="username"/></div>
       <div class="field"><label>${T("Password")}</label><input type="password" value=${p} onInput=${e => setP(e.target.value)} autocomplete="current-password"/></div>
       ${err ? html`<div class="formmsg err">${err}</div>` : null}
       <button class="btn btn-primary" type="submit" disabled=${busy} style="width:100%;justify-content:center;margin-top:4px">${busy ? T("Signing in…") : T("button|Sign in")}</button>
-    `}
   </form></div>`;
 }
 function setUiMode(m) { try { localStorage.setItem("swg-ui", m); } catch (_) {} location.reload(); }
@@ -441,7 +381,7 @@ function MoreSheet() {
   useStore();
   const [, force] = useState(0);
   const go = (fn) => () => { closeModal(); fn(); };
-  const v = Store.versions || {}, ref = Store.panelUpdateRef || "";
+  const v = Store.versions || {};
   const env = Store.env || {};
   const kind = !("docker" in env) ? "" : env.docker ? (env.runtime === "podman" ? T("kind|podman") : T("kind|docker")) : T("kind|bare-metal");
   const tm = themeMode();
@@ -451,7 +391,6 @@ function MoreSheet() {
   return html`<${Sheet} title=${html`<span class="m-brand" role="img" aria-label=${T("More")}>${brandMark()}</span>`} noGuard=${true}>
     <div class="msheet">
       <div class="msheet-g">
-        <button class="msheet-it" onClick=${go(() => checkForUpdate())}><${Ic} i="refresh"/><span class="msheet-l">${T("Check status")}</span></button>
         <button class="msheet-it" onClick=${go(openLogOverlay)}><${Ic} i="doc"/><span class="msheet-l">${T("Logs")}</span></button>
       </div>
       <div class="msheet-g">
@@ -467,8 +406,7 @@ function MoreSheet() {
         ${item(LOGOUT_SVG, T("Log out"), go(doLogout), null, "danger")}
       </div>
       ${v.panel ? html`<div class="msheet-ver">
-        <div class="msheet-verl"><b>${v.panel}</b>${kind ? html`<span>${kind}</span>` : null}${ref ? html`<span class="appref">${T("from {ref}", { ref })}</span>` : null}</div>
-        ${ref ? html`<p>${T("Update installs {ref}, not the latest release — this host's updater (/usr/local/bin/swg-update) was installed or last updated from it. Run `sudo bash -c \"SWG_REF=main swg-update\"` once to follow releases again.", { ref })}</p>` : null}
+        <div class="msheet-verl"><b>${v.panel}</b>${kind ? html`<span>${kind}</span>` : null}</div>
       </div>` : null}
     </div>
   <//>`;

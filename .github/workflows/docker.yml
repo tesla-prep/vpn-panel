@@ -10,7 +10,6 @@ on:
     paths-ignore:
       - '*.md'            # AGENTS, API, CHANGELOG, README, THIRD-PARTY — all top level
       - 'docs/**'
-      - 'forks/**/*.md'   # per-fork build notes
       - 'LICENSE'
   workflow_dispatch:
 

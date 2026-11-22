@@ -78,9 +78,6 @@ export const api = {
   config(pubkey, node, iface) { return this.get("/api/config?pubkey=" + encodeURIComponent(pubkey) + "&node=" + encodeURIComponent(node) + "&iface=" + encodeURIComponent(iface)); },
   account() { return this.get("/api/account"); },
   accountSave(b) { return this.post("/api/account", b); },
-  twofaSetup() { return this.post("/api/account/2fa/setup", {}); },
-  twofaEnable(code) { return this.post("/api/account/2fa/enable", { code }); },
-  twofaDisable(b) { return this.post("/api/account/2fa/disable", b); },
   nodes() { return this.get("/api/nodes"); },
   nodeCreate(b) { return this.post("/api/nodes/create", b); },
   nodeUpdate(b) { return this.post("/api/nodes/update", b); },
@@ -97,13 +94,6 @@ export const api = {
   exitEscrowForget(node, id) { return this.post("/api/exit/escrow/forget", { node, id }); },
   connectionUpdate(b) { return this.post("/api/connection/update", b); },
   panelSettings(b) { return this.post("/api/panel/settings", b); },
-  vkPool(pool, rev) { return this.post("/api/vk-pool", { pool, rev, pool_v: 2 }); },   // pool_v: built from GET /api/vk-pool, not the poll (a pre-S12b tab is refused)     // save the whole shared VK pool (cascades to holders server-side; rev guards a stale overwrite)
-  vkPoolPerUser(n) { return this.post("/api/vk-pool/per-user", { n }); },   // how many pool links a NEW user gets
-  vkPoolGet() { return this.get("/api/vk-pool"); },                        // the pool itself + the check's answers (the poll carries only its rev and a live count)
-  vkPoolResults() { return this.get("/api/vk-pool/results"); },            // the check's answers alone, while a run is going
-  vkCheck(id) { return this.post("/api/vk-pool/check", id ? { id } : {}); },   // ask VK about one link (any, dead included), or start "Check all"
-  vkCheckAuto(on) { return this.post("/api/vk-pool/check-auto", { on }); },    // the every-6-hours switch
-  userVkPoolAdd(id) { return this.post("/api/user/vk-pool-add", { id }); },  // give this user one more link from the pool
   subVault() { return this.get("/api/sub/vault"); },
   subVaultSet(b) { return this.post("/api/sub/vault", b); },
   subReset() { return this.post("/api/sub/reset", {}); },
@@ -222,9 +212,6 @@ export const api = {
   p4SetVersion(client, index) { return this.post("/api/turn/p4/setversion", { client, index }); },     // rollback to an observed version (index=null → latest)
   turnVersions(q) { return this.get("/api/turn/versions?owner=" + encodeURIComponent(q.owner || "") + "&node=" + encodeURIComponent(q.node || "") + "&service=" + encodeURIComponent(q.service || "") + "&fork=" + encodeURIComponent(q.fork || "")); },   // mirrored (rollback-able) versions + any per-(node,fork) hold
   changelog(want) { return this.get("/api/changelog" + (want ? "?want=" + encodeURIComponent(want) : "")); },   // full panel changelog (newest-first) for the version info bubble
-  nodeSelfUpdate(b) { return this.post("/api/node/update", b); },   // flag a node to self-update (≠ nodeUpdate, which renames)
-  hostUpdate() { return this.post("/api/host/update", {}); },
-  checkUpdate() { return this.post("/api/update/check", {}); },
   procClearNode(node) { return this.post("/api/node/proc-clear", { node }); },   // dismiss a stuck/failed re-install/convert/update tag
   procClearHost() { return this.post("/api/host/proc-clear", {}); },
 };
@@ -303,8 +290,6 @@ export const Store = {
     this.versions = d.versions || this.versions;
     this.tls = d.tls || this.tls || {};   // cert expiry + renewal health → the Access & TLS card
 
-    this.latestRemote = d.latest_remote; this.panelOutdated = !!d.panel_outdated;
-    this.panelUpdateRef = d.panel_update_ref || "";   // the host updater's branch when not main (swg-update's baked ref)
     this.turnUpdates = d.turn_updates || this.turnUpdates || [];   // [{fork,kind,node,installed,latest,ids}] — deployed turn-family servers behind their newest build, one row per (fork, node). Held forks are already excluded server-side.
     if (s && s.ok) { this.hostProc = d.host_proc || null; this.hostProcErr = d.host_proc_err || null; }   // only on a clean poll → the tag HOLDS through the panel's own re-install downtime
     if (ev && Array.isArray(ev.data)) this.events = ev.data;

@@ -1,0 +1,58 @@
+name: swg-panel
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  swg-panel:
+    image: ghcr.io/tesla-prep/swg-panel:SWG_REVISION
+    container_name: swg-panel
+    restart: unless-stopped
+    logging: *logging
+    ports:
+      - "127.0.0.1:${PANEL_PORT:-6741}:8443"
+    environment:
+      SWG_PUBLIC_URL: "${PANEL_URL:?Set PANEL_URL in .env}"
+      SWG_SUB_PUBLIC_URL: "${SUB_URL:?Set SUB_URL in .env}"
+    volumes:
+      - ./data/etc:/etc/swg-panel
+      - ./data/lib:/var/lib/swg-panel
+      - ./data/stats:/var/www/wgstats
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import os, urllib.parse, urllib.request; p=urllib.parse.urlsplit(os.environ['SWG_PUBLIC_URL']).path.rstrip('/'); urllib.request.urlopen('http://127.0.0.1:8443' + p + '/healthz', timeout=3)"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+  swg-sub:
+    image: ghcr.io/tesla-prep/swg-panel:SWG_REVISION
+    container_name: swg-sub
+    restart: unless-stopped
+    logging: *logging
+    depends_on:
+      swg-panel:
+        condition: service_healthy
+    entrypoint: ["/opt/swg-panel/swg-sub"]
+    ports:
+      - "127.0.0.1:${SUB_PORT:-8444}:8444"
+    environment:
+      SWG_SUB_HOST: "0.0.0.0"
+      SWG_SUB_PORT: "8444"
+      SWG_SUB_TRUST_XFF: "1"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 8444), 3).close()"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+    volumes:
+      - ./data/etc:/etc/swg-panel:ro
+      - ./data/lib:/var/lib/swg-panel:ro
+      - ./data/stats:/var/www/wgstats:ro
+      - /dev/null:/etc/swg-panel/auth:ro
+      - /dev/null:/var/lib/swg-panel/panel-settings.json:ro
+      - /dev/null:/var/lib/swg-panel/subs/vault.json:ro
+      - /dev/null:/var/lib/swg-panel/subs/escrow.json:ro
+    tmpfs:
+      - /var/lib/swg-panel/configs

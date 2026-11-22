@@ -1886,8 +1886,8 @@ export function NodeCreateSheet() {
     ${msg ? html`<div class=${"formmsg " + msg.k}>${msg.t}</div>` : null}
   <//>`;
 }
-export const BOOTSTRAP_URL = "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh";
-export const bootCmd = args => `sudo bash -c "$(curl -fsSL ${BOOTSTRAP_URL})" -- ${args}`;
+const INSTALL_SCRIPT = "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/swg.sh";
+const installNodeCmd = `curl -fsSLo swg.sh ${INSTALL_SCRIPT} && sudo bash swg.sh install node`;
 
 function transferToken(host, token) {
   const json = JSON.stringify({ u: host, t: token, k: "" });
@@ -1895,84 +1895,20 @@ function transferToken(host, token) {
   return "swgx1_" + b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function NodeTokenSheet({ name, token, isNew, kind, platform, rebuild }) {
-  // the address a node dials: the panel's confirmed public one (what every sync tells the fleet), this tab's own only when none is
-  // set — a panel reached through an SSH tunnel or another name handed out a command that pointed nowhere (OE, 1.8.9)
-  const host = String(Store.panelPublicUrl || "").trim().replace(/\/+$/, "") || `${location.origin}${BASE}`;
-  const bare = bootCmd(`node -key ${token} -host ${host}`);
-  const docker = bootCmd(`docker node -key ${token} -host ${host}`);
-  const nixos = platform === "nixos";
-  const bothWays = !!rebuild;
-  const [armedOpen, setArmedOpen] = useState(false);   // the pre-flight, folded — see below
-  const rotate = !isNew && !rebuild;
-
-  const copyBlock = (label, code) => html`<div class="field"><label>${label}</label>
-    <div class="cmdrow"><div class="tokenbox">${code}</div>
-      <button class="copyaction" onClick=${() => copy(code, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>`;
-
-  const fixBare = `sudo python3 -c 'import json,sys;p="/etc/swg-agent/config.json";c=json.load(open(p));c.setdefault("panel",{})["token"]=sys.argv[1];json.dump(c,open(p,"w"),indent=2)' ${token} && sudo systemctl restart swg-noded`;
-  const fixCtr = `sudo docker exec swg-node sh -c 'printf %s "$1" > /var/lib/swg-noded/panel-token; chmod 600 /var/lib/swg-noded/panel-token' sh ${token} && sudo docker restart swg-node`;
-  const fixNix = `sudo sh -c 'printf %s "$1" > /var/lib/swg-noded/panel-token; chmod 600 /var/lib/swg-noded/panel-token' sh ${token} && sudo systemctl restart swg-noded`;
-  const fixCmd = nixos ? fixNix : kind === "docker" ? fixCtr : fixBare;
-  const fixBlock = ((kind || nixos) && !rebuild) ? html`<div class="field"><label>${T("Only fix the credential — no re-install")}</label>
-    <div class="cmdrow"><div class="tokenbox">${fixCmd}</div>
-      <button class="copyaction" onClick=${() => copy(fixCmd, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div>
-    <div class="hint">${T("Run this when the node is healthy and only its token is wrong — after a rotate that landed somewhere unexpected, say. It changes the token and restarts the node; it installs nothing, touches no interface, and leaves the panel address and TLS settings exactly as they are.")}</div>
-  </div>` : null;
-
-  // The imperative install — bare-metal / Docker, a one-line command each.
-  const runLabel = (col, l) => html`${T("Run on the node —")} <span style=${"color:" + col + ";font-weight:700"}>${l}</span>`;
-  const installCommands = html`<${Fragment}>
-    ${copyBlock(runLabel("#60a5fa", kindLabel("baremetal")), bare)}
-    ${copyBlock(runLabel("#c084e8", kindLabel("docker")), docker)}
-    <div class="hint">${T("Pick the one this node runs. Each fetches the installer and prompts for the endpoint.")}</div>
-  <//>`;
-
-  return html`<${Sheet} title=${(isNew ? T("Node created")
-      : rebuild ? (rebuild.was_reporting ? T("Migrate") : T("Restore or migrate"))
-      : T("New token")) + " · " + name}
-    noSwipe=${true} foot=${html`<button class="btn btn-primary" onClick=${closeModal}>${T("Done")}</button>`}>
-    ${/* THE SUBJECT OF THIS STEP IS THE COMMAND. Everything below used to arrive at once: the whole
-          pre-flight again, the enrolment token, the transfer token, both commands and the credential-only
-          repair — on a screen whose one job is "run this on the new box". The operator read the outcome on
-          the previous step and pressed Prepare; repeating it in full pushed the command off the fold.
-          It stays reachable, folded, because it is the record of what was armed. */ null}
-    ${rebuild ? html`<${Disclosure} title=${T("What was armed")} open=${armedOpen} onToggle=${() => setArmedOpen(!armedOpen)}>
-        <${RebuildOutcome} d=${rebuild}/><//>
-      <div class="seclabel">${T("Run this on the box")}</div>` : null}
-    ${/* …and the warning says what to copy. With the standalone token field gone from a migration, "copy
-          it now" pointed at nothing on screen; the token is inside the command below, so that is what has
-          to leave this sheet with the operator. */ null}
-    <div class="notice warn"><${Ic} i="warn"/><span><b>${T("Shown once.")}</b> ${rebuild && !nixos
-      ? T("The command below carries a token that authenticates the node to this panel — copy the command now. You can rotate the token later if it leaks.")
-      : T("This token authenticates the node to the panel — copy it now. You can rotate it later if it leaks.")}</span></div>
-    ${/* `recoversAs` said "restores this node as <method> — to change it, convert the node". A ROTATE
-          restores nothing, and a MIGRATION now offers both methods a few lines below, so the sentence
-          contradicted the screen it was on in both places. The hint under the two commands says the true
-          version of it in one line. */ null}
-    ${nixos || !rebuild ? html`<div class="field" style="margin-top:15px"><label>${T("Enrollment token")}</label><div class="cmdrow"><div class="tokenbox">${token}</div><button class="copyaction" onClick=${() => copy(token, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>` : null}
-    ${/* …and the transfer token only where a record is WAITING TO RECEIVE one. It says "this panel, and a
-          node key valid here", which is an invitation — meaningful for a record nothing is running behind
-          yet, and meaningless on a live node, where accepting it would mean pushing somebody else's node
-          into a record that already has interfaces and peers. `kind` is the discriminator: the panel only
-          learns it from a node that has actually reported. So: Add node, yes; a rotate on a placeholder
-          whose token was lost, yes — that is the one rotate where this is the point; a rotate on a running
-          node, no; a migration, no (it has reported, by definition). */ null}
-    ${(kind || rebuild) ? null : html`<div class="field"><label>${T("Transfer token")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— to move an existing node here")}</span></label>
-      <div class="cmdrow"><div class="tokenbox">${transferToken(host, token)}</div>
-        <button class="copyaction" onClick=${() => copy(transferToken(host, token), T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div>
-      <div class="hint">${T("Carries this panel's address and this token together. On the panel that has the node now: its Transfer window, and paste this — nothing is installed.")}</div></div>`}
-    ${rotate || (nixos && !rebuild) ? null
-      : bothWays ? html`<${Fragment}>
-          ${copyBlock(runLabel(kind === "docker" ? "#c084e8" : "#60a5fa", kindLabel(kind || "baremetal")),
-                      kind === "docker" ? docker : bare)}
-          ${copyBlock(runLabel(kind === "docker" ? "#60a5fa" : "#c084e8", kindLabel(kind === "docker" ? "baremetal" : "docker")),
-                      kind === "docker" ? bare : docker)}
-          <div class="hint">${T("Either works: the first is what this node runs today, and the panel follows whichever the new box reports.")}</div>
-        <//>`
-      : (kind === "docker" || kind === "baremetal") ? copyBlock(runLabel(kind === "docker" ? "#c084e8" : "#60a5fa", kindLabel(kind)), kind === "docker" ? docker : bare, false)
-      : installCommands}
-    ${fixBlock}
+export function NodeTokenSheet({ name, token, isNew }) {
+  const host = Store.panelPublicUrl || location.origin + BASE;
+  const install = installNodeCmd;
+  const copyField = (label, value) => html`<div class="field"><label>${label}</label>
+    <div class="cmdrow"><div class="tokenbox">${value}</div>
+      <button class="copyaction" onClick=${() => copy(value, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>`;
+  return html`<${Sheet} title=${(isNew ? T("Node created") : T("New token")) + " · " + name}
+    foot=${html`<button class="btn btn-primary" onClick=${closeModal}>${T("Done")}</button>`}>
+    ${copyField("PANEL_URL", host)}
+    ${copyField("NODE_TOKEN", token)}
+    ${isNew ? copyField(T("Run on the node"), install) : null}
+    <p class="hint">${T("Set PANEL_URL, NODE_TOKEN and the public NODE_ENDPOINT in /opt/swg-node/.env.")}</p>
+    ${isNew ? html`<p class="hint">${T("After saving .env, run the installer again.")}</p>`
+             : html`<p class="hint">${T("After saving .env, run sudo docker compose up -d in /opt/swg-node.")}</p>`}
   <//>`;
 }
 export function openNodeEdit(node) { openModal(html`<${NodeEditSheet} node=${node}/>`); }
@@ -2348,7 +2284,7 @@ export function NodeRemoveSheet({ node }) {
   const nixos = node.platform === "nixos";
   const uninstall = declarative
     ? (nixos ? "services.swg-node.enable = false;   # then: sudo nixos-rebuild switch" : "")   // i18n-keys: generated Nix — file text, copied verbatim
-    : bootCmd("uninstall");
+    : "cd /opt/swg-node && sudo docker compose down";
   const flag = () => { setFlagged(true); mutate({
     key: "node:" + node.id,
     patch: s => { const n = s.nodes.find(x => x.id === node.id); if (n) n.removing = true; },

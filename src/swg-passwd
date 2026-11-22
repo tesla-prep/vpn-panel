@@ -155,6 +155,8 @@ def main():
     except (KeyboardInterrupt, EOFError):
         sys.exit("\nswg-passwd: aborted — nothing changed")
 
+    if not cur_hash and not pw:
+        sys.exit("swg-passwd: a password is required to initialize the panel")
     user_changed = user != cur_user
     if not pw and not user_changed:
         print("Nothing to change — same username, password kept.")
@@ -176,7 +178,7 @@ def main():
         print("  • Username:  %s (unchanged)" % user)
     if pw:
         print("  • Password:  updated")
-        print("  • Sign in with:  " + B(user) + " / " + B(pw))
+        print("  • Sign in as:  " + B(user))
         print("  • " + BBLUE("Encryption Vault") + ":  left intact — no config, subscription link or escrowed")
         print("    interface key was touched. Signing in with the new password will ask you to re-connect it")
         print("    with your " + B("old panel password") + " or your " + B("encryption key") + " (shown when this panel")

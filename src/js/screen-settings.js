@@ -53,430 +53,12 @@ import {
 export { AWG_KEYS, genAwg, awgBlankHints, AwgGrid };   // their home moved to iface.js (the link sheet draws them too); kept here for importers
 import { statsUsage, trafficInvalidate } from "./traffic.js";
 import { h, Fragment } from "preact";
-import { useState, useEffect, useRef, useCallback } from "preact/hooks";
+import { useState, useEffect, useRef } from "preact/hooks";
 import htm from "htm";
 
 const html = htm.bind(h);
 
 
-// Shared VK call-link pool
-const VK_PAGE_INLINE = 5, VK_PAGE_SHEET = 15;
-
-const VKP = { rev: null, pool: [], res: {}, asked: { pool: undefined, res: undefined }, busy: { pool: false, res: false } };
-function vkpTake(d) {
-  if (!d) return;
-  // the rev only moves forward: a GET served before a save but answered after it does not undo the save
-  if (Array.isArray(d.pool) && (VKP.rev === null || (d.rev || 0) >= VKP.rev)) { VKP.pool = d.pool; VKP.rev = d.rev || 0; }
-  if (d.res) VKP.res = d.res;
-}
-function vkpLoad(what, mark) {
-  const k = what === "res" ? "res" : "pool";
-  if (VKP.busy[k]) return Promise.resolve();
-  VKP.busy[k] = true;
-  if (mark !== undefined) VKP.asked[k] = mark;
-  return (k === "res" ? api.vkPoolResults() : api.vkPoolGet())
-    .then(r => { if (!(r && r.ok)) throw new Error("vk-pool"); vkpTake(r.data); })
-    .then(() => { VKP.busy[k] = false; bus.emit(); },
-          () => { VKP.busy[k] = false; VKP.asked[k] = undefined; });   // no emit: the next poll asks again, not this instant
-}
-
-function usePool() {
-  useStore();
-  const ps = Store.panelSettings || {};
-  const ck = ps.vk_check || {};
-  const psRev = ps.vk_pool_rev || 0, psSeq = ck.seq || 0;
-  useEffect(() => {                                // every render: cheap, and the marks keep it to once per change
-    if (VKP.asked.pool !== psRev && !VKP.busy.pool) { VKP.asked.res = psSeq; vkpLoad("pool", psRev); }
-    else if (VKP.asked.res !== psSeq && !VKP.busy.res && !VKP.busy.pool) vkpLoad("res", psSeq);
-  });
-  const server = VKP.pool;
-  const [local, setLocal] = useState(null);        // optimistic overlay; null = showing the server's list
-  const [checking, setChecking] = useState(() => new Set());   // the rows whose Check is waiting on VK
-  const wantRev = useRef(0);
-  const revRef = useRef(VKP.rev || 0);
-  const chain = useRef(Promise.resolve());
-  const gen = useRef(0);                           // moves when a save fails: the saves queued behind it are dropped
-  const pool = local || server;
-  // Drop the overlay only once the server has caught up, so the row never flashes back to its old value in
-  // the gap between "saved" and "the next fetch arrived".
-  useEffect(() => {
-    const rv = VKP.rev || 0;
-    if (local && rv >= wantRev.current) setLocal(null);
-    if (!local) revRef.current = rv;
-  }, [VKP.rev, local]);
-
-  const send = (next, okMsg) => {
-    setLocal(next);
-    wantRev.current = revRef.current + 1;
-    const g = gen.current;
-    chain.current = chain.current.then(async () => {
-      if (gen.current !== g) return;
-      const r = await api.vkPool(next, revRef.current);
-      if (!r || !r.ok) {
-        gen.current++;
-        setLocal(null);                            // revert to whatever the server actually holds
-        if ((r || {}).code === "conflict" && (r.data || {}).pool) { vkpTake(r.data); revRef.current = r.data.rev || 0; VKP.asked.pool = undefined; bus.emit(); await Store.poll(); }
-        toast(srvText(r) || T("Couldn't save the VK pool"), "err");
-        return;
-      }
-      vkpTake(r.data);
-      revRef.current = (r.data || {}).rev || revRef.current + 1;
-      const moved = (r.data || {}).reassigned || 0;
-      Store.configEpoch++; bus.emit();
-      toast(moved ? T("{v1} — moved {v2} to another link.", { v1: okMsg, v2: plural(moved, "user") }) : okMsg, "ok");
-      await Store.poll().catch(() => {});
-    });
-    return chain.current;
-  };
-
-  // Holders per URL, counted ONCE per render: with no size limit a per-row scan of every user is links × users a render.
-  const held = new Map();
-  for (const u of (Store.recon.users || [])) for (const l of (u.vk_links || [])) held.set(l, (held.get(l) || 0) + 1);
-  const holders = url => held.get(url) || 0;
-  const problem = (url, skipId) => {
-    const v = normVkLink(url);
-    if (!v) return T("Enter a VK call link.");
-    if (!_VK_CALL_RE.test(v)) return T("Expected a VK call link or its hash, like {v1}", { v1: "https://vk.ru/call/join/…" });
-    if (pool.some(e => e.id !== skipId && e.url === v)) return T("The same link is in the pool twice.");
-    return "";
-  };
-  // A row's Check: VK's answer in a toast, and on the row's pulse for the hour after (VkCheckBtn).
-  const checkOne = async e => {
-    if (!e.id || checking.has(e.id)) return;      // a row not saved yet has no id ({} would be "Check all")
-    setChecking(c => new Set(c).add(e.id));
-    let r = null;
-    try { r = await api.vkCheck(e.id); } catch (_) { r = null; }
-    setChecking(c => { const n = new Set(c); n.delete(e.id); return n; });
-    await vkpLoad("pool");
-    if (!r || !r.ok) { toast(srvText(r) || T("Couldn't ask VK"), "err"); return; }
-    const d = r.data || {};
-    if (d.verdict === "alive") toast(d.revived ? T("VK: the link is alive — it is handed out again.")
-      : d.operator_dead ? T("VK: the link is alive. You marked it dead — mark it alive to hand it out again.")
-      : T("VK: the link is alive."), "ok");
-    else if (d.verdict === "dead") toast(!d.marked ? T("VK: this link no longer exists.")   // already dead, or edited meanwhile
-      : d.moved ? T("VK: this link no longer exists — marked dead, moved {v1} to another link.", { v1: plural(d.moved, "user") })
-      : T("VK: this link no longer exists — marked dead."), "ok");
-    else toast(d.verdict === "limited" ? T("VK limited the check — nothing changed. Try again later.")
-      : d.verdict === "neterr" ? T("VK didn't answer — nothing changed.") : T("VK gave no clear answer — nothing changed."), "err");
-    Store.configEpoch++; bus.emit();
-    Store.poll().catch(() => {});
-  };
-  return {
-    pool, holders, problem, checking, checkOne, res: VKP.res, loaded: VKP.rev !== null,
-    saveUrl: (e, raw) => { const v = normVkLink(raw); const why = problem(v, e.id);
-      if (why) { toast(why, "err"); return false; }
-      if (v !== e.url) send(pool.map(x => x.id === e.id ? { ...x, url: v, dead_by: undefined } : x), T("Link updated."));
-      return true; },
-    addMany: (list) => send([...pool, ...list.map(u => ({ url: u, dead: false, added: Math.floor(Date.now() / 1000) }))],
-                            list.length > 1 ? T("Added {v1}.", { v1: plural(list.length, "VK link") }) : T("Link added.")),
-    // dead_by dropped in the overlay as the server drops it (an un-mark or an edit is the operator's own decision)
-    toggleDead: e => send(pool.map(x => x.id === e.id ? { ...x, dead: !x.dead, dead_by: undefined } : x), e.dead ? T("Marked alive.") : T("Marked dead.")),
-    remove: e => send(pool.filter(x => x.id !== e.id), T("Link removed.")),
-    removeDead: () => { const n = pool.filter(x => x.dead).length;
-      send(pool.filter(x => !x.dead), T("Removed {v1}.", { v1: plural(n, "dead VK link") })); },
-    removeAll: () => send([], T("Removed {v1}.", { v1: plural(pool.length, "VK link") })),
-  };
-}
-
-// Split a pasted blob into links. An operator with a .txt of them should be able to paste the lot: newlines,
-// commas, semicolons and plain spaces all separate, blanks and duplicates fall out.
-function vkSplitPaste(text) {
-  const seen = new Set(); const out = [];
-  for (const part of String(text || "").split(/[\s,;]+/)) {
-    const v = normVkLink(part.trim());
-    if (v && !seen.has(v)) { seen.add(v); out.push(v); }
-  }
-  return out;
-}
-
-// Split in two so the trigger can sit on the one-line bar while the paste box, which needs the full width,
-// opens above it instead of squeezing into a third of the row.
-function VkAddBtn({ onClick }) {
-  return html`<button class="btn btn-ghost btn-mini" onClick=${onClick}><${Ic} i="plus"/> ${T("Add links")}</button>`;
-}
-function VkPasteBox({ onAdd, onClose }) {
-  const [text, setText] = useState("");
-  const links = vkSplitPaste(text);
-  const bad = links.filter(u => !_VK_CALL_RE.test(u)).length;
-  const setOpen = () => onClose();
-  return html`<div class="vkpool-add">
-    <textarea class="vkpool-paste" rows="3" autofocus placeholder=${T("Paste links or their hashes — one per line, or separated by commas or spaces")}
-      value=${text} onInput=${e => setText(e.target.value)}
-      onKeyDown=${e => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); if (links.length && !bad) { onAdd(links); setText(""); onClose(); } } }}></textarea>
-    <div class="vkpool-foot">
-      <span class="faint" style="font-size:11px">${bad ? T("{v1} of these isn't a VK call link or its hash.", { v1: String(bad) })
-        : links.length ? T("{v1} ready to add", { v1: plural(links.length, "VK link") }) : T("Paste one or many.")}</span>
-      <span class="grow"></span>
-      <button class="btn btn-ghost btn-mini" onClick=${() => { setText(""); onClose(); }}>${T("Cancel")}</button>
-      <button class="btn btn-primary btn-mini" disabled=${!links.length || !!bad}
-        onClick=${() => { onAdd(links); setText(""); onClose(); }}>${T("Add")}</button>
-    </div>
-  </div>`;
-}
-
-// The row list, shared by both surfaces. `withDate` adds the "added" column the sheet has room for.
-function VkPoolRows({ P, rows, withDate }) {
-  const [draft, setDraft] = useState({});
-  const urlOf = e => (draft[e.id] !== undefined ? draft[e.id] : e.url);
-  const clear = id => setDraft(d => { const n = { ...d }; delete n[id]; return n; });
-  return html`<div class="vkpool">
-    ${rows.map(e => { const v = urlOf(e), held = P.holders(e.url), edited = normVkLink(v) !== e.url;
-      const save = () => { if (P.saveUrl(e, v)) clear(e.id); };
-      return html`
-      <div class=${"vkpool-row" + (e.dead ? " dead" : "") + (e.dead_by === "check" ? " vkgone" : "")} key=${e.id}>
-        <div class=${"vkbox" + (e.dead ? " dead" : "")} style="flex:1">
-          <${Ic} i=${e.dead_by === "check" ? "warn" : "users"}/>
-          <input class="vkbox-input" value=${v} placeholder=${T("A hash, or https://vk.ru/call/join/…")}
-            onInput=${ev => setDraft(d => ({ ...d, [e.id]: ev.target.value }))}
-            onKeyDown=${ev => { if (ev.key === "Enter") { ev.preventDefault(); save(); }
-                                if (ev.key === "Escape") clear(e.id); }}/>
-          ${edited ? html`<button class="btn btn-mini vkbox-save" onClick=${save}
-            title=${T("Save this link (or press Enter)")}><${Ic} i="check"/></button>` : null}
-          ${e.dead_by === "check" && !edited ? html`<span class="vkpool-gone" title=${T("VK's check found this link no longer exists — it is no longer handed out. Check it again to bring it back if VK answers that it is alive.")}>${T("VK: no longer exists")}</span>` : null}
-        </div>
-        ${withDate ? html`<span class="vkpool-added" title=${T("When it was added")}>${e.added ? ago(e.added) : "—"}</span>` : null}
-        <span class=${"vkpool-held" + (held ? "" : " none")} title=${T("Users holding this link")}>${held || "—"}</span>
-        <${VkCheckBtn} P=${P} e=${e}/>
-        <button class=${"btn btn-ghost btn-mini iconbtn vkpool-dead" + (e.dead ? " on" : "")} onClick=${() => P.toggleDead(e)}
-          title=${e.dead ? T("Mark as alive — hand it out again") : T("Mark as dead — stop handing it out and move its users off")}>
-          <${Ic} i=${e.dead ? "check" : "off"}/></button>
-        <button class="btn btn-ghost btn-mini iconbtn" onClick=${() => P.remove(e)}
-          title=${T("Remove from the pool")}><${Ic} i="trash"/></button>
-      </div>`; })}
-  </div>`;
-}
-
-const VK_CHECK_FRESH = 3600;   // the server's VK_CHECK_KEEP
-function vkCheckTone(P, e) {
-  if (P.checking.has(e.id) || (e.id && ((Store.panelSettings || {}).vk_check || {}).cur === e.id)) return "busy";
-  const r = P.res[e.id];
-  if (r && r.url === e.url && panelNowS() - r.at < VK_CHECK_FRESH) return r.v;   // an answer about the URL the row holds now
-  return e.dead_by === "check" ? "gone" : "";
-}
-function VkCheckBtn({ P, e }) {
-  const tone = vkCheckTone(P, e), r = P.res[e.id];
-  const said = tone === "busy" ? T("Asking VK…")
-    : tone === "alive" ? T("VK answered: alive, {v1}", { v1: ago(r.at) })
-    : tone === "dead" ? T("VK answered: this link no longer exists, {v1}", { v1: ago(r.at) })
-    : tone === "unknown" ? T("VK gave no clear answer, {v1}", { v1: ago(r.at) })
-    : tone === "gone" ? T("VK's check found this link no longer exists") : "";
-  // Busy is aria-disabled, not disabled: .iconbtn:disabled takes the pointer away, and with it the "Asking VK…" title.
-  return html`<button class=${"btn btn-ghost btn-mini iconbtn vkpool-chk" + (tone ? " t-" + tone : "")} disabled=${!e.id}
-    aria-disabled=${tone === "busy" ? "true" : null} onClick=${() => P.checkOne(e)}
-    title=${(said ? said + " — " : "") + T("Ask VK whether this link still exists")}><${Ic} i="activity"/></button>`;
-}
-
-// The alive check's line, above the totals: what the last run found, the every-6-hours switch and "Check all".
-function VkCheckLine({ P }) {
-  const ps = Store.panelSettings || {};
-  const ck = ps.vk_check || {};
-  const auto = ps.vk_check_auto !== false;
-  if (!P.pool.length) return null;
-  const at = ck.at || 0;
-  const next = dur(Math.max(60, at + 6 * 3600 - panelNowS()));
-  const line = ck.checking ? html`<span class="vkcheck-st run"><${Ic} i="clock"/>${T("Checking with VK…")}</span>`
-    : !at ? html`<span class="vkcheck-st"><${Ic} i="activity"/>${T("Not checked yet")}</span>`
-    : ck.state === "limited" ? html`<span class="vkcheck-st warn"><${Ic} i="warn"/>${auto ? T("VK limited the check, next try in {v1}", { v1: next }) : T("VK limited the check")}</span>`
-    : ck.state === "suspect" ? html`<span class="vkcheck-st warn"><${Ic} i="warn"/>${T("VK called most links dead — none was marked. Check one on its row to be sure.")}</span>`
-    : ck.state === "failed" ? html`<span class="vkcheck-st warn"><${Ic} i="warn"/>${auto ? T("VK didn't answer, next try in {v1}", { v1: next }) : T("VK didn't answer")}</span>`
-    : html`<span class="vkcheck-st"><${Ic} i="check"/>${T("Checked {v1}", { v1: ago(at) })}</span>`;
-  const setAuto = async on => {
-    let r = null;
-    try { r = await api.vkCheckAuto(on); } catch (_) { r = null; }
-    if (!r || !r.ok) { toast(srvText(r) || T("Couldn't save"), "err"); return; }
-    Store.panelSettings = { ...(Store.panelSettings || {}), vk_check_auto: on };
-    bus.emit();
-    Store.poll().catch(() => {});
-  };
-  const checkAll = async () => {
-    let r = null;
-    try { r = await api.vkCheck(); } catch (_) { r = null; }
-    if (!r || !r.ok) { toast(srvText(r) || T("Couldn't ask VK"), "err"); return; }
-    const live = P.pool.filter(e => !e.dead).length;
-    toast((r.data || {}).started ? T("Checking {v1} with VK.", { v1: plural(live, "VK link") })
-      : (r.data || {}).checking ? T("A check is already running.") : T("No live links to check."), "ok");
-    Store.poll().catch(() => {});
-  };
-  return html`<div class="vkcheck">
-    ${line}
-    <span class="grow"></span>
-    ${/* A span, not a label: Switch is a <label> of its own, and a nested one is invalid and drops this title. */ ""}
-    <span class="vkcheck-auto" title=${T("Ask VK about every live link every 6 hours, one link a second, from this panel's address")}>
-      <${Switch} on=${auto} onChange=${setAuto}/><span onClick=${() => setAuto(!auto)}>${T("Every 6 h")}</span></span>
-    <button class="btn btn-ghost btn-mini" disabled=${!!ck.checking} onClick=${checkAll}
-      title=${T("Ask VK about every live link now — dead ones are skipped; check a dead one on its own row")}>
-      <${Ic} i="activity"/> ${T("vk|Check all")}</button>
-  </div>`;
-}
-
-// What the pool adds up to. "Used" is links with at least one holder — a pool with eight links and two in
-// use is a different situation from eight links evenly loaded, and the row-by-row counts do not say it.
-function VkPoolTotals({ P, big }) {
-  const total = P.pool.length;
-  if (!total) return null;
-  const urls = new Set(P.pool.map(e => e.url));
-  const used = P.pool.filter(e => P.holders(e.url) > 0).length;
-  const people = (Store.recon.users || []).filter(u => (u.vk_links || []).some(x => urls.has(x))).length;
-  const dead = P.pool.filter(e => e.dead).length;
-  return html`<div class=${"vkpool-tot" + (big ? " big" : "")}>
-    <span>${plural(total, "VK link")}</span>
-    <span class="vkpool-dot">·</span>
-    <span>${T("{v1} in use", { v1: String(used) })}</span>
-    <span class="vkpool-dot">·</span>
-    ${/* "у N пользователей" needs the GENITIVE, which is not the form plural() picks for a bare count — the
-          catalog already carries this kind of case variant for "на N ноде". English strips the prefix and
-          still reads "held by 2 users". */""}
-    <span>${T("held by {v1}", { v1: plural(people, "gen|user") })}</span>
-    ${dead ? html`<span class="vkpool-dot">·</span><span class="vk-dead-n">${plural(dead, "dead VK link")}</span>` : null}
-  </div>`;
-}
-
-// Sort is a VIEW concern only — the stored order never changes, so a sort can never rewrite the pool.
-// VK's last answer, the news first: asking, dead, no clear answer, gone for good, alive, none — the Check pulse's colours.
-const VK_TONE_RANK = { busy: 5, dead: 4, unknown: 3, gone: 2, alive: 1, "": 0 };
-const VK_SORTS = { users: (P) => (a, b) => P.holders(b.url) - P.holders(a.url),
-                   check: (P) => (a, b) => VK_TONE_RANK[vkCheckTone(P, b)] - VK_TONE_RANK[vkCheckTone(P, a)],
-                   status: () => (a, b) => (a.dead ? 1 : 0) - (b.dead ? 1 : 0),
-                   added: () => (a, b) => (b.added || 0) - (a.added || 0) };
-function vkSorted(P, pool, sort, desc) {
-  if (!sort) return pool;
-  const out = pool.slice().sort(VK_SORTS[sort](P));
-  return desc ? out : out.reverse();
-}
-function VkSortHead({ sort, desc, setSort, setDesc, withDate, left }) {
-  const click = k => { if (sort === k) setDesc(d => !d); else { setSort(k); setDesc(true); } };
-  // The resting mark is the PAIR "↓↑" — it says "this sorts both ways", which one arrow does not. What made
-  // it unreadable before was the size and the tracking (10px, -0.5px, --faint), not the pair: see the CSS.
-  const arw = k => sort === k ? (desc ? "↓" : "↑") : "↓↑";
-  const cell = (k, cls, title) => html`<button class=${cls + " vkh" + (sort === k ? " on" : "")}
-    title=${title} onClick=${() => click(k)}>${arw(k)}</button>`;
-  return html`<div class="vkpool-head">
-    ${left || null}
-    <span class="grow"></span>
-    ${withDate ? cell("added", "vkpool-added", T("Sort by when it was added")) : null}
-    ${cell("users", "vkpool-held", T("Sort by how many users hold it"))}
-    ${cell("check", "btn btn-mini iconbtn", T("Sort by VK's last answer"))}
-    ${cell("status", "btn btn-mini iconbtn", T("Sort by alive or dead"))}
-    <span class="btn btn-mini iconbtn vkh-pad"></span>
-  </div>`;
-}
-function VkPager({ page, setPage, pages }) {
-  if (pages <= 1) return null;
-  return html`<div class="vkpool-pager vkpool-pager-in">
-    <button class="btn btn-ghost btn-mini" disabled=${page <= 0} onClick=${() => setPage(p => p - 1)}>${T("Prev")}</button>
-    <span class="faint">${T("{v1} of {v2}", { v1: String(page + 1), v2: String(pages) })}</span>
-    <button class="btn btn-ghost btn-mini" disabled=${page >= pages - 1} onClick=${() => setPage(p => p + 1)}>${T("Next")}</button>
-  </div>`;
-}
-
-function VkPoolSheet() {
-  const P = usePool();
-  const [sort, setSort] = useState("added");
-  const [desc, setDesc] = useState(true);
-  const [page, setPage] = useState(0);
-  const rows = vkSorted(P, P.pool, sort, desc);
-  const pages = Math.max(1, Math.ceil(rows.length / VK_PAGE_SHEET));
-  const pg = Math.min(page, pages - 1);
-  const deadN = P.pool.filter(e => e.dead).length;
-  const [addOpen, setAddOpen] = useState(false);
-  return html`<${Sheet} title=${T("Shared VK call link pool")} width=${860} noGuard=${true} onClose=${closeModal}
-    foot=${html`<${Fragment}>
-      <${VkAddBtn} onClick=${() => setAddOpen(o => !o)}/>
-      ${deadN ? html`<button class="btn btn-ghost btn-mini" onClick=${() => openConfirm({
-          title: T("Remove every dead link?"), danger: true, confirmLabel: T("Remove them"),
-          body: T("The {v1} in the pool marked dead will be removed, and anyone still holding one moves to a live link.", { v1: plural(deadN, "VK link") }),
-          onConfirm: () => { P.removeDead(); return true; } })}>
-        <${Ic} i="trash"/> ${T("Remove dead ({v1})", { v1: String(deadN) })}</button>` : null}
-      ${P.pool.length ? html`<button class="btn btn-ghost btn-mini danger" onClick=${() => openConfirm({
-          title: T("Remove every link in the pool?"), danger: true, requireType: T("REMOVE ALL"),
-          confirmLabel: T("Remove them all"),
-          body: T("The whole pool is removed ({v1}). Anyone holding one is left without it, and there is nothing left to hand out — new users get no link until you add one.", { v1: plural(P.pool.length, "VK link") }),
-          onConfirm: () => { P.removeAll(); return true; } })}>
-        <${Ic} i="trash"/> ${T("Remove all")}</button>` : null}
-      <span class="grow"></span>
-      <button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Close")}</button></>`}>
-    <${VkCheckLine} P=${P}/>
-    <${VkSortHead} sort=${sort} desc=${desc} setSort=${setSort} setDesc=${setDesc} withDate=${true}
-      left=${html`<${VkPoolTotals} P=${P} big=${true}/>`}/>
-    ${P.pool.length ? html`<${VkPoolRows} P=${P} rows=${rows.slice(pg * VK_PAGE_SHEET, (pg + 1) * VK_PAGE_SHEET)} withDate=${true}/>`
-      : html`<div class="vkpool-empty">${!P.loaded ? T("Loading…") : (vkPerUser() ? T("The pool is empty — add links and new users will get them automatically.") : T("The pool is empty."))}</div>`}
-    ${addOpen ? html`<${VkPasteBox} onAdd=${P.addMany} onClose=${() => setAddOpen(false)}/>` : null}
-    <div class="vkpool-bar"><span></span><${VkPager} page=${pg} setPage=${setPage} pages=${pages}/><span></span></div>
-  <//>`;
-}
-
-const vkPerUser = () => { const n = parseInt((Store.panelSettings || {}).vk_pool_per_user, 10);
-  return isNaN(n) ? 3 : Math.max(0, Math.min(16, n)); };   // mirrors the server's _vk_pool_per_user
-
-// How many pool links a NEW user is handed (server default 3). Saves on its own the moment it is committed —
-// Enter or leaving the field — like every pool row; it never touches users who already exist.
-function VkPerUser() {
-  useStore();
-  // The server always sends the effective value (PANEL_SETTINGS_DEFAULTS); shown clamped the way it applies it.
-  const saved = String(vkPerUser());
-  const [v, setV] = useState(null);                // null = showing the saved value
-  const commit = async () => {
-    if (v === null) return;
-    if (v === "" || v === saved) { setV(null); return; }
-    let r = null;
-    try { r = await api.vkPoolPerUser(+v); } catch (_) { r = null; }   // network error / proxy error page → api.post throws
-    if (!r || !r.ok) { toast(srvText(r) || T("Couldn't save"), "err"); setV(null); return; }
-    // Take the saved value now: a failed follow-up poll must not put the old number back beside a success toast.
-    Store.panelSettings = { ...(Store.panelSettings || {}), vk_pool_per_user: +v };
-    bus.emit();                                    // the pool's hints read it too, and they only re-render on the bus
-    setV(null);
-    toast(T("New users will get {v1}.", { v1: plural(+v, "VK link") }), "ok");
-    Store.poll().catch(() => {});
-  };
-  return html`<div class="field" style="max-width:340px;margin:0 0 10px">
-    <label>${T("Links per new user")}</label>
-    <input type="text" inputmode="numeric" value=${v === null ? saved : v} onDblClick=${e => e.target.select()}
-      onInput=${e => { let x = e.target.value.replace(/[^0-9]/g, ""); if (+x > 16) x = "16"; setV(x); }}
-      onBlur=${commit} onKeyDown=${e => { if (e.key === "Enter") { e.preventDefault(); e.target.blur(); } if (e.key === "Escape") setV(null); }}
-      placeholder="3"/>
-    <div class="hint">${T("Taken from the pool, least-used first, when a user is created (0 = none). Existing users keep what they have.")}</div>
-  </div>`;
-}
-
-function VkPoolEditor() {
-  const P = usePool();
-  const [sort, setSort] = useState("");
-  const [desc, setDesc] = useState(true);
-  const [page, setPage] = useState(0);
-  const rows = vkSorted(P, P.pool, sort, desc);
-  const pages = Math.max(1, Math.ceil(rows.length / VK_PAGE_INLINE));
-  const pg = Math.min(page, pages - 1);
-  const liveLeft = P.pool.filter(e => !e.dead).length;
-  const [addOpen, setAddOpen] = useState(false);
-  return html`<${Fragment}>
-    <div class="seclabel" style="margin-top:18px">${T("Shared VK call link pool")}</div>
-    <p class="hint" style="margin:0 0 10px">${vkPerUser() ? Trich("Links handed out to users *at random* — a new user gets them automatically, and you can give anyone more from the pool in their *Manage* view.")
-      : Trich("Links handed out to users *at random* — from the pool in their *Manage* view. New users get none automatically while the setting below is 0.")}</p>
-    <${VkPerUser}/>
-    <${VkCheckLine} P=${P}/>
-    ${P.pool.length > 1
-      ? html`<${VkSortHead} sort=${sort} desc=${desc} setSort=${setSort} setDesc=${setDesc}
-              left=${html`<${VkPoolTotals} P=${P}/>`}/>`
-      : html`<div class="vkpool-head"><${VkPoolTotals} P=${P}/></div>`}
-    ${P.pool.length ? html`<${VkPoolRows} P=${P} rows=${rows.slice(pg * VK_PAGE_INLINE, (pg + 1) * VK_PAGE_INLINE)}/>`
-      : html`<div class="vkpool-empty">${!P.loaded ? T("Loading…") : (vkPerUser() ? T("The pool is empty — add links and new users will get them automatically.") : T("The pool is empty."))}</div>`}
-    ${/* _vk_user_sync drops a dead pool link from its holders even when nothing is left to replace it with, and a link
-          added later reaches only NEW users (vk_pool_per_user) — the others get it from "Add from pool" in their Manage. */ ""}
-    ${P.pool.length && !liveLeft ? html`<div class="hint vk-warn">${vkPerUser()
-      ? T("No live links left — anyone who held a pool link has lost it. A working link you add goes to new users; give it to the others with Add from pool in their Manage view.")
-      : T("No live links left — anyone who held a pool link has lost it. Once you add a working link, give it to them with Add from pool in their Manage view.")}</div>` : null}
-    ${addOpen ? html`<${VkPasteBox} onAdd=${P.addMany} onClose=${() => setAddOpen(false)}/>` : null}
-    <div class="vkpool-bar">
-      <${VkAddBtn} onClick=${() => setAddOpen(o => !o)}/>
-      <${VkPager} page=${pg} setPage=${setPage} pages=${pages}/>
-      ${P.pool.length > VK_PAGE_INLINE ? html`<button class="btn btn-ghost btn-mini" onClick=${() => openModal(html`<${VkPoolSheet}/>`)}>
-        ${T("View all ({v1})", { v1: String(P.pool.length) })}</button>` : html`<span></span>`}
-    </div>
-  <//>`;
-}
-
-
-/** The mesh-mode choice as the operator reads it. `max` is the server's auto line (MESH_AUTO_FULL_MAX). */
 function meshModeLabel(v, max) {
   return v === "full" ? T("Full mesh") : v === "demand" ? T("On demand")
     : (max ? T("Auto — a full mesh up to {v1} nodes, on demand above", { v1: max }) : T("Auto"));
@@ -639,924 +221,6 @@ export const CF_IP_RANGES = [
   "162.158.0.0/15", "104.16.0.0/13", "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
   "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32",
   "2a06:98c0::/29", "2c0f:f248::/32"];
-let _tls_mode_opts = null;
-export const TLS_MODE_OPTS = () => (_tls_mode_opts || (_tls_mode_opts = [
-  { value: "", label: T("None — plain HTTP (behind a reverse proxy / Cloudflare)") },
-  { value: "letsencrypt", label: T("Let's Encrypt (HTTP-01 — needs port 80 reachable)") },
-  { value: "cloudflare", label: T("Let's Encrypt via Cloudflare DNS (no port 80; needs a token)") },
-  { value: "cf15", label: T("Cloudflare Origin certificate (15y — only valid behind Cloudflare)") },
-  { value: "selfsigned", label: T("Self-signed") },
-  { value: "skip", label: T("Existing certificate files (issued and renewed outside the panel)") }]));
-
-export const tlsModeLabel = (mode) =>
-  ((TLS_MODE_OPTS().find(o => o.value === (mode || "")) || {}).label || "—");
-
-const RENEW_VIEW = { pressedAt: 0, before: 0 };
-
-export function AccessTLSCard({ onChange }) {
-  const acc = (Store.panelSettings || {}).access || {};
-  const p0 = acc.panel || {}, s0 = acc.sub || {}, t0 = acc.tls || {}, k0 = acc.console || {};
-  const declarative = !!((Store.env || {}).declarative);
-  const nixAccess = String((Store.env || {}).nix_access || "");
-  const subsOn = !!((Store.panelSettings || {}).subscriptions || {}).enabled;
-  const localPort = Number(p0.local_port || 0);   // co-located node's loopback port (live, read-only) — 0/absent ⇒ no local node ⇒ hide the field
-  const [pUrl, setPUrl] = useState(normPublicUrl(p0.url || "")); const [pHost, setPHost] = useState(p0.host || "0.0.0.0"); const [pPort, setPPort] = useState(String(p0.port || 443));
-  const [sUrl, setSUrl] = useState(s0.url || ""); const [sHost, setSHost] = useState(s0.host || "0.0.0.0"); const [sPort, setSPort] = useState(String(s0.port || 8444));
-  const [mode, setMode] = useState(t0.mode || ""); const [email, setEmail] = useState(t0.email || "");
-  const [cfTok, setCfTok] = useState(""); const [cfOrig, setCfOrig] = useState("");
-  // paths, not secrets — they round-trip from the server, so the fields keep what was saved
-  const [certPath, setCertPath] = useState(t0.cert_path || ""); const [keyPath, setKeyPath] = useState(t0.key_path || "");
-  const [subCertPath, setSubCertPath] = useState(t0.sub_cert_path || ""); const [subKeyPath, setSubKeyPath] = useState(t0.sub_key_path || "");
-  const [hasCfTok, setHasCfTok] = useState(!!t0.has_cf_token); const [hasCfOrig, setHasCfOrig] = useState(!!t0.has_cf_origin_token);
-  const [cMode, setCMode] = useState(k0.mode || ""); const [cHost, setCHost] = useState("127.0.0.1");
-  const [cPort, setCPort] = useState(String(k0.port || 9443));
-  const [consolePend, setConsolePend] = useState(null);   // a console move awaiting its confirm: {nonce,host,port,scheme,base,expires} — the operator opens the new address and the change commits only there
-  const [consoleIn, setConsoleIn] = useState(0);          // seconds left on that confirm window, from the server's absolute deadline (so a reload continues the SAME countdown)
-  const [ips, setIps] = useState([]); const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false);
-  const [polling, setPolling] = useState(false);
-  const [confirmUrl, setConfirmUrl] = useState("");   // set while an address change is verifying → the operator confirms it by opening the new address in a new tab (we can't auto-navigate safely: an unreachable new address would strand them, and a cross-origin reachability probe is blocked by our own CSP)
-  const [dockerFlip, setDockerFlip] = useState("");   // Docker restart-safe change, step 3: the container is recreating onto the new address. new dial url — shown with a "reconnect" button HELD for a few seconds (see dockerArm) so the operator doesn't open it before the container is back
-  const [dockerArm, setDockerArm] = useState(0);      // seconds until the Docker reconnect button arms — a short hold covering the container restart (opening the new address before it's up just fails)
-  const [dockerRestart, setDockerRestart] = useState(null);   // Docker restart-safe change, step 1 (Save done): {nonce,url_changed,old_url,new_url,port,port_move,armUntil,error} — nodes now dual-connect to new_url; the operator reviews, then Confirm & restart (dry-run + recreate) or Revert (no-op). Nothing has recreated yet.
-  const [drArmIn, setDrArmIn] = useState(0);          // seconds until the "Confirm & restart" button arms — a hold covering one node-sync so nodes LEARN the new address before the recreate (so it can't strand them)
-  const [dockerFlipPort, setDockerFlipPort] = useState(0);   // >0 = the step-3 reconnect card is for a reverse-proxy INTERNAL-port move: show the new port to re-point the proxy at (the public url is unchanged), not a "reconnect at new address" link
-  const [nixRecipe, setNixRecipe] = useState("");    // declarative host: which worked example is open ("proxy" | "direct")
-  const [nixWeb, setNixWeb] = useState("nginx");    // …and which web server that example is written for
-  const [confirmVerified, setConfirmVerified] = useState(true);   // false = the reachability gate FAILED-OPEN (revealed Confirm without proving the new address answers) → surface that so Confirm-appearing isn't mistaken for "reachable"
-  const [rpSwap, setRpSwap] = useState(null);         // unified reverse-proxy swap in progress: {port_changed,url_changed,path_changed,old_url,new_url,old_host,old_port,new_host,new_port,nonce} — panel serves old+new ports/paths and advertises the new url as a node candidate until the operator re-points the proxy and confirms (no timeout). Any combination of port/url/path.
-  const [rpArmIn, setRpArmIn] = useState(0);          // seconds until the rp-swap Confirm button ARMS — a deliberate 60s hold (with a confirm modal) so the operator can't reflexively drop the old address before verifying the proxy actually serves the new one
-  const [staleWarn, setStaleWarn] = useState(false);  // the server's SAVED address settings changed out from under this open form (a rollback / boot reconcile / another tab) WHILE the operator has unsaved edits → warn before they apply a now-stale value
-  // The "you're on a previous panel address" ribbon is GLOBAL (OldAddrRibbon) + server-driven — it shows on every
-  // screen and survives reload, so there's no per-card migration ribbon/state here.
-  const rollbackRef = useRef(null);            // the panel address that was live BEFORE an apply → restore the SAVED url on revert (the server rolls back the bind/cert, but the saved url is still the new one → it'd advertise a dead address to nodes)
-  const didPanelRef = useRef(false);           // whether THIS save applied a panel change / a sub change — the shared /api/access/status keeps the LAST result of each, so a sub-only save must ignore a stale panel "saved" (and vice-versa)
-  const didSubRef = useRef(false);
-  const cancelledRef = useRef(false);          // the operator CANCELLED this change (vs it timing out unconfirmed) → the revert message/modal should say "cancelled", not "check DNS/firewall". Set on the Cancel click, cleared when a fresh apply starts + once the revert is shown.
-  // Baseline of what's currently live — the form is compared to this to decide what changed (and thus what needs
-  // a live apply). Refreshed after a successful save so the button disables until the next edit.
-  const [orig, setOrig] = useState({ pUrl: normPublicUrl(p0.url || ""), pHost: p0.host || "0.0.0.0", pPort: String(p0.port || 443),
-    sUrl: s0.url || "", sHost: s0.host || "0.0.0.0", sPort: String(s0.port || 8444), mode: t0.mode || "", email: t0.email || "",
-    cert_path: t0.cert_path || "", key_path: t0.key_path || "",
-    sub_cert_path: t0.sub_cert_path || "", sub_key_path: t0.sub_key_path || "",
-    cMode: k0.mode || "", cHost: k0.host || "127.0.0.1", cPort: String(k0.port || 9443) });
-  useEffect(() => { api.get("/api/access/ips").then(r => { if (r && r.ok) setIps(r.ips || []); }); }, []);
-  // Recover an in-progress reverse-proxy swap after a page reload (server keeps the old address serving until confirmed).
-  useEffect(() => { api.get("/api/access/status").then(r => { const p = r && r.ok && r.panel;
-    // Recover a swap after reload — and continue the SAME arming countdown (server sends arm_secs remaining from when
-    // the swap was armed), so a reload can't reset the safety hold back to a fresh 60s.
-    if (p && p.state === "rp-swap") setRpSwap({ port_changed: p.port_changed, url_changed: p.url_changed, path_changed: p.path_changed, old_url: p.old_url, new_url: p.new_url, old_host: p.old_host, old_port: p.old_port, new_host: p.new_host, new_port: p.new_port, nonce: p.nonce, armUntil: Date.now() + (p.arm_secs != null ? p.arm_secs : 60) * 1000 });
-    // Recover an in-progress docker restart-safe change after a reload — step 1 (awaiting Confirm/Revert), continuing
-    // the SAME arming countdown the server reports.
-    else if (p && p.state === "docker-restart") setDockerRestart({ nonce: p.nonce, url_changed: p.url_changed, old_url: p.old_url, new_url: p.new_url, port: p.port, port_move: p.port_move, armUntil: Date.now() + (p.arm_secs != null ? p.arm_secs : 20) * 1000, error: p.dryrun_failed ? (p.message || "") : "" });
-    // The new container came up in "awaiting reachability" — THIS page reaching the panel here IS the proof, so commit
-    // (clears the marker + stands the auto-revert timer down). If it can't reach the panel it never gets here → auto-revert.
-    else if (p && p.state === "docker-awaiting" && p.nonce) api.post("/api/access/docker-commit", { nonce: p.nonce }).catch(() => {});
-    const k = r && r.ok && r.console;
-    if (k && k.state === "verifying" && k.nonce)
-      setConsolePend({ nonce: k.nonce, host: k.host, port: k.port, scheme: k.https ? "https" : "http", base: k.base || "", expires: k.expires });
-    }).catch(() => {}); }, []);
-  useEffect(() => {
-    if (!rpSwap) { setRpArmIn(0); return; }
-    const until = rpSwap.armUntil || (Date.now() + 60000);
-    const tick = () => setRpArmIn(Math.max(0, Math.ceil((until - Date.now()) / 1000)));
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [rpSwap]);
-  const consoleUrl = (c) => {
-    if (!c) return "";
-    const raw = String(c.host || "");
-    const h = (raw === "0.0.0.0" || raw === "::" || !raw) ? location.hostname : (raw.includes(":") ? "[" + raw + "]" : raw);
-    return `${c.scheme || "https"}://${h}:${c.port}${c.base || ""}/?__applyconsole=${encodeURIComponent(c.nonce || "")}`;
-  };
-  // The console confirm window, anchored to the server's absolute deadline so a page reload continues the
-  // SAME countdown rather than restarting it. At 0 the panel has already put everything back on its own.
-  useEffect(() => {
-    if (!consolePend) { setConsoleIn(0); return; }
-    const tick = async () => {
-      const left = Math.max(0, Math.ceil(((consolePend.expires || 0) * 1000 - Date.now()) / 1000));
-      setConsoleIn(left);
-      if (left > 0) return;
-      setConsolePend(null);
-      const still = await api.get("/api/access/status").catch(() => null);
-      if (still && still.ok) { resync(); setMsg({ ok: false, t: T("The tunnel wasn't confirmed in time, so the panel is still on its public address.") }); }
-      else setMsg({ ok: true, t: T("Private access is on — this address serves the nodes now. Carry on in the tab you confirmed from.") });
-    };
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [consolePend]);
-  // Docker-flip reconnect hold: tick down to 0, then the reconnect button arms (gives the container time to restart)
-  useEffect(() => {
-    if (dockerArm <= 0) return;
-    const t = setTimeout(() => setDockerArm(dockerArm - 1), 1000);
-    return () => clearTimeout(t);
-  }, [dockerArm]);
-  useEffect(() => {
-    if (!dockerRestart) { setDrArmIn(0); return; }
-    const until = dockerRestart.armUntil || (Date.now() + 20000);
-    const tick = () => setDrArmIn(Math.max(0, Math.ceil((until - Date.now()) / 1000)));
-    tick();
-    const t = setInterval(tick, 1000);
-    return () => clearInterval(t);
-  }, [dockerRestart]);
-  // Pull the CURRENT saved config back into the form (+ baseline) — used after a revert, where the backend rolled
-  // the bind back to the live one, so the form never keeps showing a value the panel rejected.
-  const resync = async () => {
-    const r = await api.get("/api/state").catch(() => null);
-    const ps = ((r || {}).data || {}).panel_settings;
-    if (ps) { Store.panelSettings = ps; bus.emit(); }   // refresh the GLOBAL store too, so a remount/reload can't rehydrate the rejected value the apply rolled back
-    const a = (ps || {}).access || {};
-    const pp = a.panel || {}, ss = a.sub || {}, tt = a.tls || {};
-    setPUrl(normPublicUrl(pp.url || "")); setPHost(pp.host || "0.0.0.0"); setPPort(String(pp.port || 443));
-    setSUrl(ss.url || ""); setSHost(ss.host || "0.0.0.0"); setSPort(String(ss.port || 8444));
-    setMode(tt.mode || ""); setEmail(tt.email || "");
-    setCertPath(tt.cert_path || ""); setKeyPath(tt.key_path || "");
-    setSubCertPath(tt.sub_cert_path || ""); setSubKeyPath(tt.sub_key_path || "");
-    const kk = a.console || {};
-    setCMode(kk.mode || ""); setCHost(kk.host || "127.0.0.1"); setCPort(String(kk.port || 9443));
-    setOrig({ pUrl: normPublicUrl(pp.url || ""), pHost: pp.host || "0.0.0.0", pPort: String(pp.port || 443),
-      sUrl: ss.url || "", sHost: ss.host || "0.0.0.0", sPort: String(ss.port || 8444), mode: tt.mode || "", email: tt.email || "",
-      cert_path: tt.cert_path || "", key_path: tt.key_path || "",
-      sub_cert_path: tt.sub_cert_path || "", sub_key_path: tt.sub_key_path || "",
-      cMode: kk.mode || "", cHost: kk.host || "127.0.0.1", cPort: String(kk.port || 9443) });
-  };
-  useEffect(() => {
-    if (!polling) return; let live = true, timer;
-    const tick = async () => {
-      const r = await api.get("/api/access/status"); if (!live) return;
-      if (r && r.ok) {
-        const p = r.panel || {}, s = r.sub || {};
-        const dp = didPanelRef.current, ds = didSubRef.current;   // react ONLY to a service this save actually changed — the shared status keeps each one's LAST result, so it's stale for the other
-        if (dp && p.state === "verifying" && p.redirect) {
-          setConfirmUrl(p.redirect);   // show the confirm affordance (rendered in the card); the operator opens it to prove the new address is reachable
-          setConfirmVerified(p.verified !== false);   // false = the gate FAILED-OPEN (couldn't reach the new address) → Confirm is unverified, warn
-          let h = p.redirect; try { h = new URL(p.redirect).host; } catch (_) {}
-          setMsg(p.verified === false
-            ? { ok: false, t: T("Couldn't verify {v1} answers yet — it may still be warming up. You can open it to confirm, but if it doesn't load, cancel (nothing is committed until it answers).", { v1: h }) }
-            : { ok: true, t: T("Confirming the new address ({v1}) — open it in a new tab so it can reach this panel. It reverts on its own if it can't be reached.", { v1: h }) });
-        } else {
-          setConfirmUrl("");
-          const parts = [];
-          if (dp && p.state === "reverted")   // pending ended without a confirm: a deliberate Cancel vs a timeout (unreachable/not opened) read differently
-            parts.push(cancelledRef.current
-              ? T("Change cancelled — kept the current address.")
-              : T("The new address wasn't confirmed — kept the current one. Check its DNS / Cloudflare / firewall / port, then try again."));
-          else if (dp && (p.state === "checking" || p.state === "issuing"))   // pre-confirm progress: reachability probe / cert issuance — not an error, not done
-            parts.push(p.state === "issuing" ? (p.message || T("Issuing the certificate…")) : T("Waiting for the new address to start responding…"));
-          else if (dp && p.state === "rp-swap")   // reverse-proxy swap still pending — the notice drives it; just wait for the confirm
-            parts.push(T("Waiting to confirm the reverse-proxy change…"));
-          else if (dp && p.state && p.state !== "idle") parts.push(T("Panel: {v1}", { v1: p.message || p.state }));
-          if (ds && subsOn && s.state && s.state !== "idle") parts.push(T("Subscriptions: {v1}", { v1: s.message || s.state }));
-          const fail = (dp && ["failed", "reverted"].includes(p.state)) || (ds && s.state === "failed");
-          if (parts.length) setMsg({ ok: !fail, t: parts.join(" · ") });
-        }
-        const fail = (dp && ["failed", "reverted"].includes(p.state)) || (ds && s.state === "failed");
-        const done = (!dp || ["saved", "failed", "reverted", "idle"].includes(p.state)) && (!ds || ["saved", "failed", "reverted", "idle"].includes(s.state));
-        if (done) { setPolling(false); setBusy(false); setConfirmUrl(""); setRpSwap(null);   // clear busy too — a non-navigating finish (revert) reloads nothing, so the Save button would otherwise stay stuck on "Saving…"
-          if (fail) {
-            // The server reverted the live bind/cert, but the SAVED url is still the new (unreachable) one — it'd be
-            // advertised to nodes as the panel's address. Roll it back to what was live before, THEN resync the form.
-            const rb = rollbackRef.current; rollbackRef.current = null;
-            if (rb) { try { await api.panelSettings({ access: { panel: { url: rb.url, host: rb.host, port: rb.port } } }); } catch (_) {} }
-            resync();    // the form was left showing the rejected value → pull the rolled-back config back in
-            if (dp && (p.state === "reverted" || p.state === "failed")) {
-              const cancelled = p.state === "reverted" && cancelledRef.current;   // deliberate Cancel → neutral "cancelled", not a warning to troubleshoot
-              openModal(html`<${ConfirmSheet} title=${cancelled ? T("Address change cancelled") : T("Address change not confirmed")} warn=${!cancelled} confirmLabel="OK"
-                body=${cancelled ? T("You cancelled the change — the panel kept the current address.") : ((p.message && p.state === "failed") ? p.message : T("The new address wasn’t confirmed, so the panel kept the current one. Check its DNS / Cloudflare / firewall / port, then try again."))}/>`);
-            }
-            cancelledRef.current = false;   // consumed
-          } else {
-            rollbackRef.current = null;
-            const gs = +(p.grace_secs || 0), nu = p.new_url || "";
-            if (dp && p.state === "saved") {
-              if (gs > 0) {   // a REBIND: this tab may now be on the OLD address — the GLOBAL "previous address" ribbon (top of every screen) guides the operator across + counts down
-                openModal(html`<${ConfirmSheet} title=${T("New address confirmed")} confirmLabel=${T("Got it")}
-                  body=${Trich("The panel is now reached at *{v1}*. If this tab is on the previous address, the ribbon at the top takes you across — it keeps working while nodes move over, then stops. Switch when you’re ready.", { v1: nu || T("the new address") })}/>`);
-              } else {        // url-only / cert-only: same bind → this address keeps working, just verified the new URL
-                openModal(html`<${ConfirmSheet} title=${T("Panel address confirmed")} confirmLabel=${T("Done")}
-                  body=${Trich("Verified — the panel is now reached at *{v1}*.", { v1: nu || T("the new address") })}/>`);
-              }
-            }
-          }
-          return; }
-      }
-      timer = setTimeout(tick, 1400);
-    };
-    tick(); return () => { live = false; clearTimeout(timer); };
-  }, [polling]);
-
-  const presets = new Set(["0.0.0.0", "127.0.0.1", ...ips.map(x => x.ip)]);
-  const ipOpts = (host, withLocal) => [
-    ...(withLocal ? [{ value: "127.0.0.1", label: T("127.0.0.1 — local only") }] : []),
-    ...ips.map(x => ({ value: x.ip, label: `${x.ip} — ${x.iface}` })),
-    { value: "0.0.0.0", label: T("0.0.0.0 — any IP") },
-    { value: "__custom", label: T("Custom IP…") }];
-  const cfMode = (mode === "cloudflare" || mode === "cf15");
-  const behindProxy = (mode === "" || mode === "skip");   // plain HTTP → a reverse proxy fronts panel + sub; their listen host:port is internal (nginx upstream), not a public address
-  const _hostPortN = (url, rawPort, dflt) => {
-    const stored = parseInt(rawPort) || dflt;
-    const t = (url || "").trim();
-    const n = (behindProxy || !t) ? stored : (parseInt(urlPortOf(t), 10) || (/^http:\/\//i.test(t) ? 80 : 443));
-    return Math.max(1, Math.min(65535, n));
-  };
-  const _pPortN = () => _hostPortN(pUrl, pPort, 443);
-  const _sPortN = () => _hostPortN(sUrl, sPort, 8444);
-  // Cloudflare only proxies a fixed set of HTTPS ports, and the port that must be in that set is the one CLIENTS
-  // reach — the derived host port, not the raw field. cf15 puts this into `blocked`, so it gates, not hints.
-  const pBad = cfMode && !CF_HTTPS_PORTS.includes(_pPortN());
-  const sBad = subsOn && cfMode && !CF_HTTPS_PORTS.includes(_sPortN());
-  // A port outside 1–65535 is invalid on ANY mode. Block it here — otherwise the port silently clamps to 65535 on
-  // save while the URL keeps the out-of-range :port, a url/bind desync the change then fails on. (Server rejects too.)
-  const _portRangeBad = p => { const s = String(p == null ? "" : p).trim(); return !!s && (!/^\d+$/.test(s) || +s < 1 || +s > 65535); };
-  // Behind a proxy the field is authoritative, so range-check what was typed. In direct mode the port comes from
-  // the url, so check the url's port text — an out-of-range :99999 must not clamp silently to 65535 on save.
-  const pPortRangeBad = behindProxy ? _portRangeBad(pPort) : _portRangeBad(urlPortOf(pUrl));
-  const sPortRangeBad = subsOn && (behindProxy ? _portRangeBad(sPort) : _portRangeBad(urlPortOf(sUrl)));
-  const hard = mode === "cf15";                                   // cf15 origin certs ONLY work behind CF → block
-  // Direct TLS (not behind a proxy) → this service terminates its own TLS and is reached DIRECTLY, so a loopback
-  // listen IP isn't publicly reachable (Cloudflare/clients can't hit 127.0.0.1) → 521. Only valid behind a proxy.
-  const _isLoopback = (h) => /^(127\.\d|::1|localhost)/i.test((h || "").trim());
-  const sshTunnelCmd = (port) => `ssh -L ${port}:127.0.0.1:${port} ssh_user@server_ip`;
-  const panelHereUrl = () => {
-    const u = String((Store.panelPublicUrl || "")).trim().replace(/\/+$/, "");
-    if (u) return u;
-    return (location.origin + location.pathname).replace(/\/+$/, "") || location.origin;
-  };
-  const nixConsoleSample = () => [
-    "services.swg-panel = {",   // i18n-keys: generated Nix — file text, copied verbatim
-    "  # …your existing options…",   // i18n-keys: generated Nix — file text, copied verbatim
-    "  consolePort = 8445;",   // i18n-keys: generated Nix — file text, copied verbatim
-    "};"].join("\n");
-
-  const cWired = acc.console_wired || null;
-  const cDockerUnwired = !!acc.console_docker_unwired;
-  const _cReach = cWired ? cWired.host : cHost;
-  const _cPortN = () => (cWired ? cWired.port : (parseInt(cPort) || 0)) || 9443;
-  const _cLoopback = _isLoopback(_cReach);                     // a loopback console is served plain HTTP (no eavesdropper on loopback) and is reachable only through an SSH tunnel
-  const cPortBad = !cWired && cMode === "own" && (_portRangeBad(cPort) || !(parseInt(cPort) || 0));   // only gates Save in the mode that binds it — "Same address" leaves the field inert
-  const hasPanelCert = !behindProxy;                           // the panel terminates its own TLS → a non-loopback console inherits that certificate; behind a proxy it would be plain HTTP on a public port
-  const pLoopbackDirect = !behindProxy && _isLoopback(pHost);
-  const sLoopbackDirect = subsOn && !behindProxy && _isLoopback(sHost);
-  const setModeLinked = m => {
-    const toDirect = !(m === "" || m === "skip"), wasProxy = behindProxy;
-    setMode(m);
-    if (toDirect && wasProxy) { setPUrl(withUrlPort(pUrl, pPort)); if (subsOn) setSUrl(withUrlPort(sUrl, sPort)); }
-  };
-  const wasBehindProxy = (orig.mode === "" || orig.mode === "skip");
-  const modeFlip = behindProxy !== wasBehindProxy;                      // the Type change crosses the reverse-proxy ↔ direct-TLS line (the panel's own socket flips HTTP↔HTTPS)
-  const flipToTls = modeFlip && !behindProxy;                           // reverse proxy → direct TLS (panel starts terminating its own TLS)
-  const blocked = (hard && (pBad || sBad)) || pLoopbackDirect || sLoopbackDirect || pPortRangeBad || sPortRangeBad || cPortBad || (cMode === "own" && cDockerUnwired);
-  // ONE-AT-A-TIME cooldown: while a previous address change is verifying or gracing out, Save is locked — the
-  // only allowed action is Cancel. Server-enforced too (a stray apply gets a 'cooldown' 409); this just mirrors it.
-  const cooldown = Store.accessCooldown || { secs: 0, reason: "" };
-  const cooldownActive = (cooldown.secs || 0) > 0;                          // Save is locked on EVERY tab during a change
-  const showCooldownNotice = cooldownActive && !confirmUrl && !rpSwap && !dockerRestart && !consolePend && !polling && !busy;   // only surface the notice where THIS tab isn't already driving the change — the driver shows its own progress ("Waiting…") then the confirm area, so confirm always wins the race over the generic cooldown
-
-  const ipField = (host, setHost, withLocal, bad) => {
-    const val = presets.has(host) ? host : "__custom";
-    return html`<div class="field"><label>${T("Listen IP")}${bad ? html` <span class="ciw" title=${T("Loopback isn't reachable with direct TLS")}><${Ic} i="warn"/></span>` : null}</label>
-      <div style=${bad ? "border-radius:8px;box-shadow:0 0 0 3px color-mix(in srgb,var(--dangling) 40%,transparent)" : ""}><${Dropdown} value=${val} onChange=${v => setHost(v === "__custom" ? (presets.has(host) ? "" : host) : v)}
-        options=${ipOpts(host, withLocal)}/></div>
-      ${val === "__custom" ? html`<input class=${"mt8" + (bad ? " bad" : "")} type="text" placeholder="e.g. 203.0.113.5" value=${host} onInput=${e => setHost(e.target.value)}/>` : null}</div>`;
-  };
-  const portField = (port, setPort, bad, badTitle) => html`<div class="field"><label>${T("Internal port")}${bad ? html` <span class="ciw" title=${badTitle || T("Cloudflare can't reach this port")}><${Ic} i="warn"/></span>` : null}</label>
-    <input class=${bad ? "bad" : ""} type="text" value=${port} onInput=${e => setPort(e.target.value)}/></div>`;
-  const loopNote = (which) => html`<div class="notice err"><${Ic} i="warn"/><span>
-    ${Trich("*Loopback won't work with direct TLS.* The {which} terminates its own TLS and is reached *directly* — Cloudflare / clients connect straight to this box — so a `127.0.0.1` Listen IP isn't reachable from outside and fails publicly (Cloudflare shows *521*). Set the Listen IP to `0.0.0.0` (a public interface). Loopback is only correct *behind a reverse proxy* (TLS mode “None”). Save is disabled until this is fixed.", { which })}</span></div>`;
-  // Reverse-proxy ↔ direct-TLS is a COORDINATED CUTOVER: the panel and the proxy can't both hold the public port,
-  // so one has to make way for the other. Spell out exactly what the operator must do around the Save.
-  const flipNote = () => html`<div class="notice warn" style="margin:0 0 14px"><${Ic} i="warn"/><div style="min-width:0">
-    ${flipToTls
-      ? Trich("*Switching to direct TLS — a coordinated cutover.* The panel will terminate its *own* TLS on *{addr}* — with direct TLS the port comes from the *Public URL* (there is no separate internal port), so put the port clients reach in the URL and set the Listen IP to a *public* address (`0.0.0.0`). Your reverse proxy currently owns that port — *free it first* (stop nginx/Caddy there); the panel and the proxy can't both hold it. On Save the panel binds the new HTTPS address *alongside* the current one and you confirm from it — nodes then reach the panel directly. Nothing is dropped until you confirm.", { addr: (pHost.trim() || "0.0.0.0") + ":" + _pPortN() })
-      : Trich("*Switching to a reverse proxy — a coordinated cutover.* The panel will serve *plain HTTP* on *{addr}* for your proxy to front. Behind a proxy the listen address is its own setting — an *Internal port* field appears below; set it and the Listen IP to `127.0.0.1`, and leave the Public URL as the address your proxy serves. Stand up nginx/Caddy to terminate TLS and `proxy_pass` to that address (sample below), then confirm — the panel keeps serving its current direct-TLS address until you do.", { addr: (pHost.trim() || "127.0.0.1") + ":" + _pPortN() })}
-    </div></div>`;
-  const cfNote = html`<div class=${"notice " + (hard ? "err" : "warn")}><${Ic} i="warn"/><span>
-    ${T("Cloudflare's proxy only reaches origin HTTPS on {ports}.", { ports: CF_HTTPS_PORTS.join(", ") })} ${hard ? T("A cf15 origin certificate is only valid behind Cloudflare, so this port won't work — pick one of those.") : T("If this panel is behind Cloudflare, this port won't be reachable.")}<br/>
-    ${T("If it IS behind Cloudflare, restrict this port to Cloudflare's IP ranges:")}<br/>
-    <button class="btn btn-mini mt8" onClick=${() => copy(CF_IP_RANGES.join("\n"), T("Cloudflare IP ranges"))}><${Ic} i="copy"/> ${T("Copy Cloudflare IP ranges")}</button></span></div>`;
-
-  const _canonUrl = raw => normPublicUrl(raw);   // URLs always keep their port (normPublicUrl only hides the scheme-default 443/80)
-  const panelBindChanged = () => (pHost.trim() || "0.0.0.0") !== (orig.pHost || "0.0.0.0") || _pPortN() !== _origPPortN();
-  const panelUrlChanged  = () => _canonUrl(pUrl) !== _canonUrl(orig.pUrl);   // the public address everyone dials — a change is verified (confirm) before it takes over
-  const subBindChanged   = () => (sHost.trim() || "0.0.0.0") !== (orig.sHost || "0.0.0.0") || _sPortN() !== _origSPortN();
-  const subUrlChanged    = () => _canonUrl(sUrl) !== _canonUrl(orig.sUrl);   // the sub public URL's path is swg-sub's mount base → a change must restart it
-  const certChanged      = () => mode !== (orig.mode || "") || email.trim() !== (orig.email || "") || !!cfTok || !!cfOrig
-                                 || certPath.trim() !== (orig.cert_path || "") || keyPath.trim() !== (orig.key_path || "")
-                                 || subCertPath.trim() !== (orig.sub_cert_path || "") || subKeyPath.trim() !== (orig.sub_key_path || "");
-  const urlChanged       = () => pUrl.trim() !== (orig.pUrl || "") || sUrl.trim() !== (orig.sUrl || "");
-  // The console preset. Only the fields that matter for the mode it is IN: with "Same address" the host and
-  // port are inert leftovers in the form, and comparing them would report a change that applies to nothing.
-  const consoleChanged   = () => (cMode || "") !== (orig.cMode || "") ||
-                                 (!cWired && cMode === "own" && (parseInt(cPort) || 0) !== (parseInt(orig.cPort) || 0));
-  const dirty            = () => panelBindChanged() || subBindChanged() || certChanged() || urlChanged() || consoleChanged();
-  // Pull the CURRENT saved settings from the store (kept fresh by the /api/state poll) into the form + baseline —
-  // like resync() but with no fetch. Used to silently correct a form whose baseline drifted behind the server.
-  const _storeAccess = () => (((Store.panelSettings || {}).access) || {});
-  const _serverBaseline = () => { const a = _storeAccess(), pp = a.panel || {}, ss = a.sub || {}, tt = a.tls || {}, kk = a.console || {};
-    return { pUrl: normPublicUrl(pp.url || ""), pHost: pp.host || "0.0.0.0", pPort: String(pp.port || 443),
-      sUrl: ss.url || "", sHost: ss.host || "0.0.0.0", sPort: String(ss.port || 8444), mode: tt.mode || "", email: tt.email || "",
-      cMode: kk.mode || "", cHost: kk.host || "127.0.0.1", cPort: String(kk.port || 9443) }; };
-  const resyncFromStore = () => { const b = _serverBaseline();
-    setPUrl(b.pUrl); setPHost(b.pHost); setPPort(b.pPort); setSUrl(b.sUrl); setSHost(b.sHost); setSPort(b.sPort); setMode(b.mode); setEmail(b.email);
-    setCMode(b.cMode); setCHost(b.cHost); setCPort(b.cPort); setOrig(b); };
-  useEffect(() => {
-    if (busy || polling || rpSwap || dockerRestart || confirmUrl) return;   // an in-flight change owns the form
-    if (!((Store.panelSettings || {}).access || {}).panel) return;    // store not populated yet → never resync to blanks
-    if (JSON.stringify(_serverBaseline()) === JSON.stringify(orig)) { if (staleWarn) setStaleWarn(false); return; }
-    if (!dirty()) { resyncFromStore(); if (staleWarn) setStaleWarn(false); }
-    else if (!staleWarn) setStaleWarn(true);
-  });
-  const _overlap = (a, b) => { a = (a || "").trim() || "0.0.0.0"; b = (b || "").trim() || "0.0.0.0"; return a === b || a === "0.0.0.0" || b === "0.0.0.0"; };
-  // Compare derived-against-derived: in direct mode `orig.pPort` is the stored value while the live figure comes
-  // from the url, so a raw stored number would mis-fire this guard in both directions.
-  const _origPPortN = () => _hostPortN(orig.pUrl, orig.pPort, 443);
-  const _origSPortN = () => _hostPortN(orig.sUrl, orig.sPort, 8444);
-  const subWantsPanelLive = () => subsOn && subBindChanged() && _sPortN() === _origPPortN() && _overlap(sHost, orig.pHost);   // sub's target is the panel's current port
-  const panelWantsSubLive = () => subsOn && panelBindChanged() && _pPortN() === _origSPortN() && _overlap(pHost, orig.sHost); // panel's target is the sub's current port
-
-  // Wait for an in-flight subscription apply to reach a terminal state — so the panel apply below never binds
-  // a port while the sub is still vacating it (the race that surfaced as "Address already in use").
-  const _awaitSub = async () => {
-    for (let i = 0; i < 60; i++) {                 // ~90s cap (a cert issuance can be slow); most settle in a few s
-      const r = await api.get("/api/access/status").catch(() => null);
-      const s = (r && r.sub) || {};
-      if (["saved", "failed", "reverted", "idle"].includes(s.state)) return s;
-      await new Promise(res => setTimeout(res, 1500));
-    }
-    return { state: "unknown", message: T("The subscription update didn't finish in time.") };
-  };
-
-  const saveAndApply = async () => {
-    requestAnimationFrame(() => {
-      const c = document.querySelector(".acctls"); if (!c) return;
-      let off = 0; document.querySelectorAll(".appbar, .addr-old-ribbon").forEach(el => { const cs = getComputedStyle(el); if (cs.position === "sticky" || cs.position === "fixed") off += el.getBoundingClientRect().height; });
-      window.scrollTo({ top: Math.max(0, c.getBoundingClientRect().top + window.scrollY - off - 12), behavior: "smooth" });
-    });
-    if (blocked) return setMsg({ ok: false, t: T("Fix the highlighted port first.") });
-    if (!dirty()) return;
-    if (consoleChanged()) {
-      if (panelBindChanged() || panelUrlChanged() || certChanged() || subBindChanged() || subUrlChanged())
-        return setMsg({ ok: false, t: T("Change private access on its own — save the address and certificate changes first, then turn the tunnel on.") });
-      return applyConsole();
-    }
-    // Trading ports between panel and sub can't be done in one shot on a single host — one must free its port
-    // before the other can take it. Guide the operator through two saves instead of attempting a doomed order.
-    if (subWantsPanelLive() || panelWantsSubLive()) {
-      if (subWantsPanelLive() && panelWantsSubLive())
-        return setMsg({ ok: false, t: T("The panel and subscription are swapping ports — a single host can't swap two ports at once. First move one of them to a spare free port and Save, then set both to their final ports and Save again.") });
-      const first = subWantsPanelLive() ? T("the panel") : T("the subscription server");
-      const second = subWantsPanelLive() ? T("the subscription server") : T("the panel");
-      return setMsg({ ok: false, t: `The panel and subscription are trading ports. Do it in two saves so one frees the port before the other takes it: first move ${first} and Save, then set ${second}'s port and Save again.` });
-    }
-    const needSub = subsOn && (subBindChanged() || certChanged() || subUrlChanged());   // sub-URL change → new mount base → swg-sub must re-read it
-    const pBindChg = panelBindChanged(), pUrlChg = panelUrlChanged();   // capture BEFORE setOrig resets them → so the post-save proxy guidance knows what changed
-    const needPanel = pBindChg || certChanged() || pUrlChg;
-    didPanelRef.current = needPanel; didSubRef.current = needSub;   // so the status poll reacts only to what THIS save changes (the shared status is stale for the other)
-    cancelledRef.current = false;   // fresh apply — a later revert is a timeout unless the operator clicks Cancel
-    setBusy(true); setMsg({ ok: true, t: T("Saving your changes…") });
-    const npUrl = normPublicUrl(pUrl), nsUrl = normPublicUrl(sUrl);
-    setPUrl(npUrl); setSUrl(nsUrl);                                    // reflect it back in the fields
-    const r = await api.panelSettings({ access: {
-      panel: { url: npUrl, host: pHost.trim() || "0.0.0.0", port: _pPortN() },
-      sub: { url: nsUrl, host: sHost.trim() || "0.0.0.0", port: _sPortN() },
-      tls: { mode, email: email.trim(), cf_token: cfTok, cf_origin_token: cfOrig,
-             cert_path: certPath.trim(), key_path: keyPath.trim(),
-             sub_cert_path: subCertPath.trim(), sub_key_path: subKeyPath.trim() } } });
-    if (!r || r.ok === false) { setBusy(false); return setMsg({ ok: false, t: (r && (srvText(r) || (r.errors || []).join("; "))) || T("Save failed.") }); }
-    const rtls = ((r.data || {}).access || {}).tls || {};        // redacted echo → refresh the "(set)" markers
-    setHasCfTok(!!rtls.has_cf_token); setHasCfOrig(!!rtls.has_cf_origin_token); setCfTok(""); setCfOrig("");
-    // remember the address that was live before this apply — if the new one doesn't confirm, we re-save this so the
-    // panel's canonical url (advertised to nodes) rolls back with the bind/cert the server already reverts.
-    if (needPanel) rollbackRef.current = { url: orig.pUrl, host: orig.pHost || "0.0.0.0", port: +orig.pPort || 443 };
-    setConfirmUrl(""); setDockerFlip(""); setDockerArm(0); setDockerFlipPort(0);
-    setOrig({ pUrl: npUrl, pHost: pHost.trim() || "0.0.0.0", pPort: String(_pPortN()),
-      sUrl: nsUrl, sHost: sHost.trim() || "0.0.0.0", sPort: String(_sPortN()), mode, email: email.trim(),
-      cert_path: certPath.trim(), key_path: keyPath.trim(),
-      sub_cert_path: subCertPath.trim(), sub_key_path: subKeyPath.trim() });
-    if (needSub || (Store.subCert || {}).needs_issue) {
-      setMsg({ ok: true, t: T("Updating the subscription server…") });
-      await api.post("/api/access/apply-sub", {});
-      const ss = await _awaitSub();               // let it settle before the panel apply — no bind race
-      if (ss.state === "failed") {
-        setBusy(false);
-        try {
-          await api.panelSettings({ access: {
-            panel: { url: orig.pUrl, host: orig.pHost || "0.0.0.0", port: +orig.pPort || 443 },
-            sub: { url: orig.sUrl, host: orig.sHost || "0.0.0.0", port: +orig.sPort || 8444 } } });
-        } catch (_) {}
-        await resync();
-        return setMsg({ ok: false, t: T("{v1} No panel change was applied — settings rolled back.", { v1: ss.message || T("The subscription server couldn't be updated.") }) });
-      }
-    }
-    // then the panel address/cert (dual-listen + confirm — the operator confirms by opening the new address)
-    if (needPanel) {
-      const rp = await api.post("/api/access/apply", {});
-      if (rp && rp.ok === false) { setBusy(false); await resync(); return setMsg({ ok: false, t: srvText(rp) || T("Couldn't apply the panel address.") }); }
-      if (rp && rp.docker_restart) {   // Docker restart-safe change, step 1: nodes now dual-connect to the new address; the operator reviews, then Confirm & restart (dry-run + recreate) or Revert. NOTHING is recreated yet — no dual-listen is possible in a single container, so the recreate waits until Confirm.
-        const d = rp.docker_restart; setBusy(false);
-        setDockerRestart({ nonce: d.nonce, url_changed: d.url_changed, old_url: d.old_url, new_url: d.new_url, port: d.port, port_move: d.port_move, armUntil: Date.now() + (d.arm_secs != null ? d.arm_secs : 20) * 1000, error: "" });
-        return setMsg({ ok: true, t: d.port_move ? T("Saved — review, then Confirm & restart below (you'll re-point your reverse proxy to the new port).") : T("Saved — the nodes are learning the new address. Review, then Confirm & restart below (or Revert).") });
-      }
-      if (rp && rp.rp_swap) {   // unified reverse-proxy swap (port and/or url and/or path) → both old+new serve; operator re-points the proxy then confirms below
-        const s = { ...rp.rp_swap, armUntil: Date.now() + 60000 }; setRpSwap(s); setBusy(false);   // fresh swap → full 60s arming hold
-        const bits = [];
-        if (s.port_changed) bits.push(T("both ports"));
-        if (s.url_changed) bits.push(T("the old and new address"));
-        return setMsg({ ok: true, t: T("Saved — the panel now serves {v1}. Update your reverse proxy, then confirm below.", { v1: bits.join(" + ") || T("the change") }) });
-      }
-      if (rp && !rp.applied) {    // a live bind/cert change is in progress → the status poll surfaces a Confirm link on the first tick
-        setMsg({ ok: true, t: T("Preparing the new panel address…") });
-        setPolling(true); return;
-      }
-    }
-    if (needSub) setPolling(true);   // no panel redirect — just watch the sub restart finish
-    setBusy(false);
-    setMsg({ ok: true, t: needSub ? T("Saved & applying — the subscription server is restarting.") : (needPanel ? (behindProxy ? T("Saved — the reverse proxy serves this URL; nothing to restart.") : T("Saved & applied.")) : T("Saved.")) });
-  };
-
-  // Report state up to the settings footer (which owns the Save button + status line, like every other section).
-  // Runs after each render; the parent only re-renders when a DISPLAYED bit actually changes (see onAccess).
-  useEffect(() => { if (onChange) onChange({ dirty: dirty() && !blocked && !cooldownActive && !declarative, busy: busy || polling, msg, run: saveAndApply }); });
-
-  const applyConsole = async () => {
-    setBusy(true); setMsg({ ok: true, t: T("Setting up private access…") });
-    const r = await api.post("/api/access/console-apply", {
-      mode: cMode, host: cHost.trim() || "127.0.0.1", port: parseInt(cPort) || 0 }).catch(() => null);
-    setBusy(false);
-    if (!r) { await resync(); return setMsg({ ok: false, t: T("The panel didn't answer. It may be restarting, or this tab may be on an address that no longer serves it — reload the page to see where things stand.") }); }
-    if (r.ok === false) { await resync(); return setMsg({ ok: false, t: srvText(r) || T("Couldn't change private access.") }); }
-    if (r.applied) {   // back to the panel's own address — nothing to confirm, it can only ever restore access
-      await resync();
-      return setMsg({ ok: true, t: r.panel_url
-        ? T("The console is served at {v1} again, and the panel's own address answers everything once more.", { v1: r.panel_url })
-        : T("Private access is off — the panel is on its public address again.") });
-    }
-    setConsolePend({ nonce: r.nonce, host: r.host, port: r.port, scheme: r.scheme, base: r.base || "", expires: r.expires });
-    setMsg({ ok: true, t: T("Nothing has changed yet — open the tunnel and confirm you can reach the panel through it.") });
-  };
-  // Back out before the confirm. Everything the apply did was additive (a second listener; the panel's own
-  // address never stopped serving the console), so this is instant and cannot strand anyone.
-  const cancelConsole = async () => {
-    setBusy(true);
-    try {
-      const r = await api.post("/api/access/console-cancel", {});
-      if (!r || r.ok === false) { toast(srvText(r) || T("Couldn't cancel the change."), "err"); setBusy(false); return; }
-      setConsolePend(null); await resync(); setBusy(false);
-      setMsg({ ok: true, t: T("Cancelled — the panel stays where it is.") });
-      toast(T("Cancelled — the panel stays where it is."), "ok");
-    } catch (_) { toast(T("Couldn't cancel the change."), "err"); setBusy(false); }
-  };
-  // Abort a change that's still VERIFYING (not yet confirmed) — the server drops the un-confirmed listener /
-  // restores the cert and rolls the saved url back. The only other option during verifying is to confirm it.
-  const cancelChange = async () => {
-    cancelledRef.current = true;   // so the reverted-state message/modal reads "cancelled", not the "check DNS/firewall" troubleshooting copy
-    try {
-      const r = await api.post("/api/access/cancel", {});
-      if (!r || r.ok === false) { cancelledRef.current = false; toast(srvText(r) || T("Couldn't cancel the change."), "err"); }   // cancel didn't take → a later timeout-revert should read as a failure, not "cancelled"
-      else toast(T("Change cancelled — kept the current address."), "ok");
-    } catch (_) { cancelledRef.current = false; toast(T("Couldn't cancel the change."), "err"); }
-    // the polling loop sees the reverted state and clears the confirm affordance + resyncs the form
-  };
-  const confirmRpSwap = () => {
-    if (!rpSwap) return;
-    if (rpSwap.url_changed) {
-      const base = String(rpSwap.new_url || "").replace(/\/+$/, "");
-      if (!base || !rpSwap.nonce) return;
-      window.open(base + "/?__applyurl=" + encodeURIComponent(rpSwap.nonce), "_blank", "noopener");
-      setPolling(true);
-      setMsg({ ok: true, t: T("Opened the new address to confirm your proxy routes it here. If it loads there, the switch completes and nodes move over.") });
-      return;
-    }
-    // pure internal-port change → the confirm proves the proxy is on the new port (it travels through the proxy);
-    // the server drops the old port only if this request arrived on the new listener, else it refuses (no lockout).
-    (async () => {
-      setBusy(true);
-      try {
-        const r = await api.post("/api/access/confirm-proxy", {});
-        if (!r || r.ok === false) {
-          const em = srvText(r) || T("Couldn't confirm.");
-          setBusy(false); toast(em, "err");
-          if (r && r.code === "proxy_not_switched") setMsg({ ok: false, t: em });   // prominent: fix the proxy then retry — the swap stays pending, nothing was dropped
-          return;
-        }
-        setRpSwap(null); await resync(); setBusy(false);
-        setMsg({ ok: true, t: T("Done — the panel is now on the new port only.") });
-        toast(T("Old port dropped — panel is on the new port."), "ok");
-      } catch (_) { toast(T("Couldn't confirm."), "err"); setBusy(false); }
-    })();
-  };
-  const confirmRpSwapGuarded = () => {
-    if (!rpSwap) return;
-    const bits = [];
-    if (rpSwap.port_changed) bits.push(html`<li>${Trich("The old internal port *{old}* *stops serving* — your proxy must already forward to *{new}*.", { old: rpSwap.old_port, new: (rpSwap.new_host || "127.0.0.1") + ":" + rpSwap.new_port })}</li>`);
-    if (rpSwap.url_changed) bits.push(html`<li>${Trich("I open *{url}* in a new tab — it's adopted *only if it loads there* and reaches this panel. Nodes then move to it.", { url: rpSwap.new_url })}</li>`);
-    openModal(html`<${ConfirmSheet} title=${T("Finish the reverse-proxy switch?")} warn=${true}
-      confirmLabel=${rpSwap.url_changed ? T("Proceed — open the new address") : T("Proceed — drop the old port")} cancelLabel=${T("Not yet")}
-      body=${html`<div>${T("On Proceed:")}</div><ul style="margin:6px 0 10px;padding-left:18px">${bits}</ul>
-        <div style="color:var(--dangling)">${Trich("*⚠️ You can lose access to the panel.* If your web server (nginx / Caddy / Traefik / …) isn't already routing the new address to this panel — wrong upstream port, missing `server_name`, or missing `location` — the old address stops and the new one won't answer.")}</div>
-        <div style="margin-top:8px">${Trich("Before proceeding, confirm *{addr}* actually opens the panel. If anything's off, cancel and fix your proxy first — *nothing has changed yet*.", { addr: rpSwap.url_changed ? rpSwap.new_url : ((rpSwap.new_host || "127.0.0.1") + ":" + rpSwap.new_port) })}</div>`}
-      onConfirm=${() => confirmRpSwap()}/>`);
-  };
-  // ...or back out: tear down whatever the swap added (new port / new path / new-url candidate); the old address
-  // never stopped serving, so nodes stay put.
-  const revertRpSwap = async () => {
-    setBusy(true);
-    try {
-      const r = await api.post("/api/access/cancel", {});
-      if (!r || r.ok === false) { toast(srvText(r) || T("Couldn't revert."), "err"); setBusy(false); return; }
-      setRpSwap(null); await resync(); setBusy(false);
-      setMsg({ ok: true, t: T("Reverted — the panel stays on the current address.") });
-      toast(T("Reverted — kept the current address."), "ok");
-    } catch (_) { toast(T("Couldn't revert."), "err"); setBusy(false); }
-  };
-  const confirmDockerRestart = async () => {
-    if (!dockerRestart) return;
-    setBusy(true); setMsg({ ok: true, t: T("Checking the new address (dry-run)…") });
-    try {
-      const r = await api.post("/api/access/docker-confirm", { nonce: dockerRestart.nonce }, 240000);
-      if (r && r.docker_recreate) {   // dry-run passed → the container is recreating onto the new address; show the reconnect hold
-        setDockerRestart(null); setDockerFlip(r.new_url || dockerRestart.new_url || ""); setDockerFlipPort(r.port_move ? (r.port || dockerRestart.port || 0) : 0); setDockerArm(20); setBusy(false);
-        return setMsg({ ok: true, t: r.message || T("Restarting the panel container. Reconnect at {v1} once it's back.", { v1: r.new_url || dockerRestart.new_url }) });
-      }
-      setBusy(false);
-      // EXPIRED while the dry-run ran: the server already rolled the change back, so there is nothing left to confirm or
-      // revert — the card goes (its buttons would only be refused) and the page says what happened.
-      if (r && r.code === "expired") { setDockerRestart(null); return setMsg({ ok: false, t: srvText(r) }); }
-      setDockerRestart({ ...dockerRestart, error: srvText(r) || T("The panel couldn't verify the new address.") });
-      return setMsg(null);
-    } catch (_) { setBusy(false); setMsg({ ok: false, t: T("Couldn't run the dry-run.") }); }
-  };
-  // Revert step 1 before any recreate: drop the candidate the nodes were dual-connecting to and roll settings back.
-  // Everything step 1 did was additive, so this is an instant, safe no-op for the live panel.
-  const revertDockerRestart = async () => {
-    setBusy(true);
-    try {
-      const r = await api.post("/api/access/docker-revert", {});
-      if (!r || r.ok === false) { toast(srvText(r) || T("Couldn't revert."), "err"); setBusy(false); return; }
-      setDockerRestart(null); await resync(); setBusy(false);
-      setMsg({ ok: true, t: T("Reverted — the panel stays on the current address.") });
-      toast(T("Reverted — kept the current address."), "ok");
-    } catch (_) { toast(T("Couldn't revert."), "err"); setBusy(false); }
-  };
-  const _nixDom = (u => { try { return new URL(/^https?:\/\//i.test(u) ? u : "https://" + u).hostname; } catch (_) { return ""; } })(p0.url || "");
-  const _nixSubUrl = subBaseUrl();
-  const _nixSubHost = (u => { try { return new URL(/^https?:\/\//i.test(u) ? u : "https://" + u).hostname; } catch (_) { return ""; } })(_nixSubUrl);
-  const _nixSubBase = (u => { try { return new URL(/^https?:\/\//i.test(u) ? u : "https://" + u).pathname; } catch (_) { return ""; } })(_nixSubUrl);
-  const subSuggested = !_nixSubHost && subsOn && !!_nixDom;
-  const subVhostDom = _nixSubHost || (subSuggested ? "sub." + _nixDom : "");
-  const nixProxy = () => nixProxyBlock(nixWeb, [
-    { domain: _nixDom, base: p0.base, host: p0.host, port: p0.port || 8443 },
-    ...(subVhostDom ? [{ domain: subVhostDom, base: _nixSubBase, host: s0.host, port: s0.port || 8444,
-                         suggest: subSuggested }] : [])]);
-  const nixDirect = () => nixDirectTlsBlock(_nixDom, p0.port || 8443, p0.base);
-
-  if (declarative) return html`<div class="card acctls">
-    <div class="notice" style="margin:0 0 14px;border-color:var(--accent);background:var(--accent-dim, rgba(31,200,214,.08))"><${Ic} i="info"/><div style="min-width:0">
-      ${Trich("*This panel's address is managed declaratively.* Its URL, listen address, mount path and certificate come from the configuration that built this machine, so they are shown here rather than edited here — change them there and rebuild. Everything the panel is *for* is unaffected: peers, interfaces, routing and subscriptions all work exactly as they do anywhere else.")}
-    </div></div>
-    ${nixAccess ? html`<div class="seclabel" style="margin-top:0">${T("Where this panel's address is set")}</div>
-    <p class="hint" style="margin:0 0 12px">${T("These options carry what this panel is running right now — where it listens, the hostname it advertises, the path it is mounted at. Edit them in your configuration, rebuild, and this screen follows.")}</p>
-    <pre class="mono nixblock">${nixAccess}</pre>
-    <button class="btn btn-mini" onClick=${() => copy(nixAccess, T("the panel's address options"))}><${Ic} i="copy"/>${T("Copy")}</button>
-
-    ${/* The number an operator writing a vhost actually needs, and the one thing this screen used to make
-          them derive. Kept as plain rows rather than folded into the examples below: it is true whichever
-          web server they run, and it stays true when they run none. */""}
-    <div class="seclabel">${T("Where a TLS terminator sends traffic")}</div>
-    <div class="subaddr wide">
-      <div class="subaddr-row"><span class="subaddr-k">${T("Panel")}</span><span class="subaddr-v mono">${nixUpstream(p0.host)}:${p0.port || 8443}${(p0.base && p0.base !== "/") ? p0.base : ""}</span></div>
-      <div class="subaddr-row"><span class="subaddr-k">${T("Subscription page")}</span><span class="subaddr-v mono">${nixUpstream(s0.host)}:${s0.port || 8444}${(s0.base && s0.base !== "/") ? s0.base : ""}${subsOn ? "" : html` <span class="faint">${T("(inert until subscriptions are on)")}</span>`}</span></div>
-      ${localPort > 0 ? html`<div class="subaddr-row"><span class="subaddr-k">${T("This box's own node")}</span><span class="subaddr-v mono">127.0.0.1:${localPort} <span class="faint">${T("(plain HTTP, never proxied)")}</span></span></div>` : null}
-    </div>
-    <p class="hint" style="margin:6px 0 0">${T("Internal addresses on this host. Changing the public URL, the path or the certificate never moves them, so a proxy pointed here keeps working.")}</p>
-
-    ${/* ── PRIVATE PANEL ACCESS, read-only ─────────────────────────────────────────────────────────
-          Shown ALWAYS, on or off. Off, this screen used to carry no sign the feature existed at all —
-          and it is the one platform where the console is the only way in, so an operator had nothing
-          to discover and nothing to copy. On, it now says the same things in the same order as every
-          other installation: the port, the tunnel command with its Copy button, and what happens to
-          the nodes. The only difference is the switch, which lives in the configuration here. */""}
-    <div class="seclabel">${T("Private panel access")}</div>
-    ${/* The pitch is for an operator who has NOT turned this on. Once it is on they are reading it
-          through the tunnel it describes, and the paragraph argues for a thing they already did. The
-          port gets no row of its own either: it is in the snippet above and in the command below, and
-          a third copy only invites the question of which one is authoritative. */""}
-    ${cWired ? null : html`<p class="hint" style="margin:0 0 12px">${Trich("Your nodes and your browser reach this panel through the same door today. They don't have to. Serve the panel *on the server itself* and reach it over an SSH tunnel — the public address then keeps the fleet running while answering *nothing else*: every panel page, every operator API call and the integration API return `404` there.")}</p>`}
-    ${cWired ? html`
-      <div class="notice" style="margin:0 0 12px"><${Ic} i="info"/><div style="min-width:0">
-        ${Trich("*The panel is served on `127.0.0.1:{v1}` on the server*, which nothing outside that machine can open. It is plain HTTP on purpose: the traffic never crosses a network, and a certificate issued for your panel's domain would only mis-name itself on a loopback address.", { v1: String(cWired.port) })}
-        <div style="margin:10px 0 0">${T("Open the tunnel from your own machine:")}</div>
-        <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
-          <button class="btn btn-mini" style="flex:none" onClick=${() => copy(sshTunnelCmd(cWired.port), T("SSH tunnel command"))}><${Ic} i="copy"/>${T("Copy")}</button>
-          <pre class="mono" style="flex:1;min-width:0;white-space:pre;overflow:auto;padding:10px;border-radius:6px;background:var(--code-bg, rgba(127,127,127,.09));margin:0;font-size:.85em">${`ssh -L ${cWired.port}:127.0.0.1:${cWired.port} `}<b>ssh_user</b>@<b>server_ip</b></pre>
-        </div>
-        <div class="hint" style="margin:0">${Trich("Put in the login and address you already use for SSH — `ssh_user` and `server_ip`.")}</div>
-        <div style="margin:10px 0 0">${Trich("When the tunnel is up, the panel will be accessible at {v1}", { v1: html`<a class="mono" style="color:var(--brand);font-weight:600" href=${"http://127.0.0.1:" + cWired.port + "/"} target="_blank" rel="noopener">${"http://127.0.0.1:" + cWired.port + "/"}</a>` })}</div>
-        <div class="hint" style="margin:8px 0 0">${Trich("*The nodes are unaffected*: they keep dialling the public address, which keeps answering exactly the routes they use.")}</div>
-      </div></div>`
-    : html`
-      <p class="hint" style="margin:0 0 12px">${Trich("This host's Access screen is read-only, so the option *is* the switch — there is nothing to turn on here. Give the panel a console port in your configuration and rebuild; the console moves there, and this section then shows the tunnel command for it.")}</p>
-      <pre class="mono nixblock">${nixConsoleSample()}</pre>
-      <button class="btn btn-mini" onClick=${() => copy(nixConsoleSample(), T("the private-access option"))}><${Ic} i="copy"/>${T("Copy")}</button>`}
-
-    <div class="seclabel">${T("A sample configuration")}</div>
-    <p class="hint" style="margin:0 0 12px">${T("Two arrangements, both with this panel's own domain, path and port already filled in. Pick one, paste it beside the options above, and rebuild.")}</p>
-    <${Disclosure} title=${T("Terminate TLS in front of the panel")} summary=${T("recommended")} sumCls="on"
-      open=${nixRecipe === "proxy"} onToggle=${() => setNixRecipe(r => r === "proxy" ? "" : "proxy")}>
-      <div class="segrow" role="radiogroup">
-        <button type="button" role="radio" aria-checked=${nixWeb === "nginx"} class=${"seg" + (nixWeb === "nginx" ? " on" : "")} onClick=${() => setNixWeb("nginx")}>nginx</button>
-        <button type="button" role="radio" aria-checked=${nixWeb === "caddy"} class=${"seg" + (nixWeb === "caddy" ? " on" : "")} onClick=${() => setNixWeb("caddy")}>Caddy</button>
-      </div>
-      ${subVhostDom ? html`<p class="hint" style="margin:0 0 8px">${subSuggested
-        ? Trich("Two virtual hosts: the panel, and the subscription page — a *separate service* on its own port. Subscriptions are on but the page has no address yet, so this gives it `{v1}`; change that to whatever you want to publish it as.", { v1: subVhostDom })
-        : Trich("Two virtual hosts: the panel, and the subscription page — a *separate service* on its own port.")}</p>` : null}
-      <pre class="mono nixblock">${nixProxy()}</pre>
-      <button class="btn btn-mini" onClick=${() => copy(nixProxy(), T("the reverse-proxy configuration"))}><${Ic} i="copy"/>${T("Copy")}</button>
-      ${subVhostDom ? null : html`<p class="hint" style="margin:12px 0 0">${Trich("The subscription page is off. Turn it on in Subscriptions and give it `sub.domain`, and a virtual host for it appears here.")}</p>`}
-      <div class="hint" style="margin-top:10px">${Trich("Leave the panel on its loopback address in this arrangement — the proxy is the only thing that should be reachable from outside.")}</div>
-    <//>
-    <${Disclosure} title=${T("Terminate TLS in the panel itself")} summary=${T("no proxy")}
-      open=${nixRecipe === "direct"} onToggle=${() => setNixRecipe(r => r === "direct" ? "" : "direct")}>
-      <pre class="mono nixblock">${nixDirect()}</pre>
-      <button class="btn btn-mini" onClick=${() => copy(nixDirect(), T("the direct-TLS configuration"))}><${Ic} i="copy"/>${T("Copy")}</button>
-      <div class="hint" style="margin-top:10px">${Trich("The panel reads a certificate `security.acme` already manages and is reloaded when it renews. Declare the certificate itself however you validate it (HTTP-01, DNS-01) — but *don't set its `group`*: this module puts it in `swg` so the panel can read the key, and a second `group` fights it.")}</div>
-      ${subVhostDom ? html`<div class="hint" style="margin-top:8px">${Trich("The subscription page still needs its own terminator — it is a separate service on `{v1}`, and this option covers the panel only.", { v1: nixUpstream(s0.host) + ":" + (s0.port || 8444) })}</div>` : null}
-    <//>` : null}
-  </div>`;
-  let _confHost = confirmUrl; try { _confHost = new URL(confirmUrl).host; } catch (_) {}
-  return html`<div class="card acctls">
-    ${(busy || msg) ? html`<div class=${"notice acc-status" + (busy || (msg && msg.ok) ? "" : " warn")} style=${"margin:0 0 14px" + (busy || (msg && msg.ok) ? ";border-color:var(--accent);background:var(--accent-dim, rgba(31,200,214,.08))" : "")}><${Ic} i=${busy ? "clock" : (msg && msg.ok ? "info" : "warn")}/><div style="min-width:0">
-      ${msg ? html`<b>${msg.t}</b>` : null}
-      ${busy ? html`<div class="hint" style="margin:4px 0 0">${T("Applying your change — this can take up to a minute or two. It hasn't hung; please wait.")}</div>` : null}
-      ${/* Gate-wait (probing/issuing the new address, before the confirm affordance) — give the operator an escape hatch
-            instead of only waiting out the auto-revert. Uniquely the PANEL apply keeps busy true through polling (a
-            sub-only save clears it); the confirm card owns Cancel once confirmUrl is set. */""}
-      ${(busy && polling && !confirmUrl && !rpSwap && !dockerRestart && !dockerFlip) ? html`<div style="margin-top:10px"><button class="btn btn-ghost btn-mini" onClick=${cancelChange}>${T("Cancel this change")}</button></div>` : null}
-    </div></div>` : null}
-    ${rpSwap ? html`<div class="notice" style="margin:0 0 14px;border-color:var(--accent);background:var(--accent-dim, rgba(31,200,214,.08))"><${Ic} i="info"/><div style="min-width:0">
-      ${Trich("*Finish the reverse-proxy switch.* The panel is serving the old *and* new setup at once — each node keeps its current address and only moves once the old one stops. Update your reverse proxy to match {v1}, then confirm. Nothing goes down in between.", { v1: rpSwap.port_changed && rpSwap.url_changed ? T("(both changes below)") : "" })}
-      <ul style="margin:8px 0 2px;padding-left:18px">
-        ${rpSwap.port_changed ? html`<li>${Trich("Internal port {old} → {new} — point your proxy's upstream at {addr} (co-located loopback nodes follow automatically).", {
-          old: html`<span class="mono" style="font-weight:700;color:var(--dangling)">${rpSwap.old_port}</span>`,
-          new: html`<span class="mono" style="font-weight:700;color:var(--online)">${rpSwap.new_port}</span>`,
-          addr: html`<span class="mono" style="font-weight:700;color:var(--online)">${(rpSwap.new_host || "127.0.0.1")}:${rpSwap.new_port}</span>`,
-        })}</li>` : null}
-        ${rpSwap.url_changed ? html`<li>${Trich("Public address {old} → {new} — {what} (copy the *panel* nginx sample below), keeping the old one live for now.", {
-          old: html`<span class="mono" style="font-weight:700;color:var(--dangling)">${rpSwap.old_url}</span>`,
-          new: html`<span class="mono" style="font-weight:700;color:var(--online)">${rpSwap.new_url}</span>`,
-          what: rpSwap.path_changed
-            ? Trich("add a location for the new path {v1}", { v1: html`<span class="mono" style="font-weight:700;color:var(--online)">${(() => { try { return new URL(rpSwap.new_url).pathname.replace(/\/+$/, "") + "/"; } catch (_) { return T("the new path"); } })()}</span>` })
-            : Trich("route {v1} to this panel", { v1: html`<span class="mono" style="font-weight:700;color:var(--online)">${rpSwap.new_url}</span>` }),
-        })}</li>` : null}
-      </ul>
-      ${rpSwap.url_changed ? html`<div class="hint" style="margin:4px 0 0">${T("On confirm the new address opens in a new tab to prove your proxy routes it here before switching nodes over; if it can't load, just revert — nothing changes.")}</div>
-      <div class="notice warn" style="margin:8px 0 0"><${Ic} i="warn"/><div>${Trich("*Make sure the new address already opens this panel* (proxy upstream / `server_name` / `location`). If it doesn't, the confirm simply won't take — the old address keeps serving, so you can't be locked out.")}</div></div>` : null}
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">${rpArmIn > 0
-        ? html`<button class="btn btn-primary" disabled title=${T("Take a moment to open the new address and check your proxy first")}>${T("Confirm in {n}s — verify your proxy first", { n: rpArmIn })}</button>`
-        : (rpSwap.url_changed
-            ? html`<a class="btn btn-primary" href=${(String(rpSwap.new_url || "").replace(/\/+$/, "")) + "/?__applyurl=" + encodeURIComponent(rpSwap.nonce || "")} target="_blank" rel="noopener" onClick=${() => { setPolling(true); setMsg({ ok: true, t: T("Opening the new address to confirm your proxy routes it here — if it loads, the switch completes and nodes move over.") }); }}>${T("Confirm — open the new address ↗")}</a>`
-            : html`<button class="btn btn-primary" disabled=${busy} onClick=${confirmRpSwapGuarded}>${T("Confirm — drop the old port")}</button>`)}<button class="btn btn-ghost" disabled=${busy} onClick=${revertRpSwap}>${T("Revert")}</button></div>
-    </div></div>` : null}
-    ${dockerRestart ? html`<div class="notice ${dockerRestart.error ? "warn" : ""}" style=${dockerRestart.error ? "margin:0 0 14px" : "margin:0 0 14px;border-color:var(--accent);background:var(--accent-dim, rgba(31,200,214,.08))"}><${Ic} i=${dockerRestart.error ? "warn" : "info"}/><div style="min-width:0">
-      ${dockerRestart.port_move
-        ? Trich("*Confirm the internal-port change.* The public address doesn't change, so the nodes aren't affected — but the panel will restart onto a new internal port, so your *reverse proxy must be re-pointed* to it. When you Confirm, the panel dry-runs the new port (checks it's free), restarts onto it, then waits for you to re-point the proxy. If it stays unreachable it *rolls back to the current port automatically*.")
-        : Trich("*Confirm the address change.* The nodes are now told to *also* try `{v1}`, so they're already connected there before the restart. When you Confirm, the panel first *dry-runs* the new settings in a throwaway container (issues the certificate, checks the port), and only then restarts onto the new address. If it can't be reached afterwards, it *rolls back automatically*.", { v1: dockerRestart.new_url })}
-      ${dockerRestart.port_move
-        ? html`<ul style="margin:8px 0 2px;padding-left:18px"><li>${Trich("New internal port `{v1}` — after Confirm, point your reverse proxy's upstream at it and reload the proxy.", { v1: dockerRestart.port })}</li></ul>`
-        : dockerRestart.url_changed
-        ? html`<ul style="margin:8px 0 2px;padding-left:18px"><li>${Trich("New address `{v1}` — make sure DNS / your firewall / Cloudflare route it to this panel.", { v1: dockerRestart.new_url })}</li></ul>`
-        : null}
-      ${dockerRestart.error ? html`<div class="notice warn" style="margin:8px 0 0"><${Ic} i="warn"/><div style="min-width:0"><b>${T("Dry-run failed.")}</b> ${srvText(dockerRestart)}</div></div>` : null}
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">${drArmIn > 0
-        ? html`<button class="btn btn-primary" disabled title=${T("The nodes are still learning the new address")}>${T("Confirm & restart in {n}s…", { n: drArmIn })}</button>`
-        : html`<button class="btn btn-primary" disabled=${busy} onClick=${confirmDockerRestart}>${busy ? T("Checking…") : T("Confirm & restart")}</button>`}<button class="btn btn-ghost" disabled=${busy} onClick=${revertDockerRestart}>${T("Revert")}</button></div>
-    </div></div>` : null}
-    ${dockerFlip ? html`<div class="notice" style="margin:0 0 14px;border:1px solid var(--accent);background:var(--accent-dim, rgba(31,200,214,.08))"><${Ic} i="clock"/><div style="min-width:0">
-      ${dockerFlipPort > 0
-        ? html`${Trich("*Restarting onto internal port {v1}.* Point your reverse proxy's upstream at `127.0.0.1:{v1}` and reload the proxy — this page comes back once it routes there. It confirms itself when reachable; if it stays unreachable it rolls back to the current port automatically.", { v1: dockerFlipPort })}
-          <div style="margin-top:10px">${dockerArm > 0
-            ? html`<button class="btn btn-primary" disabled title=${T("Waiting for the container to restart")}>${T("Restarting in {n}s…", { n: dockerArm })}</button>`
-            : html`<a class="btn btn-primary" href=${dockerFlip} target="_blank" rel="noopener">${T("Reload this page ↻")}</a>`}</div>`
-        : html`${Trich("*Restarting the panel container.* Reconnect at the new address once it's back — it confirms itself when you reach it. If the new address can't be reached (or the certificate can't be issued), the panel rolls back automatically to the current address.")}
-          <div style="margin-top:10px">${dockerArm > 0
-            ? html`<button class="btn btn-primary" disabled title=${T("Waiting for the container to restart")}>${T("Reconnect in {n}s…", { n: dockerArm })}</button>`
-            : html`<a class="btn btn-primary" href=${dockerFlip} target="_blank" rel="noopener">${T("Reconnect at the new address ↗")}</a>`}</div>`}
-    </div></div>` : null}
-    ${confirmUrl ? html`<div class="notice ${confirmVerified ? "" : "warn"}" style=${confirmVerified ? "margin:0 0 14px;border-color:var(--accent);background:var(--accent-dim, rgba(31,200,214,.08))" : "margin:0 0 14px"}><${Ic} i=${confirmVerified ? "info" : "warn"}/><div style="min-width:0">
-      ${confirmVerified
-        ? html`${Trich("*Confirm the new address.* Open `{v1}` in a new tab to confirm it — the change is applied *only once* it loads there.", { v1: _confHost })}`
-        : html`${Trich("*Couldn't verify the new address yet.* I probed `{v1}` from here and it didn't answer in time — it may still be warming up (a fresh Cloudflare origin can be slow), *or* it's not reachable at all (e.g. a direct-TLS panel bound to `127.0.0.1` instead of a public IP, or a port your proxy/DNS doesn't route). Open it to confirm anyway — the change applies *only if it loads*.", { v1: _confHost })}`}
-      ${Trich("If that tab *can't* load, just close it: this panel stays on the current address and reverts automatically. Nothing is committed until the new address answers.")}
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap"><a class="btn btn-primary" href=${confirmUrl} target="_blank" rel="noopener">${T("Open the new address to confirm ↗")}</a><button class="btn btn-ghost" onClick=${cancelChange}>${T("Cancel this change")}</button></div>
-    </div></div>` : null}
-    ${showCooldownNotice ? html`<div class="notice warn" style="margin:0 0 14px"><${Ic} i="warn"/><div style="min-width:0">
-      <b>${T("Operation cooldown.")}</b> ${cooldown.reason === "verifying" ? T("An address change is still waiting to be confirmed.")
-        : cooldown.reason === "console" ? T("A private-access change is still waiting to be confirmed — finish or cancel it in the tab that started it.")
-        : Trich("The previous change is still settling (*{v1}s* left).", { v1: cooldown.secs })} ${Trich("Address changes run *one at a time* — Save is locked until it finishes. If a change is in flight, you can still cancel it from the tab that started it.")}
-    </div></div>` : null}
-    ${staleWarn ? html`<div class="notice warn" style="margin:0 0 14px"><${Ic} i="warn"/><div style="min-width:0">
-      ${Trich("*These settings changed elsewhere.* The panel's saved address settings were updated by the server (a rollback, a boot reconcile, or a change confirmed in another tab) while you have *unsaved edits* here — so a field below may be based on an *old* value. *Reload the page* before saving, or your change could re-apply a value the panel already reverted.")} <button class="btn btn-mini" style="margin-left:6px" onClick=${() => { resyncFromStore(); setStaleWarn(false); }}>${T("Discard my edits & refresh")}</button>
-    </div></div>` : null}
-
-    <div class="seclabel" style="margin-top:0">${T("Certificate")}</div>
-    <p class="hint" style="margin:0 0 12px">${T("How TLS is terminated — this decides which ports are valid below. One choice issues both certificates (the panel's and swg-sub's, always separate keys).")}</p>
-    ${(() => {
-      const ts = Store.tls || {};
-      const d = Number(ts.days_left);
-      const job = ts.renew_job || null;
-      const running = !!job && job.state === "running";
-      const canRenew = ts.renewer === "ours" || ts.renewer === "other";
-      const startRenew = async () => {
-        RENEW_VIEW.pressedAt = panelNow(); RENEW_VIEW.before = Number(ts.expires_at) || 0;
-        try {
-          const r = await api.post("/api/access/renew-cert", {});
-          if (!r || r.ok === false) toast(srvText(r) || T("Couldn't start the renewal."), "err");
-          else await Store.poll();
-        } catch (_) { toast(T("Couldn't start the renewal."), "err"); }
-      };
-      const onRenew = () => ts.renewer === "other"
-        ? openConfirm({ title: T("Renew the certificate now?"), confirmLabel: T("Renew now"), warn: true,
-            body: T("acme.sh renews this certificate for another program on this server as well ({v1}) and runs that program's reload command, which may restart it — exactly as its own scheduled renewals do.", { v1: ts.renewer_path || "?" }),
-            onConfirm: () => { startRenew(); return true; } })
-        : startRenew();
-      const renewBtn = canRenew ? html`<div style="margin-top:8px"><button type="button" class="btn btn-mini" disabled=${running} onClick=${onRenew}><${Ic} i="refresh"/> ${running ? T("Renewing…") : T("Renew now")}</button></div>` : null;
-      const warn = (body, title) => html`<div class="notice warn" style="margin:0 0 12px" title=${title || ""}><${Ic} i="warn"/><div style="min-width:0">${body}${renewBtn}</div></div>`;
-      let w = null;
-      // Expired comes first and has one wording for every certificate: the day count goes negative ("valid for -3
-      // more day(s)") and an hour count reads "0 hour(s) ago" in the first hour, so neither is shown past expiry.
-      const expired = Number(ts.expires_at) > 0 && Number(ts.expires_at) * 1000 <= panelNow();
-      if (expired) w = warn(Trich("*This certificate has expired.* Browsers refuse the panel and nodes that verify it stop syncing until it is renewed."), ts.renew_last);
-      else if (ts.renew_ok === false) w = warn(Trich("*Automatic renewal is failing.* The certificate is still valid for *{v1}* more day(s), but nothing is renewing it — check that this host is reachable by the validation method above.", { v1: isFinite(d) ? d : "?" }), ts.renew_last);
-      else if (ts.renewer === "missing" && !ts.self_signed) w = warn(Trich("*Nothing on this server renews this certificate.* acme.sh holds no certificate for this address, so it will expire in *{v1}* day(s) unless it is issued again.", { v1: isFinite(d) ? d : "?" }));
-      // A ~6-day certificate always has fewer than 21 days left — judged by days it warned from the day it was
-      // issued, so a real failure looked like every other day. Overdue = past 2/3 of its life, on the panel's clock.
-      else if (ts.short_lived) {
-        const left = Number(ts.expires_at) * 1000 - panelNow();
-        if (left < Number(ts.lifetime_s) * 1000 / 3) w = warn(Trich("*This certificate should already have been renewed.* It has *{v1}* hour(s) left.", { v1: Math.floor(left / 3600000) }));
-      }
-      else if (!ts.self_signed && isFinite(d) && d <= 21) w = warn(Trich("*This certificate expires in {v1} day(s).*", { v1: d }));
-      // HELD: acme.sh has a CA certificate for this address, but the panel serves a self-signed one — which nodes
-      // pin — so the follow will not swap it on its own. Said once, with the deliberate way to switch.
-      const held = ts.renewer_held ? html`<div class="notice warn" style="margin:0 0 12px"><${Ic} i="warn"/><div style="min-width:0">
-        ${ts.held_swap_at
-          ? Trich("*acme.sh holds a certificate from a public CA for this address, but the panel still serves its self-signed one — and acme.sh will install its next renewal over it ({v1}).* Nodes that pinned the self-signed certificate stop syncing at that moment. Switch now with *Save*, then re-run the node installer on the nodes that pinned it — on a NixOS node, clear `services.swg-node.panelTlsFingerprint` and set `verifyPanelTls = true` in its configuration.nix, run `nixos-rebuild switch` and restart `swg-noded`.", { v1: ts.held_swap_at })
-          : Trich("*acme.sh holds a certificate from a public CA for this address, but the panel still serves its self-signed one.* It is not swapped automatically: nodes that pinned the self-signed certificate would stop syncing. Switch it here with *Save*, then re-run the node installer on the nodes that pinned it — on a NixOS node, clear `services.swg-node.panelTlsFingerprint` and set `verifyPanelTls = true` in its configuration.nix, run `nixos-rebuild switch` and restart `swg-noded`.")}
-      </div></div>` : null;
-      // Not a fault — the panel follows it — but the one fact that explains why its renewals live somewhere else.
-      const other = ts.renewer === "other" ? html`<div class="notice" style="margin:0 0 12px"><${Ic} i="info"/><div style="min-width:0">
-        ${Trich("*Another program on this server renews this certificate* — acme.sh installs each renewal to `{v1}`. The panel takes the renewed certificate from acme.sh within 6 hours, so both keep working.", { v1: ts.renewer_path || "?" })}
-      </div></div>` : null;
-      // The last Renew-now's outcome, for a quarter of an hour: a success usually clears the warning it was pressed
-      // in, so the answer has to live beside it rather than inside it.
-      let done = null;
-      const until = Number(ts.expires_at) > 0 ? new Date(Number(ts.expires_at) * 1000).toLocaleString(locale()) : "?";
-      const renewedHtml = html`<div class="notice ok" style="margin:0 0 12px"><${Ic} i="check"/><div style="min-width:0">${Trich("*Renewed.* The panel now serves a certificate valid until {v1}.", { v1: until })}</div></div>`;
-      if (!job && RENEW_VIEW.pressedAt && panelNow() - RENEW_VIEW.pressedAt < 15 * 60000 && Number(ts.expires_at) > RENEW_VIEW.before) {
-        done = renewedHtml;                  // the job went with a restart, but the certificate says it worked
-      } else if (job && job.state === "done" && panelNow() - Number(job.at) * 1000 < 15 * 60000) {
-        if (job.result === "renewed") done = renewedHtml;
-        else if (job.result === "not-due") done = html`<div class="notice" style="margin:0 0 12px"><${Ic} i="info"/><div style="min-width:0">${Trich("*Not renewed — acme.sh says it is not due yet* (next renewal: {v1}). The certificate is valid until {v2}.", { v1: job.message || "?", v2: until })}</div></div>`;
-        else done = html`<div class="notice warn" style="margin:0 0 12px"><${Ic} i="warn"/><div style="min-width:0">
-          <b>${job.result === "not-installed" ? T("acme.sh renewed the certificate, but the panel did not install it.")
-            : job.result === "skipped" ? T("Nothing was renewed.") : T("The renewal failed.")}</b>
-          ${job.result === "no-entry" ? T("acme.sh holds no certificate for this address, so there is nothing to renew.")
-            : job.message ? (job.source === "acme" ? T("acme.sh said:") : T("Details:")) : null}
-          ${job.message && job.result !== "no-entry" ? html`<pre style="white-space:pre-wrap;margin:6px 0 0;font-size:11.5px">${job.message}</pre>` : null}
-        </div></div>`;
-      }
-      return (w || other || done || held) ? html`${done}${w}${held}${other}` : null;
-    })()}
-    <div class="field"><label>${T("Type")}</label><${Dropdown} value=${mode} onChange=${setModeLinked} options=${TLS_MODE_OPTS()}/></div>
-    ${(mode === "letsencrypt" || mode === "cloudflare") ? html`<div class="field"><label>${T("Account email")}</label><input type="text" placeholder=${T("admin@example.com")} value=${email} onInput=${e => setEmail(e.target.value)}/></div>` : null}
-    ${mode === "cloudflare" ? html`<div class="field"><label>${T("Cloudflare API token")}</label><input type="password" placeholder=${hasCfTok ? T("•••••••• (set — leave blank to keep)") : T("Zone:DNS:Edit token")} value=${cfTok} onInput=${e => setCfTok(e.target.value)}/>
-      <div class="hint">${T("Used for DNS-01 validation. Stored on the panel only; never sent to the browser. Enter \"-\" to clear.")}</div></div>` : null}
-    ${mode === "cf15" ? html`<div class="field"><label>${T("Cloudflare Origin CA token")}</label><input type="password" placeholder=${hasCfOrig ? T("•••••••• (set — leave blank to keep)") : T("Zone:SSL and Certificates:Edit token")} value=${cfOrig} onInput=${e => setCfOrig(e.target.value)}/>
-      <div class="hint">${Trich("Requests a 15-year Cloudflare Origin certificate — valid *only* behind Cloudflare's proxy. Stored on the panel only. Enter \"-\" to clear.")}</div></div>` : null}
-    ${mode === "skip" ? html`<div class="field"><label>${T("Full-chain certificate")}</label>
-      <input type="text" placeholder="/etc/letsencrypt/live/example.com/fullchain.pem" value=${certPath} onInput=${e => setCertPath(e.target.value)}/>
-      <div class="hint">${T("An absolute path on the panel host — the certificate with its chain. It must cover the panel's public address.")}</div></div>
-    <div class="field"><label>${T("Private key")}</label>
-      <input type="text" placeholder="/etc/letsencrypt/live/example.com/privkey.pem" value=${keyPath} onInput=${e => setKeyPath(e.target.value)}/>
-      <div class="hint">${T("Absolute path too, and the key must not have a passphrase. Both files are copied into place and re-checked every few hours, so a renewal written over them is picked up on its own. Leave both blank if a certificate is already installed and nothing here should touch it.")}</div></div>` : null}
-    ${mode === "skip" ? html`<div class="field"><label>${T("Subscription certificate")}</label>
-      <input type="text" placeholder="/etc/letsencrypt/live/subs.example.net/fullchain.pem" value=${subCertPath} onInput=${e => setSubCertPath(e.target.value)}/></div>
-    <div class="field"><label>${T("Subscription private key")}</label>
-      <input type="text" placeholder="/etc/letsencrypt/live/subs.example.net/privkey.pem" value=${subKeyPath} onInput=${e => setSubKeyPath(e.target.value)}/>
-      <div class="hint">${T("Only needed when the subscription page answers to a different name than the panel. Leave both blank and it is served the certificate above — which is what you want when the two share a hostname, or one certificate covers both.")}</div></div>` : null}
-    ${modeFlip ? flipNote() : null}
-
-    <div class="seclabel">${T("Public panel address")}</div>
-    <p class="hint" style="margin:0 0 12px">${T("Where the panel itself is reached.")}${behindProxy
-      ? T(" Your proxy fronts this URL and forwards to the internal address below — the two are independent.")
-      : Trich(" The panel serves this address directly, so *the URL carries the port* (there is no separate internal port to set).")}</p>
-    <div class="field"><label>${T("Public URL")}</label><input type="text" placeholder=${T("https://panel.example.com  or  https://example.com/swgpanel")} value=${pUrl} onInput=${e => setPUrl(e.target.value)}/></div>
-    <div class="fieldrow">${ipField(pHost, setPHost, true, pLoopbackDirect)}${behindProxy
-      ? portField(pPort, setPPort, pBad || pPortRangeBad, pPortRangeBad ? T("Port must be a number between 1 and 65535") : null)
-      : null}</div>
-    ${pLoopbackDirect ? loopNote("panel") : (pBad ? cfNote : null)}
-    ${localPort > 0 ? html`<div class="localnode-note">${Trich("This box's own node reaches the panel on {v1} — a dedicated plain-HTTP loopback port, served at the root. It's set at install and a public address, port, path, or certificate change never moves it, so the co-located node never loses the panel.", { v1: html`<b class="mono">127.0.0.1:${localPort}</b>` })}</div>` : null}
-    ${(behindProxy && (panelBindChanged() || panelUrlChanged())) ? html`<div class="notice" style="margin:8px 0 12px"><${Ic} i="info"/><div style="min-width:0">
-      ${Trich("*Behind a reverse proxy.*")}
-      ${panelBindChanged() ? Trich(" Saving binds `{v1}` *alongside* the current port (both keep serving) — you then re-point your reverse proxy and confirm to drop the old one, with no downtime. External nodes dial your public URL through the proxy, so they don't change; only a co-located node that dials the panel on `127.0.0.1` needs its `panel.url` port updated too.", { v1: (pHost.trim() || "127.0.0.1") + ":" + _pPortN() }) : null}
-      ${panelUrlChanged() ? Trich(" The public URL is served by *your reverse proxy*, not the panel — make sure the proxy serves it (server_name / TLS cert / path) before relying on it. The panel's own mount path stays `SWG_PANEL_BASE`. Nodes are told this URL as their dial address, so external nodes re-point to it on their next sync — make sure they can reach it; one that can't must have its `panel.url` updated by hand.") : null}
-    </div></div>`
-    : panelBindChanged() ? html`<div class="notice" style="margin:8px 0 12px"><${Ic} i="info"/><div style="min-width:0">
-      ${Trich("*Nodes re-point themselves.* On save, online nodes learn the new address on their next sync and switch to it — the old address stays reachable for ~3 minutes so they can. A node that is *offline* during the change (or one installed without verifying/pinning the panel cert) must be re-pointed by hand: set `panel.url` in `/etc/swg-agent/config.json` (bare-metal) or `PANEL_URL` in `.env` (docker) to the new address, then restart `swg-noded` / recreate the container; on NixOS, set `services.swg-node.panelUrl` in the node's configuration.nix, run `nixos-rebuild switch` and restart `swg-noded`.")}
-    </div></div>` : null}
-    ${behindProxy ? html`<details class="nginx-sample" style="margin:8px 0 4px"><summary style="cursor:pointer;color:var(--muted);font-size:.9em">${Trich("Reverse-proxy config for the panel (nginx) — full `server { }` for the values above")}</summary>
-      <pre class="mono" style="white-space:pre;overflow:auto;padding:10px;border-radius:6px;background:var(--code-bg, rgba(127,127,127,.09));margin:8px 0 6px;font-size:.85em">${nginxServerBlock(pUrl, pHost, _pPortN())}</pre>
-      <button class="btn btn-mini" onClick=${() => copy(nginxServerBlock(pUrl, pHost, _pPortN()), T("panel nginx server block"))}><${Ic} i="copy"/>${T("Copy")}</button>
-      <div class="hint" style="margin-top:6px">${Trich("Built from the domain, external port, path (from the Public URL) and the internal listen address above. Point `ssl_certificate` at your real cert, then `nginx -t && systemctl reload nginx`.")}</div>
-    </details>` : null}
-
-    <div class="seclabel">${T("Private panel access")}</div>
-    ${/* ⚠️ GATED ON THE SAVED STATE (`k0.mode`), NOT ON THE TOGGLE (`cMode`). The paragraph argues for
-          moving the console, so it is for someone who has not moved it — once the change is CONFIRMED
-          the operator is reading it through the tunnel it describes. But the toggle here is a form
-          control, not the applied state: gating on it would make this text appear and vanish under the
-          cursor every time the operator flipped it while deciding, and while they are deciding the
-          public address is still serving the panel and the pitch is still the context for the choice.
-          The saved value is the honest signal, and it matches the declarative branch above, where
-          there is no toggle at all and "on" can only mean "already done". */""}
-    ${k0.mode === "own" ? null : html`<p class="hint" style="margin:0 0 12px">${Trich("Your nodes and your browser reach this panel through the same door today. They don't have to. Serve the panel *on the server itself* and reach it over an SSH tunnel — the public address then keeps the fleet running while answering *nothing else*: every panel page, every operator API call and the integration API return `404` there.")}</p>`}
-    ${/* The toggle and its port are one decision, so they share a row — and the port is a NORMAL field
-          (label above, full width of its column) so it reads like every other field on this screen.
-          align-items:flex-end bottom-aligns the single-line toggle with the input, not with its label. */ ""}
-    <div class="fieldrow" style="align-items:flex-end;margin:0 0 12px">
-      <label class="ivk-esc-row" style="flex:1;min-width:140px;align-items:center;margin:0 0 9px;cursor:pointer">
-        <${Switch} on=${cMode === "own"} onChange=${v => setCMode(v ? "own" : "")}/>
-        <span>${T("Access web panel via SSH tunnel")}</span></label>
-      ${(cMode === "own" && !cWired && !cDockerUnwired) ? html`<div class="field">
-        <label>${T("Tunnel port")}${cPortBad ? html` <span class="ciw" title=${T("Port must be a number between 1 and 65535")}><${Ic} i="warn"/></span>` : null}</label>
-        <input class=${cPortBad ? "bad" : ""} type="text" value=${cPort} onInput=${e => setCPort(e.target.value)}/></div>`
-        : html`<div class="field" style="visibility:hidden"><label>&nbsp;</label></div>`}
-    </div>
-    ${/* Where the panel is reached on its PUBLIC address. The section otherwise said nothing at all in
-          its resting state — a heading and a switch — so the one fact an operator wants before flipping
-          it (what am I about to change?) was the one fact missing.
-          ⚠️ Two independent things decide this line, and they are not the same thing:
-            • WHETHER to show it — the TOGGLE. Switched on, the operator is asking for the console to
-              move and the notice below already tells them where it lands; repeating the public address
-              beside it just competes with that.
-            • WHICH TENSE — the SAVED state. Off with public saved is the resting truth ("is"). Off with
-              private saved is a pending change back ("will be"), and saying "is" there would describe
-              an address that does not serve the panel yet.
-          Written as two literal Trich calls rather than one with a computed key: the i18n extractor
-          reads the literal argument, and a conditional inside it takes both sentences out of the
-          catalogue. */""}
-    ${cMode === "own" ? null : html`<div class="hint" style="margin:0 0 12px">${
-      k0.mode === "own"
-        ? Trich("The panel will be accessible at {v1}", { v1: html`<a class="mono" style="color:var(--brand);font-weight:600" href=${panelHereUrl()} target="_blank" rel="noopener">${panelHereUrl()}</a>` })
-        : Trich("The panel is accessible at {v1}", { v1: html`<a class="mono" style="color:var(--brand);font-weight:600" href=${panelHereUrl()} target="_blank" rel="noopener">${panelHereUrl()}</a>` })
-    }</div>`}
-    ${(cMode === "own" && cDockerUnwired) ? html`<div class="notice warn" style="margin:0 0 12px"><${Ic} i="warn"/><div style="min-width:0">
-      ${Trich("*This panel's container doesn't publish a port for this*, so a listener inside it would be unreachable — there is nothing to fill in here yet. *Re-run the Docker installer* to restage `docker-compose.yml` (it adds the port), then come back.")}
-    </div></div>` : null}
-    ${(cMode === "own" && cWired) ? html`<div class="subaddr wide" style="margin:0 0 10px">
-      <div class="subaddr-row"><span class="subaddr-k">${T("Tunnel port")}</span><span class="subaddr-v mono">${cWired.port}</span></div></div>
-      <p class="hint" style="margin:0 0 12px">${Trich("This port is set where this panel is deployed, not here — so there is nothing to pick. Change it in `.env` (`CONSOLE_PORT`) and re-run the Docker installer, or in the NixOS option, then come back.")}</p>` : null}
-    ${(cMode === "own" && !cDockerUnwired) ? html`
-      <div class="notice" style="margin:8px 0 12px"><${Ic} i="info"/><div style="min-width:0">
-        ${Trich("*The panel will be served on `127.0.0.1:{v1}` on the server*, which nothing outside that machine can open. It is plain HTTP on purpose: the traffic never crosses a network, and a certificate issued for your panel's domain would only mis-name itself on a loopback address.", { v1: _cPortN() })}
-        <div style="margin:10px 0 0">${T("Open the tunnel from your own machine:")}</div>
-        <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
-          <button class="btn btn-mini" style="flex:none" onClick=${() => copy(sshTunnelCmd(_cPortN()), T("SSH tunnel command"))}><${Ic} i="copy"/>${T("Copy")}</button>
-          <pre class="mono" style="flex:1;min-width:0;white-space:pre;overflow:auto;padding:10px;border-radius:6px;background:var(--code-bg, rgba(127,127,127,.09));margin:0;font-size:.85em">${`ssh -L ${_cPortN()}:127.0.0.1:${_cPortN()} `}<b>ssh_user</b>@<b>server_ip</b></pre>
-        </div>
-        <div class="hint" style="margin:0">${Trich("Put in the login and address you already use for SSH — `ssh_user` and `server_ip`.")}</div>
-        <div style="margin:10px 0 0">${Trich("When the tunnel is up, the panel will be accessible at {v1}", { v1: html`<a class="mono" style="color:var(--brand);font-weight:600" href=${"http://127.0.0.1:" + _cPortN() + "/"} target="_blank" rel="noopener">${"http://127.0.0.1:" + _cPortN() + "/"}</a>` })}</div>
-        <div class="hint" style="margin:8px 0 0">${Trich("*The nodes are unaffected*: they keep dialling the public address, which keeps answering exactly the routes they use.")}</div>
-        <div class="hint" style="margin:8px 0 0">${Trich("*To close the door further*, restrict the public panel port in your firewall to the addresses your nodes connect from. The panel can't list them for you — it never sees a node's source address, and behind a proxy it would only see the proxy — so use the addresses you know. ⚠️ Get that list wrong and the fleet stops syncing, so change it while you can still watch the Nodes screen.")}</div>
-      </div></div>` : null}
-    ${consolePend ? html`<div class="notice" style="margin:0 0 14px;border-color:var(--accent);background:var(--accent-dim, rgba(31,200,214,.08))"><${Ic} i="info"/><div style="min-width:0">
-      ${Trich("*Nothing has changed yet.* The panel is now served *both* here and through the tunnel — open it through the tunnel to prove you can reach it. Only then does this address stop serving the panel.")}
-      <div class="hint" style="margin:6px 0 0">${Trich("If you don't, everything goes back on its own in *{n}s* — you cannot be locked out by not finishing.", { n: consoleIn })}</div>
-      <div class="hint" style="margin:4px 0 0">${Trich("Once it's confirmed, *this tab stops working*: this address will answer only what the nodes ask for. Carry on in the tunnelled one.")}</div>
-      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-        <a class="btn btn-primary" href=${consoleUrl(consolePend)} target="_blank" rel="noopener">${T("Open the panel through the tunnel to confirm ↗")}</a>
-        <button class="btn btn-ghost" disabled=${busy} onClick=${cancelConsole}>${T("Cancel this change")}</button></div>
-    </div></div>` : null}
-
-    ${subsOn ? html`<div class="seclabel">${T("Subscription address")}</div>
-      <p class="hint" style="margin:0 0 12px">${T("Where the swg-sub page is reached (a separate service; changing it only restarts swg-sub).")}${behindProxy
-        ? "" : Trich(" As with the panel, *the URL carries the port*.")}</p>
-      <div class="field"><label>${T("Public URL")}</label><input type="text" placeholder=${T("https://sub.example.com  or  https://example.com/swgsub")} value=${sUrl} onInput=${e => setSUrl(e.target.value)}/></div>
-      <div class="fieldrow">${ipField(sHost, setSHost, true, sLoopbackDirect)}${behindProxy
-        ? portField(sPort, setSPort, sBad || sPortRangeBad, sPortRangeBad ? T("Port must be a number between 1 and 65535") : null)
-        : null}</div>
-      ${sLoopbackDirect ? loopNote(T("subscription server")) : (sBad ? cfNote : null)}
-      ${(behindProxy && (subBindChanged() || subUrlChanged())) ? html`<div class="notice" style="margin:8px 0 12px"><${Ic} i="info"/><div style="min-width:0">
-        ${Trich("*Behind a reverse proxy.* Point your proxy at `{v1}` and make sure it serves this URL's path. swg-sub picks it up on Save — a path or domain change reloads it live (no downtime; existing links keep working during a grace), a host/port change restarts it. If the panel has no root helper, it saves and asks you to run `systemctl reload swg-sub`.", { v1: (sHost.trim() || "127.0.0.1") + ":" + _sPortN() })}
-      </div></div>` : null}
-      ${behindProxy ? html`<details class="nginx-sample" style="margin:8px 0 4px"><summary style="cursor:pointer;color:var(--muted);font-size:.9em">${Trich("Reverse-proxy config for the subscription page (nginx) — full `server { }` for the values above")}</summary>
-        <pre class="mono" style="white-space:pre;overflow:auto;padding:10px;border-radius:6px;background:var(--code-bg, rgba(127,127,127,.09));margin:8px 0 6px;font-size:.85em">${nginxServerBlock(sUrl, sHost, _sPortN())}</pre>
-        <button class="btn btn-mini" onClick=${() => copy(nginxServerBlock(sUrl, sHost, _sPortN()), T("subscription nginx server block"))}><${Ic} i="copy"/>${T("Copy")}</button>
-        <div class="hint" style="margin-top:6px">${Trich("If swg-sub shares the panel's domain, merge its `location` into that server block instead of a second one — then reload nginx.")}</div>
-      </details>` : null}` : null}
-  </div>`;
-}
-
 export function InterfaceKeyEscrow({ value, onChange, vaultExists }) {
   if (vaultExists === null || value === null) return html`<div class="hint">${T("Checking…")}</div>`;
   if (!vaultExists) return html`<p class="hint" style="margin:0">${Trich("Set up your *Encryption Vault* first in {v1} — each server's interface key is sealed under it.", { v1: html`<button class="linkbtn" onClick=${() => goSettings("configs")}>${T("Client configs → Encryption")}</button>` })}</p>`;
@@ -1626,54 +290,6 @@ export function SubVaultCard() {
             onClick=${() => setShown(subKeyB64())}><${Ic} i="key"/>${T("Show encryption key")}</button>`}<span class="grow"></span>
           <button class="btn btn-ghost btn-mini danger" onClick=${() => setResetMode(true)}>${T("Reset encryption…")}</button></div>`}
   <//>`;
-}
-export function ConfigMigrationCard() {
-  useStore();                          // re-render as the plaintext count drops after a pass
-  const [busy, setBusy] = useState(false);
-  const [pw, setPw] = useState("");
-  const [report, setReport] = useState(null);
-  const [vaultExists, setVaultExists] = useState(true);
-  useEffect(() => { api.subVault().then(r => setVaultExists(!!(r && r.ok && r.data && r.data.exists))).catch(() => {}); }, []);
-  const n = Store.configsPlaintext || 0;
-  if (n <= 0 && !report) return null;                          // nothing to migrate
-  const flaggedNames = report ? report.flagged.map(pid => {
-    const p = (Store.recon.peers || []).find(x => x.id === pid) || {};
-    return (p.name ? p.name + " · " : "") + (p.title || "peer");
-  }) : [];
-  const run = async () => {
-    if (!subSKCached()) {                                  // a cached SK ⇒ the vault exists (e.g. just set up this session)
-      if (!vaultExists) { toast(T("Set up the encryption key above first."), "err"); return; }
-      if (!pw) { toast(T("Enter your panel password to unlock the encryption key."), "err"); return; }
-      try { await subUnlock(pw); setPw(""); } catch (e) { toast((e && e.message) || T("Unlock failed"), "err"); return; }
-    }
-    setBusy(true);
-    try {
-      const rep = await runConfigMigration();
-      setReport(rep);
-      toast(rep.purged
-        ? T("Encrypted {v1} · purged {v2} plaintext.", { v1: plural(rep.migrated, "config"), v2: rep.purged })
-        : T("Encrypted {v1}.", { v1: plural(rep.migrated, "config") }), "ok");
-    } catch (e) { toast((e && e.message) || T("Migration failed"), "err"); }
-    setBusy(false);
-  };
-  const pwField = html`<input class="subpw" type="password" style="max-width:220px" value=${pw} autocomplete="off"
-    placeholder=${T("Panel password (unlocks the encryption key)")} onKeyDown=${e => { if (e.key === "Enter") run(); }} onInput=${e => setPw(e.target.value)}/>`;
-  return html`<div class=${"notice " + (n > 0 ? "warn" : "ok")} style="margin-top:10px"><div style="min-width:0">
-    ${n > 0
-      ? Trich("*{v1} in plaintext still on the panel.* Encrypt them so the server can no longer read a client private key. Safe and resumable — the plaintext is deleted only after its encrypted copy exists.", { v1: plural(n, "config") })
-      : Trich("*All stored configs are encrypted.*")}
-    ${report ? html`<div class="hint" style="margin-top:8px">${Trich("Encrypted {v1} of {v2} · purged {v3} plaintext", { v1: html`<b>${report.migrated}</b>`, v2: report.total, v3: html`<b>${report.purged}</b>` })}${report.orphansPurged ? ` (+${report.orphansPurged} orphan)` : ""}${report.remaining ? ` · ${report.remaining} still plaintext` : ""}.
-      ${report.flagged.length ? html`<div style="margin-top:6px">${(() => {
-        const a = { v1: plural(report.flagged.length, "peer"), v2: flaggedNames.slice(0, 8).join(", ") + (flaggedNames.length > 8 ? T(" +{n} more", { n: flaggedNames.length - 8 }) : "") };
-        return report.flagged.length === 1
-          ? Trich("*{v1}* couldn't be encrypted (unassigned, or no stored key) — *rekey* or assign it to include: {v2}.", a)
-          : Trich("*{v1}* couldn't be encrypted (unassigned, or no stored key) — *rekey* or assign them to include: {v2}.", a);
-      })()}</div>` : html`<div style="margin-top:6px">${T("Every assigned peer with a stored key is encrypted.")}</div>`}</div>` : null}
-    <div class="chiprow" style="margin-top:8px">
-      ${(n > 0 && !subSKCached()) ? pwField : null}
-      ${n > 0 ? html`<button class="btn btn-primary btn-mini" disabled=${busy || (!vaultExists && !subSKCached())} onClick=${run}>${busy ? T("Encrypting…") : (report ? T("Encrypt remaining") : T("Encrypt stored configs"))}</button>` : null}
-    </div>
-  </div></div>`;
 }
 let _tzCat = null;
 const browserZone = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch (_) { return ""; } };
@@ -1855,7 +471,6 @@ export function PanelSettingsScreen() {
   const [lists, setLists] = useState((ps.custom_lists || []).map(l => ({ ...l, _rid: newRid(), targets: customTargets(l) })));
   const [turnEnabledS, setTurnEnabledS] = useState(ps.turn_enabled !== false);   // master turn-proxy switch
   const [turnForks, setTurnForks] = useState(new Set(ps.enabled_turn_forks || TURN_FORKS_DEFAULT));   // forks offered in the install picker
-  const [vkLinkS, setVkLinkS] = useState(ps.vk_link || "");   // VK call link baked into generated turn-proxy client configs
   // ---- themed colour pickers ({dark,light} each) — Interfaces / Display / Turn sections ----
   const asThemed = (v, dd, dl) => (v && typeof v === "object") ? { dark: v.dark || dd, light: v.light || dl } : { dark: v || dd, light: v || dl };
   const sameThemed = (a, dd, dl) => (a.dark || "").toLowerCase() === dd.toLowerCase() && (a.light || "").toLowerCase() === dl.toLowerCase();
@@ -2032,8 +647,8 @@ export function PanelSettingsScreen() {
   const [secUser, setSecUser] = useState(""); const [secOrigUser, setSecOrigUser] = useState("");
   const [secCur, setSecCur] = useState(""); const [secNp, setSecNp] = useState(""); const [secNp2, setSecNp2] = useState("");
   const [secAuth, setSecAuth] = useState(true);   // false = panel has no login configured (fields disabled)
-  const [sec2fa, setSec2fa] = useState(false);    // TOTP currently enabled on the account
   useEffect(() => { api.account().then(r => { if (r && r.ok) { setSecAuth(r.data.auth_enabled !== false); setSec2fa(!!r.data.twofa_enabled); if (r.data.username) { setSecUser(r.data.username); setSecOrigUser(r.data.username); } } }); }, []);
+  useEffect(() => { api.account().then(r => { if (r && r.ok) { setSecAuth(r.data.auth_enabled !== false); if (r.data.username) { setSecUser(r.data.username); setSecOrigUser(r.data.username); } } }); }, []);
   const secChanged = () => secAuth && (secUser.trim() !== secOrigUser || !!secNp);
   const [exitWhy, setExitWhy] = useState({});
   const exitErr = () => {
@@ -2121,7 +736,6 @@ export function PanelSettingsScreen() {
   const eq = (a, b) => { const c = v => v == null ? "" : Array.isArray(v) ? JSON.stringify([...v].sort()) : typeof v === "object" ? JSON.stringify(Object.keys(v).sort().reduce((o, k) => (o[k] = v[k], o), {})) : String(v); return c(a) === c(b); };
   const nFields = n => ({ routing_mode: n.routing_mode || "kernel", ip_learning: n.ip_learning !== false, endpoint_host: n.endpoint_host || "",
     log_mb: String(n.log_mb || 100),   // Settings → Logs, the node's disk budget (published by the panel, or a save of anything else posts 100)
-    dns_upstream: (n.dns_upstream || []).join(", "),   // Force-DNS resolver's upstream, as typed ("" = the default)
     mesh_subnet: n.mesh_subnet || "", mesh_port: n.mesh_port ? String(n.mesh_port) : "", mesh_prefix: n.mesh_prefix || "",
     default_egress_ip: n.default_egress_ip || "", panel_ip: n.panel_ip || "", mesh_egress_ip: n.mesh_egress_ip || "",
     default_exit: n.default_exit || "",
@@ -2159,15 +773,6 @@ export function PanelSettingsScreen() {
     setOrig(o => ({ ...o, [nid]: { ...(o[nid] || {}), default_routing: fresh.default_routing, default_exit: fresh.default_exit, p2p: fresh.p2p } }));
   };
   const [saved, setSaved] = useState(0);   // timestamp; the green "All settings saved" flash shows while now < saved
-  // Access & TLS reports its {dirty,busy,msg,run} up here so the shared footer drives its Save + status like every
-  // other section. The ref always holds the latest; accessSig re-renders the footer only when a shown bit changes.
-  const accessRef = useRef({ dirty: false, busy: false, msg: null, run: () => {} });
-  const [, setAccessSig] = useState("");
-  const onAccess = useCallback(s => {
-    accessRef.current = s;
-    const sig = (s.dirty ? "1" : "0") + (s.busy ? "1" : "0") + "|" + (s.msg ? (s.msg.ok ? "o" : "e") + s.msg.t : "");
-    setAccessSig(prev => prev === sig ? prev : sig);
-  }, []);
   const save = async () => {
     try {
     if (SECTIONS.some(([s]) => glDirty(s))) {   // only rewrite panel_settings when a GLOBAL setting actually changed (nodes go via nodeUpdate below)
@@ -2213,7 +818,6 @@ export function PanelSettingsScreen() {
         status_conditions: statusCondsOut(),
         theme_color: themeColorOut(),
         theme_color_light: themeColorLightOut(),
-        vk_link: vkLinkS.trim(),
         // Only when the card changed: log_debug is a duration, and an unrelated save must not restart Debug's clock.
         // Debug keeps the level saved before it as the base, which is what it returns to.
         ...(logDirty() ? { log_level: logEdit.lvl === "debug" ? logBase : logEdit.lvl,
@@ -2242,7 +846,6 @@ export function PanelSettingsScreen() {
       const e = nodeEdits[n.id] || {}, o = orig[n.id] || {};
       if (!Object.keys(nFields(n)).some(k => !eq(e[k], o[k]))) continue;
       const nr = await api.nodeUpdate({ id: n.id, routing_mode: e.routing_mode, ip_learning: e.ip_learning !== false, endpoint_host: (e.endpoint_host || "").trim(),
-        dns_upstream: String(e.dns_upstream || "").split(/[\s,]+/).filter(Boolean),
         mesh_subnet: (e.mesh_subnet || "").trim() === dSub ? "" : (e.mesh_subnet || "").trim(),
         mesh_port: (e.mesh_port || "").trim() === dPort ? "" : (e.mesh_port || "").trim(),
         mesh_prefix: (e.mesh_prefix || "").trim() === dPfx ? "" : (e.mesh_prefix || "").trim(),
@@ -2323,7 +926,6 @@ export function PanelSettingsScreen() {
       const e = nodeEdits[n.id] || {}, o = orig[n.id] || {}, fl = [];
       if (!eq(e.routing_mode, o.routing_mode))
         fl.push(T("mode → {v1}", { v1: (MODE_META[e.routing_mode || "kernel"] || {}).label || e.routing_mode }));
-      if (!eq(e.dns_upstream, o.dns_upstream)) fl.push(T("upstream DNS → {v1}", { v1: e.dns_upstream || T("val|default") }));
       if (!eq(e.ip_learning !== false, o.ip_learning !== false)) fl.push(T("IP learning → {v1}", { v1: e.ip_learning !== false ? T("val|on") : T("val|off") }));
       if (!eq(e.endpoint_host, o.endpoint_host)) fl.push(T("ingress address → {v1}", { v1: e.endpoint_host || T("val|auto") }));
       if (!eq(e.mesh_subnet, o.mesh_subnet)) fl.push(T("mesh subnet → {v1}", { v1: e.mesh_subnet || T("val|default") }));
@@ -2385,7 +987,7 @@ export function PanelSettingsScreen() {
   const confirmDeleteList = l => openConfirm({ title: T("Delete custom list"), confirmLabel: T("Delete"), danger: true,
     body: Trich("Delete *{v1}*? It's removed from *every node* it's enabled on, and its interface rules stop matching on the next sync. This can't be undone.", { v1: l.title || T("Untitled list") }),
     onConfirm: () => persistLists(lists.filter(x => x._rid !== l._rid)) });
-    const SECTIONS = [["display", "Display"], ["security", "Authentication"], ["access", "Panel access"], ["configs", "Client configs"], ["subs", "Subscriptions"], ["mesh", "Network"], ["links", "Mesh"], ["exits", "WARP & exits"], ["defaults", "Interfaces"], ["turn", "Turn proxies"], ["routing", "Routing & Blocking"], ["geo", "Geo data providers"], ["integrations", "Integrations"], ["logs", "Logs"]]   // i18n-keys: canonical (deep-link + persisted section); sectionLabel() below carries the display names
+    const SECTIONS = [["display", "Display"], ["security", "Authentication"], ["configs", "Client configs"], ["subs", "Subscriptions"], ["mesh", "Network"], ["links", "Mesh"], ["exits", "SOCKS5 exits"], ["defaults", "Interfaces"], ["turn", "Turn proxies"], ["routing", "Routing & Blocking"], ["geo", "Geo data providers"], ["integrations", "Integrations"], ["logs", "Logs"]]   // i18n-keys: canonical (deep-link + persisted section); sectionLabel() below carries the display names
 const VK_LINK_PLACEHOLDER = "<PASTE VK CALL LINK>";   // i18n-keys: emitted verbatim into generated configs
 
 /* Settings → Logs: the five levels, quietest first (docs/LOGS-PLAN.md §1). Each label and line has a key of its own:
@@ -2407,7 +1009,7 @@ const logLeftLabel = s => s >= 3600
    the persisted section), so only the LABEL is translated — literal T() calls, same as evItemLabel. */
 const sectionLabel = k => ({
   display: T("Display"), security: T("Authentication"), access: T("Panel access"), configs: T("Client configs"),
-  subs: T("Subscriptions"), mesh: T("Network"), links: T("Mesh"), exits: T("WARP & exits"), defaults: T("Interfaces"),
+  subs: T("Subscriptions"), mesh: T("Network"), links: T("Mesh"), exits: T("SOCKS5 exits"), defaults: T("Interfaces"),
   turn: T("Turn proxies"), routing: T("Routing & Blocking"), geo: T("Geo data providers"),
   integrations: T("Integrations"), logs: T("Logs"),
 }[k] || k);   // i18n-keys
@@ -2449,7 +1051,7 @@ const sectionLabel = k => ({
     onConfirm: () => removeCatFleet(id) });
   const catSaved = id => fleetNodes.some(n => ((orig[n.id] || {}).catalog_cats || []).includes(id));   // present in the last-SAVED fleet state → removing it is a real change (confirm); a draft-only add this session isn't
   const removeCatRow = id => catSaved(id) ? confirmRemoveCat(id) : removeCatFleet(id);   // × removes a just-added (unsaved) list with no prompt; only saved lists confirm
-  const SECF = { logs: ["log_mb"], routing: ["routing_mode", "ip_learning", "dns_upstream", "catalog_cats"], mesh: ["endpoint_host", "endpoint_hosts", "default_egress_ip", "panel_ip", "default_exit", "default_routing", "default_routing_exit_ips", "p2p", "p2p_portok"], links: ["mesh_egress_ip", "mesh_subnet", "mesh_port", "mesh_prefix"], exits: ["exits"] };
+  const SECF = { logs: ["log_mb"], routing: ["routing_mode", "ip_learning", "catalog_cats"], mesh: ["endpoint_host", "endpoint_hosts", "default_egress_ip", "panel_ip", "default_exit", "default_routing", "default_routing_exit_ips", "p2p", "p2p_portok"], links: ["mesh_egress_ip", "mesh_subnet", "mesh_port", "mesh_prefix"], exits: ["exits"] };
   const nodeDirty = (nid, sec) => (SECF[sec] || []).some(f => !eq((nodeEdits[nid] || {})[f], (orig[nid] || {})[f]));
   const listsJSON = ls => JSON.stringify((ls || []).map(l => ({ id: l.id || "", title: l.title || "", enabled: l.enabled !== false, targets: customTargets(l).trim() })));
   // Display is two lines in the confirm list: the zone has a consequence of its own (the charts re-time), so it is named.
@@ -2463,7 +1065,7 @@ const sectionLabel = k => ({
   const pokDirty = () => (r => r.bad.length > 0 || !portokSame(r.list, ps.p2p_portok || P2P_PORTOK_DEFAULT))(portokRead(pok));
   const glDirty = sec =>
     sec === "routing" ? (listsJSON(lists) !== listsJSON(ps.custom_lists || []) || Object.keys(blockEdits).length > 0 || blockRemoved.length > 0) :
-    sec === "turn" ? (turnEnabledS !== (ps.turn_enabled !== false) || [...turnForks].sort().join() !== (ps.enabled_turn_forks || TURN_FORKS_DEFAULT).slice().sort().join() || JSON.stringify(forkColorOverrides()) !== JSON.stringify(forkOvFrom(ps.turn_fork_colors)) || vkLinkS.trim() !== (ps.vk_link || "") || String(Math.max(0, parseInt(tuEvery) || 0)) !== String((ps.turn_update || {}).every_days == null ? 0 : (ps.turn_update || {}).every_days) || tuAt !== ((ps.turn_update || {}).at || "04:00")) :
+    sec === "turn" ? (turnEnabledS !== (ps.turn_enabled !== false) || [...turnForks].sort().join() !== (ps.enabled_turn_forks || TURN_FORKS_DEFAULT).slice().sort().join() || JSON.stringify(forkColorOverrides()) !== JSON.stringify(forkOvFrom(ps.turn_fork_colors)) || String(Math.max(0, parseInt(tuEvery) || 0)) !== String((ps.turn_update || {}).every_days == null ? 0 : (ps.turn_update || {}).every_days) || tuAt !== ((ps.turn_update || {}).at || "04:00")) :
     sec === "security" ? secChanged() :
     sec === "geo" ? geoDirty() || nbDirty() || pokDirty() :
     sec === "defaults" ? (dns !== (idf.dns || []).join(", ") || mtu !== String(idf.mtu || 1280) || ka !== String(idf.keepalive || 25) || JSON.stringify(ifaceColorOverrides()) !== JSON.stringify(ifaceOvFrom(ps.iface_colors)) || JSON.stringify(statusCondsOut()) !== JSON.stringify({ blocked: (ps.status_conditions || {}).blocked !== false, faulty: (ps.status_conditions || {}).faulty !== false }) || JSON.stringify(awgTrim(awgDef)) !== JSON.stringify(awgTrim(idf.awg_params || {})) || JSON.stringify(awg3Trim(awg3Def)) !== JSON.stringify(awg3Trim(idf.awg3_params)) || reachDef !== (idf.reach || "user") || awgGenDef !== (idf.awg_gen || DEFAULT_AWG_GEN) || (ivkEscrow !== null && ivkEscrow !== ivkEscrowInit)) :
@@ -2561,29 +1163,6 @@ const sectionLabel = k => ({
               <span class="rds-k">${T("Overlaps")}</span><span class="rds-v">${mm.overlaps}</span>
             </div>` : null}
             <div class="rmode-desc">${mm.exp}</div>
-            ${/* Force-DNS only: where this node's resolver sends the lookups it answers for its clients. Until now a
-                  hardcoded 1.1.1.1 + 8.8.8.8 (docs/DNS-SETTINGS-PLAN.md §4). Plain addresses — no DoH/DoT engine is added. */""}
-            ${nodeMode === "forcedns" ? html`<div class="field rd-upstream">
-              <label>${T("Upstream DNS")}</label>
-              <input value=${nv(selNode, "dns_upstream") || ""} onInput=${e => setNV(selNode, { dns_upstream: e.target.value })} placeholder="1.1.1.1, 8.8.8.8" autocomplete="off"/>
-              <div class="hint">${T("Where this node's resolver sends the lookups it answers for Force-DNS clients. Empty = 1.1.1.1, 8.8.8.8. Up to four addresses, each optionally with #port (a local resolver like 127.0.0.1#5335 works). If none of them answers, clients on this node can't resolve names.")}</div>
-              ${(() => { /* what the node's resolver RUNS with (it reports it while it runs), against what is saved — an older node
-                            ignores the setting and keeps the default, so a saved value is not yet an applied one */
-                const sr = (Store.stats[selNode] || {}).smartroute || {};
-                // A node too old to know the setting never reports it — but its resolver IS running (engine dns, dnsmasq
-                // alive) on the upstream that node always had, so that is what is in effect there.
-                const run = Array.isArray(sr.dns_upstream) ? sr.dns_upstream
-                  : (sr.engine === "dns" && sr.dnsmasq === true) ? ["1.1.1.1", "8.8.8.8"] : null;
-                if (!run || savedMode !== "forcedns") return null;
-                const saved = ((nodeRec || {}).dns_upstream || []).length ? nodeRec.dns_upstream : ["1.1.1.1", "8.8.8.8"];
-                // ⚠️ SAY WHICH ONE IT IS. The SPA knows: a node that runs the setting reports it; one too old to know it does
-                // not. One sentence covering both promised "the next sync" on a node that will never apply it (F1).
-                return run.join(",") === saved.join(",")
-                  ? html`<div class="hint">${T("In effect on this node: {v1}", { v1: run.join(", ") })}</div>`
-                  : Array.isArray(sr.dns_upstream)
-                    ? html`<div class="hint warnish">${T("Not on the node yet — it still asks {v1}. It applies on the next sync.", { v1: run.join(", ") })}</div>`
-                    : html`<div class="hint warnish">${T("This node is too old to use this setting — it keeps asking {v1} until it is updated.", { v1: run.join(", ") })}</div>`; })()}
-            </div>` : null}
           </div>`; })()}
 
           <div class="rltabs">
@@ -2646,8 +1225,8 @@ const sectionLabel = k => ({
 
           <div class="lg-legend">
             ${legRow(Trich("{v1} matched by address range (GeoIP / ASN) — works in every mode.", { v1: html`<span class="capb ip">IP</span>` }))}
-            ${legRow(Trich("{v1} matched by domain name — needs Force-DNS or SNI mode.", { v1: html`<span class="capb host">${T("Host")}</span>` }))}
-            ${provFleetCats.some(id => !catUsableInMode(id, nodeMode)) ? html`<div class="lg-leg-row faint">${T("Greyed rows are Host-only — this node is IP-only, so they can't match here. The pull stays remembered; switch to Force-DNS or SNI to activate them.")}</div>` : null}
+            ${legRow(Trich("{v1} matched by domain name — needs Hybrid SNI mode.", { v1: html`<span class="capb host">${T("Host")}</span>` }))}
+            ${provFleetCats.some(id => !catUsableInMode(id, nodeMode)) ? html`<div class="lg-leg-row faint">${T("Greyed rows are Host-only — this node is IP-only, so they can't match here. The pull stays remembered; switch to Hybrid SNI to activate them.")}</div>` : null}
           </div>` : null}
 
           ${routeTab === "blocking" ? (() => {
@@ -2698,7 +1277,7 @@ const sectionLabel = k => ({
               const catNm = blockCatLabel(c.label);   // the whole name on hover — a narrow column cuts a long one off
               return html`<div class=${"bkitem" + (open ? " open" : "") + (dis ? " bk-dis" : "")} key=${c.id}>
                 <div class=${"bkrow" + (open ? " open" : "")} onClick=${() => setBkOpen(o => ({ ...o, [c.id]: !open }))}>
-                  <div class="lg-pull" onClick=${e => e.stopPropagation()}><${Switch} on=${availOn(c) && !dis} disabled=${dis} title=${dis ? T("No IP list here — can't enforce in {v1}. Add an IP list, or use Force-DNS / Hybrid-SNI.", { v1: modeLabel }) : T("Filter on {v1}", { v1: nodeRec ? nodeRec.name : T("this node") })} onChange=${v => { if (!dis) setAvail(c, v); }}/></div>
+                  <div class="lg-pull" onClick=${e => e.stopPropagation()}><${Switch} on=${availOn(c) && !dis} disabled=${dis} title=${dis ? T("No IP list here — can't enforce in {v1}. Add an IP list, or use Hybrid SNI.", { v1: modeLabel }) : T("Filter on {v1}", { v1: nodeRec ? nodeRec.name : T("this node") })} onChange=${v => { if (!dis) setAvail(c, v); }}/></div>
                   <div class="bk-cat">
                     <div class="bk-catline"><span class="lg-title" title=${catNm}>${catNm}</span><span class="bk-chev">▾</span></div>
                     <div class="bk-lists">${nL ? src.map(srcLabel).join(", ") : html`<span class="faint">${T("no lists yet — add one →")}</span>`}</div>
@@ -2707,7 +1286,7 @@ const sectionLabel = k => ({
                   <div class="bk-size">${(() => { const t = catTotal(c); return t ? html`<span class="bk-count" title=${T("Total entries across this category’s lists")}>${t}</span>` : null; })()}</div>
                   <div class="bk-fleet" onClick=${e => e.stopPropagation()}><${FleetAssign} nodes=${fleetNodes} isOn=${nid => (c.enabled_nodes || []).includes(nid)} onToggle=${(nid, on) => setAvailNode(c, nid, on)}/></div>
                   <div class="bk-cap">${(() => { const cp = caps(c); return cp.host || cp.ip
-                    ? html`<${Fragment}>${cp.host ? html`<span class="capb host" title=${T("Matched by domain — needs Force-DNS or Hybrid-SNI mode")}>${T("Host")}</span>` : null}${cp.ip ? html`<span class="capb ip" title=${T("Matched by IP — works in every mode")}>IP</span>` : null}<//>`
+                    ? html`<${Fragment}>${cp.host ? html`<span class="capb host" title=${T("Matched by domain — needs Hybrid SNI mode")}>${T("Host")}</span>` : null}${cp.ip ? html`<span class="capb ip" title=${T("Matched by IP — works in every mode")}>IP</span>` : null}<//>`
                     : html`<span class="bk-nocap" title=${T("No lists yet")}>—</span>`; })()}</div>
                   <button class=${"bk-defchip" + (c.default_on ? " on" : "")} onClick=${e => { e.stopPropagation(); setDefault(c, !c.default_on); }} title=${T("Turn this category on automatically for every new interface (still toggled per interface)")}>${c.default_on ? T("Default ON") : T("Default OFF")}</button>
                   <${BlockListPicker} providers=${bc.providers} provLists=${provList} current=${src} nodeMode=${nodeMode} onAdd=${(p, l) => addSource(c, p, l)} autoOpen=${bkAutoAdd === c.id}/>
@@ -2723,7 +1302,7 @@ const sectionLabel = k => ({
                       ${s.n != null ? html`<span class=${"bk-count" + (s.err ? " bk-stale" : "")} title=${(srcHost(s) ? T("domains in this list") : T("IP ranges in this list")) + (s.err ? " · " + T("the last update failed ({v1}) — the previous copy is still in use", { v1: s.err }) : "")}>${fmtN(s.n)}</span>`
                         : s.err && !s.busy ? html`<span class="bk-count bk-fail" title=${T("The panel couldn't download this list ({v1}). It retries on its own, less often each time.", { v1: s.err })}>${T("not downloaded")}</span>`
                         : (bc.providers || []).some(p => p.id === s.provider && p.enabled !== false) ? html`<span class="bk-count bk-wait" title=${T("The panel is downloading this list — the count appears when it's done")}>…</span>` : null}
-                      <span class=${"capb " + (srcHost(s) ? "host" : "ip")} title=${srcHost(s) ? T("Domain list — needs Force-DNS or Hybrid-SNI mode") : T("IP list — works in every mode")}>${srcHost(s) ? T("Host") : T("cap|IP")}</span>
+                      <span class=${"capb " + (srcHost(s) ? "host" : "ip")} title=${srcHost(s) ? T("Domain list — needs Hybrid SNI mode") : T("IP list — works in every mode")}>${srcHost(s) ? T("Host") : T("cap|IP")}</span>
                       ${srcUrl(s) ? html`<a class="catrow-info" href=${srcUrl(s)} target="_blank" rel="noopener" title=${T("See what's in this list")} onClick=${e => e.stopPropagation()}><${Ic} i="info"/></a>` : null}
                       <button class="bk-lremove" title=${T("Remove this list from the category")} onClick=${e => { e.stopPropagation(); removeSource(c, i); }}><${Ic} i="x"/></button>
                     </div>`)
@@ -2743,7 +1322,7 @@ const sectionLabel = k => ({
                 ${/* what each engine does with a blocked NAME since 1.8.8 (KSNI-HOSTNAMES D1/D2): Hybrid refuses the connection,
                       Force-DNS drops the answer's address unless an allowed name shares it — the two stated, not "fills a set" */""}
                 ${legRow(Trich("{v1} matched by domain name — *{v2}* drops what a blocked name resolves to, unless an allowed site uses the same address; *Hybrid-SNI* refuses each connection to a blocked name. IP-only and Kernel-SNI skip domain lists.", { v1: html`<span class="capb host">${T("Host")}</span>`, v2: T("Force-DNS") }))}
-                ${legRow(Trich("{v1} a domain list can't enforce on an IP-only or Kernel-SNI node — it's skipped, never pushed. Switch that node to Force-DNS / Hybrid-SNI, or add an IP list.", { v1: html`<span class="bk-nabadge">${T("Not available")}</span>` }))}
+                ${legRow(Trich("{v1} a domain list can't enforce on an IP-only or Kernel-SNI node — it's skipped, never pushed. Switch that node to Hybrid SNI, or add an IP list.", { v1: html`<span class="bk-nabadge">${T("Not available")}</span>` }))}
               </div>
             <//>`;
           })() : null}
@@ -2815,10 +1394,6 @@ const sectionLabel = k => ({
             <button class="iconbtn tf-gear" title=${T("Server-flag defaults for {v1} (pre-fill new proxies)", { v1: f.label })} onClick=${() => openServerDefaults(f.id)}><${Ic} i="gear"/></button>
           </div>`; })}</div>
           <//>`}
-          <${VkPoolEditor}/>
-          <div class="seclabel" style="margin-top:18px">${T("Fallback VK call link")}</div>
-          <p class="hint" style="margin:0 0 8px">${Trich("Used for *unassigned* peers, and as the link the panel bakes in when you generate a config here to *test a connection yourself* before handing it out. Leave blank to emit a *{v1}* placeholder.", { v1: VK_LINK_PLACEHOLDER })}</p>
-          <input class="vklink-in" value=${vkLinkS} onInput=${e => setVkLinkS(e.target.value)} placeholder=${T("https://vk.com/call/join/…")}/>
           ${turnEnabledS ? html`<${Fragment}>
           <div class="seclabel" style="margin-top:18px">${T("Auto-update schedule")}</div>
           <p class="hint" style="margin:0 0 10px">${Trich("The panel checks each deployed proxy's fork for a newer release and, if there is one, updates the binary and restarts the proxy automatically. A restart briefly drops that proxy's clients, so pick a *quiet hour*. (The panel stages the update; each node applies it on its next sync.)")}</p>
@@ -2971,7 +1546,6 @@ const sectionLabel = k => ({
                       saved: +(n.log_mb || 100), st: n.log || null, docker: n.kind === "docker", stale: nodeStale(n.id) }))]}/>
         </div>` : null}
         ${section === "logs" ? html`<${LogViewer}/>` : null}
-        ${section === "access" ? html`<${AccessTLSCard} onChange=${onAccess}/>` : null}
         ${section === "defaults" ? html`<div class="card">
           <div class="seclabel turnhead" style="margin-top:0">${T("Interface colours")}<span class="grow"></span>
             ${Object.keys(ifaceColorOverrides()).length ? html`<button class="btn btn-mini" onClick=${() => setIfaceColors({ wg: { ...IFACE_COLOR_DEFAULTS.wg }, awg: { ...IFACE_COLOR_DEFAULTS.awg }, awg3: { ...IFACE_COLOR_DEFAULTS.awg3 }, wdtt: { ...IFACE_COLOR_DEFAULTS.wdtt }, csqtt: { ...IFACE_COLOR_DEFAULTS.csqtt } })}><${Ic} i="refresh"/>${T("Reset")}</button>` : null}</div>
@@ -3043,7 +1617,6 @@ const sectionLabel = k => ({
           <div class="field"><label>${T("Current password")}</label><input type="password" value=${secCur} disabled=${!secAuth} onInput=${e => setSecCur(e.target.value)} autocomplete="current-password" placeholder=${T("required to confirm a change")}/></div>
           <div class="row2"><div class="field"><label>${T("New password")}</label><input type="password" value=${secNp} disabled=${!secAuth} onInput=${e => setSecNp(e.target.value)} autocomplete="new-password" placeholder=${T("leave blank to keep current")}/></div>
             <div class="field"><label>${T("Confirm new password")}</label><input type="password" value=${secNp2} disabled=${!secAuth} onInput=${e => setSecNp2(e.target.value)} autocomplete="new-password"/></div></div>
-          <${TwoFactorCard} enabled=${sec2fa} disabled=${!secAuth} onChange=${setSec2fa}/>
         </div>` : null}
         ${section === "configs" ? html`<div class="card">
           <div class="seclabel" style="margin-top:0">${T("Client configs")}</div>
@@ -3056,7 +1629,6 @@ const sectionLabel = k => ({
           <div class="seclabel">${T("Encryption")}</div>
           <p class="hint" style="margin:0 0 8px">${T("An encryption key held only by you (independent of your login password) protects stored client configs so the server can't read the private keys, and unlocks a peer's QR any time you're signed in. The same key powers subscriptions when you turn them on.")}</p>
           <${SubVaultCard}/>
-          <${ConfigMigrationCard}/>
         </div>` : null}
         ${section === "subs" ? html`<div class="card">
           <div class="seclabel" style="margin-top:0">${T("Subscriptions")}</div>
@@ -3074,19 +1646,7 @@ const sectionLabel = k => ({
           <div class="seclabel">${T("Access expiry")}</div>
           <p class="hint" style="margin:0 0 12px">${Trich("A subscription or peer with an expiry date shows an orange *about to expire* warning this many days ahead.")}</p>
           <div class="field" style="max-width:340px"><label>${T("Warn before expiry (days)")}</label><input type="text" inputmode="numeric" value=${warnDays} onDblClick=${e => e.target.select()} onInput=${e => { let v = e.target.value.replace(/[^0-9]/g, ""); if (+v > 365) v = "365"; setWarnDays(v); }} placeholder=${T("Default: 3 (0 = warn only once expired)")}/></div>
-          <div class="seclabel">${T("Address & certificate")}</div>
-          <div class=${"subaddr" + (declarative ? " wide" : "")}>
-            <div class="subaddr-row"><span class="subaddr-k">${T("Public URL")}</span><span class="subaddr-v mono">${subBaseUrl() || html`<span class="faint">${declarative ? T("Not set — give it sub.domain or sub.publicUrl") : T("Not set")}</span>`}</span></div>
-            ${/* On a declarative host this row used to read 0.0.0.0:8444 — an unseeded default beside a
-                  surface that is actually on loopback, and the one number a hand-written vhost needs. The
-                  module now writes what it is really reached on, so name the row for what it is FOR. */""}
-            <div class="subaddr-row"><span class="subaddr-k">${declarative ? T("Proxy to") : T("Listen")}</span><span class="subaddr-v mono">${(((ps.access || {}).sub || {}).host || "0.0.0.0")}:${(((ps.access || {}).sub || {}).port || 8444)}</span></div>
-            <div class="subaddr-row"><span class="subaddr-k">${T("Certificate")}</span><span class="subaddr-v mono">${tlsModeLabel(((ps.access || {}).tls || {}).mode || "")}</span></div>
-          </div>
-          <div class="hint" style="margin:6px 0 0">${declarative
-            ? html`${Trich("This page's address comes from the configuration that built this machine — `services.swg-panel.sub.domain`, `sub.basePath`, `sub.publicUrl` and `sub.port`.")}
-                <div style="margin-top:5px">${Trich("{v1} shows them beside a virtual host you can paste.", { v1: html`<button class="linkbtn" onClick=${() => setSection("access")}>${T("Panel access")}</button>` })}</div>`
-            : Trich("The subscription page's URL, listen address and certificate are configured in {v1}.", { v1: html`<button class="linkbtn" onClick=${() => setSection("access")}>${T("Panel access")}</button>` })}</div>
+          <div class="field"><label>${T("Public URL")}</label><code>${subBaseUrl()}</code></div>
           <div class="seclabel">${T("Languages")}</div>
           <div class="field"><label>${T("Offered on the subscription page")}</label>
             <div class="sublangs">${SUB_LANG_LIST.map(([id, name]) => html`<div class=${"sublang" + (subLangs.includes(id) ? " on" : "")} key=${id}>
@@ -3150,7 +1710,7 @@ const sectionLabel = k => ({
               source addresses still under Network. Reversible — the move is five edits. */""}
         ${section === "exits" ? html`<div class="card">
           ${nodeRec ? html`<${Fragment}>
-            <div class="seclabel" style="margin-top:0">${T("{v1} — external exits", { v1: nodeRec.name })}</div>
+            <div class="seclabel" style="margin-top:0">${T("{v1} — SOCKS5 exits", { v1: nodeRec.name })}</div>
             <${NodeExitsForm} key=${selNode} node=${nodeRec} vals=${nodeEdits[selNode]} set=${p => setNV(selNode, p)}
               goSection=${setSection} escrowOn=${ivkEscrowInit}
               ${/* Same writer the Network screen uses: exits are saved on the spot and both sides of the
@@ -3207,37 +1767,7 @@ const sectionLabel = k => ({
             <div class="seclabel" style="margin-top:0">${T("{v1} — ingress", { v1: nodeRec.name })}</div>
             <${NodeIngressForm} node=${nodeRec} vals=${nodeEdits[selNode]} set=${p => setNV(selNode, p)}/>
             <div class="seclabel">${T("{v1} — outbound addresses", { v1: nodeRec.name })}</div>
-            <${NodeEgressForm} node=${nodeRec} vals=${nodeEdits[selNode]} set=${p => setNV(selNode, p)}
-              escrowOn=${ivkEscrowInit} goSection=${setSection}
-              ${/* ⚠️ SEEDED AND RE-BASED THROUGH `nFields`, NEVER FROM A RAW RECORD. /api/state attaches
-                    derived fields to each exit (`why_not`, `live`, `key_blob`) and `nFields` strips them on
-                    purpose — seeding or re-basing with them would leave the draft a different SHAPE from
-                    the baseline, so the section would read dirty forever and re-submit server verdicts as
-                    if the operator had typed them. */""}
-              ${/* One writer for every exit change this screen makes, and it re-bases BOTH sides of the
-                    dirty check from the server's answer — the draft and the baseline — so no section is
-                    left offering to save something that is already saved. */""}
-              saveExits=${async xs => {
-                const rr = await api.nodeUpdate({ id: selNode, exits: xs });
-                if (!rr || !rr.ok) {
-                  toast(exitRefusalText(rr && rr.refusal, rr && rr.device) || srvText(rr) || T("Couldn't save"), "err");
-                  return false;
-                }
-                await Store.poll();
-                const fresh = nFields((Store.nodes || []).find(n => n.id === selNode) || {});
-                setNV(selNode, { exits: fresh.exits });
-                setOrig(o => ({ ...o, [selNode]: { ...(o[selNode] || {}), exits: fresh.exits.map(x => ({ ...x })) } }));
-                rebaseDefault(selNode, fresh);
-                return true;
-              }}
-              openManage=${seed => openModal(html`<${ExitManageSheet} node=${nodeRec}
-                seed=${seed || nFields(nodeRec).exits}
-                onSaved=${() => {
-                  const fresh = nFields((Store.nodes || []).find(n => n.id === selNode) || {});
-                  setNV(selNode, { exits: fresh.exits });
-                  setOrig(o => ({ ...o, [selNode]: { ...(o[selNode] || {}), exits: nFields((Store.nodes || []).find(n => n.id === selNode) || {}).exits } }));
-                  rebaseDefault(selNode, fresh);
-                }}/>`)}/>
+            <${NodeEgressForm} node=${nodeRec} vals=${nodeEdits[selNode]} set=${p => setNV(selNode, p)}/>
           <//>`
             : html`<p class="hint" style="margin:0">${T("No nodes yet — enroll a node to configure how it is reached and how it exits.")}</p>`}
           ${/* FLEET-WIDE, deliberately OUTSIDE the node picker above: "which of my nodes sit on a private network"
@@ -3274,18 +1804,14 @@ const sectionLabel = k => ({
           <textarea class="ta" rows="3" spellcheck="false" autocomplete="off" placeholder="10.0.0.0/24&#10;198.51.100.7" value=${scanAllow} onInput=${e => setScanAllow(e.target.value)}></textarea>
         </div>` : null}
         <div class="setfoot">
-          ${section === "access"
-            ? null   /* access status (incl. "applying, be patient") is consolidated into the card's top banner, scrolled into view on Save */
-            : (Date.now() < saved ? html`<span class="savedflash"><${Ic} i="check"/> ${T("All settings saved")}</span>` : null)}
+          ${(Date.now() < saved ? html`<span class="savedflash"><${Ic} i="check"/> ${T("All settings saved")}</span>` : null)}
           <span class="grow"></span>
           ${/* Back leaves Settings for where the operator came from, on a phone as on a desktop (operator, 2026-10-29: it went to
                 the list of sections, wherever Settings was opened from); the list is the sticky "Panel settings" line above */""}
           <button class="btn btn-ghost btn-dismiss" onClick=${leaveSettings}>${T("Back")}</button>
           ${/* a phone in a section: the list of sections from the foot too, as the sticky line above opens it (operator) */""}
           ${isMobile() && section ? html`<button class="btn btn-ghost m-setmenu" onClick=${() => { setSection(null); window.scrollTo(0, 0); }}>${T("Open menu")}</button>` : null}
-          ${section === "access"
-            ? html`<button class="btn btn-primary" disabled=${accessRef.current.busy || !accessRef.current.dirty} title=${!accessRef.current.dirty ? T("No changes to save") : ""} onClick=${() => accessRef.current.run()}>${accessRef.current.busy ? T("Saving…") : T("Save")}</button>`
-            : html`<button class="btn btn-primary" disabled=${!!secErr() || !!exitErr() || !anyDirty} title=${secErr() || exitErr() || (!anyDirty ? T("No changes to save") : "")} onClick=${confirmSave}>${T("Save")}</button>`}</div>
+          ${html`<button class="btn btn-primary" disabled=${!!secErr() || !!exitErr() || !anyDirty} title=${secErr() || exitErr() || (!anyDirty ? T("No changes to save") : "")} onClick=${confirmSave}>${T("Save")}</button>`}</div>
       </div>
     </div>
   </div>`;
@@ -4414,9 +2940,6 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
   };
   // the four ways to add one: the desktop's row of buttons, a phone's sheet (ExitKindSheet), the same records
   const exitKinds = [
-    [T("Register with WARP"), { producer: "imported", provider: "warp", licence: "" }, T("A free Cloudflare account, registered for this node")],
-    [T("Paste a custom config"), { producer: "imported", provider: "profile", profile_text: "" }, T("A WireGuard or AmneziaWG profile from anywhere else")],
-    [T("Add a dial-in exit"), { producer: "imported", provider: "profile", profile_text: "", dialin: true }, T("An upstream that connects to this node, such as a router behind NAT")],
     [T("Add a SOCKS5 proxy"), { producer: "imported", provider: "socks5", socks_text: "", socks_pass: "" }, T("A SOCKS5 proxy's address and login")],
   ];
   const del = ex => openConfirm({
@@ -4443,7 +2966,7 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
     ${/* The node's name is in the section header two lines up, and where devices live is a fact about a
           different screen. What is left is the one thing the screen has to say. */""}
     ${isMobile() ? html`<button class="btn btn-primary m-addtop" onClick=${() => openModal(html`<${ExitKindSheet} kinds=${exitKinds} onPick=${add}/>`)}><${Ic} i="plus"/> ${T("Add an exit")}</button>` : null}
-    <p class="hint" style="margin:0 0 14px">${T("Cloudflare WARP accounts, WireGuard profiles from anywhere else, SOCKS5 proxies, and dial-in exits — an upstream such as a router behind NAT that connects to this node. Websites see the exit rather than this node.")}</p>
+    <p class="hint" style="margin:0 0 14px">${T("Configure SOCKS5 proxies here and assign an exit from the user card.")}</p>
     ${exits.length ? html`<div class="exgrid g8">
       <div class="exg-r"><div class="exg-h">${T("Title")}</div>
       <div class="exg-h">${T("Device")}</div>
@@ -4521,7 +3044,7 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
     </div>`
       : null}
     ${exits.length ? null
-      : html`<p class="hint" style="margin:0 0 12px">${T("No exits on this node yet. Register a free Cloudflare account, paste a WireGuard profile from somewhere else, add a SOCKS5 proxy, or add a dial-in exit for an upstream that connects to this node.")}</p>`}
+      : html`<p class="hint" style="margin:0 0 12px">${T("No SOCKS5 exits on this node yet.")}</p>`}
     ${/* TWO WAYS TO GET ONE, offered as two actions rather than one button and a provider dropdown: the
           choice is what the operator is actually deciding, and "Register" has to be one click for the path
           that needs no input at all. wgcf is never named — it is plumbing. */""}
@@ -4672,182 +3195,19 @@ export const P2P_HINT = () => ({
   iface: T("Each interface's own Torrents / P2P choice applies — block, allow, or route. Traffic other nodes send out through this server, and programs running on it, are not checked."),
   routed: v1 => T("Torrent traffic may leave only through {v1}. If that way is down, torrent traffic is blocked — never sent out another way. Traffic other nodes send out through this server is blocked. A torrent program on the server itself is stopped only when its handshakes are unencrypted — an encrypted one gets through.", { v1 }) });
 
-export function NodeEgressForm({ node, vals, set, escrowOn, goSection, openManage, saveExits }) {
-  const ips = node.ips || []; const v = vals || {};
-  const isList = Array.isArray(v.default_routing);   // the default is a rule list (D2) — its presence is the switch
-  // The list's rules start folded: the section opens on its few settings, and the rules are there on a click. Opened by the
-  // choice that makes the default a list, so choosing it shows where the rules go.
+function NodeEgressForm({ node, vals: v, set }) {
+  const ips = node.ips || [];
+  const isList = Array.isArray(v.default_routing);
   const [rulesOpen, setRulesOpen] = useState(false);
   const [p2pOpen, setP2pOpen] = useState(false);
-  const [form, setForm] = useState(null);
-  const [armed, setArmed] = useState("");   // the exit id whose row is asking "delete?" — see exitOptionGroups
-  const ddClose = useRef(null);
-  const closeList = () => { if (ddClose.current) ddClose.current(); };
-  const exitsNow = () => (vals || {}).exits || node.exits || [];
-  const commitExits = async (xs, extra) => {
-    const ok = saveExits ? await saveExits(xs) : true;
-    if (ok && extra) set(extra);
-    return ok;
-  };
-  const [egDraft, setEgDraft] = useState(null);   // null | {id, val}
-  const setExitEgress = async (id, val) => {
-    await commitExits(exitsNow().map(x => (String(x.id) === String(id)
-      ? { ...x, egress_ip: String(val || "").trim() } : x)));
-  };
-  const addDevice = async (dev, title = "", eg = "", select = true, gw = "") => {
-    const d = String(dev || "").trim();
-    if (!d) return;
-    const have = exitsNow().find(x => String(x.device || "") === d);
-    const patch = { label: String(title || "").trim(), egress_ip: String(eg || "").trim(),
-                    gw: String(gw || "").trim() };
-    const next = have
-      ? exitsNow().map(x => (x === have ? { ...x, ...patch } : x))
-      : [...exitsNow(), { id: newExitId(), ...patch, producer: "adopted",
-                          device: d, enabled: true, killswitch: false }];
-    setForm(null);
-    // choosing a device is choosing a PLAIN default: a list still stored would make the server ignore it (§4.2)
-    await commitExits(next, select ? { default_exit: have ? have.id : next[next.length - 1].id,
-                                       ...(isList ? { default_routing: null } : {}) } : null);
-  };
-  const renameExit = async (id, title, eg, gw, dev) => {
-    setForm(null);
-    const d = String(dev || "").trim();
-    await commitExits(exitsNow().map(x => (String(x.id) === String(id)
-      ? { ...x, label: String(title || "").trim(), egress_ip: String(eg || "").trim(),
-          gw: String(gw || "").trim(), ...(d ? { device: d } : {}) } : x)));
-  };
-  const commitForm = () => {
-    if (!form) return;
-    if (form.kind === "exit") return renameExit(form.id, form.title, form.egress_ip, form.gw, form.device);
-    // "device" is the PENCIL on a device the node reported but the panel has no record for — an edit, so it
-    // mints the record and stops there. "custom" is the create, and creating is choosing.
-    addDevice(form.device, form.title, form.egress_ip, form.kind === "custom", form.gw);
-  };
   return html`<div>
-    <p class="hint" style="margin:0 0 12px">${Trich("How *{v1}* leaves for the internet by default, and as which address. An interface that makes its own choice keeps it — these apply to the ones set to Auto, and to traffic cascaded in from other nodes.", { v1: node.name })}</p>
-    ${/* DECISION 4 — the node's default WAY OUT, deliberately placed before the address it leaves AS. The
-          two are one ladder read top to bottom: where, then as what. Same semantics as its neighbour and as
-          every per-interface field — live, node-wide, and beaten by any interface that chose for itself. */""}
-    ${/* The two halves of one sentence — WHERE it leaves, then AS WHAT — so they sit on one line and are
-          read together. Wraps to stacked below ~440px rather than squashing two dropdowns into slivers. */""}
-    ${/* ⚠️ ONLY "custom" TAKES THE ROW'S PLACE, and the difference is what the operator is doing. Creating a
-          device is answering the question the row asks, so the row steps aside for the answer. EDITING one
-          is a note about some OTHER row — the current selection is still the thing on screen and still
-          relevant, so it stays and the fields appear beneath it. */""}
-    <div class=${"row2 egrow" + (form && form.kind === "custom" ? " editing" : "")}>
-    <div class="field"><label>${T("Default exit")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— where traffic leaves by")}</span></label>
-      ${/* THE SAME GROUPED LIST THE INTERFACE AND RULE PICKERS OFFER, minus the two kinds that cannot mean
-            anything here: a node's DEFAULT cannot be "forward to another node" (that is a per-interface
-            decision about that interface's traffic) and it cannot be "smart cascade" (a rule list is the
-            thing that HAS a default, not a default itself). Same words, same order, one builder. */""}
-      ${/* One handler, three kinds of answer: an exit id (choose it), `dev:<name>` (a device the node
-            reported — mint the record and choose that), or `__custom__` (a device it did NOT report — the
-            operator types the name below). The record is identical in the last two cases, so a device that
-            starts out typed and is reported later does not become a second thing. */""}
-      ${/* ⚠️ A SECOND DOOR TO THE SAME ROOM, on purpose. "Manage…" already sits on the list's last row, but
-            only someone who OPENS the list finds it — and the operator who wants to fix an exit is not
-            necessarily choosing one. The gear is where every other screen puts "the fuller version of this",
-            and it opens the identical sheet, so there is nothing to keep in step. */""}
-      <div class="exdd-row">
-      ${/* The form belongs to this list, and so does any popup opened FROM the form — portalled to the
-            body, so nothing the caller holds `contains` it. "A click in some open list is not a click away
-            from this list" is the whole rule, and it needs no marker on either side to say so. */""}
-      <${Dropdown} value=${isList ? "__smart__" : (v.default_exit || "")} closeRef=${ddClose}
-        keep=${t => !!(t && t.closest && t.closest(".exname, .ddpop"))}
-        ${/* While the form is up it sits directly below this control, so the list has to open the other way
-              or it covers the fields the operator opened it to edit. */""}
-        drop=${form ? "up" : "auto"}
-        ${/* a half-answered "delete?" must not be waiting there the next time the list is opened */""}
-        onClose=${() => setArmed("")}
-        onChange=${x => {
-          if (x === "__custom__") return setForm({ kind: "custom", device: "", title: "", egress_ip: "" });
-          setForm(null);
-          // D2 — choosing the list keeps what the default was as its "Everything else", so nothing about where the
-          // remainder goes changes by choosing it; the operator adds rules above that.
-          if (x === "__smart__") return isList ? null
-            : (setRulesOpen(true), set({ default_routing: v.default_exit ? [{ enabled: true, category: "all", action: "dev", exit_id: v.default_exit }] : [] }));
-          if (String(x).startsWith("dev:")) return addDevice(String(x).slice(4));   // clears the list itself (see addDevice)
-          set({ default_exit: x, ...(isList ? { default_routing: null } : {}) });
-        }}
-        options=${[
-        { value: "", label: node.wan_iface ? T("Default ({v1})", { v1: node.wan_iface }) : T("val|Default") },
-        { value: "__smart__", label: T("Routing (smart cascade)"), className: "egopt-mode" },
-        ...exitOptionGroups({ ...node, exits: v.exits || node.exits || [] }, {
-          // the DRAFT above supplies the labels (a rename shows before it is saved); the STORE supplies the
-          // live state, which the draft does not carry — see `exitOptionGroups`.
-          stored: node.exits || [],
-          // this screen MANAGES exits, so it offers the devices the node reports that have no record yet —
-          // choosing one mints it (see `onChange` below). A screen that only chooses does not ask for them.
-          devices: true,
-          onToggle: (id, on) => {
-            if (String(id).startsWith("dev:")) {
-              const dev = String(id).slice(4);
-              if (on) return;                       // already the effective state; nothing to write
-              return commitExits([...exitsNow(), { id: newExitId(), label: "", producer: "adopted",
-                                                   device: dev, enabled: false, killswitch: false }]);
-            }
-            commitExits(exitsNow().map(x => (String(x.id) === String(id) ? { ...x, enabled: on } : x)),
-                        (!on && String(v.default_exit || "") === String(id)) ? { default_exit: "" } : null);
-          },
-          custom: "__custom__",
-          onRename: a => setForm({ ...a, title: a.title || "", egress_ip: a.egress_ip || "" }),
-          onManage: () => { closeList(); if (openManage) openManage(v.exits); },
-          armed, onArm: setArmed,
-          onRemove: a => { setArmed("");
-            commitExits(exitsNow().filter(x => String(x.id) !== String(a.id)),
-                        String(v.default_exit || "") === String(a.id) ? { default_exit: "" } : null); },
-        })]}/>
-      ${openManage ? html`<button type="button" class="btn btn-icon exdd-gear" title=${T("Manage…")}
-        aria-label=${T("Manage…")} onClick=${() => openManage(v.exits)}><${Ic} i="gear"/></button>` : null}
-      </div>
-      ${(node.exits || []).length ? null : html`<div class="hint">${T("No exits on this node yet — add one under External exits to offer it here.")}</div>`}</div>
-    ${(() => {
-      const _x = isList ? null : (node.exits || []).find(e => e.id === (v.default_exit || ""));
-      if (!_x) {
-        return html`<div class="field"><label>${T("Default egress IP")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— direct internet exit")}</span></label>
-          <${NodeIpPick} ips=${ips} value=${v.default_egress_ip || ""} onChange=${ip => set({ default_egress_ip: ip })} auto=${T("Auto (MASQUERADE)")}/></div>`;
-      }
-      if ((_x.producer || "adopted") !== "imported") {
-        const _known = candAddr(node, _x.device);
-        const _drafted = (egDraft && String(egDraft.id) === String(_x.id)) ? egDraft.val : null;
-        const _risky = !_known && !String(_drafted ?? _x.egress_ip ?? "").trim();
-        return html`<div class="field"><label>${T("Default egress IP")}</label>
-          <${ExitEgressPick} key=${_x.id} discovered=${_known} value=${_drafted ?? (_x.egress_ip || "")}
-            addrs=${cardAddrs(node, _x.device)}
-            onChange=${val => setEgDraft({ id: _x.id, val })}
-            onCommit=${val => { setEgDraft(null); setExitEgress(_x.id, val); }}/>
-          ${_risky ? html`<div class="hint err">${T("This node has never reported an IP address for this device. If it doesn't have one, traffic sent through it is thrown away on the way out, and nothing here will look wrong. Type the address in if you know it.")}</div>` : null}</div>`;
-      }
-      const _ins = exitInsideAddr(_x);
-      const _h = exitHealth(_x, node);
-      return html`<div class="field"><label>${T("Default egress IP")}</label>
-        <input value=${_ins || "—"} disabled readonly
-          style=${_ins ? "font-family:var(--mono)" : ""}/>
-        ${/* NO LINE UNDER A KNOWN ADDRESS. The field is labelled, the value is an address, and the sentence
-              explaining where it came from was three lines of prose for a fact nobody had asked about. The
-              hint is kept for the case that genuinely needs one: no address, and a reason why. */""}
-        ${_ins ? null
-          : html`<div class=${"hint " + (_h.tone === "bad" ? "err" : "warnish")}>${_h.why}</div>`}</div>`;
-    })()}
-      ${form ? html`<${ExitFields} value=${form}
-        onChange=${p => setForm(f => ({ ...f, ...p }))}
-        discovered=${candAddr(node, form.device)} addrs=${cardAddrs(node, form.device)}
-        isNic=${isCardName(node, form.device)} gw=${cardGateway(node, form.device)}
-        ${/* ⚠️ A NAME WE INVENTED IS EDITABLE; A NAME THE NODE REPORTED IS NOT. The manage sheet has always
-              let the operator correct a name they typed, and one screen refusing what the other allows is
-              how a UI teaches people not to trust it. But a reported name is that box's own device, and
-              editing it here would silently repoint the exit at something else — a different act, and one
-              that belongs where the whole record is on screen. */""}
-        devEditable=${form.kind === "custom" || (form.kind === "exit" && !candOf(node, form.device))}
-        submitLabel=${form.kind === "custom" ? T("val|Add") : T("Save changes")}
-        onSubmit=${commitForm} onCancel=${() => setForm(null)}
-        ${/* Only the create case has anything to say: what KIND of device this is for, which is the one
-              thing the form cannot show. The edit hint used to explain what a title is for, to someone who
-              had just clicked a pencil on a row that already had one. */""}
-        hint=${form.kind === "custom"
-          ? T("A tunnel something else on this node runs that it hasn't reported — a proxy's TUN, a WireGuard client. It is added to this node's exits and chosen here.")
-          : ""}/>` : null}
-    </div>
+    <div class="field"><label>${T("Default egress IP")}</label>
+      <${NodeIpPick} ips=${ips} value=${v.default_egress_ip || ""}
+        onChange=${ip => set({ default_egress_ip: ip })} auto=${T("Auto (MASQUERADE)")}/></div>
+    <label class="toggle-row"><${Switch} on=${isList} onChange=${on => {
+      set({ default_routing: on ? [] : null, default_routing_exit_ips: {} });
+      setRulesOpen(on);
+    }}/><span>${T("Routing (smart cascade)")}</span></label>
     ${/* D2 — THE DEFAULT, MADE SMART: one rule list for this node's Auto interfaces, its smart interfaces' silence and the
           traffic other nodes cascade out through it (§3.1, §7.3). Keyed by what the server holds, so a save re-reads it. */""}
     ${isList ? html`<div class="field">
@@ -4914,91 +3274,3 @@ function PortokHints({ text }) {
 
 
 // Self-contained: setup → scan → verify → recovery codes → enabled/disable.
-export function TwoFactorCard({ enabled, disabled, onChange }) {
-  const [stage, setStage] = useState("idle");     // idle | setup | recovery | disabling
-  const [setup, setSetup] = useState(null);        // {secret, otpauth}
-  const [qr, setQr] = useState("");
-  const [code, setCode] = useState("");
-  const [recovery, setRecovery] = useState([]);
-  const [disPw, setDisPw] = useState(""); const [disCode, setDisCode] = useState("");
-  const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
-  const reset = () => { setStage("idle"); setSetup(null); setQr(""); setCode(""); setErr(""); setDisPw(""); setDisCode(""); };
-  const beginSetup = async () => {
-    setBusy(true); setErr("");
-    try {
-      const r = await api.twofaSetup();
-      if (!r || !r.ok) { setErr(srvText(r) || T("Couldn't start setup.")); setBusy(false); return; }
-      setSetup(r.data); setStage("setup");
-      try { setQr(await qrDataURL(r.data.otpauth, 200)); } catch (_) { setQr(""); }
-    } catch (_) { setErr(T("Couldn't reach the panel.")); }
-    setBusy(false);
-  };
-  const doEnable = async () => {
-    if (busy) return; setBusy(true); setErr("");
-    try {
-      const r = await api.twofaEnable(code.trim());
-      if (!r || !r.ok) { setErr(srvText(r) || T("That code isn't valid — try the current one.")); setBusy(false); return; }
-      setRecovery((r.data && r.data.recovery) || []); setStage("recovery"); setCode(""); onChange && onChange(true);
-    } catch (_) { setErr(T("Couldn't reach the panel.")); }
-    setBusy(false);
-  };
-  const doDisable = async () => {
-    if (busy) return; setBusy(true); setErr("");
-    try {
-      const r = await api.twofaDisable({ current_password: disPw, code: disCode.trim() });
-      if (!r || !r.ok) { setErr(srvText(r) || T("Couldn't disable — check your password and code.")); setBusy(false); return; }
-      reset(); onChange && onChange(false); toast(T("Two-factor authentication disabled."), "ok");
-    } catch (_) { setErr(T("Couldn't reach the panel.")); }
-    setBusy(false);
-  };
-  const copyRecovery = () => { try { navigator.clipboard.writeText(recovery.join("\n")); toast(T("Recovery codes copied."), "ok"); } catch (_) {} };
-
-  // A SECTION of the Authentication card, not a card of its own — so the pane reads as one settings area with
-  // two headings, like Access & TLS. No margin-top:0 here: this is the second section and wants the gap.
-  return html`<${Fragment}>
-    <div class="seclabel">${T("Two-factor authentication")}
-      ${enabled && stage === "idle" ? html`<span class="grow"></span><span class="tg tg-ok">${T("state|On")}</span>` : null}</div>
-    ${err ? html`<div class="formmsg err">${err}</div>` : null}
-    ${!enabled && stage === "idle" ? html`
-      <p class="hint" style="margin:0 0 12px">${T("Add a second step at sign-in using an authenticator app (Google Authenticator, Authy, 1Password…).")} ${disabled ? html`<b class="warntext">${T("Configure a panel login first.")}</b>` : null}</p>
-      <button class="btn btn-primary" disabled=${disabled || busy} onClick=${beginSetup}>${busy ? T("Starting…") : T("Set up two-factor")}</button>
-    ` : null}
-    ${enabled && stage === "idle" ? html`
-      <p class="hint" style="margin:0 0 12px">${T("Sign-in requires a code from your authenticator app. Keep your recovery codes somewhere safe in case you lose the device.")}</p>
-      <button class="btn btn-danger" onClick=${() => { reset(); setStage("disabling"); }}>${T("Disable two-factor")}</button>
-    ` : null}
-    ${stage === "setup" ? html`
-      <p class="hint" style="margin:0 0 12px">${T("Scan this with your authenticator app, then enter the 6-digit code it shows to confirm.")}</p>
-      <div class="twofa-setup">
-        ${qr ? html`<img class="twofa-qr" src=${qr} alt=${T("TOTP QR code")} width="200" height="200"/>` : html`<div class="twofa-qr empty">${T("QR unavailable")}</div>`}
-        <div class="twofa-manual">
-          <label>${T("Can't scan? Enter this key manually")}</label>
-          <code class="twofa-secret">${setup && setup.secret}</code>
-          <div class="field" style="margin-top:12px"><label>${T("Code from the app")}</label>
-            <input autofocus value=${code} onInput=${e => setCode(e.target.value)} inputmode="text" autocomplete="one-time-code" placeholder="123 456"/></div>
-          <div class="btnrow" style="margin-top:8px">
-            <button class="btn btn-primary" disabled=${busy || code.trim().length < 6} onClick=${doEnable}>${busy ? T("Verifying…") : T("Verify & enable")}</button>
-            <button class="btn btn-ghost btn-dismiss" disabled=${busy} onClick=${reset}>${T("Cancel")}</button>
-          </div>
-        </div>
-      </div>
-    ` : null}
-    ${stage === "recovery" ? html`
-      <p class="hint" style="margin:0 0 12px">${Trich("*Two-factor is on.* Save these recovery codes now — each works once if you lose your authenticator. *They won't be shown again.*")}</p>
-      <div class="twofa-codes">${recovery.map(c => html`<code key=${c}>${c}</code>`)}</div>
-      <div class="btnrow" style="margin-top:12px">
-        <button class="btn btn-ghost" onClick=${copyRecovery}><${Ic} i="copy"/>${T("Copy codes")}</button>
-        <button class="btn btn-primary" onClick=${reset}>${T("Done")}</button>
-      </div>
-    ` : null}
-    ${stage === "disabling" ? html`
-      <p class="hint" style="margin:0 0 12px">${T("Confirm with your password and a current code to turn two-factor off.")}</p>
-      <div class="field"><label>${T("Current password")}</label><input type="password" value=${disPw} onInput=${e => setDisPw(e.target.value)} autocomplete="current-password"/></div>
-      <div class="field"><label>${T("Authentication code (or recovery code)")}</label><input value=${disCode} onInput=${e => setDisCode(e.target.value)} autocomplete="one-time-code" placeholder="123 456"/></div>
-      <div class="btnrow" style="margin-top:8px">
-        <button class="btn btn-danger" disabled=${busy || !disPw || !disCode.trim()} onClick=${doDisable}>${busy ? T("Disabling…") : T("Disable two-factor")}</button>
-        <button class="btn btn-ghost btn-dismiss" disabled=${busy} onClick=${reset}>${T("Cancel")}</button>
-      </div>
-    ` : null}
-  <//>`;
-}
