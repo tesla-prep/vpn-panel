@@ -3,6 +3,12 @@
 All notable user-facing changes to **swgPanel**. This file starts at `1.3.11-beta`;
 earlier releases predate the changelog — see the git history. · Русский: [CHANGELOG.ru.md](CHANGELOG.ru.md)
 
+## [1.11.0-beta]
+
+### Changed
+
+- The standalone installers and update commands use tesla-prep/vpn-panel. Docker updates move the shipped image references to the tesla-prep GHCR packages after the new images are downloaded. Existing local builds and custom registries keep their image references.
+
 ## [1.10.1-beta]
 
 ### Security

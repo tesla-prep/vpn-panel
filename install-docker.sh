@@ -1244,8 +1244,8 @@ mkdir -p "$PREFIX$INSTALL_DIR"
 cp -a "$SRC/docker-compose.yml" "$PREFIX$INSTALL_DIR/" 2>/dev/null || true
 if $BUILD; then
   for f in Dockerfile Dockerfile.node .dockerignore VERSION \
-           swg-panel-server swg-agent swg-noded swg-sni swg-sub swg-passwd \
-           index.html app.css app.js reconcile.js $SUB_WEB; do
+           swg-panel-server swg-agent swg-noded swg-sni swg-relay swg-sub swg-passwd \
+           index.html app.css app.js reconcile.js turn-artifacts.js $SUB_WEB; do
     [ -e "$SRC/$f" ] && cp -a "$SRC/$f" "$PREFIX$INSTALL_DIR/" 2>/dev/null || true
   done
   [ -d "$SRC/vendor" ] && cp -a "$SRC/vendor" "$PREFIX$INSTALL_DIR/" 2>/dev/null || true
@@ -1256,12 +1256,12 @@ if $BUILD; then
   # ⚠️ `image:` + `build:` TOGETHER IS THE POINT, NOT AN OVERSIGHT. Compose names a built image with the
   # `image:` value, and this compose has ONE consumer of that name outside compose itself: swg-noded runs
   # every turn-proxy container from `SWG_TURN_IMAGE`, which the node service resolves to
-  # `ghcr.io/sanityprotocol/swg-node:${SWG_IMAGE_TAG:-latest}`. Comment `image:` out and compose names the
+  # `ghcr.io/tesla-prep/swg-node:${SWG_IMAGE_TAG:-latest}`. Comment `image:` out and compose names the
   # build `<project>-swg-node` instead, so SWG_TURN_IMAGE points at an image the box has never built —
   # docker then PULLS main's published image to run the proxies, or fails outright with no network. That is
   # the same "reverted to published code" failure a --build install exists to prevent, moved one layer down.
   # Measured on docker 29.7.2 / compose v5.2.0: with `image:` the build is tagged
-  # ghcr.io/sanityprotocol/swg-node:latest; without it, cmpxb-swg-node:latest.
+  # ghcr.io/tesla-prep/swg-node:latest; without it, cmpxb-swg-node:latest.
   #
   # The hazard that motivated commenting it — `compose pull` replacing a local build with `latest` — is
   # answered by the TAG instead, below: a build install pins SWG_IMAGE_TAG to a name GHCR does not publish,
@@ -1391,7 +1391,7 @@ case "$PROFILE" in node|master|host-node)
 esac
 # ⚠️ A LOCAL BUILD MUST NOT WEAR THE PUBLISHED NAME. Both services interpolate
 # `${SWG_IMAGE_TAG:-latest}` into their `image:`, so an unpinned --build install tags its own images
-# `ghcr.io/sanityprotocol/swg-{panel,node}:latest` — indistinguishable in `docker images` from what CI
+# `ghcr.io/tesla-prep/swg-{panel,node}:latest` — indistinguishable in `docker images` from what CI
 # publishes from main, and one `docker compose pull` away from being silently replaced by it. Pinning a tag
 # GHCR does not publish keeps the name (so SWG_TURN_IMAGE still resolves to the image this box built) while
 # making that pull fail loudly instead. An explicit SWG_IMAGE_TAG always wins: an operator pinning a real
@@ -1738,7 +1738,7 @@ if [ "${SWG_CONVERT_DIR:-}" = convert-docker ] && ! $DRYRUN; then
   # panel down and then fail on "image not found", leaving the box with neither. Check before the point of no return.
   if ! $BUILD; then
     # ⚠️ ASK COMPOSE FOR THE IMAGE NAMES — never sed them out of the file. `image:` reads
-    # `ghcr.io/sanityprotocol/swg-node:${SWG_IMAGE_TAG:-latest}`, a COMPOSE variable, and a `sed` returns it
+    # `ghcr.io/tesla-prep/swg-node:${SWG_IMAGE_TAG:-latest}`, a COMPOSE variable, and a `sed` returns it
     # VERBATIM: `docker image inspect` can then never match it, so this guard — whose whole job is to refuse
     # a convert when the image is missing — refused EVERY bare-metal → docker convert instead. The pull
     # directly above succeeds and prints "pulled current image(s)", and then this dies saying the image

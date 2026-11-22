@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bootstrap.sh — fetch swg-panel from GitHub and run the right installer.
 #
-#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)"
+#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)"
 #       → interactive: pick installation method (bare-metal/docker) + role (master/host/node).
 #   sudo bash -c "$(curl …)" -- -key NODE_KEY -host https://PANEL   → add a node (a key implies node; asks method).
 #   sudo bash -c "$(curl …)" -- docker host                         → explicit method + role (skips the prompts).
@@ -52,7 +52,7 @@ SWG_ARGS=("$@")   # as given — the command the warning below hands back is bui
 # removed it (the shell stays "in" the deleted dir, getcwd() fails, and git/curl refuse to run).
 # Step into a guaranteed-present directory before doing anything.
 cd / 2>/dev/null || cd "${TMPDIR:-/tmp}" 2>/dev/null || true
-REPO="${SWG_REPO:-https://github.com/SanityProtocol/swg-panel}"
+REPO="${SWG_REPO:-https://github.com/tesla-prep/vpn-panel}"
 # Which ref to install. SWG_REF wins; otherwise INFER IT FROM THE URL WE WERE FETCHED FROM.
 # Without the inference, `SWG_BOOTSTRAP_URL=.../dev/bootstrap.sh | bash` fetched the dev bootstrap and
 # then installed `main` from it — a panel tracking a pre-release branch SILENTLY DOWNGRADED itself on
@@ -236,7 +236,7 @@ done
 # same arguments in the one form that works under sudo-rs and classic sudo alike (sudo's stdin is the terminal, not a pipe).
 if [ "$SWG_TTY" = /dev/null ] && { : </dev/tty; } 2>/dev/null; then
   _bs_url="<this bootstrap.sh URL>"
-  [ "$REPO" = https://github.com/SanityProtocol/swg-panel ] && _bs_url="https://raw.githubusercontent.com/SanityProtocol/swg-panel/${REF:-main}/bootstrap.sh"
+  [ "$REPO" = https://github.com/tesla-prep/vpn-panel ] && _bs_url="https://raw.githubusercontent.com/tesla-prep/vpn-panel/${REF:-main}/bootstrap.sh"
   # A ref other than main rides INSIDE the script string: sudo resets the environment, so SWG_REF in front of it would be
   # dropped, and the URL does not reach the script either — the dev bootstrap would install main (see _ref_from_url).
   _bs_pre=""; [ -n "${REF:-}" ] && [ "${REF:-}" != main ] && _bs_pre="SWG_REF=$(printf '%q' "$REF"); "
@@ -360,13 +360,15 @@ info "fetching $REPO @ $REF"
 # "GitHub unreachable" and going straight to the tarball works, but silently costs every 22.04 node the
 # git path for ever — and hides a defect that is one flag from fixed.
 _fetched=""
+_archive_name="${REPO##*/}"
+_archive_name="${_archive_name%.git}"
 # ⚠️ A COMMIT IS HOW A RELEASE IS NAMED. Panel releases carry no tag — each is one squashed commit on main — so going
 # back to one means its commit (SWG_REF=df3bb45 is 1.8.7-beta), and `git clone --branch` takes only a branch or a tag.
 # GitHub serves an archive of any commit, which is the tarball road below by another URL. 7–40 hex digits, never a
 # branch or a tag name this repo uses.
 if printf '%s' "$REF" | grep -cE '^[0-9a-f]{7,40}$' >/dev/null; then
-  if need curl && need tar && curl -fsSL "$REPO/archive/$REF.tar.gz" | tar -xz -C "$TMP"; then
-    mv "$TMP"/swg-panel-* "$TMP/swg-panel" && _fetched=tar
+  if need curl && need tar && curl -fsSL "${REPO%.git}/archive/$REF.tar.gz" | tar -xz -C "$TMP"; then
+    mv "$TMP"/"$_archive_name"-* "$TMP/swg-panel" && _fetched=tar
   fi
   # ⚠️ …BUT A COMMIT IS WHAT TO INSTALL, NEVER WHAT TO TRACK. The scripts below bake SWG_REF into the one-click
   # wrapper and the node's update_ref, and a commit there never moves: the Update button of a box taken back to one
@@ -406,9 +408,9 @@ elif need git; then
   fi
 fi
 if [ -z "$_fetched" ] && need curl && need tar; then
-  if { curl -fsSL "$REPO/archive/refs/heads/$REF.tar.gz" | tar -xz -C "$TMP"; } \
-     || { curl -fsSL "$REPO/archive/refs/tags/$REF.tar.gz" | tar -xz -C "$TMP"; }; then
-    mv "$TMP"/swg-panel-* "$TMP/swg-panel" && _fetched=tar
+  if { curl -fsSL "${REPO%.git}/archive/refs/heads/$REF.tar.gz" | tar -xz -C "$TMP"; } \
+     || { curl -fsSL "${REPO%.git}/archive/refs/tags/$REF.tar.gz" | tar -xz -C "$TMP"; }; then
+    mv "$TMP"/"$_archive_name"-* "$TMP/swg-panel" && _fetched=tar
   fi
 fi
 [ -n "$_fetched" ] || die "could not fetch $REPO @ $REF — needs git, or curl+tar, and a reachable GitHub"

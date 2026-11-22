@@ -85,13 +85,13 @@
 **Панель** — спрашивает роль: master (панель + эта машина является узлом) или host (только панель)
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- bare-metal
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- bare-metal
 ```
 
 **Узел** — спрашивает URL панели + ключ из Nodes → Add node
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- node
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- node
 ```
 
 ### B — Docker
@@ -99,13 +99,13 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-
 **Панель** — при необходимости устанавливает Docker, затем спрашивает роль (master: панель + эта машина является узлом, заводится автоматически · host: только панель) и домен + выбор TLS (логин генерируется автоматически, поменяете его позже в панели)
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker
 ```
 
 **Узел** — спрашивает URL панели + ключ из Nodes → Add node
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker node
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker node
 ```
 
 ### C — NixOS (декларативно)
@@ -139,7 +139,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-
 **Обновить** любую машину позже, на месте (автоматически определяет, что установлено):
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- update
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- update
 ```
 
 ## Установка панели
@@ -173,7 +173,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-
 ```bash
 sudo ROLE=master TLS_MODE=cloudflare CF_TOKEN=… PANEL_DOMAIN=panel.example.net \
      BASIC_USER=admin BASIC_PASS='…' \
-     bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- bare-metal
+     bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- bare-metal
 ```
 
 Переменные идут **после** `sudo`, как выше: sudo отбрасывает окружение, заданное перед ним, а sudo-rs в Ubuntu 26.04
@@ -188,7 +188,7 @@ sudo ROLE=master TLS_MODE=cloudflare CF_TOKEN=… PANEL_DOMAIN=panel.example.net
 1. **Nodes → Add node** — задайте имя, публичный IP/host, на который подключаются клиенты, и цвет. Вы получите **одноразовый токен enrollment** и точный однострочник.
 2. **На входном сервере** вставьте этот однострочник — он скачивает репозиторий и запускает установщик узла:
    ```bash
-   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" \
+   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" \
      -- node -key SECURE_NODE_KEY -host https://panel.example.net
    ```
    Он ставит инструменты датапата и запускает `swg-noded` — и **ничего** не спрашивает про настройку. Интерфейсы, turn-прокси, серверы WDTT и csqtt — всё это создаётся в панели. Предпочитаете Docker? Панель показывает и команду `… -- docker node -key … -host …`.
@@ -304,13 +304,13 @@ prerouting; даты — это таймауты ядра, поэтому дос
 **Панель** — Шаг 1 спрашивает роль, ровно как на bare-metal: **master** (панель + эта машина также запускает WG/AWG как совмещённый контейнер-узел, заводится в один проход) или **host** (только панель). По умолчанию — `master`.
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker
 ```
 
 **Узел** — отдельный входной сервер; спрашивает URL панели + ключ из **Nodes → Add node** (именно так разворачиваются узлы для роли `host`)
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker node
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker node
 ```
 
 Флаги пропускают запросы (команда enroll из панели их использует): `-role master|host`, `-user`, `-pass`, `-domain`, `-base`, `-port`, `-tls`, `-email`, `-cf-token`, `-cf-origin`, `-key`, `-host`, `-endpoint`, `-iface`, `-ifaces`, `-net host|bridge`, `--build` — например `… -- docker node -key NODE_KEY -host https://panel.example.net`.
@@ -348,7 +348,7 @@ docker compose --profile node up -d
 
 **Два образа** (по умолчанию тянутся готовыми из GHCR; `--build` собирает их локально). `swg-panel` — чистый Python + встроенный `acme.sh`. `swg-node` несёт userspace-датаплейн **`amneziawg-go`** + инструменты `awg` (контейнер не может загрузить модуль ядра хоста) и требует `NET_ADMIN` + `/dev/net/tun`. По умолчанию он поднимается **без единого интерфейса** — вы добавляете их из панели (Interfaces → Load new interface). Задайте `NODE_IFACE` для одного стартового интерфейса (AmneziaWG 2.0; `NODE_PLAIN_WG=yes` для обычного WG), `NODE_IFACES` — для нескольких (`name:port:addr[:proto[:endpoint]],…`), либо смонтируйте свои конфиги в `/etc/swg-node/*.conf`. Созданные из панели интерфейсы переживают `up -d` (каталог конфигов — это volume). Masquerade настраивается автоматически. Для лучшей пропускной способности предпочтителен **bare-metal**-узел с модулем ядра. При включённом управлении turn-proxy `swg-noded` запускает каждый прокси как контейнер-сосед `swg-turn-*` (host network, `--restart unless-stopped`) через смонтированный сокет Docker — правка одного просто пересоздаёт контейнер, без systemd на хосте.
 
-Готовые образы: `ghcr.io/sanityprotocol/swg-panel` и `ghcr.io/sanityprotocol/swg-node`.
+Готовые образы: `ghcr.io/tesla-prep/swg-panel` и `ghcr.io/tesla-prep/swg-node`.
 
 **Повторный запуск установщика безопасен** — он обнаруживает существующую установку, сохраняет ваши `.env` + `./data` (токен, логин, сертификат, интерфейсы) и предлагает текущие значения по умолчанию; шаги wg/awg и turn-proxy показывают, что уже есть, и позволяют добавить ещё. Чтобы начать с нуля, сначала запустите деинсталлятор. (Docker: примените заново с `PULL_POLICY=always … bootstrap.sh docker host|node`, чтобы приехали новый образ + compose.) **Одно исключение, на Docker:** повторный запуск перекладывает `docker-compose.yml` из релиза, а из портов интерфейсов он публикует только загрузочный — поэтому если узел работает на **bridge**-сети и вы публиковали дополнительные порты вручную, добавьте эти строки заново. Host-сеть (по умолчанию) не публикует порты по интерфейсам, её это не касается.
 
@@ -359,13 +359,13 @@ docker compose --profile node up -d
 Запустите тот же однострочник с другим методом. **В bare-metal** — голое слово-роль означает bare-metal:
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- master
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- master
 ```
 
 **В Docker** — добавьте перед ролью `docker`:
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker master
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker master
 ```
 
 Конверсия **сохраняет всё** — URL панели, логин, ростер, узлы и TLS-сертификат, а для `master` — токен, интерфейсы и turn-proxy локального узла. Она работает по принципу **copy-first**: новый метод полностью разворачивается *до* сноса старого, поэтому единственный простой — несколько секунд атомарного переключения, а узлы самовосстанавливаются при следующей синхронизации.

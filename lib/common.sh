@@ -1425,7 +1425,7 @@ set -euo pipefail
 # re-baked this very file back to main (measured on swgt: 1.8.6-beta -> 1.8.5-beta, wrapper dev -> main, on one press
 # of Update; and on a box installed FRESH from a branch). Exporting the URL (rather than forcing SWG_REF) keeps an
 # operator's own \$SWG_BOOTSTRAP_URL authoritative — their URL then decides the ref.
-URL="\${SWG_BOOTSTRAP_URL:-https://raw.githubusercontent.com/SanityProtocol/swg-panel/${_swg_ref}/bootstrap.sh}"
+URL="\${SWG_BOOTSTRAP_URL:-https://raw.githubusercontent.com/tesla-prep/vpn-panel/${_swg_ref}/bootstrap.sh}"
 export SWG_BOOTSTRAP_URL="\$URL"
 # ⚠️ DOWNLOADED FIRST, RUN SECOND — AND A SECOND DOOR WHEN RAW CANNOT BE HAD. tests/update_bootstrap_fallback_selftest.py
 # runs this text, and every writer of it.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # update.sh — update an existing swg-panel install in place, from the latest GitHub code.
 #
-#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- update
+#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- update
 #
 # bootstrap.sh fetches the latest repo and runs this from it. It AUTO-DETECTS which
 # components are installed — covering every shape (bare-metal host / master / node,
@@ -23,6 +23,15 @@ for a in "$@"; do case "$a" in
   --node-only) NODE_ONLY=true;;     # update ONLY the bare-metal node/agent — never the co-located panel/docker
 esac; done
 SRC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# A standalone download fetches the tree. A checkout or archive can still update from its local copy.
+if [ ! -f "$SRC/lib/common.sh" ]; then
+  _bootstrap="$(mktemp)"
+  trap 'rm -f "$_bootstrap"' EXIT
+  export SWG_BOOTSTRAP_URL="${SWG_BOOTSTRAP_URL:-https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh}"
+  curl -fsSL --connect-timeout 20 --max-time 120 "$SWG_BOOTSTRAP_URL" -o "$_bootstrap"
+  bash "$_bootstrap" update "$@"
+  exit
+fi
 # No terminal (the one-click update, an unattended run): debconf has nobody to ask and says so four lines per package
 # it touches. A value already set is left as it is. Same line as install-host.sh / install-node.sh.
 # ⚠️ ONLY THE TERMINAL'S FOREGROUND CAN READ IT. Under `curl … | sudo bash`, sudo-rs (Ubuntu 26.04's sudo) runs the
@@ -1674,7 +1683,7 @@ ensure_panel_unit_warn(){   # DETECT + WARN only — never recreate. The panel u
   # …from the ref this box follows (main pinned here re-installed main over a dev box: IN-8); a ref other than main rides
   # INSIDE the string, as bootstrap's own hand-back does — sudo drops SWG_REF in front of it
   local _r="${SWG_REF:-main}" _p=""; [ "$_r" = main ] || _p="SWG_REF=$(printf '%q' "$_r"); "
-  warn "    sudo bash -c \"$_p\$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/$_r/bootstrap.sh)\" -- host"
+  warn "    sudo bash -c \"$_p\$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/$_r/bootstrap.sh)\" -- host"
 }
 
 ensure_netctl_docker(){   # the docker address helper on a panel-bearing docker host: units HEALED if missing, the drainer at this release.
@@ -1850,9 +1859,9 @@ ensure_update_unit_docker(){   # HEAL the docker one-click self-update wiring on
   # brings with every update (1.8.8 qualification, round 10, N12). Each piece is compared with this release's text, and
   # the wiring is rewritten when one differs. The ref the wrapper follows stays the box's: SWG_REF (bootstrap exports
   # it), else the one baked into the wrapper there now — `main` only when neither says.
-  case "${1:-}" in host|master|host-node) ;; *) return 0;; esac    # panel-bearing profiles only (mirrors ensure_netctl_docker)
+  case "${1:-}" in host|master|host-node|node) ;; *) return 0;; esac
   local _ref="${SWG_REF:-}" _stale=""
-  [ -n "$_ref" ] || _ref="$(sed -n 's#^URL=.*/swg-panel/\([^/]*\)/bootstrap\.sh}".*#\1#p' /usr/local/bin/swg-update 2>/dev/null | sed -n 1p || true)"
+  [ -n "$_ref" ] || _ref="$(sed -En 's#^URL=.*/(swg-panel|vpn-panel)/([^/]*)/bootstrap\.sh\}".*#\2#p' /usr/local/bin/swg-update 2>/dev/null | sed -n 1p || true)"
   _ref="${_ref:-main}"
   if [ -x /usr/local/bin/swg-update ] && [ -x /usr/local/bin/swg-update-check ] \
      && [ -f /etc/systemd/system/swg-update.service ] && [ -f /etc/systemd/system/swg-update.timer ]; then
@@ -2047,6 +2056,33 @@ if [ -f "$NODED_DIR/swg-noded" ] || [ -f "$AGENT_DIR/swg-agent" ]; then
 fi
 
 # ───────────────────────── Docker (host / node / master) ─────────────────────────
+docker_uses_upstream_images(){
+  grep -Eq '^[[:blank:]]*image:[[:blank:]]*ghcr\.io/sanityprotocol/swg-(panel|node):' "$DOCKER_DIR/docker-compose.yml"
+}
+
+pull_docker_update_images(){
+  local profile="$1" current="$DOCKER_DIR/docker-compose.yml" staged backup
+  if ! docker_uses_upstream_images; then
+    ( cd "$DOCKER_DIR" && on_tty $COMPOSE --profile "$profile" pull )
+    return
+  fi
+
+  # Use a sibling of the installed Compose file so relative paths resolve during
+  # the pull. Switch the installed file only when the images are available.
+  staged="$(mktemp "$DOCKER_DIR/.swg-compose.XXXXXX")" || return 1
+  if cp -p "$current" "$staged" &&
+     sed -E '/^[[:blank:]]*image:[[:blank:]]*ghcr\.io\/sanityprotocol\/swg-(panel|node):/s@ghcr.io/sanityprotocol/swg-@ghcr.io/tesla-prep/swg-@;
+             /^[[:blank:]]*SWG_TURN_IMAGE:[[:blank:]]*"?\$\{SWG_TURN_IMAGE:-ghcr\.io\/sanityprotocol\/swg-node:/s@ghcr.io/sanityprotocol/swg-node@ghcr.io/tesla-prep/swg-node@' "$current" > "$staged" &&
+     ( cd "$DOCKER_DIR" && on_tty $COMPOSE --profile "$profile" -f "$staged" pull ) &&
+     backup="$(mktemp "$current.before-tesla-prep.XXXXXX")" &&
+     cp -p "$current" "$backup" && mv -f "$staged" "$current"; then
+    note "docker-compose.yml: switched to ghcr.io/tesla-prep (backup: $(basename "$backup"))"
+  else
+    rm -f "$staged"
+    return 1
+  fi
+}
+
 if ! $NODE_ONLY && docker_stack_live; then
   found=1; doc_seen=yes
   if ! $DRYRUN; then   # the host timer units' systemd lines (lib/common.sh) — they start every 10–30 s
@@ -2227,11 +2263,12 @@ PYCON
 import re, sys
 comp, envf = sys.argv[1], sys.argv[2]
 text = orig = open(comp).read()
-TURN = ('      SWG_TURN_IMAGE: "${SWG_TURN_IMAGE:-ghcr.io/sanityprotocol/swg-node:${SWG_IMAGE_TAG:-latest}}"'
+owner = "sanityprotocol" if re.search(r"(?m)^\s*image:\s*ghcr\.io/sanityprotocol/swg-node:", text) else "tesla-prep"
+TURN = ('      SWG_TURN_IMAGE: "${SWG_TURN_IMAGE:-ghcr.io/' + owner + '/swg-node:${SWG_IMAGE_TAG:-latest}}"'
         '  # image swg-noded runs each turn-proxy container from')
 
 # a) the service images themselves
-pat = re.compile(r'^(\s*image:\s*ghcr\.io/sanityprotocol/swg-(?:panel|node)):([^\s$]+)\s*$', re.M)
+pat = re.compile(r'^(\s*image:\s*ghcr\.io/(?:sanityprotocol|tesla-prep)/swg-(?:panel|node)):([^\s$]+)\s*$', re.M)
 pins = {m.group(2) for m in pat.finditer(text)}
 text = pat.sub(lambda m: m.group(1) + ":${SWG_IMAGE_TAG:-latest}", text)
 
@@ -2448,7 +2485,7 @@ PYDRIFT
       info "restaging source + rebuilding ($DOCKER_DIR)"
       for f in Dockerfile Dockerfile.node .dockerignore VERSION \
                swg-panel-server swg-agent swg-noded swg-sni swg-relay swg-sub swg-passwd \
-               index.html app.css app.js reconcile.js $SUB_WEB; do
+               index.html app.css app.js reconcile.js turn-artifacts.js $SUB_WEB; do
         [ -e "$SRC/$f" ] && run cp -a "$SRC/$f" "$DOCKER_DIR/"
       done
       [ -d "$SRC/vendor" ] && run cp -a "$SRC/vendor" "$DOCKER_DIR/"
@@ -2468,7 +2505,9 @@ PYDRIFT
       # a COMMIT (bootstrap's SWG_COMMIT — going back by commit) moves the scripts, not the containers: said (SOAK-3)
       if [ -n "${SWG_COMMIT:-}" ] && [ -z "${SWG_IMAGE_TAG:-}" ] && ! grep -qs '^SWG_IMAGE_TAG=[^[:space:]#]' "$DOCKER_DIR/.env"; then
         warn "updating to commit $(b "$SWG_COMMIT"), but the containers run the published $(b latest) image — for that commit's own, set $(b "SWG_IMAGE_TAG=sha-${SWG_COMMIT:0:7}") in $DOCKER_DIR/.env (kept for every release commit) and re-run"; fi
-      if $DRYRUN; then DID_UPDATE=yes; echo "    [skip] (cd $DOCKER_DIR && $COMPOSE --profile $prof pull && $COMPOSE --profile $prof up -d --force-recreate)"; note "docker ($prof): would pull + recreate"
+      if $DRYRUN; then
+        if docker_uses_upstream_images; then note "docker-compose.yml: would switch shipped images to ghcr.io/tesla-prep after a successful pull"; fi
+        DID_UPDATE=yes; echo "    [skip] (cd $DOCKER_DIR && $COMPOSE --profile $prof pull && $COMPOSE --profile $prof up -d --force-recreate)"; note "docker ($prof): would pull + recreate"
       # --force-recreate: after `pull` updates :latest, a plain `up -d` may just (re)start the EXISTING
       # container on the OLD image (log shows "Started", not "Recreated") — so the node keeps the old
       # version until a 2nd run. Forcing recreation guarantees it runs the freshly-pulled image.
@@ -2476,7 +2515,7 @@ PYDRIFT
       # ⚠️ PULL FIRST, WHILE THE STACK STILL RUNS. The pull used to come after the `docker rm -f` below, so a pull
       # that failed — the registry unreachable or filtered, a rate limit, a full disk — left the box with its
       # containers removed and nothing started: panel, node and every client down until someone ssh'd in.
-      elif ! ( cd "$DOCKER_DIR" && on_tty $COMPOSE --profile "$prof" pull ); then
+      elif ! pull_docker_update_images "$prof"; then
         DID_FAIL=yes; note "docker ($prof): pull FAILED — nothing was touched"
         warn "could not pull the new image — the containers are still running on the current one, nothing was
        touched. Check the box can reach ghcr.io (and has disk space), then re-run the update."

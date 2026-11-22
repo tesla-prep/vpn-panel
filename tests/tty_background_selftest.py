@@ -168,7 +168,7 @@ BS = ('cd %s && PATH=%s:$PATH bash bootstrap.sh node -key "abc 123" -host https:
 out, stopped = run_in_pty(BS, background=True, sup=SUP_RS)
 check("[4] it warns that the terminal cannot be read", "this terminal cannot be read" in out, out[:600])
 check("[4] …and hands back the same arguments in the form sudo-rs can run",
-      'sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/' in out
+      'sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/' in out
       and '/bootstrap.sh)" -- node -key abc\\ 123 -host https://panel.example.net' in out, out[:600])
 check("[4] …and does not stop", not stopped, out[-300:])
 out, stopped = run_in_pty(BS, background=False)
@@ -179,7 +179,7 @@ check("[8] under classic sudo it says nothing of the kind either (no sudo-rs war
 
 out, stopped = run_in_pty("cd %s && SWG_REF=dev PATH=%s:$PATH bash bootstrap.sh node -key K" % (ROOT, D), background=True, sup=SUP_RS)
 check("[4] a ref other than main rides inside the handed-back command (sudo drops SWG_REF; the dev bootstrap must not install main)",
-      'sudo bash -c "SWG_REF=dev; $(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/dev/bootstrap.sh)" -- node -key K' in out, out[:600])
+      'sudo bash -c "SWG_REF=dev; $(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/dev/bootstrap.sh)" -- node -key K' in out, out[:600])
 
 print("== [4b] no prompt left hanging where the terminal cannot be read (code review)")
 dsrc = open(os.path.join(ROOT, "install-docker.sh"), encoding="utf-8").read()

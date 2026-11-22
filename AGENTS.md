@@ -46,7 +46,7 @@ SSH, no rsync. Do not design an orchestration that expects to push to nodes.
 # panel only, fully unattended
 sudo ROLE=host PANEL_DOMAIN=panel.example.org TLS_MODE=letsencrypt ACME_EMAIL=you@example.org \
      BASIC_USER=admin BASIC_PASS='…' SERVE_MODE=internal \
-     bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- host
+     bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- host
 ```
 
 The variables go **after** `sudo`, inline: sudo drops an environment set in front of it, and sudo-rs (Ubuntu 26.04)

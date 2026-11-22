@@ -2,7 +2,7 @@
 """Self-test: a container node's host helper runs from the node's OWN image, not `swg-node:latest`.
 
 host_sh on a docker node is a privileged `docker run --rm --pid=host --entrypoint nsenter <HELPER_IMAGE> …` — every host read,
-foreign-server scan and unit write. HELPER_IMAGE defaulted to `ghcr.io/sanityprotocol/swg-node:latest` and nothing passed it,
+foreign-server scan and unit write. HELPER_IMAGE defaulted to `ghcr.io/tesla-prep/swg-node:latest` and nothing passed it,
 so a node pinned to a build ran helpers from an image the operator never chose. Measured on svo-im pinned to sha-56e2b4d (1.8.7
 qualification PART 4, A7): 31 helper containers in 30 minutes from `swg-node:latest`, a two-week-old main build; a host that
 has never pulled `:latest` fetches it on the first helper, or cannot reach the host at all where the registry is slow.
@@ -32,12 +32,12 @@ def check(name, cond, detail=""):
 src = open(NODED).read()
 path = NODED
 if PERTURB:
-    anchor = 'HELPER_IMAGE = os.environ.get("HELPER_IMAGE") or os.environ.get("SWG_TURN_IMAGE") or "ghcr.io/sanityprotocol/swg-node:latest"'
+    anchor = 'HELPER_IMAGE = os.environ.get("HELPER_IMAGE") or os.environ.get("SWG_TURN_IMAGE") or "ghcr.io/tesla-prep/swg-node:latest"'
     if src.count(anchor) != 1:
         print("PERTURB FAILED — the HELPER_IMAGE default is not in swg-noded exactly once")
         sys.exit(1)
     path = os.path.join(tempfile.mkdtemp(), "swg-noded")
-    open(path, "w").write(src.replace(anchor, 'HELPER_IMAGE = os.environ.get("HELPER_IMAGE") or "ghcr.io/sanityprotocol/swg-node:latest"'))
+    open(path, "w").write(src.replace(anchor, 'HELPER_IMAGE = os.environ.get("HELPER_IMAGE") or "ghcr.io/tesla-prep/swg-node:latest"'))
 
 LOAD = r"""
 import importlib.machinery, importlib.util, json, sys
@@ -62,11 +62,11 @@ check("[1] a node pinned to %s runs its helper from that image" % PIN.split(":")
 b = helper({"SWG_TURN_IMAGE": PIN, "HELPER_IMAGE": "registry.example/custom:1"})
 check("[2] an explicit HELPER_IMAGE wins", b.get("helper") == "registry.example/custom:1", b)
 c = helper({})
-check("[2] nothing set → the published default", c.get("helper") == "ghcr.io/sanityprotocol/swg-node:latest", c)
+check("[2] nothing set → the published default", c.get("helper") == "ghcr.io/tesla-prep/swg-node:latest", c)
 
 compose = open(os.path.join(ROOT, "docker-compose.yml")).read()
 check("[3] docker-compose.yml hands the node SWG_TURN_IMAGE derived from SWG_IMAGE_TAG",
-      re.search(r'SWG_TURN_IMAGE:\s*"\$\{SWG_TURN_IMAGE:-ghcr\.io/sanityprotocol/swg-node:\$\{SWG_IMAGE_TAG:-latest\}\}"', compose) is not None)
+      re.search(r'SWG_TURN_IMAGE:\s*"\$\{SWG_TURN_IMAGE:-ghcr\.io/tesla-prep/swg-node:\$\{SWG_IMAGE_TAG:-latest\}\}"', compose) is not None)
 nix = open(os.path.join(ROOT, "nix", "modules", "node.nix")).read()
 check("[3] the NixOS module sets SWG_TURN_IMAGE from turnImage, which defaults to image",
       "SWG_TURN_IMAGE = cfg.turnImage;" in nix and re.search(r"turnImage = mkOption \{\s*type = types\.str; default = cfg\.image;", nix) is not None)

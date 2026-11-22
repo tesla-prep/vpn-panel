@@ -85,13 +85,13 @@ Four one-liners — each **prompts for whatever it needs**. Choose a method (bar
 **Panel** — asks the role: master (panel + this box is a node) or host (panel only)
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- bare-metal
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- bare-metal
 ```
 
 **Node** — asks for the panel URL + the key from Nodes → Add node
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- node
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- node
 ```
 
 ### B — Docker
@@ -99,13 +99,13 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-
 **Panel** — installs Docker if needed, then asks the role (master: panel + this box is a node, auto-enrolled · host: panel only) and a domain + TLS choice (login auto-generated, change it later in the panel)
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker
 ```
 
 **Node** — asks for the panel URL + the key from Nodes → Add node
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker node
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker node
 ```
 
 ### C — NixOS (declarative)
@@ -139,7 +139,7 @@ Open the panel URL, log in, and add entry servers from **Nodes → Add node** �
 **Update** any box later, in place (auto-detects what's installed):
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- update
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- update
 ```
 
 ## Installing the panel
@@ -173,7 +173,7 @@ Unattended example (config via env):
 ```bash
 sudo ROLE=master TLS_MODE=cloudflare CF_TOKEN=… PANEL_DOMAIN=panel.example.net \
      BASIC_USER=admin BASIC_PASS='…' \
-     bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- bare-metal
+     bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- bare-metal
 ```
 
 The variables go **after** `sudo`, as above: sudo drops an environment set in front of it, and Ubuntu 26.04's sudo-rs
@@ -188,7 +188,7 @@ Nodes are managed entirely from the UI — the installer no longer asks about th
 1. **Nodes → Add node** — give it a name, the public IP/host clients dial, and a colour. You get a **one-time enrollment token** and the exact one-liner.
 2. **On the entry server**, paste that one-liner — it fetches the repo and runs the node installer:
    ```bash
-   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" \
+   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" \
      -- node -key SECURE_NODE_KEY -host https://panel.example.net
    ```
    It installs the datapath tooling and starts `swg-noded` — it does **not** ask you to configure anything. Interfaces, turn-proxies, WDTT and csqtt servers are all created from the panel. Prefer Docker? The panel shows a `… -- docker node -key … -host …` command too.
@@ -302,13 +302,13 @@ cannot link.
 **Panel** — Step 1 asks the role, exactly like bare-metal: **master** (panel + this box also runs WG/AWG as a co-located node container, auto-enrolled in one pass) or **host** (panel only). `master` is the default.
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker
 ```
 
 **Node** — a separate entry server; asks for the panel URL + the key from **Nodes → Add node** (this is how the `host` role's nodes are deployed)
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker node
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker node
 ```
 
 Flags skip the prompts (the panel's enroll command uses them): `-role master|host`, `-user`, `-pass`, `-domain`, `-base`, `-port`, `-tls`, `-email`, `-cf-token`, `-cf-origin`, `-key`, `-host`, `-endpoint`, `-iface`, `-ifaces`, `-net host|bridge`, `--build` — e.g. `… -- docker node -key NODE_KEY -host https://panel.example.net`.
@@ -346,7 +346,7 @@ Configure via `.env`:
 
 **Two images** (pulled prebuilt from GHCR by default; `--build` builds them locally). `swg-panel` is pure Python + the bundled `acme.sh`. `swg-node` carries the userspace **`amneziawg-go`** datapath + `awg` tools (a container can't load the host kernel module) and needs `NET_ADMIN` + `/dev/net/tun`. It comes up with **no interface by default** — you add them from the panel (Interfaces → Load new interface). Set `NODE_IFACE` for one bootstrap interface (AmneziaWG 3.1 on compatible hosts, or 2.0 on older hosts. Set `NODE_PLAIN_WG=yes` for plain WG), `NODE_IFACES` for several (`name:port:addr[:proto[:endpoint]],…`), or mount your own confs under `/etc/swg-node/*.conf`. Panel-created interfaces persist across `up -d` (the conf dir is a volume). Masquerade is automatic. For best throughput, prefer a **bare-metal** node with the kernel module. With turn-proxy management enabled, `swg-noded` runs each proxy as a sibling `swg-turn-*` container (host network, `--restart unless-stopped`) over the mounted Docker socket — editing one just recreates the container, no host systemd.
 
-Prebuilt images: `ghcr.io/sanityprotocol/swg-panel` and `ghcr.io/sanityprotocol/swg-node`.
+Prebuilt images: `ghcr.io/tesla-prep/swg-panel` and `ghcr.io/tesla-prep/swg-node`.
 
 **Re-running an installer is safe** — it detects an existing install, keeps your `.env` + `./data` (token, login, certificate, interfaces), and offers the current values as defaults; the wg/awg and turn-proxy steps show what's already there and let you add more. To start fresh, run the uninstaller first. (Docker: re-apply with `PULL_POLICY=always … bootstrap.sh docker host|node` so the new image + compose land.) **One exception, on Docker:** re-running restages `docker-compose.yml` from the release, and the only per-interface UDP ports it publishes are the bootstrap one — so if you run the node on **bridge** networking and published extra ports by hand, re-add those lines afterwards. Host networking (the default) publishes nothing per interface and is unaffected.
 
@@ -357,13 +357,13 @@ Switch a box's **method** in place: re-run the installer asking for the *other* 
 Run the same one-liner with the other method. **To bare-metal** — a bare role word means bare-metal:
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- master
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- master
 ```
 
 **To Docker** — prefix the role with `docker`:
 
 ```bash
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- docker master
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker master
 ```
 
 A convert **keeps everything** — the panel's URL, login, roster, nodes and TLS cert, and (for a `master`) the local node's token, interfaces and turn-proxies. It is **copy-first**: the new method is staged in full *before* the old one is torn down, so the only downtime is the few seconds of the atomic switch — nodes self-heal on their next sync.

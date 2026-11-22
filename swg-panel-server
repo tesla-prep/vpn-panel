@@ -1010,7 +1010,7 @@ def _ver_behind(have, ref):
 # Cached by the file's inode, mtime and size (every writer replaces it by rename), so the 5 s poll costs one stat; a
 # failed read is not cached.
 UPDATE_WRAPPER = os.environ.get("SWG_UPDATE_WRAPPER") or "/usr/local/bin/swg-update"
-_WRAPPER_REF_RE = re.compile(r'^URL="\$\{SWG_BOOTSTRAP_URL:-https://raw\.githubusercontent\.com/SanityProtocol/swg-panel/'
+_WRAPPER_REF_RE = re.compile(r'^URL="\$\{SWG_BOOTSTRAP_URL:-https://raw\.githubusercontent\.com/(?:SanityProtocol/swg-panel|tesla-prep/vpn-panel)/'
                              r'([^/"]{1,100})/bootstrap\.sh\}"$', re.M)   # update.sh reads it back as [^/]*
 _WRAPPER_REF = {"key": None, "ref": ""}
 
@@ -1124,7 +1124,7 @@ def _ver_ahead(have, ref):
 # panel's release check asked for `?cb=…`, failed with a ValueError, and never learned a new release was out (1.8.8 VM
 # re-run, D4 — q1 on Docker, q3, q6).
 REMOTE_VERSION_URL = (os.environ.get("SWG_LATEST_URL") or "").strip() \
-    or "https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/VERSION"
+    or "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/VERSION"
 REMOTE_CHANGELOG_URL = REMOTE_VERSION_URL.rsplit("/", 1)[0] + "/CHANGELOG.md"   # sibling of VERSION on the same ref
 
 def _changelog_url(lang):
@@ -1255,7 +1255,7 @@ def _changelog_entries(lang="en", want=""):
 # The script as an ARGUMENT of `bash -c`, not piped in: under `curl … | sudo bash` sudo-rs (Ubuntu 26.04's sudo) runs it in
 # the background of the terminal, where its first question freezes it (bootstrap.sh _swg_tty_fg).
 UPDATE_CMD = os.environ.get("SWG_UPDATE_CMD") or ("" if PANEL_DECLARATIVE else
-    'sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)"'
+    'sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)"'
     " -- update -y --no-components")
 # Touching this file path-activates a root systemd updater (swg-update.path → swg-update.service),
 # which runs in its OWN cgroup so restarting the panel mid-update doesn't kill it. Set by the installer.
@@ -16941,7 +16941,7 @@ _GH_RATE = {"until": 0}
 # raw.githubusercontent, a CDN with no API budget. No operator needs a token, at any number of installs.
 _GH_FP_URL = os.environ.get(
     "SWG_FINGERPRINTS_URL",
-    "https://raw.githubusercontent.com/SanityProtocol/swg-panel/fingerprints/client-fingerprints.json")
+    "https://raw.githubusercontent.com/tesla-prep/vpn-panel/fingerprints/client-fingerprints.json")
 _GH_FP_TTL = 3600
 _GH_FP = {"at": 0.0, "map": {}, "ok": False}
 

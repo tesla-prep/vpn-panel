@@ -16,9 +16,9 @@ SERVER = os.environ.get("SWG_PANEL_SERVER") or os.path.join(HERE, "..", "swg-pan
 PERTURB = "--perturb" in sys.argv
 src = open(SERVER, encoding="utf-8").read()
 if PERTURB:
-    a = 'REMOTE_VERSION_URL = (os.environ.get("SWG_LATEST_URL") or "").strip() \\\n    or "https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/VERSION"'
+    a = 'REMOTE_VERSION_URL = (os.environ.get("SWG_LATEST_URL") or "").strip() \\\n    or "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/VERSION"'
     assert src.count(a) == 1, "perturbation anchor missing — would FALSE-PASS"
-    src = src.replace(a, 'REMOTE_VERSION_URL = os.environ.get("SWG_LATEST_URL", "https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/VERSION")')
+    src = src.replace(a, 'REMOTE_VERSION_URL = os.environ.get("SWG_LATEST_URL", "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/VERSION")')
 path = os.path.join(tempfile.mkdtemp(prefix="envawg-"), "panel.py"); open(path, "w").write(src)
 os.environ["SWG_LATEST_URL"] = ""
 loader = importlib.machinery.SourceFileLoader("swgpanel_envawg", path)
@@ -32,8 +32,8 @@ def check(name, ok, detail=""):
     print(("  PASS " if ok else "  FAIL ") + name + (("  — " + str(detail)) if detail and not ok else ""))
     if not ok: FAILS.append(name)
 print("[1] SWG_LATEST_URL=\"\" (what compose passes)")
-check("the release check asks main's VERSION", P.REMOTE_VERSION_URL.endswith("/swg-panel/main/VERSION"), P.REMOTE_VERSION_URL)
-check("…and the changelog sits beside it", P.REMOTE_CHANGELOG_URL.endswith("/swg-panel/main/CHANGELOG.md"), P.REMOTE_CHANGELOG_URL)
+check("the release check asks main's VERSION", P.REMOTE_VERSION_URL.endswith("/vpn-panel/main/VERSION"), P.REMOTE_VERSION_URL)
+check("…and the changelog sits beside it", P.REMOTE_CHANGELOG_URL.endswith("/vpn-panel/main/CHANGELOG.md"), P.REMOTE_CHANGELOG_URL)
 print("\n[2] awg_pending is gone — it was computed on every poll and read by nothing")
 live = open(SERVER, encoding="utf-8").read()
 check("the describe builder no longer sets it", 'ifc["awg_pending"]' not in live)

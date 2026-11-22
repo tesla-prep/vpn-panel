@@ -8,7 +8,7 @@
 #
 # First add the node in the panel's "Nodes" screen — it hands you a one-time key
 # and the exact command to run here, e.g.:
-#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" \
+#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" \
 #     -- node -key SECURE_NODE_KEY -host https://panel.example.net
 #
 # Fill CONFIG to run unattended, or be prompted. Run as root. --dry-run renders

@@ -2154,7 +2154,7 @@ export function NodeCreateSheet() {
     ${msg ? html`<div class=${"formmsg " + msg.k}>${msg.t}</div>` : null}
   <//>`;
 }
-export const BOOTSTRAP_URL = "https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh";
+export const BOOTSTRAP_URL = "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh";
 // The one-liner every screen hands out: `sudo bash -c "$(curl …)" -- <args>`, never `curl … | sudo bash -s <args>`. Under the
 // pipe, sudo-rs (Ubuntu 26.04's sudo) runs the script in the background of the terminal and its first question freezes it
 // (bootstrap.sh _swg_tty_fg; client report 2026-10-06). Handed to `bash -c`, sudo's stdin is the terminal — with sudo-rs

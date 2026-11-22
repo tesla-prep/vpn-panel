@@ -48,8 +48,8 @@ WRAPPERS = ("lib/common.sh",)                     # the one text (swg_update_wra
 WRITERS = ("install-host.sh", "update.sh", "lib/common.sh")
 PERTURB = "--perturb" in sys.argv
 
-RAW_DEV = "https://raw.githubusercontent.com/SanityProtocol/swg-panel/dev/bootstrap.sh"
-API_DEV = "https://api.github.com/repos/SanityProtocol/swg-panel/contents/bootstrap.sh?ref=dev"
+RAW_DEV = "https://raw.githubusercontent.com/tesla-prep/vpn-panel/dev/bootstrap.sh"
+API_DEV = "https://api.github.com/repos/tesla-prep/vpn-panel/contents/bootstrap.sh?ref=dev"
 ACCEPT = "Accept: application/vnd.github.raw"
 BOOT_ARGS = "update -y --no-components --node-only"
 

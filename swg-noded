@@ -20768,7 +20768,7 @@ def delete_ifaces(node_cfg, delete, agent, sudo):
 # a two-week-old main build — and a host that had never pulled `:latest` fetched it on the first helper, or could not reach the
 # host at all where the registry is slow or blocked. SWG_TURN_IMAGE is the node's own image by construction (compose sets it
 # from SWG_IMAGE_TAG; the NixOS module from `image`), and it is already local.
-HELPER_IMAGE = os.environ.get("HELPER_IMAGE") or os.environ.get("SWG_TURN_IMAGE") or "ghcr.io/sanityprotocol/swg-node:latest"
+HELPER_IMAGE = os.environ.get("HELPER_IMAGE") or os.environ.get("SWG_TURN_IMAGE") or "ghcr.io/tesla-prep/swg-node:latest"
 # ── where host systemd units go ─────────────────────────────────────────────────────────────────
 # PROBED, never guessed from the distro. On a host that keeps its units in a read-only store —
 # NixOS, and any other immutable-OS layout — /etc/systemd/system is a symlink into that store and
@@ -25883,10 +25883,10 @@ def csqtt_snapshot():
 UPDATE_CMD_TMPL = (
     'B=$(mktemp) && trap \'rm -f "$B"\' EXIT && '
     '{{ curl -fsSL --connect-timeout 20 --max-time 120 -o "$B" '
-    'https://raw.githubusercontent.com/SanityProtocol/swg-panel/{ref}/bootstrap.sh '
+    'https://raw.githubusercontent.com/tesla-prep/vpn-panel/{ref}/bootstrap.sh '
     '|| {{ echo "could not fetch bootstrap.sh from raw.githubusercontent.com — trying api.github.com" >&2; '
     'curl -fsSL --connect-timeout 20 --max-time 120 -o "$B" -H "Accept: application/vnd.github.raw" '
-    '"https://api.github.com/repos/SanityProtocol/swg-panel/contents/bootstrap.sh?ref={ref}"; }}; }} && '
+    '"https://api.github.com/repos/tesla-prep/vpn-panel/contents/bootstrap.sh?ref={ref}"; }}; }} && '
     'SWG_REF={ref} bash "$B" update -y --no-components --node-only')
 DEFAULT_UPDATE_REF = "main"
 

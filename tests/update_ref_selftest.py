@@ -78,10 +78,10 @@ NODE_SRC = ("swg-noded", "install-node.sh", "install-host.sh", "update.sh")
 srcs = {f: open(os.path.join(ROOT, f), encoding="utf-8").read() for f in WRITERS}
 if PERTURB:
     # ⚠️ ASSERT THE ANCHOR: the one text lives in lib/common.sh now; a replace that finds it nowhere plants nothing (round 10)
-    assert sum(srcs[f].count("swg-panel/${_swg_ref}/bootstrap.sh") for f in srcs) >= 1, \
-        "perturbation anchor missing (swg-panel/${_swg_ref}/bootstrap.sh) — this run would FALSE-PASS"
+    assert sum(srcs[f].count("vpn-panel/${_swg_ref}/bootstrap.sh") for f in srcs) >= 1, \
+        "perturbation anchor missing (vpn-panel/${_swg_ref}/bootstrap.sh) — this run would FALSE-PASS"
     for f in srcs:
-        srcs[f] = srcs[f].replace("swg-panel/${_swg_ref}/bootstrap.sh", "swg-panel/main/bootstrap.sh")
+        srcs[f] = srcs[f].replace("vpn-panel/${_swg_ref}/bootstrap.sh", "vpn-panel/main/bootstrap.sh")
 
 print("\n[1] every writer of the update wrapper bakes the ref")
 # ONE TEXT (round 8): swg_update_wrapper_text in lib/common.sh; the three writers render it with the ref they resolved.
@@ -112,7 +112,7 @@ for ref, want in (("", "main"), ("dev", "dev"), ("v1.9.0", "v1.9.0")):
     out = subprocess.run(["bash", "-c", '_swg_ref="${SWG_REF:-main}"; cat <<WRAP\n%s\nWRAP' % tmpl],
                          capture_output=True, text=True, env={**os.environ, "SWG_REF": ref}).stdout
     check("SWG_REF=%-7r bakes %s" % (ref or "(unset)", want),
-          ("swg-panel/%s/bootstrap.sh" % want) in out, out.strip()[:110])
+          ("vpn-panel/%s/bootstrap.sh" % want) in out, out.strip()[:110])
     # ⚠️ the heredoc is UNQUOTED so the ref expands — every OTHER $ must still reach the file intact, or the
     # wrapper loses the override the operator uses to point one box somewhere else.
     check("…and `${SWG_BOOTSTRAP_URL}` survives to the file", "${SWG_BOOTSTRAP_URL:-" in out, out.strip()[:110])
@@ -173,7 +173,7 @@ if PERTURB:
     nsrc["update.sh"] = nsrc["update.sh"].replace("  ensure_node_update_ref #", "  #")
 
 check("swg-noded's self-update command is a TEMPLATE, not a hardcoded ref",
-      "{ref}" in nsrc["swg-noded"] and "swg-panel/main/" not in nsrc["swg-noded"],
+      "{ref}" in nsrc["swg-noded"] and "vpn-panel/main/" not in nsrc["swg-noded"],
       [l for l in nsrc["swg-noded"].splitlines() if "UPDATE_CMD_TMPL" in l][:1])
 check("…and it defaults to main when nothing recorded a ref",
       'DEFAULT_UPDATE_REF = "main"' in nsrc["swg-noded"])
@@ -207,7 +207,7 @@ for ref, want in ((None, "main"), ("dev", "dev"), ("v1.9.0", "v1.9.0"), ("", "ma
                   ("evil;rm -rf /", "main")):
     cfg = {"node": ({} if ref is None else {"update_ref": ref})}
     got = _m.default_update_cmd(cfg)
-    check("update_ref=%-14r -> %s" % (ref, want), ("swg-panel/%s/" % want) in got, got[:120])
+    check("update_ref=%-14r -> %s" % (ref, want), ("vpn-panel/%s/" % want) in got, got[:120])
 check("an explicit update_cmd still wins outright",
       "MINE" in (({"node": {"update_cmd": "MINE", "update_ref": "dev"}}.get("node") or {}).get("update_cmd")))
 
@@ -229,13 +229,13 @@ HINT = m.group(0) if m else ""
 if PERTURB_HINT:
     _a = re.search(r'\n  local _r=[^\n]*\n  warn "    sudo bash -c[^\n]*\n', HINT)
     assert _a, "perturbation anchor missing — would FALSE-PASS"
-    HINT = HINT.replace(_a.group(0), "\n  warn '    sudo bash -c \"$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)\" -- host'\n")
+    HINT = HINT.replace(_a.group(0), "\n  warn '    sudo bash -c \"$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)\" -- host'\n")
 _pd = tempfile.mkdtemp(prefix="unitwarn-"); open(os.path.join(_pd, "swg-panel-server"), "w").close()
 assert HINT.count("/etc/systemd/system/swg-panel-server.service") == 1, "the unit check is not where [5] reads it"
 HINT = HINT.replace("/etc/systemd/system/swg-panel-server.service", _pd + "/no-such.service")   # the unit is missing, on any box
-for ref, want in (("dev", 'sudo bash -c "SWG_REF=dev; $(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/dev/bootstrap.sh)" -- host'),
-                  ("main", 'sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- host'),
-                  (None, 'sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh)" -- host')):
+for ref, want in (("dev", 'sudo bash -c "SWG_REF=dev; $(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/dev/bootstrap.sh)" -- host'),
+                  ("main", 'sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- host'),
+                  (None, 'sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- host')):
     env = {k: v for k, v in os.environ.items() if k != "SWG_REF"}
     if ref is not None:
         env["SWG_REF"] = ref
@@ -272,7 +272,7 @@ for args, want, what in (((("dev",), {}), "dev", "a bare node on dev reports dev
                          ((("dev",), {"cmd": "MINE"}), "", "a node running an operator's own update_cmd reports no ref (update_custom says it)")):
     got = shown(*args[0], **args[1])
     check("[6] %s" % what, got == want, repr(got)); _s6.append(what)
-SWGT = ("curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/dev/bootstrap.sh"
+SWGT = ("curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/dev/bootstrap.sh"
         " | SWG_REF=dev bash -s update -y --no-components --node-only")
 for (a, kw), want, what in ((((None,), {"cmd": SWGT}), True, "an own update_cmd is reported as update_custom (swgt's dev-pinned one)"),
                             (((None,), {"cmd": ["bash", "/root/up.sh", 1]}), True, "…a list one too, never parsed (a hand-edited int cannot break the snapshot)"),
@@ -360,7 +360,7 @@ check("[7] a host updater baked with dev reports dev", ref_after(wrapper("dev"))
 check("[7] …rewritten to main (a later update from main) reports nothing — the cache follows the file", ref_after(wrapper("main")) == "")
 check("[7] …a tag is reported as it is", ref_after(wrapper("v1.9.0")) == "v1.9.0")
 check("[7] …no updater (a Docker panel) reports nothing", ref_after(None) == "")
-check("[7] …a file that is not our text reports nothing", ref_after('#!/bin/sh\nURL="https://example.org/swg-panel/dev/bootstrap.sh"\n') == "")
+check("[7] …a file that is not our text reports nothing", ref_after('#!/bin/sh\nURL="https://example.org/vpn-panel/dev/bootstrap.sh"\n') == "")
 _P7.UPDATE_TRIGGER = None
 check("[7] …a panel without the update trigger reports nothing (its Update hands out a main-pinned command)",
       ref_after(wrapper("dev")) == "")
@@ -379,13 +379,13 @@ open(_new, "w").write(wrapper("tst")); os.utime(_new, ns=(_t, _t)); os.replace(_
 check("[7] …a rename to a same-size ref in the same second is noticed (the key holds the inode)", _P7.panel_update_ref() == "tst")
 # update.sh reads the same line back with its own sed (the ref it re-bakes on the next update): both readers, run on the
 # same generated wrappers, must agree — the panel says nothing for main, which update.sh reads as main.
-_m = re.search(r"sed -n '(s#\^URL=[^']*)' /usr/local/bin/swg-update", open(os.path.join(ROOT, "update.sh"), encoding="utf-8").read())
+_m = re.search(r"sed -En '(s#\^URL=[^']*)' /usr/local/bin/swg-update", open(os.path.join(ROOT, "update.sh"), encoding="utf-8").read())
 check("[7] update.sh still reads its updater's ref back with one sed (the comparison below runs it)", bool(_m))
 if _m:
     _bad = []
     for _ref in ("dev", "main", "v1.9.0", "1.8.11-rc.1", "my_branch", "feature/x"):
         _txt = wrapper(_ref); open(_W, "w").write(_txt)
-        _sed = subprocess.run(["sed", "-n", _m.group(1), _W], capture_output=True, text=True).stdout.split("\n")[0]
+        _sed = subprocess.run(["sed", "-En", _m.group(1), _W], capture_output=True, text=True).stdout.split("\n")[0]
         ref_after(_txt)
         if (_sed if _sed != "main" else "") != _P7.panel_update_ref():
             _bad.append((_ref, _sed, _P7.panel_update_ref()))
