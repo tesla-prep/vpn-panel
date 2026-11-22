@@ -4,7 +4,7 @@
 
 ## Быстрый старт
 
-Подготовьте Ubuntu 24.04 LTS или новее, Docker Engine с Compose и Nginx с HTTPS для веб-доступа. Панель и подписки работают в одном Compose-проекте, каждая VPN-нода устанавливается отдельно.
+Подготовьте Ubuntu 24.04 LTS или новее, Git, curl, Docker Engine с Compose и Nginx с HTTPS для веб-доступа. Панель и подписки работают в одном Compose-проекте, каждая VPN-нода устанавливается отдельно.
 
 ```bash
 curl -fsSLo swg.sh https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/swg.sh
@@ -12,7 +12,7 @@ sudo bash swg.sh install panel --dry-run
 sudo bash swg.sh install panel
 ```
 
-Первый запуск создаёт `/opt/swg-panel/.env`. Заполните его и запустите установщик ещё раз. Настройте проксирование панели и подписок по примеру в руководстве.
+Введите в установщике публичные HTTPS-адреса, локальные порты и учётные данные администратора. Установка продолжится в том же запуске. Настройте Nginx по примеру в руководстве.
 
 - [Установка, Nginx и обновление](docs/operations.md)
 - [Пользователи, подписки и ноды](docs/guide.md)

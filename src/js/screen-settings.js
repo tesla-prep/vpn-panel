@@ -25,8 +25,8 @@ import {
 } from "./ui.js";
 import {
   CONF_SEALED_OLD, CONF_UNREACHABLE, EXIT_LOCKED, EXIT_KEEP_LOCKED, exitKeepState, awgConfLines, buildConf, exitKeepRouter, exitRouterKey, genKeys, genPSK, QR,
-  SUB_LANG_LIST, VaultPromptSheet, downloadConf, ivkSetEscrow, nginxServerBlock, nixDirectTlsBlock, nixProxyBlock,
-  ensureVaultUnlocked, ivkResealForNodeBlob, nixUpstream, normPublicUrl, qrDataURL, runConfigMigration, subBaseUrl, subForget, subKeyB64, subRewrap, subSKCached, subUnlock,
+  SUB_LANG_LIST, VaultPromptSheet, downloadConf, ivkSetEscrow,
+  ensureVaultUnlocked, ivkResealForNodeBlob, normPublicUrl, qrDataURL, runConfigMigration, subBaseUrl, subForget, subKeyB64, subRewrap, subSKCached, subUnlock,
   subVaultCreate, urlPortOf, withUrlPort,
 } from "./crypto.js";
 import {

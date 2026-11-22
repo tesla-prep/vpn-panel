@@ -8,6 +8,76 @@ die() {
     exit 1
 }
 
+valid_port() {
+    [[ $1 =~ ^[1-9][0-9]{0,4}$ ]] && (( $1 <= 65535 ))
+}
+
+valid_https_url() {
+    local pattern='^https://([[:alnum:]][[:alnum:].-]*|\[[[:xdigit:]:.]+\])(:([0-9]+))?(/[[:alnum:]._%+~/-]*)?$'
+    [[ $1 =~ $pattern ]] || return 1
+    [[ -z ${BASH_REMATCH[3]} ]] || valid_port "${BASH_REMATCH[3]}"
+}
+
+prompt_setting() {
+    local name=$1 label=$2 validator=$3 default=${4:-} secret=${5:-false}
+    local answer prompt="$label"
+    [[ -z $default ]] || prompt+=" [$default]"
+    while true; do
+        printf '%s: ' "$prompt" >&2
+        if "$secret"; then
+            IFS= read -rs answer || die 'Installation cancelled before saving settings.'
+            printf '\n' >&2
+        else
+            IFS= read -r answer || die 'Installation cancelled before saving settings.'
+        fi
+        answer=${answer:-$default}
+        if "$validator" "$answer"; then
+            printf -v "$name" '%s' "$answer"
+            return
+        fi
+        printf 'Invalid value for %s. Try again.\n' "$name" >&2
+    done
+}
+
+valid_node_token() { [[ $1 =~ ^[a-zA-Z0-9_-]+$ ]]; }
+valid_node_endpoint() { [[ $1 =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]; }
+
+configure_installation() (
+    local role=$1 PANEL_URL SUB_URL PANEL_PORT SUB_PORT NODE_TOKEN NODE_ENDPOINT settings
+    [[ -t 0 ]] || die "Initial setup requires a terminal or a prepared $install_dir/.env."
+    prompt_setting PANEL_URL 'Public HTTPS URL of the panel' valid_https_url
+    PANEL_URL=${PANEL_URL%/}
+    if [[ $role == panel ]]; then
+        prompt_setting SUB_URL 'Public HTTPS URL for subscriptions' valid_https_url "$PANEL_URL/subs"
+        SUB_URL=${SUB_URL%/}
+        while [[ $SUB_URL == "$PANEL_URL" ]]; do
+            printf 'Use a separate URL for subscriptions.\n' >&2
+            prompt_setting SUB_URL 'Public HTTPS URL for subscriptions' valid_https_url "$PANEL_URL/subs"
+            SUB_URL=${SUB_URL%/}
+        done
+        prompt_setting PANEL_PORT 'Local HTTP port for the panel' valid_port 6741
+        prompt_setting SUB_PORT 'Local HTTP port for subscriptions' valid_port 8444
+        while [[ $SUB_PORT == "$PANEL_PORT" ]]; do
+            printf 'Use a separate local port for subscriptions.\n' >&2
+            prompt_setting SUB_PORT 'Local HTTP port for subscriptions' valid_port
+        done
+    else
+        prompt_setting NODE_TOKEN 'Node token from the panel' valid_node_token '' true
+        prompt_setting NODE_ENDPOINT 'Public hostname or IPv4 address of this node' valid_node_endpoint
+    fi
+    settings=$(mktemp .env.XXXXXX)
+    trap 'rm -f -- "$settings"' EXIT
+    {
+        printf "PANEL_URL='%s'\n" "$PANEL_URL"
+        if [[ $role == panel ]]; then
+            printf "SUB_URL='%s'\nPANEL_PORT=%s\nSUB_PORT=%s\n" "$SUB_URL" "$PANEL_PORT" "$SUB_PORT"
+        else
+            printf "NODE_TOKEN='%s'\nNODE_ENDPOINT='%s'\n" "$NODE_TOKEN" "$NODE_ENDPOINT"
+        fi
+    } > "$settings"
+    mv -T -- "$settings" .env
+)
+
 install_awg_module() (
     local kernel tag=v3.1.20260906 dkms_version package trees flavour tmp
     kernel=$(uname -r)
@@ -114,9 +184,11 @@ flock -n 9 || die "Another deployment is running in $install_dir."
 
 if [[ $action == install ]]; then
     [[ ! -e compose.yml ]] || die "SWG $role is already installed. Run swg.sh update $role."
+    if [[ $role == panel && ! -s data/etc/auth && ! -t 0 ]]; then
+        die 'Initial panel setup requires a terminal to set the password.'
+    fi
     if [[ ! -f .env ]]; then
-        install -m 0600 "$source_dir/docker/$role.env.example" .env
-        die "Fill in $install_dir/.env and run the installer again."
+        configure_installation "$role"
     fi
 elif [[ $(installed_revision) == "$revision" ]]; then
     echo "SWG $role is already at $revision."
@@ -151,7 +223,6 @@ if [[ $role == node ]]; then
         '
 elif [[ ! -s data/etc/auth ]]; then
     [[ $action == install ]] || die 'Panel credentials are missing.'
-    [[ -t 0 ]] || die 'Initial panel setup requires a terminal to set the password.'
     install -d -m 0700 data/etc data/lib data/lib/subs data/stats
     "${compose[@]}" run --rm --no-deps --entrypoint swg-passwd swg-panel
     [[ -s data/etc/auth ]] || die 'Panel credentials were not saved.'

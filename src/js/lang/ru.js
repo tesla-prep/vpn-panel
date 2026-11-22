@@ -4490,16 +4490,8 @@ export const STR = {
     " Публичный адрес отдаёт *ваш обратный прокси*, а не панель — прежде чем на него полагаться, проверьте прокси (server_name, сертификат, путь). Свой путь монтирования панель берёт из `SWG_PANEL_BASE`. Нодам этот адрес сообщается как адрес подключения, так что внешние перейдут на него при следующей синхронизации — убедитесь, что он им доступен; кому нет, тому `panel.url` придётся править вручную.",
   "*Nodes re-point themselves.* On save, online nodes learn the new address on their next sync and switch to it — the old address stays reachable for ~3 minutes so they can. A node that is *offline* during the change (or one installed without verifying/pinning the panel cert) must be re-pointed by hand: set `panel.url` in `/etc/swg-agent/config.json` (bare-metal) or `PANEL_URL` in `.env` (docker) to the new address, then restart `swg-noded` / recreate the container; on NixOS, set `services.swg-node.panelUrl` in the node's configuration.nix, run `nixos-rebuild switch` and restart `swg-noded`.":
     "*Ноды перейдут сами.* После сохранения те, что на связи, узнают новый адрес при следующей синхронизации и перейдут — старый адрес держится ещё около 3 минут, чтобы они успели. Нода, который был *офлайн* во время смены (или ставился без проверки и закрепления сертификата панели), придётся перенастроить руками: пропишите `panel.url` в `/etc/swg-agent/config.json` (без Docker) или `PANEL_URL` в `.env` (Docker) и перезапустите `swg-noded` либо пересоздайте контейнер; на NixOS задайте `services.swg-node.panelUrl` в configuration.nix ноды, выполните `nixos-rebuild switch` и перезапустите `swg-noded`.",
-  "Reverse-proxy config for the panel (nginx) — full `server { }` for the values above":
-    "Конфиг прокси для панели (nginx) — готовый `server { }` под значения выше",
-  "Built from the domain, external port, path (from the Public URL) and the internal listen address above. Point `ssl_certificate` at your real cert, then `nginx -t && systemctl reload nginx`.":
-    "Собран из домена, внешнего порта, пути (из публичного адреса) и внутреннего адреса выше. Укажите в `ssl_certificate` свой сертификат, затем `nginx -t && systemctl reload nginx`.",
   "*Behind a reverse proxy.* Point your proxy at `{v1}` and make sure it serves this URL's path. swg-sub picks it up on Save — a path or domain change reloads it live (no downtime; existing links keep working during a grace), a host/port change restarts it. If the panel has no root helper, it saves and asks you to run `systemctl reload swg-sub`.":
     "*За обратным прокси.* Направьте прокси на `{v1}` и проверьте, что он отдаёт путь этого адреса. swg-sub подхватит настройки при сохранении: смена пути или домена перечитывается на лету (без простоя, старые ссылки какое-то время ещё работают), смена хоста или порта — с перезапуском. Если у панели нет прав root, она сохранит и попросит выполнить `systemctl reload swg-sub`.",
-  "Reverse-proxy config for the subscription page (nginx) — full `server { }` for the values above":
-    "Конфиг прокси для страницы подписки (nginx) — готовый `server { }` под значения выше",
-  "If swg-sub shares the panel's domain, merge its `location` into that server block instead of a second one — then reload nginx.":
-    "Если swg-sub живёт на домене панели, перенесите его `location` в тот же server-блок вместо второго — и перечитайте конфиг nginx.",
   "Set up your *Encryption Vault* first in {v1} — each server's interface key is sealed under it.":
     "Сначала настройте *хранилище ключей* в {v1} — ключ интерфейса каждого сервера запечатан им.",
   "Set up once. Confirm your panel password — an encryption key is generated in your browser and shown once; the server only ever stores it wrapped, so it can't read your clients' private keys.":
@@ -7651,6 +7643,6 @@ Object.assign(STR, {
   "Configure SOCKS5 proxies here and assign an exit from the user card.": "Настройте прокси здесь и назначьте выход в карточке пользователя.",
   "No SOCKS5 exits on this node yet.": "На этой ноде пока нет выходов SOCKS5.",
   "Set PANEL_URL, NODE_TOKEN and the public NODE_ENDPOINT in /opt/swg-node/.env.": "Укажите PANEL_URL, NODE_TOKEN и публичный NODE_ENDPOINT в /opt/swg-node/.env.",
-  "After saving .env, run the installer again.": "Сохраните .env и запустите установщик повторно.",
-  "After saving .env, run sudo docker compose up -d in /opt/swg-node.": "Сохраните .env и выполните sudo docker compose up -d в /opt/swg-node.",
+  "Enter the panel URL, node token and public node address when the installer asks.": "Введите адрес панели, токен и публичный адрес ноды, когда их запросит установщик.",
+  "Set NODE_TOKEN in /opt/swg-node/.env, then run sudo docker compose up -d in that directory.": "Укажите NODE_TOKEN в /opt/swg-node/.env и выполните sudo docker compose up -d в этом каталоге.",
 });

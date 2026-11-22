@@ -1748,9 +1748,8 @@ export function NodeTokenSheet({ name, token, isNew }) {
     ${copyField("PANEL_URL", host)}
     ${copyField("NODE_TOKEN", token)}
     ${isNew ? copyField(T("Run on the node"), install) : null}
-    <p class="hint">${T("Set PANEL_URL, NODE_TOKEN and the public NODE_ENDPOINT in /opt/swg-node/.env.")}</p>
-    ${isNew ? html`<p class="hint">${T("After saving .env, run the installer again.")}</p>`
-             : html`<p class="hint">${T("After saving .env, run sudo docker compose up -d in /opt/swg-node.")}</p>`}
+    ${isNew ? html`<p class="hint">${T("Enter the panel URL, node token and public node address when the installer asks.")}</p>`
+             : html`<p class="hint">${T("Set NODE_TOKEN in /opt/swg-node/.env, then run sudo docker compose up -d in that directory.")}</p>`}
   <//>`;
 }
 export function openNodeEdit(node) { openModal(html`<${NodeEditSheet} node=${node}/>`); }
