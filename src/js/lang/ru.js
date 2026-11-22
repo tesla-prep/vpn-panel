@@ -1526,8 +1526,8 @@ export const STR = {
   // budget-ok: field <label>, own line
   "Fallback VK call link": "Запасная ссылка на звонок VK",
   "https://vk.com/call/join/…": "https://vk.com/call/join/…",
-  "*Curated* presets are always available — recommended, ready-to-route lists the panel maintains and resolves itself, with nothing to enable. Turn on any public *provider* below to also search its raw catalog; the panel fetches it so its lists appear in the picker. Turning one off hides its lists and *stops* anything already routed from it until you turn it back on.":
-    "*Отобранные* наборы доступны всегда — рекомендованные, готовые к маршрутизации списки, которые панель ведёт и собирает сама; включать нечего. Включите любого публичного *провайдера* ниже, чтобы искать ещё и по его сырому каталогу; панель его скачает, и его списки появятся в выборе. Выключение провайдера прячет его списки и *останавливает* всё, что уже из него маршрутизируется, пока вы не включите его снова.",
+  "Enable a provider to find its lists in the rule editor. When you turn a provider off, its lists are hidden and its rules stop matching.":
+    "Включите провайдера, чтобы его списки появились в редакторе правил. После отключения провайдера его списки скрываются, и правила с ними перестают срабатывать.",
   "Retry": "Повторить",
   "Loading providers…": "Загружаю провайдеров…",
   "Custom-list tag colour": "Цвет тега своих списков",
@@ -2921,13 +2921,11 @@ export const STR = {
   "Add lists next — the category matches by domain or IP depending on the lists you pick.":
     "Дальше добавьте списки — категория совпадает по домену или по IP в зависимости от выбранных списков.",
   "A category with that name already exists.": "Категория с таким именем уже есть.",
-  "Recommended presets": "Рекомендуемые наборы",
   "Provider catalog": "Каталог провайдера",
   "Lists from {v1}": "Списки {v1}",
   "{v1} is still downloading its list catalog — its lists appear here when it finishes.": "{v1} ещё загружает каталог списков — они появятся здесь, когда загрузка закончится.",
   "{v1} could not download its list catalog — retry it in Settings ▸ Geo data providers.": "Не удалось загрузить каталог списков {v1} — повторите в «Настройки ▸ Провайдеры гео-данных».",
   "Domains blocked in Russia — the RKN registry, filtered": "Домены, заблокированные в России, — реестр РКН после фильтрации",
-  "IP addresses blocked in Russia, merged into ranges": "IP-адреса, заблокированные в России, в виде диапазонов",
   "Community list: sites RKN does not block that refuse visitors from Russia": "Список сообщества: сайты, которые РКН не блокирует, но которые не пускают посетителей из России",
   "Community list: networks RKN does not block that refuse addresses from Russia": "Список сообщества: сети, которые РКН не блокирует, но которые не пускают адреса из России",
   "Discord's networks": "Сети Discord",
@@ -4551,16 +4549,8 @@ export const STR = {
   "Downloading…": "Скачивается…",
   "The broadest GeoSite + GeoIP set — per-service domain and country IP rules, tracking upstream Clash data.":
     "Самый широкий набор GeoSite + GeoIP — правила по сервисам и странам, вслед за данными Clash.",
-  "Community-curated per-service domain sets — well-maintained, the source many routing rules build on.":
-    "Наборы доменов по сервисам от сообщества — аккуратно ведутся, на них строят многие правила.",
-  "Release-built GeoIP — country and service IP ranges in clean CIDR text, a solid IP-tier companion.":
-    "GeoIP из релизов — диапазоны стран и сервисов чистым CIDR, надёжное дополнение по IP.",
   "Russia-focused domain and IP lists for anti-censorship routing — blocked services and their networks.":
     "Списки доменов и адресов с фокусом на Россию для обхода блокировок — закрытые сервисы и их сети.",
-  "600+ per-app rule sets — a dedicated list for almost any single service, some with IP variants.":
-    "600+ наборов правил по приложениям — отдельный список почти на любой сервис, часть с адресами.",
-  "Built-in recommended presets for common services — panel-maintained, ready to route.":
-    "Встроенные готовые наборы для популярных сервисов — ведёт панель, можно сразу маршрутизировать.",
   "Your own IP / domain lists — turn off to hide the Custom lists section in routing.":
     "Ваши списки адресов и доменов — выключите, чтобы скрыть раздел своих списков в маршрутизации.",
   "Re-fetch every routed list from its provider now (updates the panel; nodes pull the changes on their schedule)":
@@ -4806,7 +4796,6 @@ export const STR = {
     "Есть несохранённые изменения, они пропадут. Уйти без сохранения?",
   "Gemini (Google AI)": "Gemini (ИИ Google)",
   "Microsoft Copilot": "Microsoft Copilot",
-  "Russia — all IPs": "Россия — все адреса",
   "All traffic (catch-all)": "Весь трафик (всё подряд)",
   "Perplexity AI": "Perplexity AI",
   "Russian Government": "Госсайты России",
@@ -4833,12 +4822,6 @@ export const STR = {
     "Gemini от Google — отдельно от остальных служб Google",
   "Microsoft & GitHub Copilot": "Microsoft и GitHub Copilot",
   "Signal private messenger": "Защищённый мессенджер Signal",
-  "The whole Russian IP space (GeoIP) — works in every mode":
-    "Всё адресное пространство России (GeoIP) — работает в любом режиме",
-  "Sites blocked inside Russia — comprehensive (~86k domains, heavy)":
-    "Сайты, закрытые в России — полный список (~86 тыс. доменов, тяжёлый)",
-  "News / media blocked inside Russia — light subset (~130)":
-    "Новости и СМИ, закрытые в России — краткий список (~130)",
   "couldn't load — will retry": "не загрузилось — попробуем ещё",
   // budget-ok: a message bar / notice — full width, wraps, nothing beside it
   "Reset failed.": "Сбросить не удалось.",
@@ -5099,7 +5082,6 @@ export const STR = {
   "the panel didn't respond. Nothing was lost; try again.": "панель не ответила. Ничего не потеряно, повторите.",
   "Heads up: changing a node's mesh subnet, interface prefix, or AWG params re-provisions its mesh links — it briefly drops off the mesh while every peer pulls the new config and reconnects.":
     "Учтите: смена подсети сети, префикса интерфейсов или параметров AWG пересоберёт подключения ноды — она ненадолго выпадет из сети, пока каждый сосед забирает новые настройки и переподключается.",
-  "Routing lists — presets / custom": "Списки маршрутизации — готовые и свои",
   "Content filters — categories / lists": "Фильтры содержимого — категории и списки",
   "Authentication — panel credentials": "Вход — учётные данные панели",
   "Turn proxies — forks / colours / VK link": "Turn-прокси — сборки, цвета, ссылка VK",
@@ -5126,10 +5108,6 @@ export const STR = {
     "Панель проверяет в это местное время, с выбранной частотой.",
   "Content filters providers": "Поставщики фильтров",
   "Routing lists providers": "Поставщики списков",
-  // Curated has no switch (§6.5): it stands in the slot where a fetched provider says «обновлён 3 ч назад».
-  "always on": "всегда включены",
-  "The panel maintains and resolves these itself — there is no provider to enable, and nothing to turn off":
-    "Панель ведёт и собирает их сама — включать нечего и выключать нечего.",
   "Enabled — its lists are selectable": "Включён — его списки доступны",
   "Off — its lists are hidden and deactivated on nodes": "Выкл — его списки скрыты и отключены на нодах",
   "When this provider's data was last pulled to the panel":
@@ -5497,10 +5475,6 @@ export const STR = {
   "val|Unassigned": "Без владельца",   // NOT status|Unassigned («Свободен»), which is width-capped for the peer grid
 
   // routing categories: the four Russia sets are sentences, so they translate; the brand rows do not
-  "Russia — Government": "Россия — госсайты",
-  "Russia — Banks": "Россия — банки",
-  "Russia — Blocked (all)": "Россия — блокировки (всё)",
-  "Russia — Blocked (media)": "Россия — блокировки (медиа)",
   "Facebook, Instagram & WhatsApp": "Facebook, Instagram и WhatsApp",
   "Disney+ streaming": "Стриминг Disney+",
   "VKontakte": "ВКонтакте",
@@ -6528,7 +6502,6 @@ export const STR = {
     "DNS-серверы через запятую (-dns-servers). Пусто = умолчание приложения.",
   "Connections": "Соединения",
   "Credential group size": "Размер группы учёток",
-  "Curated": "Подборка",
   "Custom DNS": "Свой DNS",
   "DNS mode": "Режим DNS",
   "Debug logging": "Подробный лог",

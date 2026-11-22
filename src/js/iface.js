@@ -12,7 +12,7 @@ import { Ic, ICON, Tag, Panel, Badge, StatusTag, CmdErr, Sheet, footRow, secTitl
 import { RangedHistory, IfaceThroughput, lossColorMesh } from "./charts.js";
 import { AWG_ORDER, SubAutoNote, ensureVaultUnlocked, ivkResealForNode, subSKCached, subFeatureOn } from "./crypto.js";
 import { EgressPicker, NatSourcePick, natPinApplies, egressInit, egressSaveBlock, egressBody, ifTrafficBadge, BlockTraffic, blockActiveN, RoutingRules, rulesTitle,
-         SMART_CAT_LABEL, defaultBlockFor, loadBlockCatalog, reportDropped, rulesSummary, targetLabel } from "./routing.js";
+         catLabelOf, defaultBlockFor, loadBlockCatalog, reportDropped, rulesSummary, targetLabel } from "./routing.js";
 import { rulesToRows } from "./rulerows.js";
 import { MIMIC_KEYS, MIMIC_PRESETS, MIMIC_BUILTIN_SIZE, mimicOf, mimicCheck, awgFieldCheck, mimicRender, mimicLines, mimicFill, mimicAfter } from "./mimic.js";
 import { orphCount, OnlinePeersTag, searchMatch, DropsPop, DropsFigure, LossPop, meshHealth, ReachField } from "./views.js";
@@ -1017,12 +1017,11 @@ export function ConnectionEditSheet({ node, iface }) {
     && allMeta[k].egress_mode === "forward" && allMeta[k].egress_node === peer)
     .map(k => ({ iface: k, subnet: allMeta[k].subnet, ip: allMeta[k].egress_ip }));
   // interfaces that SMART-route some destination categories out through this link (not the whole iface)
-  const _listTitle = Object.fromEntries((Store.panelSettings?.custom_lists || []).map(l => [l.id, l.title]));
   const smartCarried = Object.keys(allMeta).filter(k => !allMeta[k].system && allMeta[k].egress_mode === "smart")
     .map(k => ({ iface: k, cats: (allMeta[k].routing || []).filter(r => r.action === "exit" && r.node === peer)
       .map(r => r.category === "custom"
         ? ((rulesToRows([r]).rows[0] || {}).badges || []).map(b => targetLabel(b.kind, b.value)).join(", ") || "custom"
-        : (SMART_CAT_LABEL[r.category] || _listTitle[r.category] || r.category)) }))
+        : catLabelOf(r.category)) }))
     .filter(x => x.cats.length);
   const ifBadge = k => html`<span class=${"tg tg-" + ((allMeta[k].awg_params && Object.keys(allMeta[k].awg_params).length) ? "awg" : "wg") + awg3Cls(node, k)} ...${awg3Tip(node, k)}>${k}</span>`;
   const peerNm = html`<b style=${"color:" + Store.nodeColor(peer)}>${Store.nodeName(peer)}</b>`;
@@ -1070,7 +1069,7 @@ export function ConnectionEditSheet({ node, iface }) {
       ${carried.length ? html`<div class="fwd-head"><span class="egb egb-cascade"><${Ic} i="cascade"/>${T("tag|cascade")}</span><span class="fwd-to">${T("fwd|to")}</span>${peerNm}</div>
         <div class="fwd-ifaces">${carried.map(c => ifBadge(c.iface))}</div>` : null}
       ${smartCarried.length ? html`<div class="fwd-head" style=${carried.length ? "margin-top:14px" : ""}><span class="egb egb-smart"><${Ic} i="cascade"/>${T("smart cascade")}</span><span class="fwd-to">${T("fwd|to")}</span>${peerNm}</div>
-        <div class="fwd-list">${smartCarried.map(s => html`<div class="fwd-row">${ifBadge(s.iface)} <span class="faint">(${s.cats.map(c => SMART_CAT_LABEL[c] || c).join(", ")})</span></div>`)}</div>` : null}
+        <div class="fwd-list">${smartCarried.map(s => html`<div class="fwd-row">${ifBadge(s.iface)} <span class="faint">(${s.cats.map(catLabelOf).join(", ")})</span></div>`)}</div>` : null}
       <div class="hint" style="margin-top:16px">${Trich("These interfaces' client traffic exits the fleet through *{node}*{smart}.", { node: Store.nodeName(peer), smart: smartCarried.length ? T(" — smart-routed by destination") : "" })}</div>
     </div>` : null}
     ${(() => {

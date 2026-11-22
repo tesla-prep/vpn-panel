@@ -1400,12 +1400,10 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .prov-upd{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums}
 .prov-upd.never{opacity:.6;font-style:italic}
 /* Curated has no switch (§6.5) — this holds its column so every row's swatch stays on one line. */
-.prov-nosw{width:34px;height:19px;flex:none}
 /* "in use" — a rule names this list, so the node holds it whether or not it is pinned (§1.4). Quiet: it is a
    statement of fact beside the title, not a status to scan for. */
 .lg-inuse{font-size:10.5px;color:var(--dim);border:1px solid var(--line);border-radius:5px;padding:1px 5px;white-space:nowrap}
 .fleet-note{font-size:10.5px;color:var(--dim);white-space:nowrap}
-.prov-always{font-size:11px;color:var(--dim);white-space:nowrap}   /* stands where "updated 3h ago" does on a fetched provider */
 /* "used by 3 rules on 2 interfaces" — the blast radius of the switch to its left. --dim, matching .prov-upd
    beside it rather than the quieter --faint of the repo link: this is a figure read before a decision. */
 .prov-use{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
@@ -1928,11 +1926,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .catrow-info:hover,.ccchip-info:hover{color:var(--brand);background:color-mix(in srgb,var(--brand) 14%,transparent)}
 .catrow-info .ic svg,.ccchip-info .ic svg{width:16px;height:16px}
 /* curated preset info icon → hover bubble with the list's description (no external URL to link) */
-.descinfo{position:relative;cursor:help;outline:none}
-.descbub{position:absolute;bottom:calc(100% + 8px);right:0;display:none;z-index:90;width:max-content;max-width:240px;
-  padding:7px 10px;border-radius:8px;background:var(--surface);border:1px solid var(--line-solid);color:var(--ink);
-  font-size:11.5px;line-height:1.45;font-weight:500;text-align:left;white-space:normal;box-shadow:0 10px 26px rgba(0,0,0,.4)}
-.descinfo:hover .descbub,.descinfo:focus .descbub,.descinfo:focus-within .descbub{display:block}
 /* ── Routing lists redesign: mode banner + two list grids + fleet popover ── */
 .rmode-banner{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:14px;align-items:start;padding:11px 16px 14px;border-radius:10px;margin-bottom:22px;
   border:1px solid var(--line-solid);background:color-mix(in srgb,var(--mc,var(--brand)) 6%,var(--surface-2));border-left:3px solid var(--mc,var(--brand))}

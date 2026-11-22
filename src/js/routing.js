@@ -20,23 +20,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-let _smart_categories = null;
-export const SMART_CATEGORIES = () => (_smart_categories || (_smart_categories = [
-  // The brand rows carry the marker: a product name is the same string in every language, and listing
-  // them as untranslated trains you to skim the report past the rows that are real sentences.
-  ["google", "Google"], ["youtube", "YouTube"], ["telegram", "Telegram"], ["netflix", "Netflix"],   // i18n-keys: brand names
-  ["meta", "Meta (FB / IG / WA)"], ["twitter", "X (Twitter)"], ["tiktok", "TikTok"], ["discord", "Discord"],   // i18n-keys: brand names
-  ["yandex", "Yandex"], ["vk", "VK"], ["openai", "ChatGPT (OpenAI)"], ["claude", "Claude (Anthropic)"],   // i18n-keys: brand names
-  ["grok", "Grok (xAI)"], ["gemini", T("Gemini (Google AI)")], ["copilot", T("Microsoft Copilot")], ["signal", "Signal"],   // i18n-keys: brand names
-  ["spotify", "Spotify"], ["twitch", "Twitch"], ["disney", "Disney+"], ["reddit", "Reddit"], ["github", "GitHub"],   // i18n-keys: brand names
-  ["ru_net", T("Russia — all IPs")], ["ru_gov", T("Russia — Government")], ["ru_banks", T("Russia — Banks")],
-  ["ru_blocked", T("Russia — Blocked (all)")], ["ru_blocked_media", T("Russia — Blocked (media)")],
-  ["all", T("All traffic (catch-all)")],
-]));
-export const CURATED_HEAVY = { ru_blocked: 1, ru_net: 1 };   // UI weight flag — large lists
-// Same rule as the table it derives from: built on first read, not at import.
-let _smart_cat_label = null;
-export const SMART_CAT_LABEL = new Proxy({}, { get: (_, k) => (_smart_cat_label || (_smart_cat_label = Object.fromEntries(SMART_CATEGORIES())))[k] });
 export const CAT_UNCAT_COLOR = "#8A94A6";   // muted slate — the "everything else" catch-all, deliberately off-palette
 // HSL→hex, no deps.
 export function hsl2hex(h, s, l) {
@@ -52,12 +35,13 @@ export const capFirst = s => (typeof s === "string" && s && !/[A-Z]/.test(s)) ? 
 // A block-list category (the blku_* union or a blk:* source) — rides the smart chain for its drop verdict but is
 // NOT a routing destination, so it's excluded from the destination stats (Top destinations / flow map).
 export const isBlockCat = c => /^blku?[_:]/i.test(String(c));
-export function catLabelOf(c) {   // built-in label · custom-list title (keyed by the list's id AND name, so whichever the node emits resolves to the human title) · inline custom → "Custom" · else the id
+export function catLabelOf(c) {
   if (c === "uncat") return T("Uncategorised");
+  if (c === "all") return T("All traffic (catch-all)");
   const lt = {};
   (Store.panelSettings?.custom_lists || []).forEach(l => { if (l && l.title) { if (l.id) lt[l.id] = l.title; if (l.name) lt[l.name] = l.title; } });
   if (isProviderCat(c)) return capFirst(prettyCatLabel(c, (Store.catLabels || {})[c]));   // provider list → humanised (country names etc.)
-  return capFirst(SMART_CAT_LABEL[c] || (Store.catLabels || {})[c] || lt[c] || (String(c).startsWith("custom") ? T("Custom") : c));
+  return capFirst((Store.catLabels || {})[c] || lt[c] || (String(c).startsWith("custom") ? T("Custom") : c));
 }
 // Host/IP capability flags for a list — ALWAYS Host first, IP second (house rule).
 export const capBadges = caps => html`<span class="capbs">
@@ -65,11 +49,7 @@ export const capBadges = caps => html`<span class="capbs">
   ${caps && caps.ip ? html`<span class="capb ip" title=${T("Matchable by IP range — works in every mode")}>${T("cap|IP")}</span>` : null}</span>`;
 // A provider-catalog id is "<prov>:<rawid>"; return the provider's display label (MetaCubeX / v2fly / …) for the source tag.
 export const isProviderCat = c => typeof c === "string" && c.includes(":") && !String(c).startsWith("custom");
-// A "Curated" category = one of the panel's own hand-maintained built-in sets (bare id, no ":"). These are presented
-// as the first-class "Curated" provider — the old "built-in" concept, retired. ("all" is the catch-all, not a list.)
-export const isCuratedCat = c => typeof c === "string" && !c.includes(":") && c !== "all" && c !== "custom" && !String(c).startsWith("custom") && SMART_CAT_LABEL[c] != null;
-// The provider a category belongs to: "<prov>" for a namespaced catalog id, "curated" for a built-in, else "".
-export const providerOf = c => isProviderCat(c) ? String(c).split(":")[0] : (isCuratedCat(c) ? "curated" : "");
+export const providerOf = c => isProviderCat(c) ? c.split(":", 1)[0] : "";
 
 export function reportDropped(r) {
   const rep = ((r && r.data) || {}).dropped || {};
@@ -89,15 +69,13 @@ export function reportDropped(r) {
   toast(T("Saved — {v1} not kept: {v2}", { v1: plural(total, "entry"), v2: parts.join("; ") }), "warn", 9000);
 }
 
-const isListCat = c => !!c && (isProviderCat(c) || isCuratedCat(c));
-
 /** {nodeId: Set(category)} for the whole fleet, in one walk. */
 export function fleetRuleCats() {
   const out = {};
   for (const n of (Store.nodes || [])) {
     const s = new Set();
     for (const cats of Object.values(n.rule_cats || {}))
-      for (const c of (cats || [])) if (isListCat(c)) s.add(c);
+      for (const c of (cats || [])) if (isProviderCat(c)) s.add(c);
     out[n.id] = s;
   }
   return out;
@@ -127,7 +105,7 @@ export const CAT_FRIENDLY = () => (_cat_friendly || (_cat_friendly = {
 }));
 export function prettyCatLabel(id, fallback) {
   const rid = String(id || "").includes(":") ? String(id).split(":")[1] : String(id || "");
-  if (CAT_FRIENDLY()[rid.toLowerCase()]) return CAT_FRIENDLY()[rid.toLowerCase()];   // curated friendly name (ids vary in case across providers)
+  if (CAT_FRIENDLY()[rid.toLowerCase()]) return CAT_FRIENDLY()[rid.toLowerCase()];   // ids vary in case across providers
   if (/^[a-z]{2}$/i.test(rid) && _REGION_NAMES) {                 // ISO 3166 alpha-2 → country name
     try { const n = _REGION_NAMES.of(rid.toUpperCase()); if (n && n.toUpperCase() !== rid.toUpperCase()) return n; } catch (e) {}
   }
@@ -151,29 +129,18 @@ export const CAT_DESC = () => (_cat_desc || (_cat_desc = {
   gemini: T("Google Gemini AI — kept separate from the rest of Google"), copilot: T("Microsoft & GitHub Copilot"),
   signal: T("Signal private messenger"),
   "rf:domains_all": T("Domains blocked in Russia — the RKN registry, filtered"),
-  "rf:ipsum": T("IP addresses blocked in Russia, merged into ranges"),
   "rf:community": T("Community list: sites RKN does not block that refuse visitors from Russia"),
   "rf:community_ips": T("Community list: networks RKN does not block that refuse addresses from Russia"),
   "rf:discord_ips": T("Discord's networks"),
-  ru_net: T("The whole Russian IP space (GeoIP) — works in every mode"),
-  ru_blocked: T("Sites blocked inside Russia — comprehensive (~86k domains, heavy)"),
-  ru_blocked_media: T("News / media blocked inside Russia — light subset (~130)"),
 }));
 export const catDescOf = id => CAT_DESC()[String(id || "").toLowerCase()] || CAT_DESC()[catRawId(id).toLowerCase()] || "";   // a full-id entry wins over the raw id
-// Info icon that shows a description bubble on hover — used for curated presets (which have no external URL to link).
-export const DescInfo = ({ text }) => text ? html`<span class="catrow-info descinfo" tabindex="0" role="note" onClick=${e => e.stopPropagation()}>
-  <${Ic} i="info"/><span class="descbub" role="tooltip">${text}</span></span>` : null;
-// The provider's GitHub page for a specific list — where the operator can see exactly what it contains (the raw
-// file, or blackmatrix7's folder with its README). Built from the same paths we fetch, as human github.com URLs.
+// The upstream GitHub page for a specific list.
 export function catListUrl(id, caps) {
   const rid = catRawId(id), prov = String(id).includes(":") ? String(id).split(":")[0] : "";
   const host = !!(caps && caps.host);
   switch (prov) {
     case "mc": return "https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/" + (host ? "geosite" : "geoip") + "/" + rid + ".list";
-    case "v2": return "https://github.com/v2fly/domain-list-community/blob/master/data/" + rid;
-    case "ls": return "https://github.com/Loyalsoldier/geoip/blob/release/text/" + rid + ".txt";
     case "rf": return "https://github.com/1andrevich/Re-filter-lists/blob/main/" + rid + ".lst";
-    case "bm": return "https://github.com/blackmatrix7/ios_rule_script/tree/master/rule/Clash/" + rid;
     default: return "";
   }
 }
@@ -226,34 +193,33 @@ export function CatalogRow({ it, added, onPick }) {
   return html`<button type="button" class=${"catrow" + (added ? " sel" : "") + (empty ? " off" : "")} disabled=${empty} title=${empty ? T("This list has no routable records") : ""} onClick=${() => !empty && onPick(it.id)}>
     <span class=${"catpick-tick" + (added ? " on" : "")}>${added ? "✓" : ""}</span>
     <div class="catrow-main">
-      <div class="catrow-l1"><span class="catrow-title">${title}</span>${rid.toLowerCase() !== title.toLowerCase() ? html`<span class="catrow-id">${rid}</span>` : null}${CURATED_HEAVY[it.id] ? html`<span class="catrow-heavy" title=${T("Large list — noticeable memory / reload on any node that routes it")}>${T("tag|heavy")}</span>` : null}</div>
+      <div class="catrow-l1"><span class="catrow-title">${title}</span>${rid.toLowerCase() !== title.toLowerCase() ? html`<span class="catrow-id">${rid}</span>` : null}${(it.id === "rf:domains_all") ? html`<span class="catrow-heavy" title=${T("Large list — noticeable memory / reload on any node that routes it")}>${T("tag|heavy")}</span>` : null}</div>
       ${sub ? html`<div class="catrow-l2">${desc ? html`<span class="catrow-desc">${desc}</span>` : null}${desc && samples.length ? html`<span class="catrow-eg"> · ${T("e.g. {v1}", { v1: samples.join(", ") + (more ? "…" : "") })}</span>` : (!desc ? html`<span class="catrow-eg">${sub}</span>` : null)}</div>` : null}
     </div>
     <div class="catrow-right">
       <${ProvTag} id=${it.id} label=${it.provider_label || provLabelOf(it.id)}/>${capBadges(it.caps)}${summary ? html`<span class="catrow-size">${summary}</span>` : null}
       ${catListUrl(it.id, it.caps) ? html`<a class="catrow-info" href=${catListUrl(it.id, it.caps)} target="_blank" rel="noopener" title=${T("View this list on GitHub")} onClick=${e => e.stopPropagation()}><${Ic} i="info"/></a>`
-        : html`<${DescInfo} text=${catDescOf(it.id)}/>`}</div>
+        : null}</div>
   </button>`;
 }
-// A Geo-data provider's name as shown. The panel's own provider is a word, not a name: the registry sends it as
-// "Curated", and it is shown in the operator's language; every other provider's label is a proper name, shown as sent.
-export function provName(p) { return p.id === "curated" ? T("Curated") : (p.label || p.id); }
+export function provName(p) { return p.label || p.id; }
 export function provLabelOf(c) {
   const pid = providerOf(c);
   if (!pid) return "";
   return provName((Store.catalogProviders || []).find(p => p.id === pid) || { id: pid });
 }
 // Each provider gets a distinct colour (default palette + a Panel-settings per-mode override, like turn forks).
-export const CAT_PROVIDER_DEFAULTS = { mc: { color: "#5B8FF9", colorL: "#2C6FD6" }, v2: { color: "#61DDAA", colorL: "#1E9E6E" },
-  ls: { color: "#F6BD16", colorL: "#B8890A" }, rf: { color: "#E8684A", colorL: "#C2452A" }, bm: { color: "#B07BE0", colorL: "#8347C0" },
-  curated: { color: "#E85D9E", colorL: "#C43B7E" } };   // "Curated" — the panel's own maintained set (rose; distinct from every fetched provider)
+export const CAT_PROVIDER_DEFAULTS = {
+  mc: { color: "#5B8FF9", colorL: "#2C6FD6" },
+  rf: { color: "#E8684A", colorL: "#C2452A" },
+};
 export function providerColor(prov) {
   const ov = (Store.panelSettings && Store.panelSettings.provider_colors) || {};
   const d = CAT_PROVIDER_DEFAULTS[prov] || (prov === "custom" ? { color: "#8A94A6", colorL: "#5E6875" } : { color: "#8FA8C0", colorL: "#5E7085" });
   return pickThemed(ov[prov], d.color, d.colorL);
 }
 
-// Provider source tag — colour-coded by provider. Curated built-ins and catalog cats both get a coloured chip;
+// Provider source tag — colour-coded by provider;
 // only genuinely source-less chips (a raw "Custom" label) stay plain. `plain` forces the neutral chip.
 export function ProvTag({ id, label, plain }) {
   const prov = providerOf(id) || (customListOf(id) ? "custom" : "");
@@ -908,7 +874,7 @@ export function listGate(mode, id, node) {
   const cl = customListOf(id);
   if (cl && (cl.disabled_nodes || []).includes(node)) return { ok: false, why: "list_off_node" };
   const prov = providerOf(id);
-  if (prov && prov !== "curated" && (Store.panelSettings?.providers || {})[prov] === false) return { ok: false, why: "prov_off" };
+  if (prov && (Store.panelSettings?.providers || {})[prov] === false) return { ok: false, why: "prov_off" };
   if (!mode) return { ok: true };                       // node record not loaded → gate nothing
   const caps = cl ? customCaps(cl) : catCapsAny(id);
   if (!caps.ip && !caps.host) return { ok: true };      // capability unknown → gate nothing
@@ -1068,10 +1034,9 @@ const readToken = (tok, mode, listEditor) => rrReadToken(tok, {
 });
 
 export const knownListId = id => !!id && String(id).toLowerCase() !== "all" && (
-  SMART_CATEGORIES().some(([c]) => c === id)                                    // a curated preset
-  || (Store.panelSettings?.custom_lists || []).some(l => l && l.id === id)      // one the operator wrote
-  || (isProviderCat(id) && (!!_CATALOG_BY_ID[id]                                // already indexed…
-                            || !_CATALOG_INDEX || !_CATALOG_INDEX.length)));    // …or there is no index to ask
+  (Store.panelSettings?.custom_lists || []).some(l => l && l.id === id)
+  || ((Store.catalogProviders || []).some(p => p.id === providerOf(id))
+    && (!!_CATALOG_BY_ID[id] || !_CATALOG_INDEX || !_CATALOG_INDEX.length)));
 
 const listSourceOf = id => provLabelOf(id) || (customListOf(id) ? T("Custom") : T("Unknown list"));
 
@@ -1086,7 +1051,7 @@ function Badge({ b, gate, node, modeLabel, onRemove, onEdit, onFix, onRetry, onR
   const puny = isList ? "" : targetPuny(b.kind, b.value);
   const title = inert ? gateReason(gate, modeLabel)
     // NAMED BY ITS PROVIDER, from the same source as the chip beside it, so the two cannot say different
-    // things about one badge: "Curated list — …", "v2fly list — …", "Custom list — …".
+    // things about one badge: "MetaCubeX list — …", "Custom list — …".
     : isList ? T("{v1} list — the panel resolves it and every node routing it pulls the same copy.",
                  { v1: listSourceOf(b.id) })
       + (listSizeOf(b.id) ? " · " + listSizeOf(b.id) : "")
@@ -1272,10 +1237,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   }, [open]);
 
   const per = isMobile() ? 50 * more : 50;
-  const _curated = SMART_CATEGORIES().filter(([id]) => id !== "all")
-    .map(([id, label]) => ({ id, provider: "curated", provider_label: T("Curated"), caps: catCap(id), disp: label }))
-    .filter(it => !ql || it.id.toLowerCase().includes(ql) || it.disp.toLowerCase().includes(ql) || catDescOf(it.id).toLowerCase().includes(ql))
-    .sort((a, b) => a.disp.toLowerCase().localeCompare(b.disp.toLowerCase()));
   const _mine = (Store.panelSettings?.custom_lists || [])
     .filter(l => l && (!ql || String(l.title || "").toLowerCase().includes(ql) || String(l.id || "").toLowerCase().includes(ql)))
     // `label` is what CatalogRow titles the row with — without it prettyCatLabel falls through to titleizing
@@ -1285,7 +1246,7 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     .sort((a, b) => a.disp.toLowerCase().localeCompare(b.disp.toLowerCase()));
   const _hits = (ql.length >= 2 && cidx) ? cidx.filter(it => it.hay.includes(ql)).sort((a, b) => a.disp.localeCompare(b.disp)) : [];
   const _qn = ql.replace(/[^a-z0-9]/g, "");
-  const _provHit = _qn.length >= 3 && !lq.includes("*") ? (Store.catalogProviders || []).filter(p => !p.builtin && p.enabled
+  const _provHit = _qn.length >= 3 && !lq.includes("*") ? (Store.catalogProviders || []).filter(p => p.enabled
     && String(p.label || "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith(_qn)) : [];
   const _provGroups = _provHit.map(p => ({ p, all: (cidx || []).filter(it => it.provider === p.id) }));
   const _hitIds = new Set(_hits.map(it => it.id));
@@ -1299,8 +1260,7 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   const has = id => badges.some(b => b.t === "list" && b.id === id);
   const revealList = id => {
     setOpen(true); setEditing(null);
-    const local = SMART_CATEGORIES().some(([c]) => c === id)
-               || (Store.panelSettings?.custom_lists || []).some(l => l && l.id === id);
+    const local = !!customListOf(id);
     if (local) { setQ(""); setPage(0); }
     else {
       const term = catRawId(id).toLowerCase();
@@ -1315,7 +1275,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   const rows = [];
   if (reading && reading.kind !== "invalid") rows.push({ k: "use" });
   if (!listEditor) {                      // a list cannot hold a list, so it is not offered one
-    _curated.forEach(it => rows.push({ k: "list", it, grp: T("Recommended presets") }));
     _mine.forEach(it => rows.push({ k: "list", it, grp: T("Your lists") }));
     catPage.forEach(it => rows.push({ k: "list", it, grp: it.grpProv ? T("Lists from {v1}", { v1: it.grpProv }) : T("Provider catalog") }));
   }

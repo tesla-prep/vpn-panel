@@ -30,8 +30,8 @@ import {
   subVaultCreate, urlPortOf, withUrlPort,
 } from "./crypto.js";
 import {
-  AsnHint, BlockListPicker, CAT_PROVIDER_DEFAULTS, DescInfo, FleetAssign, HostHealth, ListInfo,
-  MODE_META, ModeTabs, NewBlockCatSheet, ProvTag, blockCatDisabled, blockSrcOk, capBadges, catCap, catDescOf,
+  AsnHint, BlockListPicker, CAT_PROVIDER_DEFAULTS, FleetAssign, HostHealth, ListInfo,
+  MODE_META, ModeTabs, NewBlockCatSheet, ProvTag, blockCatDisabled, blockSrcOk, capBadges, catCap,
   blistText, catLabelOf, catListUrl, catRawId, catUsableInMode, loadBlockCatalog, newRid,
   TargetField, candAddr, cardAddrs, cardGateway, isCardName, candOf, exitHealth, exitIsDialin, exitOptionGroups, exitProv, fleetRuleCats, provLabelOf, provName, providerColor, providerUsage, reportDropped,
   resetRouting, sizeSummary,
@@ -365,10 +365,7 @@ export function PanelSettingsScreen() {
   const [turnMir, setTurnMir] = useState(mir.turn || "");
   // Geo-data: catalog provider enable/disable + scheduled list refresh (replacing the geo mirror).
   const _provReg = Store.catalogProviders || [];
-  // Only the providers that HAVE a switch. Curated (`builtin`) is not one: it never had one that did anything,
-  // so it is neither staged here nor sent, and the stored map loses its dead key on the next save (§6.5).
-  const _provTog = _provReg.filter(p => !p.builtin);
-  const [provEnabled, setProvEnabled] = useState(() => Object.fromEntries(_provTog.map(p => [p.id, p.enabled !== false])));
+  const [provEnabled, setProvEnabled] = useState(() => Object.fromEntries(_provReg.map(p => [p.id, p.enabled !== false])));
   const _gu = ps.geo_update || {};
   const [guEvery, setGuEvery] = useState(String(_gu.every_days == null ? 1 : _gu.every_days));
   const [guAt, setGuAt] = useState(_gu.at || "04:00");
@@ -739,7 +736,7 @@ export function PanelSettingsScreen() {
                                    ...(n.p2p.exit_id ? { exit_id: n.p2p.exit_id } : {}) } : null,
     p2p_portok: Array.isArray(n.p2p_portok) ? n.p2p_portok.join(", ") : null,   // its own never-cut ports, as typed; null = the fleet's
     endpoint_hosts: [...(n.endpoint_hosts || [])],
-    catalog_cats: [...(n.catalog_cats || [])],   // provider-catalog categories opted into on this node (node-lens; separate from the 26 built-ins)
+    catalog_cats: [...(n.catalog_cats || [])],
     exits: (n.exits || []).map(x => ({ id: x.id || "", label: x.label || "", producer: x.producer || "adopted",
       device: x.device || "", enabled: x.enabled !== false, killswitch: !!x.killswitch,
       ...(x.producer === "imported" ? {} : { egress_ip: x.egress_ip || "", gw: x.gw || "" }),
@@ -892,7 +889,7 @@ export function PanelSettingsScreen() {
   const REPROV_WARN = T("Heads up: changing a node's mesh subnet, interface prefix, or AWG params re-provisions its mesh links — it briefly drops off the mesh while every peer pulls the new config and reconnects.");
   const diffList = () => {
     const out = [];
-    if (listsJSON(lists) !== listsJSON(ps.custom_lists || [])) out.push(T("Routing lists — presets / custom"));
+    if (listsJSON(lists) !== listsJSON(ps.custom_lists || [])) out.push(T("Custom lists"));
     if (Object.keys(blockEdits).length || blockRemoved.length) out.push(T("Content filters — categories / lists"));
     if (secChanged()) out.push(T("Authentication — panel credentials"));
     if (glDirty("turn")) out.push(T("Turn proxies — forks / colours / VK link"));
@@ -1054,7 +1051,7 @@ const sectionLabel = k => ({
   // ⚠️ THE THIRD HALF of the settings idiom: without this in the display arm below, Save never enables for these two.
   const dataDirty = () => infHist !== (ps.infinite_history !== false) || histRes !== String(ps.history_resolution || 3600);
   // Geo data providers, without the Never-block list — which the confirm names on a line of its own (diffList).
-  const geoDirty = () => (JSON.stringify(provEnabled) !== JSON.stringify(Object.fromEntries((Store.catalogProviders || []).filter(p => !p.builtin).map(p => [p.id, p.enabled !== false]))) || Object.keys(blockProvEdits).length > 0 || JSON.stringify(provColorOverrides()) !== JSON.stringify(ps.provider_colors || {}) || customEnabled !== (ps.custom_lists_enabled !== false) || String(Math.max(0, parseInt(guEvery) || 0)) !== String(_gu.every_days == null ? 1 : _gu.every_days) || guAt !== (_gu.at || "04:00"));
+  const geoDirty = () => (JSON.stringify(provEnabled) !== JSON.stringify(Object.fromEntries((Store.catalogProviders || []).map(p => [p.id, p.enabled !== false]))) || Object.keys(blockProvEdits).length > 0 || JSON.stringify(provColorOverrides()) !== JSON.stringify(ps.provider_colors || {}) || customEnabled !== (ps.custom_lists_enabled !== false) || String(Math.max(0, parseInt(guEvery) || 0)) !== String(_gu.every_days == null ? 1 : _gu.every_days) || guAt !== (_gu.at || "04:00"));
   const nbDirty = () => normBlockAllow(blockAllow).join(",") !== (ps.block_allow || []).join(",");
   const pokDirty = () => (r => r.bad.length > 0 || !portokSame(r.list, ps.p2p_portok || P2P_PORTOK_DEFAULT))(portokRead(pok));
   const glDirty = sec =>
@@ -1186,7 +1183,7 @@ const sectionLabel = k => ({
                 <div class="lg-fleet">${usedBy(id)}</div>
                 <div class="lg-caps">${capBadges(cap)}</div>
                 <div class="lg-act">${catListUrl(id, cap) ? html`<a class="ccchip-info" href=${catListUrl(id, cap)} target="_blank" rel="noopener" title=${T("View this list on GitHub")}><${Ic} i="info"/></a>`
-                  : catDescOf(id) ? html`<${DescInfo} text=${catDescOf(id)}/>` : null}${!catInUseFleet(id) && catOnNode(id, selNode) ? html`<button class="ccchip-x"
+                  : null}${!catInUseFleet(id) && catOnNode(id, selNode) ? html`<button class="ccchip-x"
                   title=${T("A leftover pin — no rule names this list. Clear it from every node.")}
                   onClick=${() => removeCatRow(id)}><${Ic} i="x"/></button>` : null}</div>
               </div>`; })}
@@ -1412,21 +1409,12 @@ const sectionLabel = k => ({
             </div>
           </div>
           ${geoTab === "routing" ? html`
-          <p class="hint" style="margin:0 0 12px">${Trich("*Curated* presets are always available — recommended, ready-to-route lists the panel maintains and resolves itself, with nothing to enable. Turn on any public *provider* below to also search its raw catalog; the panel fetches it so its lists appear in the picker. Turning one off hides its lists and *stops* anything already routed from it until you turn it back on.")}</p>
-          <div class="provlist">${(_provReg.length ? _provReg : []).map(p => { const on = p.builtin || provEnabled[p.id] !== false; return html`<div class=${"provrow bprow" + (on ? "" : " off") + (p.builtin ? " builtin" : "")} key=${p.id}>
-            ${/* Curated keeps the switch COLUMN and not the switch. Its lists are resolved by the panel and cost
-                  nothing when nothing routes them, so there is no state for a switch to hold — and the one that
-                  used to sit here held none either, while telling the operator it deactivated what was already
-                  routed (§6.5). The spacer keeps every row's swatch on the same line as its neighbours'. */""}
-            ${p.builtin ? html`<span class="prov-nosw" aria-hidden="true"></span>` : html`
-            ${/* Locked while it fetches: the only thing this row can honestly offer mid-download is Cancel.
-                  Toggling it here would leave a running fetch attached to a provider the operator just turned
-                  off, and the switch is saved with the whole form, so the state would not even reach the panel
-                  until Save. */""}
+          <p class="hint" style="margin:0 0 12px">${T("Enable a provider to find its lists in the rule editor. When you turn a provider off, its lists are hidden and its rules stop matching.")}</p>
+          <div class="provlist">${_provReg.map(p => { const on = provEnabled[p.id] !== false; return html`<div class=${"provrow bprow" + (on ? "" : " off")} key=${p.id}>
             <${Switch} on=${on} disabled=${p.status === "downloading"}
               title=${p.status === "downloading" ? T("Fetching this provider's catalog — cancel to stop waiting")
                 : on ? T("Enabled — its lists are selectable") : T("Off — its lists are hidden and deactivated on nodes")}
-              onChange=${v => setProvOn(p, v)}/>`}
+              onChange=${v => setProvOn(p, v)}/>
             <${ThemedSwatch} val=${provColors[p.id]} title=${T("{v1} tag colour", { v1: provName(p) })} onChange=${nv => setProvColors(c => ({ ...c, [p.id]: nv }))}
               sample=${(c) => html`<span class="sw-sample" style=${"--pc:" + c}>${provName(p)}</span>`}/>
             <div class="bprov-meta">
@@ -1439,13 +1427,12 @@ const sectionLabel = k => ({
                       off this is the one line that explains why those rules are routing nothing. */""}
                 ${(() => { const u = providerUsage(p.id); return u.rules ? html`<span class="prov-use"
                   title=${T("Rules on your interfaces that route one of this provider's lists")}>${T("used by {v1} on {v2}", { v1: plural(u.rules, "prep|rule"), v2: plural(u.ifaces, "prep|interface") })}</span>` : null; })()}
-                ${p.builtin ? html`<span class="prov-always" title=${T("The panel maintains and resolves these itself — there is no provider to enable, and nothing to turn off")}>${T("always on")}</span>`
-                  : p.enabled === false ? null : html`<span class=${"prov-upd" + (p.last_updated ? "" : " never")} title=${p.last_updated ? T("When this provider's data was last pulled to the panel") : T("No list from this provider has been routed yet — nothing pulled")}>${p.last_updated ? T("updated {v1}", { v1: ago(p.last_updated) }) : T("never updated")}</span>`}
+                ${p.enabled === false ? null : html`<span class=${"prov-upd" + (p.last_updated ? "" : " never")} title=${p.last_updated ? T("When this provider's data was last pulled to the panel") : T("No list from this provider has been routed yet — nothing pulled")}>${p.last_updated ? T("updated {v1}", { v1: ago(p.last_updated) }) : T("never updated")}</span>`}
               </div>
               ${p.desc ? html`<span class="bprov-note">${T(p.desc)}</span>` : null}
             </div>
             <span class="grow"></span>
-            ${p.builtin || p.enabled === false ? null
+            ${p.enabled === false ? null
               : (() => { const s = p.status, flashing = provFlash[p.id] > Date.now();
               if (s === "downloading") return html`<${Fragment}><span class="prov-st upd" title=${T("Reading this provider's file list from GitHub. Its lists become searchable when it lands; nothing is routed yet.")}><span class="tf-arrow"><${Ic} i="refresh"/></span> ${T("Downloading…")}</span><button class="btn btn-mini" style="margin-left:8px" title=${T("GitHub allows 60 requests an hour without an account, and a fetch inside that window can sit for a couple of minutes. Cancelling stops the wait and turns the provider off — the request itself finishes on its own and its result is thrown away.")} onClick=${() => cancelProvider(p.id)}>${T("Cancel")}</button></>`;
               if (s === "updating") return html`<span class="prov-st upd"><span class="tf-arrow"><${Ic} i="refresh"/></span> ${T("updating…")}</span>`;   // i18n-keys
@@ -1453,7 +1440,7 @@ const sectionLabel = k => ({
               if (s === "uptodate") return flashing ? html`<span class="prov-st ok"><${Ic} i="check"/> ${T("up to date")}</span>` : null;
               if (s === "failed" || p.error) return html`<${Fragment}><span class="prov-st err" title=${srvText(p) || ""}><${Ic} i="warn"/> ${p.last_updated ? T("update failed") : T("download failed")}</span><button class="btn btn-mini" style="margin-left:8px" onClick=${() => retryProvider(p.id)}>${T("Retry")}</button></>`;
               return null; })()}
-            ${p.builtin ? null : html`<a class="prov-repo" href=${p.url} target="_blank" rel="noopener" title=${T("Open {v1}", { v1: T("{v1} on GitHub", { v1: provName(p) }) })}>${(p.url || "").replace(/^https?:\/\/github\.com\//, "")}</a>`}
+            <a class="prov-repo" href=${p.url} target="_blank" rel="noopener" title=${T("Open {v1}", { v1: T("{v1} on GitHub", { v1: provName(p) }) })}>${(p.url || "").replace(/^https?:\/\/github\.com\//, "")}</a>
           </div>`; })}${!_provReg.length ? html`<div class="hint">${T("Loading providers…")}</div>` : null}
             <div class=${"provrow bprow" + (customEnabled ? "" : " off")}>
               <${Switch} on=${customEnabled} title=${customEnabled ? T("On — you can create custom lists") : T("Off — the Custom lists section is hidden")} onChange=${v => setCustomEnabled(v)}/>

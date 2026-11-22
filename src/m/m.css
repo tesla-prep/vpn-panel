@@ -895,7 +895,7 @@ html[data-ui="m"] {
   /* Geo data providers: the switch and the colours on the first line, the provider's name, what it is and its source under them */
   & .provrow.bprow { display: grid; grid-template-columns: auto auto minmax(0, 1fr); align-items: center; gap: 8px 12px; }
   & .provrow.bprow > .grow { display: none; }
-  & .provrow.bprow > :not(.swt, .prov-nosw, .tswrow) { grid-column: 1 / -1; min-width: 0; }
+  & .provrow.bprow > :not(.swt, .tswrow) { grid-column: 1 / -1; min-width: 0; }
   & .provrow.bprow .bprov-top { flex-wrap: wrap; row-gap: 4px; width: auto; }
   & .provrow.bprow .bprov-note { width: auto; }
   /* Turn proxies: a fork's switch, colours, name and version on its first line; its apps and its gear on the next */

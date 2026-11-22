@@ -5957,9 +5957,6 @@ def _cat_caps_take(smart):
     _CAT_CAPS.clear()
     _CAT_CAPS.update(caps_in)
     _CAT_CAPS.update(kept)
-def _is_provider_cat(cat):
-    return ":" in str(cat)                                      # <prov>:<id> → panel-resolved + panel-pulled
-
 _DOM_RE = re.compile(r"^(?=.{1,253}$)(?!-)[a-z0-9-]{1,63}(?<!-)(\.(?!-)[a-z0-9-]{1,63}(?<!-))+$")
 
 _ZLABEL_RE = re.compile(r"^(?!-)[a-z0-9-]{1,63}(?<!-)$")
@@ -6061,10 +6058,6 @@ def _smart_domain_refresh(cats, res):
         res["errors"].append("smart domain dir: " + str(e)); return out, zout
     for cat in cats:
         path = os.path.join(GEO_DIR, cat + ".doms")            # domain list, pulled from the panel by _panel_list_refresh
-        # Panel-pulled = a provider cat OR a curated cat whose .doms the panel ships. A cat with no pulled file is a
-        # custom_<hash> (its domains come inline from the panel) → skip.
-        if not (_is_provider_cat(cat) or os.path.exists(path)):
-            continue
         try:
             try:
                 st = os.stat(path)
@@ -9209,7 +9202,7 @@ def _engine_change_reset(host_engine, res, already=False):
 
 def _apply_full_reset(reset_val, res):
     """Operator pressed 'Reset routing' for this node: wipe ALL smart-routing state so the SAME reconcile pass
-    rebuilds it from scratch and re-pulls every enabled/curated list from the panel. Idempotent — acts only when
+    rebuilds it from scratch and re-pulls every enabled list from the panel. Idempotent — acts only when
     the panel's per-node counter differs from our local stamp (so it fires once per press, never on a normal sync).
     An explicit operator action, not an outage → safe to wipe (the never-wipe-on-outage invariant is about failed
     syncs, which never reach here). Returns True if it reset."""
@@ -11178,7 +11171,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     # (The nft chain is built further down, once the name lists below are known: a shadow set is derived from them.)
     domains = dict((smart or {}).get("domains") or {})         # domain-tier bundles {cat:[domain]} → dnsmasq/sni/kernel-filled
     _dns_up = _dns_upstream((smart or {}).get("dns_upstream"))   # Force-DNS resolver's upstream (absent → the default)
-    if mode != "kernel":                                       # CATALOG host cats (no curated bundle) → seed empty so the node domain-fills them from MetaCubeX
+    if mode != "kernel":                                       # seed categories whose domain list is pulled from the panel
         for _c, _caps in _CAT_CAPS.items():
             if _caps.get("host") and _c not in domains and _c in smart_cats:
                 domains[_c] = []
@@ -11356,7 +11349,7 @@ def _xts_ops(domains, contains, cap=_XTS_CAP):
 
     PATTERNS COME FIRST, bounded by _XTS_PAT_MAX. The budget is shared — a separate 256 for patterns would
     double the chain length the cap exists to bound, silently — so something has to lose when a category is
-    over it, and it must not be the operand the operator typed: a curated or catalog list is bulk, arrives by
+    over it, and it must not be the operand the operator typed: a catalog list is bulk, arrives by
     itself and is already understood to be truncated, while a `contains` is one deliberate line someone wrote.
     The ceiling is what keeps that priority from becoming its own silent failure in the other direction.
 
@@ -11543,9 +11536,8 @@ def _ensure_smart_xtstring(host_entries, domains, reset_mark, res, active=True, 
 
     host_entries: exit rules [{subnet, category, table}] whose category has something to match on. domains:
     {cat:[domain]} — the panel bundle UNIONED WITH the node's fetched geosite list, so tens of thousands of
-    entries per category; _xts_ops takes the first _XTS_CAP of them and reports the rest. (This said "the
-    SMALL curated bundle ONLY" for as long as the call site has been passing the enriched dict, and the cost
-    of believing it was a 16 ms walk per pass.) contains: {cat:[operand]}, the panel's `contains` bucket —
+    entries per category; _xts_ops takes the first _XTS_CAP of them and reports the rest.
+    contains: {cat:[operand]}, the panel's `contains` bucket —
     the ONE pattern kind this engine can run (plan §4.1), sharing that budget.
     An entry carrying `src: <wid>` is a per-person row: it ROUTES only the (address, device) pairs `srcs[wid]` names, through
     the `swgs_<wid>` ipset, and LEARNS exactly as a rule for everyone with its list does (the caller hands one only where

@@ -266,7 +266,6 @@ export const Store = {
     hooks.forkColors && hooks.forkColors();   // keep every .tf-<fork> tag/badge in sync with the picker override
     hooks.themeColors && hooks.themeColors();  // keep wg/awg/blocked/faulty colours + the --brand theme in sync with the pickers
     this.smartCaps = d.smart_caps || this.smartCaps || {};   // per-category {ip,host} → [IP]/[Host] grouping + kernel-mode greying
-    this.catDomains = d.cat_domains || this.catDomains || {};   // curated domains per host category → hover tooltip
     this.catLabels = d.cat_labels || this.catLabels || {};   // custom_<hash> → custom-list title (for the destination bars)
     this.catalogProviders = d.catalog_providers || this.catalogProviders || [];   // Geo-data provider registry [{id,label,url,tiers,enabled,error}]
     this.catalogGen = d.catalog_gen || "";   // moves whenever the panel's catalog index changes → loadCatalogIndex refetches exactly then

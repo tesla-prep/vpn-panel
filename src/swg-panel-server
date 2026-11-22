@@ -9241,50 +9241,6 @@ SWG_RT_BASE = 7000          # swg-owned policy-routing table id / ip-rule priori
 SWG_RT_MAX = 7099           # (one table id per egress target per node; priority == table number)
 SWG_RT_BAND = SWG_RT_MAX - SWG_RT_BASE + 1   # how many destinations one node can route to at once — the number the operator is told when they hit it
 
-CURATED_PRESETS = {
-    # id             label                       host sources                     ip sources                     extra host
-    "google":       ("Google",                   ["mc:google"],                   ["ls:google"],                 []),
-    "youtube":      ("YouTube",                  ["v2:youtube"],                  [],                            []),
-    "telegram":     ("Telegram",                 ["v2:telegram"],                 ["ls:telegram", "AS:62041"],   []),   # +AS62041 (Telegram Messenger): canonical BGP prefixes → voice/media route by IP too
-    "netflix":      ("Netflix",                  ["v2:netflix"],                  ["ls:netflix"],                []),
-    "meta":         ("Meta (FB / IG / WA)",      ["mc:meta"],                     ["ls:facebook", "AS:32934"],   []),   # +AS32934 (Facebook): all Meta IPs incl. WhatsApp/IG/Messenger voice
-    "twitter":      ("X (Twitter)",              ["v2:twitter"],                  ["ls:twitter"],                []),
-    "tiktok":       ("TikTok",                   ["v2:tiktok"],                   [],                            []),
-    "discord":      ("Discord",                  ["v2:discord"],                  ["rf:discord_ips"],            []),
-    "yandex":       ("Yandex",                   ["v2:yandex"],                   ["AS:13238"],                  []),
-    "vk":           ("VK",                       ["v2:vk"],                       ["AS:47541", "AS:47542"],      []),
-    "openai":       ("ChatGPT (OpenAI)",         ["v2:openai"],                   [],                            []),
-    "claude":       ("Claude (Anthropic)",       ["v2:anthropic"],                [],                            []),
-    "grok":         ("Grok (xAI)",               ["v2:xai"],                      [],                            []),
-    "gemini":       ("Gemini (Google AI)",       ["v2:google-gemini"],            [],                            # NB: NOT bare google.com (would swallow all Google) — Gemini-specific subdomains only
-                     ["gemini.google.com", "aistudio.google.com", "generativelanguage.googleapis.com",
-                      "makersuite.google.com", "bard.google.com", "ai.google.dev", "notebooklm.google.com"]),
-    "copilot":      ("Microsoft Copilot",        ["v2:github-copilot"],           [],                            []),
-    "signal":       ("Signal",                   ["v2:signal"],                   [],                            []),
-    "spotify":      ("Spotify",                  ["v2:spotify"],                  [],                            []),
-    "twitch":       ("Twitch",                   ["v2:twitch"],                   [],                            []),
-    "disney":       ("Disney+",                  ["v2:disney"],                   [],                            []),
-    "reddit":       ("Reddit",                   ["v2:reddit"],                   [],                            []),
-    "github":       ("GitHub",                   ["v2:github"],                   ["AS:36459"],                  []),   # +AS36459 (GitHub Inc.): core git/web/api IPs → now IP-routable (host tier still covers CDN-served assets)
-    "ru_net":       ("Russia — all IPs",         [],                              ["ls:ru"],                     []),
-    "ru_gov":       ("Russia — Government",       ["v2:category-gov-ru"],          [],                            []),
-    "ru_banks":     ("Russia — Banks",           ["mc:category-bank-ru"],         [],                            []),
-    "ru_blocked":   ("Russia — Blocked (all)",    ["rf:domains_all"],              [],                            []),   # heavy — ~86k domains
-    "ru_blocked_media": ("Russia — Blocked (media)", ["v2:category-media-ru-blocked"], [],                        []),
-}
-CURATED_HEAVY = {"ru_blocked", "ru_net"}   # UI weight flag — large lists (86k domains / whole-RU geoip)
-CURATED_ORDER = list(CURATED_PRESETS.keys())
-
-# Derived views (keep the rest of the code + the node protocol unchanged):
-SMART_CATEGORIES = {cid: v[0] for cid, v in CURATED_PRESETS.items()}
-SMART_CATEGORIES["all"] = "All traffic (catch-all)"          # matches everything not caught by an earlier rule (no geo set)
-# extra host domains → the tiny curated add-ons; shipped inline as a guaranteed baseline (the node also pulls the full list)
-DOMAIN_BUNDLES = {cid: list(v[3]) for cid, v in CURATED_PRESETS.items() if v[3]}
-HOST_CATEGORIES = {cid for cid, v in CURATED_PRESETS.items() if v[1] or v[3]}
-IP_CATEGORIES = {cid for cid, v in CURATED_PRESETS.items() if v[2]}
-SMART_CAPS = {cid: {"ip": cid in IP_CATEGORIES, "host": cid in HOST_CATEGORIES}
-              for cid in CURATED_PRESETS}
-
 # Category catalog (dynamic, provider-backed)
 CATALOG_PROVIDERS = {
     "mc": {"label": "MetaCubeX", "url": "https://github.com/MetaCubeX/meta-rules-dat", "strip": ".list", "skip_at": True,
@@ -9292,30 +9248,15 @@ CATALOG_PROVIDERS = {
                      ("ip",   "https://api.github.com/repos/MetaCubeX/meta-rules-dat/git/trees/meta:geo/geoip")],
            "raw_host": "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geosite/{id}.list",
            "raw_ip":   "https://raw.githubusercontent.com/MetaCubeX/meta-rules-dat/meta/geo/geoip/{id}.list",
-           "fmt_host": "plain",
            "note": "The broadest GeoSite + GeoIP set — per-service domain and country IP rules, tracking upstream Clash data."},
-    "v2": {"label": "v2fly", "url": "https://github.com/v2fly/domain-list-community", "strip": "",
-           "trees": [("host", "https://api.github.com/repos/v2fly/domain-list-community/git/trees/master:data")],
-           "raw_host": "https://raw.githubusercontent.com/v2fly/domain-list-community/master/data/{id}",
-           "fmt_host": "v2fly",
-           "note": "Community-curated per-service domain sets — well-maintained, the source many routing rules build on."},
-    "ls": {"label": "Loyalsoldier", "url": "https://github.com/Loyalsoldier/geoip", "strip": ".txt",
-           "trees": [("ip", "https://api.github.com/repos/Loyalsoldier/geoip/git/trees/release:text")],
-           "raw_ip": "https://raw.githubusercontent.com/Loyalsoldier/geoip/release/text/{id}.txt",
-           "note": "Release-built GeoIP — country and service IP ranges in clean CIDR text, a solid IP-tier companion."},
     "rf": {"label": "Re-filter", "url": "https://github.com/1andrevich/Re-filter-lists", "strip": ".lst",
-           "trees": [("auto", "https://api.github.com/repos/1andrevich/Re-filter-lists/git/trees/main")],
+           "trees": [(None, "https://api.github.com/repos/1andrevich/Re-filter-lists/git/trees/main")],
            "raw_host": "https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/{id}.lst",
            "raw_ip":   "https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/{id}.lst",
-           "fmt_host": "plain",
+           "lists": {"community": "host", "community_ips": "ip", "discord_ips": "ip", "domains_all": "host"},
            "note": "Russia-focused domain and IP lists for anti-censorship routing — blocked services and their networks."},
-    "bm": {"label": "blackmatrix7", "url": "https://github.com/blackmatrix7/ios_rule_script",
-           "recursive_clash": "https://api.github.com/repos/blackmatrix7/ios_rule_script/git/trees/master:rule/Clash?recursive=1",
-           "raw_host": "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/{id}/{id}.list", "fmt_host": "classical",
-           "raw_ip":   "https://raw.githubusercontent.com/blackmatrix7/ios_rule_script/master/rule/Clash/{id}/{id}_IP.txt", "fmt_ip": "classical",
-           "note": "600+ per-app rule sets — a dedicated list for almost any single service, some with IP variants."},
 }
-CATALOG_PROVIDER_ORDER = ["mc", "v2", "ls", "rf", "bm"]
+CATALOG_PROVIDER_ORDER = list(CATALOG_PROVIDERS)
 CATALOG_TTL = 86400
 CATALOG_FAIL_TTL = 1800    # after a TOTAL provider failure, don't re-attempt for this long (see catalog_index)
 CATALOG_PATH = "/var/lib/swg-panel/catalog-index.json"          # overridden from the state dir in main()
@@ -10773,7 +10714,7 @@ def catalog_refresh_provider(pid, gen):
             base.pop(k, None)
         base.update(part)
         # `at` is the WHOLE catalog's freshness stamp and this refreshed exactly one provider. Moving it would
-        # tell the background loop that the other four are fresh too, and it would stop re-fetching them.
+        # tell the background loop that the other indexes are fresh too, and it would stop re-fetching them.
         _CATALOG.update(idx=base, err="")
         _catalog_changed()
         _CATALOG.pop("fail_at", None)
@@ -10835,7 +10776,7 @@ def catalog_providers_view(enabled, nodes=None):
     # newest stored-list `at` per provider, from the on-disk list meta (captures the initial pull, not only changes)
     pulled = {}
     for cat in routed_catalog_cats(nodes or {}):
-        pid = _cat_provider(cat)
+        pid = cat.split(":", 1)[0]
         for tier in ("host", "ip"):
             at = int((list_meta(cat, tier) or {}).get("at") or 0)
             if at > pulled.get(pid, 0):
@@ -10843,7 +10784,7 @@ def catalog_providers_view(enabled, nodes=None):
     out = []
     for pid in CATALOG_PROVIDER_ORDER:
         cfg = CATALOG_PROVIDERS[pid]
-        tiers = ["host", "ip"] if cfg.get("recursive_clash") else (sorted({t for t, _ in cfg["trees"]} - {"auto"}) or ["ip", "host"])
+        tiers = sorted(set(cfg["lists"].values()) if "lists" in cfg else {t for t, _ in cfg["trees"]})
         st = _PROV_STATUS.get(pid) or {}
         out.append({"id": pid, "label": cfg["label"], "url": cfg.get("url", ""),
                     "tiers": tiers, "enabled": bool((enabled or {}).get(pid, False)),   # providers default OFF (operator opts in)
@@ -10851,23 +10792,17 @@ def catalog_providers_view(enabled, nodes=None):
                     "error": (_CATALOG.get("perr") or {}).get(pid, "") or st.get("error", ""),
                     "status": st.get("status", "idle"),          # idle|updating|updated|uptodate|failed
                     "last_updated": max(pulled.get(pid, 0), int(st.get("last_updated", 0) or 0))})   # newest pull, else 0 = never
-    _cst = _PROV_STATUS.get("curated") or {}
-    out.insert(0, {"id": "curated", "label": "Curated", "url": "https://github.com/SanityProtocol/swg-panel",
-                   "tiers": ["host", "ip"], "builtin": True,
-                   "desc": "Built-in recommended presets for common services — panel-maintained, ready to route.",
-                   "error": _cst.get("error", ""), "status": _cst.get("status", "idle"),
-                   "last_updated": max(pulled.get("curated", 0), int(_cst.get("last_updated", 0) or 0))})
     return out
 
-def _is_routed_list_cat(c):
-    return isinstance(c, str) and (":" in c or (c in SMART_CATEGORIES and c != "all"))   # provider cat OR curated built-in
-
-def _cat_provider(c):
-    return c.split(":", 1)[0] if ":" in str(c) else "curated"    # bare curated id → the "curated" pseudo-provider
+def _is_routed_list_cat(cat):
+    if not isinstance(cat, str):
+        return False
+    provider, _, name = cat.partition(":")
+    cfg = CATALOG_PROVIDERS.get(provider)
+    return bool(name and cfg and ("lists" not in cfg or name in cfg["lists"]))
 
 def routed_catalog_cats(nodes):
-    """Every panel-served list cat any node routes or has opted into → {cat}. Includes provider cats (<prov>:<id>)
-    AND curated built-ins (bare id) — both are resolved on the panel and pulled by the node."""
+    """Provider lists referenced by rules or pinned on a node."""
     out = set()
     for n in (nodes or {}).values():
         if not isinstance(n, dict):
@@ -10982,18 +10917,6 @@ def _catalog_build(only=None):
     idx = {}; perr = {}
     for prov in [p for p in CATALOG_PROVIDER_ORDER if not only or p in only]:
         cfg = CATALOG_PROVIDERS[prov]; strip = cfg.get("strip", "")
-        if cfg.get("recursive_clash"):                          # blackmatrix7: one recursive tree → folder→{host,ip}
-            try:
-                t = _catalog_gh(cfg["recursive_clash"])
-                blobs = [e.get("path", "") for e in (t.get("tree") or []) if e.get("type") == "blob"]
-                has_list = {p.split("/")[0] for p in blobs if p.endswith(".list") and "/" in p}
-                has_ip = {p.split("/")[0] for p in blobs if p.endswith("_IP.txt") and "/" in p}
-                for fid in has_list:
-                    if fid:
-                        idx[prov + ":" + fid] = {"p": prov, "host": True, "ip": fid in has_ip}
-            except Exception as ex:
-                perr[prov] = str(ex)[:120]
-            continue
         try:
             for tier, url in cfg["trees"]:
                 t = _catalog_gh(url)
@@ -11008,10 +10931,9 @@ def _catalog_build(only=None):
                     rid = p[:-len(strip)] if strip else p
                     if not rid or "/" in rid:
                         continue
-                    tt = tier
-                    if tier == "auto":                          # Re-filter: <x>_ips.lst = IP tier, else host
-                        tt = "ip" if rid.endswith("_ips") else "host"
-                    idx.setdefault(prov + ":" + rid, {"p": prov, "ip": False, "host": False})[tt] = True
+                    resolved_tier = cfg["lists"].get(rid) if "lists" in cfg else tier
+                    if resolved_tier:
+                        idx.setdefault(prov + ":" + rid, {"p": prov, "ip": False, "host": False})[resolved_tier] = True
         except Exception as ex:
             perr[prov] = str(ex)[:120]
     if only:
@@ -11027,15 +10949,10 @@ def _catalog_build(only=None):
 def catalog_index(force=False):
     """Cached catalog index (<prov>:<id> → caps). Memory → disk → (re)build. Never raises; last-good on error."""
     now = int(time.time())
-    if not force and _CATALOG["idx"] is not None and now - _CATALOG["at"] < CATALOG_TTL:
-        return _CATALOG["idx"]
     if not force:
-        try:
-            d = json.load(open(CATALOG_PATH))
-            if now - int(d.get("at") or 0) < CATALOG_TTL and d.get("idx"):
-                _CATALOG.update(idx=d["idx"], at=int(d["at"]), err=""); _catalog_changed(); return d["idx"]
-        except Exception:
-            pass
+        cached, have = catalog_cached()
+        if have and now - _CATALOG["at"] < CATALOG_TTL:
+            return cached
     if not force and _CATALOG.get("fail_at") and now - _CATALOG["fail_at"] < CATALOG_FAIL_TTL:
         return _catalog_last_good()
     try:
@@ -11057,31 +10974,24 @@ def catalog_index(force=False):
 
 def _catalog_last_good():
     """Whatever catalog we still hold — memory, else the on-disk copy regardless of TTL, else {}. Never fetches."""
-    if _CATALOG["idx"]:
-        return _CATALOG["idx"]
-    try:
-        return json.load(open(CATALOG_PATH))["idx"] or {}
-    except Exception:
-        return {}
+    return catalog_cached()[0]
+
 
 def sync_cat_caps(plan_cats, cix, cix_have, blk_srcs, snap):
     """The category caps a node's sync carries, and the categories the node must keep its own caps for: (caps, keep), or
-    (None, []) to omit the key (absent means "keep yours"). Curated categories come from SMART_CAPS, the block feeds and
-    unions from what this node blocks (`blk_srcs`), provider categories from the catalog.
-    WITHOUT A CATALOG, WHAT THE PANEL CAN STILL RESOLVE IS SENT (q189 D12-OBS-1): the curated and block caps (they never
-    depended on the catalog) and a provider list the panel already holds (the tiers it holds). Only a PROVIDER category it
+    (None, []) to omit the key (absent means "keep yours"). Blocking caps come from `blk_srcs`.
+    Without a catalog, send blocking caps and the tiers of provider lists held by the panel. Only a provider category it
     cannot look up at all waits. The catch-all `all` and a custom rule need no caps — counting them as catalog-dependent
     withheld every cap from every Smart interface's node, so a fresh or restarted node had no host cap for its block union
     and Hybrid SNI / Force-DNS blocked nothing while the screen counted the list (measured: api.github.com rate-limited, no
     catalog-index.json). A node that keeps its caps for the categories named in `cat_caps_keep` is sent the rest; one that
     would clear them (no `caps_keep` in its report) keeps the old omission, so nothing it holds is lost."""
-    caps = {**{c: SMART_CAPS[c] for c in plan_cats if c in SMART_CAPS},
-            **{c: cix[c] for c in plan_cats if c in cix and c not in SMART_CATEGORIES},
+    caps = {**{c: cix[c] for c in plan_cats if c in cix},
             **{c: {t: True} for c, t in blk_srcs.items()}}
     keep = []
     if not cix_have:
         for c in sorted(plan_cats):
-            if c in caps or ":" not in c or c.startswith(("blk:", "blku:")):
+            if c in caps or not _is_routed_list_cat(c):
                 continue                    # resolved above, or a custom rule / the catch-all: no caps to look up
             held = {t: True for t in ("ip", "host") if list_meta(c, t)}
             if held:
@@ -11121,8 +11031,9 @@ def catalog_cached():
     if _CATALOG["idx"]:
         return _CATALOG["idx"], True
     try:
-        d = json.load(open(CATALOG_PATH))
-        idx = d.get("idx")
+        with open(CATALOG_PATH) as f:
+            d = json.load(f)
+        idx = {c: e for c, e in (d.get("idx") or {}).items() if _is_routed_list_cat(c)}
         if idx:
             # Adopt into memory but KEEP the original timestamp: reading the disk copy must not look like a fresh
             # build, or the TTL would never expire and the background refresh would never re-fetch.
@@ -11371,17 +11282,6 @@ def _line_abp(raw):
     ln = ln.split("^", 1)[0].split("$", 1)[0].lstrip(".")
     return ln if _PDOM_RE.match(ln) else None
 
-def _line_classical_host(raw):
-    ln = raw.split("#", 1)[0].strip()
-    parts = ln.split(",")
-    kind = parts[0].strip().upper()
-    if len(parts) < 2 or kind not in ("DOMAIN", "DOMAIN-SUFFIX"):
-        return None
-    d = parts[1].strip().lower().lstrip(".")
-    if _PDOM_RE.match(d):
-        return d
-    return d if kind == "DOMAIN-SUFFIX" and _zone_label_ok(d) else None
-
 def _norm_set(text, line_fn):
     out = set()
     for raw in text.splitlines():
@@ -11398,96 +11298,8 @@ def _norm_abp(text):
     """Adblock-Plus / AdGuard syntax (`||domain^`) → bare domains; element-hiding/regex/option/exception rules dropped."""
     return _norm_set(text, _line_abp)
 
-def _norm_classical(text, tier):
-    """Clash 'classical' rule text (blackmatrix7) → the requested tier. Lines are `TYPE,value[,opts]`:
-    DOMAIN/DOMAIN-SUFFIX → host (dnsmasq suffix-matches a bare domain); IP-CIDR → ip. DOMAIN-KEYWORD/regexp/
-    IP-CIDR6/PROCESS-NAME are dropped (unmatchable by our IPv4 dnsmasq/nft path)."""
-    if tier == "ip":
-        nets = []
-        for raw in text.splitlines():
-            ln = raw.split("#", 1)[0].strip()
-            if not ln.upper().startswith("IP-CIDR,"):
-                continue
-            val = ln.split(",")[1].strip() if "," in ln else ""
-            try:
-                n = ipaddress.ip_network(val, strict=False)
-                if n.version == 4:
-                    nets.append(n)
-                    if len(nets) > _IP_NET_CAP:
-                        return None                            # pathological/oversize IP feed → keep last-good, bound RAM
-            except Exception:
-                continue
-        return [str(n) for n in ipaddress.collapse_addresses(nets)]
-    return _norm_set(text, _line_classical_host)
-
-def _norm_host_v2(rid, seen, prov="v2"):
-    """v2fly data/<rid> → domains; resolves include: recursively (cycle-guarded, bounded). Fail-closed: any fetch
-    error → None so a transient blip keeps last-good instead of shipping a truncated list."""
-    if rid in seen:
-        return []
-    if len(seen) >= 300:
-        return None
-    seen.add(rid)
-    tmpl = CATALOG_PROVIDERS.get(prov, {}).get("raw_host") or ""
-    try:
-        text = _list_fetch_text(tmpl.format(id=rid))
-    except Exception:
-        return None
-    out = []
-    for raw in text.splitlines():
-        ln = raw.split("#", 1)[0].strip()
-        if not ln:
-            continue
-        val = ln.split()[0]                                     # token 0 = value; the rest are @attributes (route all)
-        if val.startswith("include:"):
-            inc = _norm_host_v2(val[8:].strip().lower(), seen, prov)
-            if inc is None:
-                return None
-            out += inc
-            continue
-        if ":" in val:
-            kind, _, v = val.partition(":")
-            if kind in ("keyword", "regexp"):                   # dnsmasq suffix matching can't express these
-                continue
-            val = v
-        d = val.strip().lower()
-        if _PDOM_RE.match(d):
-            out.append(d)
-    return out
-
-# Curated presets, resolved ON THE PANEL
 def _ipverse_asn_url(asn):
     return "https://raw.githubusercontent.com/ipverse/asn-ip/master/as/" + str(asn) + "/ipv4-aggregated.txt"
-
-def _preset_source_resolve(spec, tier):
-    """Resolve ONE preset source at a tier → list (or None on fetch failure)."""
-    prov = spec.split(":", 1)[0] if ":" in spec else ""
-    if prov in CATALOG_PROVIDERS:                              # a catalog list id (v2:/mc:/ls:/rf:/bm:)
-        return list_resolve(spec, tier)
-    if spec.startswith("AS:") and tier == "ip":               # ipverse ASN (yandex/vk IP)
-        try:    return _norm_ip(_list_fetch_text(_ipverse_asn_url(spec[3:])))
-        except Exception: return None
-    return None
-
-def _curated_resolve(cat, tier):
-    """Resolve one curated preset by unioning its provider sources for the tier (+ extra host domains). Best-effort:
-    a source that fails to fetch is skipped, not fatal — but if NOTHING resolves (and no extras), return None so the
-    caller keeps last-good instead of shipping an empty list."""
-    spec = CURATED_PRESETS.get(cat)
-    if not spec:
-        return None
-    _label, host_srcs, ip_srcs, extra_host = spec
-    srcs = ip_srcs if tier == "ip" else host_srcs
-    acc, got_any = set(), False
-    for s in srcs:
-        r = _preset_source_resolve(s, tier)
-        if r is not None:
-            acc |= set(r); got_any = True
-    if tier == "host":
-        acc |= set(extra_host or [])                          # tiny curated add-ons (e.g. Gemini's Google subdomains)
-    if not acc and not got_any:
-        return None                                            # total failure → keep last-good
-    return _norm_ip("\n".join(acc)) if tier == "ip" else sorted(acc)
 
 def _block_source_resolve(cat, tier):
     """Resolve one block feed keyed `blk:<provider>:<lid>` at its tier. A block source has exactly ONE tier (the
@@ -11529,35 +11341,23 @@ def block_source_size(provider, lid):
     return tier, (int(m["n"]) if m and m.get("n") is not None else None)
 
 def list_resolve(cat, tier):
-    """Fetch + normalize one <prov>:<id> category (or a bare curated preset) at a tier → plain list (CIDRs for ip,
-    domains for host). None on any failure so the caller keeps last-good."""
+    """Fetch and normalize a provider list. A failure leaves the last-good list in place."""
     if cat.startswith("blku:"):
         return None                                           # unions are built by _blku_store (streaming, memory-bounded) via list_store — never resolved as an in-memory list
     if cat.startswith("blk:"):
         return _block_source_resolve(cat, tier)
-    if ":" not in cat:
-        if cat in CURATED_PRESETS:
-            return _curated_resolve(cat, tier)                 # curated preset → resolved here, shipped via list_manifest
+    if not _is_routed_list_cat(cat):
         return None
     prov, rid = cat.split(":", 1)
-    cfg = CATALOG_PROVIDERS.get(prov)
-    if not cfg:
+    cfg = CATALOG_PROVIDERS[prov]
+    tmpl = cfg.get("raw_" + tier)
+    if not tmpl or ("lists" in cfg and cfg["lists"][rid] != tier):
         return None
-    if tier == "ip":
-        tmpl = cfg.get("raw_ip") or ""
-        if not tmpl:
-            return None
-        try:    txt = _list_fetch_text(tmpl.format(id=rid))
-        except Exception: return None
-        return _norm_classical(txt, "ip") if cfg.get("fmt_ip") == "classical" else _norm_ip(txt)
-    if cfg.get("fmt_host") == "v2fly":                          # v2fly needs include expansion
-        return _norm_host_v2(rid, set(), prov)
-    tmpl = cfg.get("raw_host") or ""
-    if not tmpl:
+    try:
+        txt = _list_fetch_text(tmpl.format(id=rid))
+    except Exception:
         return None
-    try:    txt = _list_fetch_text(tmpl.format(id=rid))
-    except Exception: return None
-    return _norm_classical(txt, "host") if cfg.get("fmt_host") == "classical" else _norm_host_plain(txt)
+    return _norm_ip(txt) if tier == "ip" else _norm_host_plain(txt)
 
 _LIST_SUSPECT = {}   # "<cat>|<tier>" -> reason, for a resolve that was REJECTED to protect last-good (surfaced in the UI)
 
@@ -11599,7 +11399,7 @@ def _list_commit(cat, tier, ver, n, install, tmp=None, extra=None):
     return meta, "ok"
 
 def _list_commit_items(cat, tier, items, extra=None):
-    """Commit an IN-MEMORY resolved list (ip / curated / v2fly — all small) through the shared commit path."""
+    """Commit an in-memory list through the shared commit path."""
     body = "\n".join(items) + ("\n" if items else "")
     ver = hashlib.sha1(body.encode()).hexdigest()[:12]         # content hash = the version a node compares against
     return _list_commit(cat, tier, ver, len(items), lambda: atomic_write(_list_path(cat, tier), body), extra=extra)
@@ -11619,7 +11419,7 @@ def _have_sort():
 
 def _host_stream_spec(cat, tier):
     """(url, line_fn) for a HOST list that can be resolved by streaming per-line normalization, else None (ip tier,
-    v2fly include-expansion, curated, union, unknown). Lets list_store bound memory for big domain lists via an
+    a union or an unknown list). Lets list_store bound memory for big domain lists via an
     external `sort -u` instead of a multi-million-entry Python set."""
     if tier != "host":
         return None
@@ -11633,14 +11433,14 @@ def _host_stream_spec(cat, tier):
             return None
         line_fn = _line_abp if cfg["fmt"] == "abp" else _line_host_plain
         return cfg["raw"].replace("{id}", lid or ""), line_fn
-    if ":" in cat and not cat.startswith("blku:"):
-        prov, rid = cat.split(":", 1)
-        cfg = CATALOG_PROVIDERS.get(prov)
-        if not cfg or cfg.get("fmt_host") == "v2fly" or not cfg.get("raw_host"):
-            return None                                        # v2fly needs recursive include expansion → not streamable
-        line_fn = _line_classical_host if cfg.get("fmt_host") == "classical" else _line_host_plain
-        return cfg["raw_host"].format(id=rid), line_fn
-    return None
+    if not _is_routed_list_cat(cat):
+        return None
+    prov, rid = cat.split(":", 1)
+    cfg = CATALOG_PROVIDERS[prov]
+    if "lists" in cfg and cfg["lists"][rid] != "host":
+        return None
+    return cfg["raw_host"].format(id=rid), _line_host_plain
+
 
 def _stream_host_store(cat, tier, url, line_fn):
     """Resolve a HOST list with BOUNDED memory: stream the response line-by-line → normalize → a temp file (no set),
@@ -11694,7 +11494,7 @@ def list_store(cat, tier):
     spec = _host_stream_spec(cat, tier)
     if spec and _have_sort():
         return _stream_host_store(cat, tier, spec[0], spec[1])   # host lists → streaming resolve (bounded RSS; big domain feeds no longer OOM)
-    items = list_resolve(cat, tier)                           # ip / v2fly / curated (all small) → in-memory
+    items = list_resolve(cat, tier)
     if items is None:
         return list_meta(cat, tier), "fetch-failed"           # network/parse error → keep last-good, retry later
     return _list_commit_items(cat, tier, items)
@@ -11793,13 +11593,13 @@ _ASN_TTL = 86400                                   # re-resolve an ASN's prefixe
 def _asn_cidrs(asn):
     """Resolve an ASN to its IPv4 CIDR prefixes (ipverse), TTL-cached (daily on success, 5-min on empty so a typo'd
     ASN isn't hammered yet recovers). Keeps last-known-good on a transient fetch failure. Lets an operator make ANY
-    provider IP-routable by naming its ASN in a custom list / rule (the general form of the curated-preset AS: source)."""
+    provider IP-routable by naming its ASN in a custom list or rule."""
     now = time.time()
     hit = _ASN_CACHE.get(asn)
     if hit and (now - hit[0] < (_ASN_TTL if hit[1] else 300)):
         return hit[1]
     try:
-        cidrs = _preset_source_resolve("AS:%d" % asn, "ip") or []
+        cidrs = _norm_ip(_list_fetch_text(_ipverse_asn_url(asn))) or []
     except Exception:
         cidrs = []
     if not cidrs and hit and hit[1]:
@@ -12657,7 +12457,7 @@ ROUTING_AUDS = ("local", "cascaded")    # D9 — a node default-list rule's audi
 
 def _validate_routing(routing, nodes, nid, custom_list_ids=(), prev=(), snap=None, roster=None, node_scope=False):
     """Validate + normalize a smart-routing rule list. Returns (clean_rules, error, dropped). Each rule:
-    {enabled:bool, category:<in SMART_CATEGORIES | a custom_list id | "custom" | "tld">, action:"exit"|"direct"|"block",
+    {enabled:bool, category:<provider list id | a custom_list id | "all" | "custom" | "tld">, action:"exit"|"direct"|"block",
     node:<exit nid if exit>}. A "tld" rule additionally carries match:"tld" + tlds:[label…] (route/block a whole
     top-level domain; see docs/PROTOCOL-ROUTING-PLAN.md §3.1). The implicit 'everything else → direct' default is
     NOT stored (appended at compile time).
@@ -12673,7 +12473,7 @@ def _validate_routing(routing, nodes, nid, custom_list_ids=(), prev=(), snap=Non
     The report exists to be read by a person; twenty is more than anyone reads and the total says how many
     there really were.
       unreadable   — a token that means nothing anywhere, in any mode ("goo gle..com", a bare "ru")
-      unknown_list — a category id the catalog, the custom lists and the built-ins have all never heard of
+      unknown_list — a category id the catalog and the custom lists have never heard of
     NOT in here: a rule this node's engine cannot enforce. That one is KEPT, shown inert and skipped at plan
     time (§4.2/§5.3), and calling it "dropped" would send an operator looking for something that is still there.
 
@@ -12721,11 +12521,9 @@ def _validate_routing(routing, nodes, nid, custom_list_ids=(), prev=(), snap=Non
             tgt = (doms, cidrs, asns, pats)
         elif cat in custom_list_ids:
             pass                                           # a reusable custom list referenced by id (targets resolved at compile time)
-        elif cat in _cat_idx:
-            pass                                           # a provider-catalog category (node fetches it from MetaCubeX via caps)
-        elif ":" in cat and not _cat_have:
-            pass                                           # ⚠️ a provider id we cannot VALIDATE right now (the catalog is
-        elif cat not in SMART_CATEGORIES:
+        elif _is_routed_list_cat(cat) and (cat in _cat_idx or not _cat_have):
+            pass                                           # hold supported provider ids if the catalog is unavailable
+        elif cat != "all":
             dropped.append({"entry": cat, "reason": "unknown_list"})
             continue                                       # orphaned reference (e.g. a reusable custom list that was later
                                                            # deleted, or a category removed in an upgrade) → DROP the rule
@@ -14622,6 +14420,8 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
             # pattern-free list keeps the id and the nft set it has — no fleet-wide rebuild on upgrade.
             cat = custom_cat_id(doms, cidrs, pats)
             extra = (doms, cidrs, pats)
+        elif cat != "all" and not _is_routed_list_cat(cat):
+            return None
         return cat, extra
 
     def _collect_egress(nid, ov, S, targets, auto_label="", name=""):
@@ -17802,7 +17602,7 @@ def api(method, path, qs, body, deps):
         return 200, {"ok": True, "data": {"nodes": nodes_view()}}
 
     if method == "GET" and path == "/api/state":
-        _inuse_cat = {_c for _c in routed_catalog_cats(nodes) if ":" in _c}
+        _inuse_cat = routed_catalog_cats(nodes)
         _cat_caps_extra, _cat_labels_extra = {}, {}
         if _inuse_cat:
             _cix, _ = catalog_cached()
@@ -17811,7 +17611,7 @@ def api(method, path, qs, body, deps):
                     _cat_caps_extra[_c] = _cix[_c]
                     _cat_labels_extra[_c] = catalog_label(_c)
         _cat_sizes = {}                                   # {cat: {ip,host}} resolved-list record counts (from state/lists/*.meta)
-        for _c in routed_catalog_cats(nodes) | set(CURATED_ORDER):
+        for _c in _inuse_cat:
             _sz = {}
             for _t in ("ip", "host"):
                 _m = list_meta(_c, _t)
@@ -17868,8 +17668,7 @@ def api(method, path, qs, body, deps):
             "catalog_gen": catalog_gen(),                 # moves whenever the held catalog index changes → the SPA refetches it exactly then
             "catalog_providers": catalog_providers_view((panel_settings.get("providers") or {}), nodes),   # Geo-data provider registry + enabled state (source tags + toggles)
             "cat_sizes": _cat_sizes,                     # per-cat resolved-list record counts {cat:{ip,host}} → UI list-size display
-            "smart_caps": {**SMART_CAPS, **_cat_caps_extra},   # per-category {ip,host} capability → UI [IP]/[Host] grouping + kernel-mode greying (+ in-use catalog cats)
-            "cat_domains": DOMAIN_BUNDLES,                # curated domains per host category → UI hover tooltip (ru/geoip cats absent)
+            "smart_caps": _cat_caps_extra,
             "cat_labels": {**{custom_cat_id(cl.get("domains") or [], cl.get("cidrs") or []): cl.get("title")   # custom_<hash> → list title, so the destination bars name custom lists (node counter carries the synthetic id)
                            for cl in (panel_settings.get("custom_lists") or []) if cl.get("title")},
                            **_cat_labels_extra},         # + catalog cats in use → their provider label
@@ -17932,8 +17731,8 @@ def api(method, path, qs, body, deps):
         if isinstance(mir, dict):
             cur["mirrors"] = {"geo": (mir.get("geo") or "").strip(), "turn": (mir.get("turn") or "").strip()}
         prov = incoming.get("providers")
-        if isinstance(prov, dict):                              # {prov_id: bool} — fetched catalog providers only; "curated"
-            _prov_before = cur.get("providers") or {}            # is not one of them (it has no switch, see catalog_providers_view)
+        if isinstance(prov, dict):
+            _prov_before = cur.get("providers") or {}
             cur["providers"] = {p: bool(prov[p]) for p in prov if p in CATALOG_PROVIDERS}
             _newly_on = [p for p in cur["providers"] if cur["providers"][p]
                          and not _prov_before.get(p, False) and p in CATALOG_PROVIDERS]
@@ -18324,7 +18123,7 @@ def api(method, path, qs, body, deps):
         if isinstance(pc, dict):
             out_pc = {}
             for k, v in list(pc.items())[:32]:
-                if k in CATALOG_PROVIDERS or k in BLOCK_PROVIDERS or k in ("custom", "curated"):
+                if k in CATALOG_PROVIDERS or k in BLOCK_PROVIDERS or k == "custom":
                     tc = _themed_color(v)
                     if tc: out_pc[k] = tc
             cur["provider_colors"] = out_pc
@@ -18362,7 +18161,7 @@ def api(method, path, qs, body, deps):
                                         "reason": "list_empty"})
                     continue                            # an empty list is dropped
                 lid = re.sub(r"[^a-z0-9_]", "", str(item.get("id") or "").lower())[:24]
-                _reserved = lid not in _cl_was and (lid in SMART_CATEGORIES or lid in ("custom", "tld")
+                _reserved = lid not in _cl_was and (lid in ("all", "custom", "tld")
                                                     or bool(re.fullmatch(r"custom_[0-9a-f]{10}", lid)))
                 if _reserved:
                     _cl_dropped.append({"entry": lid, "reason": "id_reserved"})
@@ -18637,11 +18436,11 @@ def api(method, path, qs, body, deps):
     if method == "GET" and path == "/api/list-info":            # hover tooltip: a list's record count + a sample (resolve-on-hover)
         cat = (qs.get("cat") or [""])[0].strip()
         retry = (qs.get("retry") or [""])[0] == "1"             # the operator pressed "not ready" — clear the cooldown
-        if ":" not in cat and cat not in CURATED_PRESETS:
+        if not _is_routed_list_cat(cat):
             return 400, {"ok": False, "error": "bad cat", "code": "bad_request"}
         # Cache-only: this fires on HOVER. A cold-cache rebuild here would hang the tooltip for a minute; an
         # empty answer just shows nothing until _catalog_refresh_loop has warmed the index.
-        caps = SMART_CAPS.get(cat) if cat in CURATED_PRESETS else (catalog_cached()[0].get(cat) or {})
+        caps = catalog_cached()[0].get(cat) or {}
         out = {}
         for tier in ("host", "ip"):                             # Host first (house rule)
             if not caps.get(tier):
@@ -20476,18 +20275,17 @@ def api(method, path, qs, body, deps):
         _p2p_pruned_u = prune_p2p_refs(nodes)
         nodes[nid].pop("enabled_categories", None)   # §6.9: deleted, never read; drop the dead key as we pass
         if "catalog_cats" in body:              # categories the operator opted THIS node into (node-lens): provider-catalog
-            cc = body.get("catalog_cats")       # ids (<prov>:<id>) AND curated built-ins (bare id) — both first-class + pullable
+            cc = body.get("catalog_cats")
             if isinstance(cc, list):
-                _cix, _ = catalog_cached()      # keep real catalog ids OR curated built-ins; drop unknown/"all"/custom_*
+                _cix, _ = catalog_cached()
                 _was = set(nodes[nid].get("catalog_cats") or [])
-                nodes[nid]["catalog_cats"] = [c for c in dict.fromkeys(cc)
-                                              if (c in _cix and c not in SMART_CATEGORIES) or (c in SMART_CATEGORIES and c != "all")
-                                              or (c in _was and c != "all")]
-                for _c in nodes[nid]["catalog_cats"]:          # newly opted-in → resolve now so its size/lists are ready (non-blocking)
+                nodes[nid]["catalog_cats"] = list(dict.fromkeys(
+                    c for c in cc if _is_routed_list_cat(c) and (c in _cix or c in _was)
+                ))
+                for _c in nodes[nid]["catalog_cats"]:
                     if _c not in _was:
-                        _caps = SMART_CAPS.get(_c, {}) if ":" not in _c else (_cix.get(_c) or {})
                         for _t in ("ip", "host"):
-                            if _caps.get(_t) and not list_meta(_c, _t):
+                            if _cix[_c].get(_t) and not list_meta(_c, _t):
                                 list_ensure(_c, _t)
         # per-node mesh overrides — a CHANGE re-provisions THIS node's links (it briefly drops off the mesh
         # while peers reconnect with the new config); a blank value falls back to the panel default.
@@ -23522,8 +23320,7 @@ class Handler(BaseHTTPRequestHandler):
         for _c in _plan_cats:
             _isblku = _c.startswith("blku:")                       # per-interface block UNION → its own tier, no provider gate (feeds pre-filtered)
             _isblk = _isblku or _c.startswith("blk:")              # block feed (blk:<provider>:<list>) → block-provider gate + its own tier
-            _curated = (not _isblk) and ":" not in _c and _c in SMART_CATEGORIES and _c != "all"   # built-in → panel-resolved + panel-pulled
-            if not _isblk and ":" not in _c and not _curated:      # custom_<hash> / "all" → not panel-served (ship inline)
+            if not _isblk and not _is_routed_list_cat(_c):
                 continue
             if _isblk:
                 if not _isblku:                                    # a bare block feed is gated by its block provider; a union isn't
@@ -23531,12 +23328,12 @@ class Handler(BaseHTTPRequestHandler):
                     if _blid not in BLOCK_PROVIDER_LISTS.get(_bprov, {}) or not block_providers_enabled(_ps)[_bprov]:
                         continue
                 _caps = {(_blk_srcs.get(_c) or "host"): True}
-            elif not _curated and not _enabled_prov.get(_c.split(":", 1)[0], False):   # routing provider not enabled → omit (node deletes the set)
+            elif not _enabled_prov.get(_c.split(":", 1)[0], False):   # routing provider not enabled → omit (node deletes the set)
                 continue
             else:
                 # No catalog: a provider list the panel already holds keeps the tiers it holds, as its caps do (sync_cat_caps).
                 # Left out, the node deleted its pulled copy and the rule routed nothing until the catalog came back (q189 V2-FLEET).
-                _caps = SMART_CAPS.get(_c, {}) if _curated else (_cix.get(_c) or ({} if _cix_have else {t: True for t in ("ip", "host") if list_meta(_c, t)}))
+                _caps = _cix.get(_c) or ({} if _cix_have else {t: True for t in ("ip", "host") if list_meta(_c, t)})
             _ent = {}
             for _tier in ("ip", "host"):
                 if not _caps.get(_tier):
@@ -23651,10 +23448,8 @@ class Handler(BaseHTTPRequestHandler):
                                           "categories": sorted(_plan_cats),
                                           **({"cat_caps": _cat_caps} if _cat_caps is not None else {}),
                                           **({"cat_caps_keep": _caps_keep} if _cat_caps is not None and _caps_keep else {}),
-                                          # domain tier: active bundles + custom-rule domain lists → node fills these via dnsmasq. ONLY for a
-                                          # DNS/SNI-mode node; a Kernel-only node (the default) gets no domains and matches purely by geoip.
-                                          "domains": ({**{c: DOMAIN_BUNDLES.get(c, []) for c in _plan_cats if c in HOST_CATEGORIES},
-                                                       **(my_plan.get("domains") or {})} if (node.get("routing_mode") or "kernel") != "kernel" else {}),
+                                          "domains": ((my_plan.get("domains") or {})
+                                                      if (node.get("routing_mode") or "kernel") != "kernel" else {}),
                                           "patterns": ((my_plan.get("patterns") or {})
                                                        if (node.get("routing_mode") or "kernel") != "kernel" else {}),
                                           "list_manifest": _list_manifest,   # provider-catalog cats → {tier: version}; node pulls each list from the panel on version change
@@ -23816,8 +23611,7 @@ class Handler(BaseHTTPRequestHandler):
         tier = (q.get("tier") or [""])[0].strip()
         _isblku = cat.startswith("blku:")                                        # per-interface block UNION — always served (feeds pre-filtered)
         _isblk = _isblku or cat.startswith("blk:")                                # block feed (blk:<provider>:<list>) → block-provider gate
-        _curated = (not _isblk) and ":" not in cat and cat in SMART_CATEGORIES and cat != "all"   # built-in → panel-resolved, always served
-        if tier not in ("ip", "host") or (not _isblk and ":" not in cat and not _curated):
+        if tier not in ("ip", "host") or (not _isblk and not _is_routed_list_cat(cat)):
             return self._send(400, {"error": "bad cat/tier"})
         if _isblk and not _isblku:
             _bprov, _, _blid = cat[4:].partition(":")
@@ -23825,7 +23619,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "unknown block list"})
             if not block_providers_enabled(Handler.deps.get("panel_settings"))[_bprov]:
                 return self._send(403, {"error": "provider disabled"})           # never serve a disabled block feed
-        elif not _isblk and not _curated and not ((Handler.deps.get("panel_settings") or {}).get("providers") or {}).get(cat.split(":", 1)[0], False):
+        elif not _isblk and not ((Handler.deps.get("panel_settings") or {}).get("providers") or {}).get(cat.split(":", 1)[0], False):
             return self._send(403, {"error": "provider disabled"})   # never serve a not-enabled provider's list
         meta = list_meta(cat, tier)
         try:
