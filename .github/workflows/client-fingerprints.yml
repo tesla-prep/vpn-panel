@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ['swg-panel-server']   # the source list lives there — re-publish when it changes
+    paths: ['src/swg-panel-server']
 
 permissions:
   contents: write             # to push the fingerprints branch
@@ -33,7 +33,7 @@ jobs:
 
           # Список проверяемых файлов берём из панели.
           spec = importlib.util.spec_from_loader(
-              "sp", importlib.machinery.SourceFileLoader("sp", "swg-panel-server"))
+              "sp", importlib.machinery.SourceFileLoader("sp", "src/swg-panel-server"))
           sp = importlib.util.module_from_spec(spec)
           spec.loader.exec_module(sp)
           sources = sp._CLIENT_SOURCES
