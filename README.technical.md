@@ -76,7 +76,7 @@ You never edit `users.json` or `nodes.json` by hand — the UI does it.
 
 ## Quick start
 
-Four one-liners — each **prompts for whatever it needs**. Choose a method (bare-metal or Docker) per box; mix freely. On **NixOS** there is no one-liner and the installers refuse — see C.
+Four one-liners — each **prompts for whatever it needs**. Choose a method (bare-metal or Docker) per box; mix freely.
 
 > On a root shell with no `sudo` (common on fresh Debian/VPS images), drop the `sudo` — `bash -c "$(curl …)" -- …`. bootstrap requires root either way and exits with a clear message if it isn't.
 
@@ -107,32 +107,6 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-pane
 ```bash
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- docker node
 ```
-
-### C — NixOS (declarative)
-
-The installers refuse to run here, and that is the feature: they write into `/opt` and
-`/etc/systemd/system`, which `nixos-rebuild` neither manages nor sees, so a run that *appeared* to
-work would leave an install your configuration cannot update or remove. Import the flake and declare
-the module instead. Both delivery methods are first-class — a container arm running these same
-images, and a native arm running the programs from your own store.
-
-```nix
-{
-  inputs.swg-panel.url = "github:SanityProtocol/swg-panel";
-
-  # on the machine itself:
-  imports = [ inputs.swg-panel.nixosModules.default ];
-  services.swg-panel = {
-    enable = true;
-    domain = "panel.example.org";
-    environmentFile = "/run/secrets/swg-panel.env";   # PANEL_PASSWORD=…
-  };
-}
-```
-
-`services.swg-node` is the same shape, and **Nodes → Add node** prints the whole block beside the
-enrolment token. Every option, the master role, adoption of a box you already run, and the one
-support boundary worth reading first: [`nix/README.md`](nix/README.md).
 
 Open the panel URL, log in, and add entry servers from **Nodes → Add node** — it prints the exact bare-metal *and* Docker command (key pre-filled) for each. Details: [Installing the panel](#installing-the-panel) · [Adding a node](#adding-a-node) · [Docker](#docker).
 
@@ -205,7 +179,7 @@ Nodes are managed entirely from the UI — the installer no longer asks about th
 
 Against a **self-signed** panel the installer **auto-pins the cert on first contact** (trust-on-first-use): the node stores its sha256 and checks it on every handshake, before the token is sent — so a man-in-the-middle can't impersonate the panel even without a CA. A **real-CA** panel is verified against the system trust store instead. Override with `TLS_VERIFY=yes|no` or an explicit `TLS_FINGERPRINT=<sha256-hex>`. If the panel later moves (host/port), a node **auto-re-points** to the new address — but only when it still presents the pinned/trusted cert. An **expired** real-CA certificate is never pinned as if it were self-signed (the node keeps verifying it and syncs once the panel is renewed). A pin that stops matching fails closed — the node cannot tell a renewed certificate from an impersonator's — and its log says what to do. **A re-install never takes a changed certificate on its own:** it decides whom the node trusts *before* it sends the node's token anywhere or changes anything — at a terminal it asks (Enter keeps the old pin), unattended it refuses; either way a refused run **stops there**, the box exactly as it was and serving its peers, the token sent nowhere. Accept the new certificate by answering `y`, or with `TLS_FINGERPRINT=<its sha256>` (`TLS_VERIFY=yes` when a public CA vouches for it — such a certificate is then verified, not pinned, since its CA re-issues it every few months). Every installer, updater, converter and uninstaller call that carries the node token checks the panel on the very connection it sends on — the pin, or the CA — exactly as the node does.
 
-**Ports to open on a node**, beyond those of the interfaces and servers you create on it: **UDP 42821–42899** if it runs a dial-in exit (the router connects in; the panel draws the port from this range unless you type one), and **TCP and UDP 20000–29999** if torrents leave by its own address (each WireGuard / AmneziaWG device's incoming torrent port is forwarded from there). A provider or host firewall that keeps them closed fails quietly: the router never connects, and no peer reaches a seeding device. On NixOS the dial-in range goes in `services.swg-node.udpPortRanges` ([NixOS README, step 6](nix/README.md#step-6--open-the-udp-ports)).
+**Ports to open on a node**, beyond those of the interfaces and servers you create on it: **UDP 42821–42899** if it runs a dial-in exit (the router connects in; the panel draws the port from this range unless you type one), and **TCP and UDP 20000–29999** if torrents leave by its own address (each WireGuard / AmneziaWG device's incoming torrent port is forwarded from there). A provider or host firewall that keeps them closed fails quietly: the router never connects, and no peer reaches a seeding device.
 
 **Per-node actions:** **Edit** (endpoint/colour — the endpoint goes into client configs), **Rotate token** (the old one stops working immediately; re-enroll), **Remove** (revokes the token and unassigns the node).
 

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """Self-test — NO CONSUMER IN A PIPE STOPS READING EARLY IN THE INSTALLERS, WHICH ALL RUN UNDER PIPEFAIL.
 
-install-host, install-node, install-docker, update, convert and bootstrap run `set -euo pipefail`, uninstall and
-nix/adopt.sh `set -uo pipefail`, lib/common.sh is sourced by them and the swg-update wrapper text sets it too. A consumer
+install-host, install-node, install-docker, update, convert, install and bootstrap run `set -euo pipefail`, uninstall `set -uo pipefail`, lib/common.sh is sourced by them and the swg-update wrapper text sets it too. A consumer
 that stops reading after its first match or line — grep -q / -m / -l, head, sed q, awk … exit — closes the pipe; a
 producer that writes again after that dies of SIGPIPE (141), and pipefail fails the whole pipeline although the match
 was found. So `docker ps --format '{{.Names}}' | grep -qx swg-panel` could read "no swg-panel" on a master whenever
@@ -44,7 +43,7 @@ import concurrent.futures as cf, os, re, shlex, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.environ.get("SWG_PF_ROOT") or os.path.abspath(os.path.join(HERE, ".."))
 SCRIPTS = ("install-host.sh", "install-node.sh", "install-docker.sh", "update.sh", "convert.sh", "bootstrap.sh",
-           "uninstall.sh", "lib/common.sh", "nix/adopt.sh")
+           "uninstall.sh", "lib/common.sh", "install.sh")
 MARK = "# pipefail-ok:"
 PERTURB = "--perturb" in sys.argv
 PERTURB_TEARDOWN = "--perturb-teardown" in sys.argv

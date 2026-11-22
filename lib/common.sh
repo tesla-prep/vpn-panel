@@ -73,14 +73,12 @@ refuse_on_declarative_host(){
     It writes into /opt and /etc/systemd/system, which nixos-rebuild neither manages nor sees: the
     run would look like it worked and leave an install you cannot update or remove.
 
-    Declare the module instead — the panel's Nodes screen prints the whole block beside the token:
-        ${opt}
-    See nix/README.md. Moving an install that is already on this box? nix/adopt.sh carries it
-    over with its identity intact — re-minting a token strips every peer from the interface."
+    Manage existing services through the system configuration that declares them:
+        ${opt}"
   fi
   _refuse "${SYSTEMD_DIR:-/etc/systemd/system} is read-only — this host's services are managed
     declaratively, so an install written here would not survive its next rebuild. Describe swg-panel
-    in that configuration instead (see nix/README.md for the NixOS modules)."
+    in that configuration instead."
 }
 _refuse(){
   if command -v die >/dev/null 2>&1; then die "$1"; fi

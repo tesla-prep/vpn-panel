@@ -3,6 +3,12 @@
 All notable user-facing changes to **swgPanel**. This file starts at `1.3.11-beta`;
 earlier releases predate the changelog — see the git history. · Русский: [CHANGELOG.ru.md](CHANGELOG.ru.md)
 
+## [1.12.0-beta]
+
+### Removed
+
+- Removed the NixOS flake, modules, deployment instructions and CI. New panel and node installations use Docker or systemd.
+
 ## [1.11.0-beta]
 
 ### Changed

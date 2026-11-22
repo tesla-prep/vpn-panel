@@ -32,7 +32,6 @@ on:
     paths-ignore:
       - '*.md'            # AGENTS, API, CHANGELOG, README, THIRD-PARTY — all top level
       - 'forks/**/*.md'   # per-fork build notes
-      - 'nix/**/*.md'     # the NixOS guide, both languages
       - 'LICENSE'
   workflow_dispatch:
 

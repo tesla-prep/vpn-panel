@@ -2161,109 +2161,6 @@ export const BOOTSTRAP_URL = "https://raw.githubusercontent.com/tesla-prep/vpn-p
 // and classic sudo alike, root or not. transfer_parse (the panel) reads both shapes, so commands already copied still work.
 export const bootCmd = args => `sudo bash -c "$(curl -fsSL ${BOOTSTRAP_URL})" -- ${args}`;
 
-/* Enrolment for a node whose installation is its configuration's. NOT a command — the installer is
-   the wrong shape here twice over: it would write into /opt on a host whose own tooling cannot see
-   that, and re-running it is not how such a node is re-enrolled anyway.
-
-   ⚠️ The token is NOT in the snippet, and that is the point rather than an omission. A Nix option's
-   value lands in the world-readable store, so the module takes a PATH to a file it reads at runtime
-   and asserts against a path literal for exactly this reason. Printing `environmentFile = "…"` beside
-   the token, with the token shown separately, is the only shape that stays true to that. */
-/* The declarative install as a copy-paste SEQUENCE of commands, not a lone config block with
-   comments nobody can act on. Each entry is [label, code]; a fresh node gets all three steps, a
-   recovery just re-writes the token file and rebuilds (its flake already exists).
-
-   ⚠️ The token goes into a FILE by command (step 1), so the config only ever names a PATH — a value
-   written into a Nix option lands in the world-readable store. That is what the old "# NODE_TOKEN"
-   comment was trying, and failing, to convey. The flake names its config `swg` and points
-   `selfUpdate.flakeRef` at it, so the panel's Update button works with nothing else to set. */
-export function nixNodeSteps(host, endpoint, token, recovery, mode, reserved) {
-  const ep = endpoint || "203.0.113.10";
-  const podman = mode === "podman";
-  /* ⚠️ THE FIREWALL. NixOS filters INPUT by default and fixes its rules at BUILD time, while every port this node serves is
-     picked by the panel at RUN time — interfaces, turn servers, mesh links. Without `udpPortRanges` an interface created
-     from the panel syncs, reports healthy and is unreachable, and nothing says so. Measured on a fresh NixOS 26.05 native
-     node (1.8.7 qualification PART 4, A1): a laptop client never handshook until the range was declared. The three bands are
-     the ones the panel hands out: user interfaces from 51820 (suggestPort), turn-family servers from 56000, dial-in exits from
-     42821 (S9e — a node that leaves it out gets theirs from what it declares), and the system mesh band from these settings —
-     leave that one out and the node's own mesh link raises a firewall issue. */
-  const rsv = reserved || {};
-  const mBase = Number(rsv.mesh_port_base) || 9999, mSpan = Number(rsv.port_span) || 100;
-  const ports = `            udpPortRanges = [ { from = 51820; to = 51899; } { from = 56000; to = 56099; } { from = 42821; to = 42899; } { from = ${mBase}; to = ${mBase + mSpan - 1}; } ];   # interfaces · turn servers · dial-in exits · mesh links`;
-  // Native takes the raw token via LoadCredential; the container arm reads NODE_TOKEN= from an env
-  // file, because a host credential cannot cross into a container (node.nix's tokenFile assertion).
-  const tokenCmd = podman ? [
-    "sudo install -d -m 700 /etc/swg-secrets",
-    `printf 'NODE_TOKEN=%s\\n' '${token}' | sudo tee /etc/swg-secrets/swg-node.env >/dev/null`,
-    "sudo chmod 600 /etc/swg-secrets/swg-node.env",
-  ].join("\n") : [
-    "sudo install -d -m 700 /etc/swg-secrets",
-    `printf %s '${token}' | sudo tee /etc/swg-secrets/swg-node-token >/dev/null`,
-    "sudo chmod 600 /etc/swg-secrets/swg-node-token",
-  ].join("\n");
-  // The one block that differs between the arms — the engine + which token option. The container arm
-  // runs the published image via podman (nixpkgs flags the docker package insecure; podman is not),
-  // and everything else it needs (the runtime, host sysctls, tmpfiles) the module turns on itself.
-  // ⚠️ native REQUIRES delivery = "native": tokenFile is rejected on the container default, so
-  // omitting it is a build failure, not a silent fallback.
-  const svc = podman ? [
-    "        { services.swg-node = {",   // i18n-keys: generated Nix — file text, copied verbatim
-    "            enable = true;",   // i18n-keys: generated Nix — file text, copied verbatim
-    '            delivery = "container";',
-    "            # nixpkgs flags docker insecure on 25.11",   // i18n-keys: generated Nix — file text, copied verbatim
-    '            backend = "podman";',
-    `            panelUrl = "${host}";`,
-    `            endpoint = "${ep}";   # the public IP CLIENTS dial`,
-    ports,
-    '            environmentFile = "/etc/swg-secrets/swg-node.env";',
-    '            selfUpdate.flakeRef = "/etc/nixos#swg";',
-    "        }; }",
-  ] : [
-    "        { services.swg-node = {",   // i18n-keys: generated Nix — file text, copied verbatim
-    "            enable = true;",   // i18n-keys: generated Nix — file text, copied verbatim
-    '            delivery = "native";',
-    `            panelUrl = "${host}";`,
-    `            endpoint = "${ep}";   # the public IP CLIENTS dial`,
-    ports,
-    '            tokenFile = "/etc/swg-secrets/swg-node-token";',
-    '            selfUpdate.flakeRef = "/etc/nixos#swg";',
-    "        }; }",
-  ];
-  const flake = [
-    "{",
-    '  inputs.nixpkgs.url   = "github:NixOS/nixpkgs/nixos-25.11";   # ← the channel `nixos-version` prints: any other one changes the whole OS',
-    '  inputs.swg-panel.url = "github:SanityProtocol/swg-panel";',
-    "  outputs = { self, nixpkgs, swg-panel }: {",   // i18n-keys: generated Nix — file text, copied verbatim
-    "    nixosConfigurations.swg = nixpkgs.lib.nixosSystem {",   // i18n-keys: generated Nix — file text, copied verbatim
-    '      system = "x86_64-linux";',
-    "      modules = [",   // i18n-keys: generated Nix — file text, copied verbatim
-    "        ./configuration.nix",
-    "        swg-panel.nixosModules.swg-node",
-    ...svc,
-    "      ];",
-    "    };",
-    "  };",
-    "}",
-  ].join("\n");
-  const buildCmd = podman ? [
-    "[ -d /etc/nixos/.git ] && sudo git -C /etc/nixos add flake.nix   # a git-tracked /etc/nixos: nix reads tracked files only",   // i18n-keys: a shell command the operator runs verbatim
-    "sudo nixos-rebuild switch --flake /etc/nixos#swg",
-  ].join("\n") : [
-    "[ -d /etc/nixos/.git ] && sudo git -C /etc/nixos add flake.nix   # a git-tracked /etc/nixos: nix reads tracked files only",   // i18n-keys: a shell command the operator runs verbatim
-    "sudo nixos-rebuild switch --flake /etc/nixos#swg",
-    "sudo reboot   # once, so the AmneziaWG kernel module loads",
-  ].join("\n");
-  if (recovery) return [
-    [T("① Replace the token file on the node"), tokenCmd],
-    [T("② Rebuild to pick it up"), "sudo nixos-rebuild switch --flake /etc/nixos#swg"],
-  ];
-  return [
-    [T("① Save the enrolment token on the node"), tokenCmd],
-    [T("② Create /etc/nixos/flake.nix"), flake],
-    [podman ? T("③ Build and switch") : T("③ Build, switch, then reboot for the kernel datapath"), buildCmd],
-  ];
-}
-
 /* THE TRANSFER TOKEN. One value carrying the two things a transfer needs — this panel's address and a
    token valid here — so the other panel's Transfer window can ask for ONE thing instead of "the whole
    enrolment command". The command was always the wrong artifact to ask for: it is a carrier for these
@@ -2282,22 +2179,19 @@ function transferToken(host, token) {
   return "swgx1_" + b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
-export function NodeTokenSheet({ name, token, isNew, kind, platform, endpoint, rebuild }) {
+export function NodeTokenSheet({ name, token, isNew, kind, platform, rebuild }) {
   // the address a node dials: the panel's confirmed public one (what every sync tells the fleet), this tab's own only when none is
   // set — a panel reached through an SSH tunnel or another name handed out a command that pointed nowhere (OE, 1.8.9)
   const host = String(Store.panelPublicUrl || "").trim().replace(/\/+$/, "") || `${location.origin}${BASE}`;
   const bare = bootCmd(`node -key ${token} -host ${host}`);
   const docker = bootCmd(`docker node -key ${token} -host ${host}`);
   const nixos = platform === "nixos";
-  const fresh = !kind && !nixos;                       // brand-new node → offer BOTH styles as tabs
-  /* …and so does a MIGRATION, which is the one moment changing run model is free. The command used to be
+  /* A migration can also change the installation method. The command used to be
      pinned to the kind the node has now — right for a rotate (same box, same install) and needlessly
      narrow here: a migration installs onto a DIFFERENT box, nothing in what it carries is run-model
      specific (keys, peers, escrow, turn identities all restore either way), and the panel adopts whatever
-     the new node reports on its first sync. So offer both, with the current kind preselected. Declarative
-     hosts keep their own arm: a bash install there would fight the configuration that owns the box. */
-  const bothWays = !nixos && !!rebuild;
-  const [tab, setTab] = useState(nixos ? "nix" : "std");
+     the new node reports on its first sync. */
+  const bothWays = !!rebuild;
   const [armedOpen, setArmedOpen] = useState(false);   // the pre-flight, folded — see below
   /* THREE SHEETS SHARE THIS ONE, and they do not ask the same question:
        create   — a node that does not exist yet: how do I install it?
@@ -2306,11 +2200,9 @@ export function NodeTokenSheet({ name, token, isNew, kind, platform, endpoint, r
      Only the last one has an answer that is not an install command, and it was being shown the install
      commands anyway — under a sentence about "restoring" a node nobody is restoring. */
   const rotate = !isNew && !rebuild;
-  const [nmode, setNmode] = useState("native");   // Declarative tab: which arm — kernel (native) or the published image via podman
-  const nixSteps = nixNodeSteps(host, endpoint, token, !!kind, nmode, (Store.panelSettings || {}).reserved);
 
-  const copyBlock = (label, code, block) => html`<div class="field"><label>${label}</label>
-    <div class="cmdrow"><div class=${"tokenbox" + (block ? " block" : "")}>${code}</div>
+  const copyBlock = (label, code) => html`<div class="field"><label>${label}</label>
+    <div class="cmdrow"><div class="tokenbox">${code}</div>
       <button class="copyaction" onClick=${() => copy(code, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>`;
 
   /* T-20 — THE CREDENTIAL ALONE. Every command on this sheet re-installs the node; none of them just fixes
@@ -2343,30 +2235,10 @@ export function NodeTokenSheet({ name, token, isNew, kind, platform, endpoint, r
 
   // The imperative install — bare-metal / Docker, a one-line command each.
   const runLabel = (col, l) => html`${T("Run on the node —")} <span style=${"color:" + col + ";font-weight:700"}>${l}</span>`;
-  const standardTab = html`<${Fragment}>
-    ${copyBlock(runLabel("#60a5fa", kindLabel("baremetal")), bare, false)}
-    ${copyBlock(runLabel("#c084e8", kindLabel("docker")), docker, false)}
+  const installCommands = html`<${Fragment}>
+    ${copyBlock(runLabel("#60a5fa", kindLabel("baremetal")), bare)}
+    ${copyBlock(runLabel("#c084e8", kindLabel("docker")), docker)}
     <div class="hint">${T("Pick the one this node runs. Each fetches the installer and prompts for the endpoint.")}</div>
-  <//>`;
-
-  // The declarative install — a command sequence for NixOS.
-  // The declarative install differs by arm in more than one line — delivery, the token file, and
-  // whether a reboot is needed — so it gets its own switch rather than a single flake with a caveat.
-  // The two arms ride on the tab row itself, right-aligned — they are a property OF the declarative
-  // install, not a second choice of equal weight, and a second full-width tablist under the first read
-  // as one. Each side wears the colour its run-model wears everywhere else in the panel (the bare-metal
-  // and docker pills), so the switch says which datapath it means before the label is read.
-  const armSwitch = html`<div class="armsw" role="tablist" aria-label=${T("Delivery")}>
-    <button role="tab" aria-selected=${nmode === "native"} class=${"bare" + (nmode === "native" ? " on" : "")} onClick=${() => setNmode("native")}>${T("Bare-metal (kernel)")}</button>
-    <button role="tab" aria-selected=${nmode === "podman"} class=${"ctr" + (nmode === "podman" ? " on" : "")} onClick=${() => setNmode("podman")}>${T("Podman (container)")}</button>
-  </div>`;
-  const nixTab = html`<${Fragment}>
-    ${nixSteps.map(([label, code]) => copyBlock(label, code, true))}
-    <div class="hint">${kind
-      ? T("This node's configuration already declares it — the two steps above just refresh the token and rebuild.")
-      : nmode === "podman"
-        ? T("Runs the published image via podman (nixpkgs flags the docker package insecure; podman is not), no reboot. Replace the endpoint with this server's public IP — the panel's Update button then works with nothing else to set.")
-        : T("Fresh box shown; if you already use a flake, add the swg-panel input and the services.swg-node block to yours instead. Replace the endpoint with this server's public IP — the panel's Update button then works with nothing else to set.")}</div>
   <//>`;
 
   return html`<${Sheet} title=${(isNew ? T("Node created")
@@ -2391,15 +2263,6 @@ export function NodeTokenSheet({ name, token, isNew, kind, platform, endpoint, r
           restores nothing, and a MIGRATION now offers both methods a few lines below, so the sentence
           contradicted the screen it was on in both places. The hint under the two commands says the true
           version of it in one line. */ null}
-    ${/* …and the token by itself only where something actually needs it typed: the declarative arm writes
-          it into a tokenFile. Everywhere else the command below carries it, so the field was a second copy
-          of a secret for no one. */ null}
-    ${/* Both credentials, and each only where it is the answer to something.
-          · the ENROLMENT token by itself: only the declarative arm needs it typed (into a tokenFile).
-            Everywhere else the command below already carries it, so the field was a second copy of a
-            secret for nobody.
-          · the TRANSFER token: for handing this node to ANOTHER PANEL. On a migration — a new box, same
-            panel — it answers a question nobody asked, and it is the longest string on the screen. */ null}
     ${nixos || !rebuild ? html`<div class="field" style="margin-top:15px"><label>${T("Enrollment token")}</label><div class="cmdrow"><div class="tokenbox">${token}</div><button class="copyaction" onClick=${() => copy(token, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>` : null}
     ${/* …and the transfer token only where a record is WAITING TO RECEIVE one. It says "this panel, and a
           node key valid here", which is an invitation — meaningful for a record nothing is running behind
@@ -2412,29 +2275,16 @@ export function NodeTokenSheet({ name, token, isNew, kind, platform, endpoint, r
       <div class="cmdrow"><div class="tokenbox">${transferToken(host, token)}</div>
         <button class="copyaction" onClick=${() => copy(transferToken(host, token), T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div>
       <div class="hint">${T("Carries this panel's address and this token together. On the panel that has the node now: its Transfer window, and paste this — nothing is installed.")}</div></div>`}
-    ${rotate && !nixos ? null
-      : nixos ? html`<${Fragment}>
-          <div class="rltabs" style="margin:18px 0 14px;gap:0">${armSwitch}</div>
-          ${nixTab}
-        <//>`
+    ${rotate || (nixos && !rebuild) ? null
       : bothWays ? html`<${Fragment}>
           ${copyBlock(runLabel(kind === "docker" ? "#c084e8" : "#60a5fa", kindLabel(kind || "baremetal")),
-                      kind === "docker" ? docker : bare, false)}
+                      kind === "docker" ? docker : bare)}
           ${copyBlock(runLabel(kind === "docker" ? "#60a5fa" : "#c084e8", kindLabel(kind === "docker" ? "baremetal" : "docker")),
-                      kind === "docker" ? bare : docker, false)}
+                      kind === "docker" ? bare : docker)}
           <div class="hint">${T("Either works: the first is what this node runs today, and the panel follows whichever the new box reports.")}</div>
         <//>`
       : (kind === "docker" || kind === "baremetal") ? copyBlock(runLabel(kind === "docker" ? "#c084e8" : "#60a5fa", kindLabel(kind)), kind === "docker" ? docker : bare, false)
-      : html`<${Fragment}>
-          <div class="rltabs" role="tablist" style="margin-top:18px;gap:0">
-            <div class="rltab-group" style="margin-left:0">
-              <button role="tab" aria-selected=${tab === "std"} class=${"rltab" + (tab === "std" ? " on" : "")} onClick=${() => setTab("std")}>${T("Standard")}</button>
-              <button role="tab" aria-selected=${tab === "nix"} class=${"rltab" + (tab === "nix" ? " on" : "")} onClick=${() => setTab("nix")}>${T("Declarative (NixOS)")}</button>
-            </div>
-            ${tab === "nix" ? armSwitch : null}
-          </div>
-          ${tab === "std" ? standardTab : nixTab}
-        <//>`}
+      : installCommands}
     ${fixBlock}
   <//>`;
 }
@@ -2541,7 +2391,7 @@ async function armRebuild(node) {
   if (!r.ok) { toast(srvText(r) || T("couldn't prepare the command"), "err"); return; }
   await Store.poll();               // the node row picks up its superseded badge before the sheet swaps
   openModal(html`<${NodeTokenSheet} name=${node.name} token=${r.data.token} isNew=${false}
-    kind=${node.kind} platform=${node.platform} endpoint=${node.endpoint_host} rebuild=${r.data}/>`);
+    kind=${node.kind} platform=${node.platform} rebuild=${r.data}/>`);
 }
 /* T-11 — the PRE-FLIGHT. Both doors ask the panel what this rebuild WOULD do and show it while the
    operator can still walk away. T-9 shipped these lists but could only show them AFTER the token had
@@ -2835,7 +2685,7 @@ export function NodeRollbackSheet({ node }) {
 }
 export function openNodeRotate(node) { openModal(html`<${NodeRotateSheet} node=${node}/>`); }
 export function NodeRotateSheet({ node }) {
-  const go2 = async () => { const r = await api.nodeRotate({ id: node.id }); if (!r.ok) { toast(srvText(r) || T("rotate failed"), "err"); return; } openModal(html`<${NodeTokenSheet} name=${node.name} token=${r.data.token} isNew=${false} kind=${node.kind} platform=${node.platform} endpoint=${node.endpoint_host}/>`); };
+  const go2 = async () => { const r = await api.nodeRotate({ id: node.id }); if (!r.ok) { toast(srvText(r) || T("rotate failed"), "err"); return; } openModal(html`<${NodeTokenSheet} name=${node.name} token=${r.data.token} isNew=${false} kind=${node.kind} platform=${node.platform}/>`); };
   return html`<${Sheet} title=${T("Rotate token · {v1}", { v1: node.name })}
     foot=${footRow({ onCancel: closeModal, onAction: go2, action: T("Rotate") })}>
     <div class="notice warn"><${Ic} i="warn"/><span>${T("The current token stops working immediately. Re-enroll the node with the new token or it will go offline.")}</span></div>

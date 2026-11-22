@@ -232,8 +232,7 @@ if [ -d "$SD" ] && ! unit_dir_writable && { [ "$(id -u)" = 0 ] || unit_dir_immut
         services.swg-panel.enable = false;   # and/or services.swg-node.enable = false;
     Then remove whatever state you no longer want: /var/lib/swg-panel, /var/lib/swg-noded,
     /etc/swg-panel, /etc/amnezia/amneziawg.
-    A node removed this way never signs off, so the panel keeps showing it — delete it there too.
-    See nix/README.md (\"Removing a node\")."
+    A node removed this way never signs off, so the panel keeps showing it — delete it there too."
   fi
   # Says what was OBSERVED, not what was concluded from it. Reaching here means either we are root and a
   # real write failed, or the mount itself reports `ro` — "read-only" was a guess in the first case.

@@ -25,7 +25,7 @@ NOTHING (exit 4).
       this scan fails instead of passing short). WHAT each site passes — the node's own pin / verify — is not read here:
       tests/token_trust_sites_selftest.py drives every one of them against a panel it must refuse (round 8, I19).
       Round 10 (I19) closed three ways past it: it reads EVERY shell file of the tree (the Docker entrypoints,
-      nix/adopt.sh, any lib file), not a list; a comment is a # that starts a word outside quotes (a `_n=" #"; ` before a
+      any lib file), not a list; a comment is a # that starts a word outside quotes (a `_n=" #"; ` before a
       curl hid it); and a token next to ANY sender — curl, wget, a python urllib / http.client / socket program, openssl,
       nc — is refused, whatever path it names (one assembled from pieces names no /api/node/ at all)
 
@@ -43,10 +43,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 ARGS = set(sys.argv[1:])
 PERTURBED = any(a.startswith("--perturb") for a in ARGS)
-# ⚠️ EVERY SHELL FILE OF THE TREE — a token sent from the Docker entrypoints, nix/adopt.sh or a new lib file was never read
+# ⚠️ EVERY SHELL FILE OF THE TREE — a token sent from the Docker entrypoints or a new lib file was never read
 # (1.8.8 qualification, round 10, I19 class 4)
 SCAN = sorted(set(("lib/common.sh", "uninstall.sh", "bootstrap.sh", "install-node.sh", "install-docker.sh", "install-host.sh",
-                   "update.sh", "convert.sh")) | {os.path.relpath(q, ROOT) for g in ("*.sh", "lib/*.sh", "docker/*.sh", "nix/*.sh")
+                   "update.sh", "convert.sh")) | {os.path.relpath(q, ROOT) for g in ("*.sh", "lib/*.sh", "docker/*.sh")
                                                    for q in glob.glob(os.path.join(ROOT, g))})
 SRC = {f: open(os.path.join(ROOT, f), encoding="utf-8").read() for f in SCAN}
 
@@ -128,7 +128,8 @@ openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30", "-subj",
         "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", SSK, "-out", SSC)
 SERVED = hashlib.sha256(ssl.PEM_cert_to_DER_cert(open(SSC).read())).hexdigest()
 CAC, CAK = os.path.join(T, "ca.pem"), os.path.join(T, "ca.key")          # a CA the test trusts (SSL_CERT_FILE)
-openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30", "-subj", "/CN=swg test CA", "-keyout", CAK, "-out", CAC)
+openssl("req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "30", "-subj", "/CN=swg test CA",
+        "-addext", "keyUsage=critical,keyCertSign,cRLSign", "-keyout", CAK, "-out", CAC)
 CSC, CSK, CSR = os.path.join(T, "cs.pem"), os.path.join(T, "cs.key"), os.path.join(T, "cs.csr")
 openssl("req", "-newkey", "rsa:2048", "-nodes", "-subj", "/CN=127.0.0.1", "-keyout", CSK, "-out", CSR)
 sh(os.path.join(T, "san.ext"), "subjectAltName=IP:127.0.0.1\n")
@@ -261,8 +262,8 @@ for f, text in SRC.items():
         if TOKEN_RE.search(code) and SENDER_RE.search(code):
             bad.append("%s:%d a token beside a sender that is not panel_req: %s" % (f, i, line.strip()[:120]))
 check("no call site sends the token any other way", not bad, bad)
-check("…read from every shell file of the tree (%d), the Docker entrypoints and nix/adopt.sh among them" % len(SCAN),
-      {"docker/node-entrypoint.sh", "docker/entrypoint.sh", "nix/adopt.sh"} <= set(SCAN), SCAN)
+check("…read from every shell file of the tree (%d), the Docker entrypoints among them" % len(SCAN),
+      {"docker/node-entrypoint.sh", "docker/entrypoint.sh"} <= set(SCAN), SCAN)
 left = ["%s:%d" % (f, i) for f, t in SRC.items() for i, l in enumerate(t.splitlines(), 1)
         if not l.lstrip().startswith("#") and re.search(r"\bauth_curl\b", l.split(" #")[0])]
 check("auth_curl (the curl -k wrapper) is gone from every script — defined or called", not left, left)

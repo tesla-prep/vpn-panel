@@ -24,7 +24,7 @@ executes nothing — no packages, no systemd, no Docker, no network. Diff that b
 
 ## Choosing a path
 
-Two independent axes — pick one value from each. **Method**: bare-metal, Docker or NixOS.
+Two independent axes — pick one value from each. **Method**: bare-metal (systemd) or Docker.
 **Role**: master, host or node.
 
 | role | what it is |
@@ -97,31 +97,6 @@ Staged under `/opt/swg-panel-docker` with a `.env` (copy `.env.example`; `PANEL_
 Compose profiles are named after the roles: `master`, `host`, `node`. `docker host` asks the role in
 step 1 — pass `-role master|host` to skip it. `--dry-run` renders the `.env` and runs no Docker commands.
 
-## NixOS
-
-There is no installer to run, and `bootstrap.sh` **refuses on a declarative host on purpose** — it would
-write into `/opt`, which `nixos-rebuild` neither manages nor sees. Declare `services.swg-panel` and/or
-`services.swg-node` instead. Both offer `delivery = "container"` (published images) and
-`delivery = "native"` (programs from the Nix store); a panel never learns how a node was installed, so
-any mix works. Secrets go in files referenced by `environmentFile` / `tokenFile`, never inline — the Nix
-store is world-readable.
-
-Two things here return success without having done what you think, which is the failure mode this file
-exists to prevent:
-
-- **`nixos-rebuild switch` exits 0 without restarting `swg-noded`** on the native arm — it prints
-  `NOT restarting the following changed units`. That is deliberate: a restart re-runs the bootstrap and
-  drops every connected client, which an unrelated config change has no business doing. So a green rebuild
-  is not evidence the new code is running; check the process and bounce it when you mean to
-  (`systemctl restart swg-noded`). The panel's own Update button already does this for you — the caveat
-  applies to a rebuild *you* run.
-- **Nix reads only git-*tracked* files.** A file written into `/etc/nixos` but never `git add`-ed arrives
-  *absent*, and the rebuild succeeds against the older content with no warning.
-
-Full guide, including both of the above in context: [nix/README.md](nix/README.md).
-
----
-
 ## Verifying, without credentials
 
 `GET /healthz` on the panel and on the subscription server is unauthenticated liveness — no data, no
@@ -178,5 +153,4 @@ updated this way needs each remaining node updated in turn.
 | [README.md](README.md) · [Русский](README.ru.md) | what it is, for a person |
 | [README.technical.md](README.technical.md) | architecture, every flag, the unattended examples |
 | [API.md](API.md) | the HTTP API |
-| [nix/README.md](nix/README.md) | the NixOS module, both delivery arms, adopting an existing box |
 | [CHANGELOG.md](CHANGELOG.md) | what changed, per release |

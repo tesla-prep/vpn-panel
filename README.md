@@ -41,7 +41,6 @@ subscription and no one else sitting in the middle of your traffic.
 - [Before you begin](#before-you-begin)
 - [The three roles (in plain words)](#the-three-roles-in-plain-words)
 - [Step 1 — Install the panel](#step-1--install-the-panel)
-  - [swgPanel on NixOS](nix/README.md)
 - [Step 2 — Add your servers](#step-2--add-your-servers)
 - [Step 3 — Add users and hand out access](#step-3--add-users-and-hand-out-access)
 - [Subscriptions & access control](#subscriptions--access-control)
@@ -162,8 +161,6 @@ plenty. It should have:
 
 - A **public IP address** (so your users can reach it).
 - A recent **Linux** (Ubuntu/Debian and most others are fine).
-  - **NixOS** is fully supported too — panel, node, or both. It does not take the command below; there
-    you declare swgPanel in your `configuration.nix` instead. See the [NixOS guide](nix/README.md).
 - **`sudo`/root** access, and a way to paste a command into it (SSH).
 
 That’s it. If you want a domain name (like `vpn.example.com`) you can point it at the server first — the
@@ -204,11 +201,6 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-pane
 > **Why not `curl … | sudo bash`?** On Ubuntu 26.04 `sudo` is sudo-rs, which runs a piped script in the background
 > of your terminal — the installer then freezes at its first question. Handing the script to `bash -c`, as above,
 > works with every `sudo`.
-
-> **On NixOS?** This command refuses to run, on purpose — it would write into `/opt`, which
-> `nixos-rebuild` neither manages nor sees, and leave you an install your own configuration cannot
-> update or remove. Import this repo's flake and declare `services.swg-panel` instead:
-> [NixOS guide](nix/README.md).
 
 The **first question is how to run it** — **bare-metal** (directly on the host, best throughput) or
 **Docker** (in containers). The **second is the role**: choose **Master** to make this box your panel
@@ -352,7 +344,7 @@ Its limits:
   that server.
 - Nothing is kept across a restart: after a server reboots, its devices can reach each other until it next hears
   from the panel — seconds normally, the whole outage if the panel is unreachable.
-- Going back to a version without this setting on a **Docker** or **NixOS** server leaves the last rules in force
+- Going back to a version without this setting on a **Docker** server leaves the last rules in force
   until the server reboots or you run `nft delete table inet swg_reach` on it. A bare-metal server removes them
   itself.
 
@@ -445,7 +437,6 @@ Remove them on that server (a reboot clears them too):
 ```bash
 sudo nft delete table inet swg_reach; sudo nft delete table inet swg_share
 ```
-On NixOS there is a little more — see [Going back to an older build](nix/README.md#going-back-to-an-older-build).
 A server's own mesh AWG params are kept on its links since 1.8.9: an older panel shows none on the server's card, and a
 link it rebuilds gets the fleet's default. Each release's notes in the [changelog](CHANGELOG.md) say what else going back
 from it takes.
@@ -615,7 +606,6 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-pane
 - **[Technical guide](README.technical.md)** — architecture, every install option and flag,
   Docker by hand, converting, smart routing, backups & security, and troubleshooting.
 - **[External API](API.md)** — the read-only REST surface, Prometheus metrics and webhooks.
-- **[NixOS](nix/README.md)** — the flake, both delivery methods, and moving a server you already run onto it.
 - **[For LLM agents](AGENTS.md)** — the unattended contract: the environment variable for every prompt,
   health probes that need no credentials, and the handful of things an agent must never touch.
 - **[Русский](README.ru.md)** · **[Техническое (RU)](README.technical.ru.md)**

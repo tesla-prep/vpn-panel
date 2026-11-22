@@ -9,8 +9,7 @@ has never pulled `:latest` fetches it on the first helper, or cannot reach the h
 
   [1] HELPER_IMAGE unset, SWG_TURN_IMAGE set → the helper image IS the node's own image
   [2] an explicit HELPER_IMAGE still wins; neither set (a bare process) → the published default
-  [3] the node's own image really is what arrives as SWG_TURN_IMAGE: docker-compose.yml derives it from SWG_IMAGE_TAG, and the
-      NixOS module sets it from `turnImage`, which defaults to `image`
+  [3] the node's own image really is what arrives as SWG_TURN_IMAGE: docker-compose.yml derives it from SWG_IMAGE_TAG
   [4] the docker run in host_sh uses HELPER_IMAGE (the variable this gate is about is the one the helper runs)
 
 Hermetic (loads swg-noded in child processes with chosen environments). Run: python3 tests/helper_image_selftest.py  (0 = pass)
@@ -67,9 +66,6 @@ check("[2] nothing set → the published default", c.get("helper") == "ghcr.io/t
 compose = open(os.path.join(ROOT, "docker-compose.yml")).read()
 check("[3] docker-compose.yml hands the node SWG_TURN_IMAGE derived from SWG_IMAGE_TAG",
       re.search(r'SWG_TURN_IMAGE:\s*"\$\{SWG_TURN_IMAGE:-ghcr\.io/tesla-prep/swg-node:\$\{SWG_IMAGE_TAG:-latest\}\}"', compose) is not None)
-nix = open(os.path.join(ROOT, "nix", "modules", "node.nix")).read()
-check("[3] the NixOS module sets SWG_TURN_IMAGE from turnImage, which defaults to image",
-      "SWG_TURN_IMAGE = cfg.turnImage;" in nix and re.search(r"turnImage = mkOption \{\s*type = types\.str; default = cfg\.image;", nix) is not None)
 check("[4] host_sh's docker run uses HELPER_IMAGE", re.search(r'"--entrypoint", "nsenter",\s*HELPER_IMAGE,', src) is not None)
 
 print()

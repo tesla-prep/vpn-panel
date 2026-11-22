@@ -257,12 +257,7 @@ fi
 # fetched and run on its own, before the repo exists, which is the same reason it redefines
 # warn/info/panel_req above. lib/common.sh is the authority; keep this in step with it by intent.
 if [ -e /etc/NIXOS ] || grep -qsE '^ID="?nixos"?[[:space:]]*$' /etc/os-release; then
-  die "NixOS detected — bootstrap.sh must not run here.
-    It writes into /opt and /etc/systemd/system, which nixos-rebuild neither manages nor sees, so it
-    would appear to work and leave an install you cannot update or remove.
-    Import the module from this repo and declare it instead — the panel's Nodes screen prints the
-    whole services.swg-node block beside the enrolment token. See nix/README.md; nix/adopt.sh moves
-    an install that is already on this box, identity intact."
+  die "NixOS detected. Run this installer on another Linux host with systemd or Docker."
 fi
 
 # ── an update runs OUTSIDE swg-noded's sandbox ──

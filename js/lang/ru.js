@@ -3986,32 +3986,6 @@ export const STR = {
     "Этот токен подтверждает ноду перед панелью — скопируйте его сейчас. Позже его можно сменить, если он утечёт.",
   "Pick the one this node runs. Each fetches the installer and prompts for the endpoint.":
     "Выберите то, на чём работает эта нода. Каждая команда скачает установщик и спросит эндпоинт.",
-  "① Save the enrolment token on the node":
-    "① Сохраните токен подключения на ноде",
-  "② Create /etc/nixos/flake.nix":
-    "② Создайте /etc/nixos/flake.nix",
-  "③ Build, switch, then reboot for the kernel datapath":
-    "③ Соберите, переключитесь и перезагрузитесь ради ядерного датапата",
-  "③ Build and switch":
-    "③ Соберите и переключитесь",
-  "Bare-metal (kernel)":
-    "Bare-metal (ядро)",
-  "Podman (container)":
-    "Подман (контейнер)",
-  "Runs the published image via podman (nixpkgs flags the docker package insecure; podman is not), no reboot. Replace the endpoint with this server's public IP — the panel's Update button then works with nothing else to set.":
-    "Запускает опубликованный образ через podman (nixpkgs помечает пакет docker небезопасным, podman — нет), без перезагрузки. Замените endpoint на публичный IP этого сервера — кнопка «Обновить» в панели затем работает без дополнительной настройки.",
-  "① Replace the token file on the node":
-    "① Замените файл токена на ноде",
-  "② Rebuild to pick it up":
-    "② Пересоберите, чтобы применить",
-  "This node's configuration already declares it — the two steps above just refresh the token and rebuild.":
-    "Конфигурация этой ноды уже её объявляет — два шага выше лишь обновляют токен и пересобирают.",
-  "Fresh box shown; if you already use a flake, add the swg-panel input and the services.swg-node block to yours instead. Replace the endpoint with this server's public IP — the panel's Update button then works with nothing else to set.":
-    "Показан свежий сервер; если у вас уже есть flake, добавьте вход swg-panel и блок services.swg-node в него. Замените endpoint на публичный IP этого сервера — кнопка «Обновить» в панели затем работает без дополнительной настройки.",
-  "Standard":
-    "Обычный",
-  "Declarative (NixOS)":
-    "Декларативно (NixOS)",
   "Enrollment token": "Токен подключения",
   // budget-ok: toast, wraps
   "Copied": "Скопировано",
@@ -6704,7 +6678,6 @@ export const STR = {
   "nothing is restored. The server stays down until you unlock the key, or you can Recreate fresh instead — which mints a new server key and makes every user re-import.":
     "ничего не восстановится. Сервер останется выключенным, пока вы не разблокируете ключ; либо пересоздайте заново — тогда будет выпущен новый ключ сервера и всем пользователям придётся переимпортировать ссылку.",
   "take-over failed: {e}": "не удалось взять под управление: {e}",
-  "Delivery": "Способ установки",
   // budget-ok: a tooltip on an icon button — its own bubble
   "Switch to {name}": "Переключить на {name}",
   "request failed": "запрос не прошёл",

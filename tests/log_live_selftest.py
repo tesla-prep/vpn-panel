@@ -26,7 +26,7 @@ reader the node and the panel both run (docs/LOGS-PLAN.md §3, §4, §23).
       the log POST is gzip.
   [6] docker: swg-sni's lines reach noded's log file through the pump, at their own priority.
   [7] The panel reads its own journal: the drop-in (installer, update.sh in the upgrade and the heal, uninstall), the
-      NixOS unit's group, the docker entrypoint's acme lines; the panel's own plan (bare metal namespace, NixOS main
+      the docker entrypoint's acme lines; the panel's own plan (bare metal namespace, NixOS main
       journal, docker file, no access yet).
 
 Run: python3 tests/log_live_selftest.py   (0 = pass)
@@ -74,7 +74,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, ".."))
 PROG = {k: os.path.join(ROOT, f) for k, f in (("noded", "swg-noded"), ("panel", "swg-panel-server"), ("update", "update.sh"),
                                               ("common", "lib/common.sh"), ("install", "install-host.sh"),
-                                              ("uninstall", "uninstall.sh"), ("nix", "nix/modules/panel.nix"),
+                                              ("uninstall", "uninstall.sh"),
                                               ("entry", "docker/entrypoint.sh"))}
 REF = "03add7a"                                  # the last build before the viewer: the byte-identical reference
 PLANT = sys.argv[sys.argv.index("--plant") + 1] if "--plant" in sys.argv else ""
@@ -880,9 +880,9 @@ def sec7():
     check("[7] update.sh gives the panel its journal inside the upgrade, before it restarts the panel",
           up < u.find("    ensure_panel_journal\n", up) < u.index("restart_panel_seeding_node_ep; then", up))
     check("[7] …and heals it on a current box with the viewer", "ensure_panel_journal; fi   # HEAL" in u)
-    check("[7] the installer writes the drop-in only where the group exists; uninstall removes it; NixOS's unit has the group",
+    check("[7] the installer writes the drop-in only where the group exists; uninstall removes it",
           "getent group systemd-journal" in SRC["install"] and "SWG_JOURNAL_DROPIN" in SRC["install"]
-          and '"$_pdd/swg-journal.conf"' in SRC["uninstall"] and 'SupplementaryGroups = [ "systemd-journal" ];' in SRC["nix"]
+          and '"$_pdd/swg-journal.conf"' in SRC["uninstall"]
           and "getent group systemd-journal" in SRC["common"])
     # docker: the renewal loop's outcome in the panel's file — at the panel's level, created when the panel has not
     # written it yet (after Off → Warnings, or a rotation, a quiet panel's file is not there: the warning was dropped), never

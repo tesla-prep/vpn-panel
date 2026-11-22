@@ -16,7 +16,7 @@ panel at 127.0.0.1 whose certificate the test controls, per connection:
   [0] every panel_req call in the shipped scripts, and every LC_VERIFY / LC_FP assignment that carries a node's trust,
       is one a driver below lifts — a new one fails here instead of passing unseen (the loopback ones, to this box's own
       panel, are listed as such). Round 10's mutations (I19) closed four ways through it: the census reads EVERY shell
-      file of the tree (a new lib file, the Docker entrypoints, nix/adopt.sh); it counts calls per (file, endpoint)
+      file of the tree (a new lib file, the Docker entrypoints); it counts calls per (file, endpoint)
       EXACTLY — a second call to an endpoint a driver already claims is a new, undriven call; every `panel_req` word in
       the code must be a call it can read (unquoted trust arguments, another method, a split line are refused, not
       skipped); a comment is a # that starts a word OUTSIDE quotes (a " #" inside a string hid a call); a trust
@@ -40,8 +40,8 @@ ROOT = os.path.abspath(os.path.join(HERE, ".."))
 FILES = ("lib/common.sh", "uninstall.sh", "bootstrap.sh", "install-node.sh", "install-docker.sh", "install-host.sh",
          "update.sh", "convert.sh")
 # ⚠️ EVERY SHELL FILE OF THE TREE, not the eight the drivers lift: a call in a new lib file, in the Docker entrypoints or
-# in nix/adopt.sh was never looked at (1.8.8 qualification, round 10, I19 class 4).
-SCAN = tuple(sorted(set(FILES) | {os.path.relpath(q, ROOT) for g in ("*.sh", "lib/*.sh", "docker/*.sh", "nix/*.sh")
+# in a new script was never looked at (1.8.8 qualification, round 10, I19 class 4).
+SCAN = tuple(sorted(set(FILES) | {os.path.relpath(q, ROOT) for g in ("*.sh", "lib/*.sh", "docker/*.sh")
                                    for q in glob.glob(os.path.join(ROOT, g))}))
 SRC = {f: open(os.path.join(ROOT, f), encoding="utf-8").read() for f in SCAN}
 ARGS = sys.argv[1:]
@@ -482,8 +482,8 @@ for f, pos, text, which, _a, _b in LCS0:
 check("every LC_VERIFY / LC_FP assignment that carries a node's trust is one a driver claims", not lc_un, lc_un)
 check("…the census is not empty (%d calls, %d assignments — the floor is 11 and 14)" % (len(CALLS0), len(LCS0)),
       len(CALLS0) >= 11 and len(LCS0) >= 14, (len(CALLS0), len(LCS0)))
-check("…read from every shell file of the tree (%d), the Docker entrypoints and nix/adopt.sh among them" % len(SCAN),
-      {"docker/node-entrypoint.sh", "docker/entrypoint.sh", "nix/adopt.sh"} <= set(SCAN) and set(FILES) <= set(SCAN), SCAN)
+check("…read from every shell file of the tree (%d), the Docker entrypoints among them" % len(SCAN),
+      {"docker/node-entrypoint.sh", "docker/entrypoint.sh"} <= set(SCAN) and set(FILES) <= set(SCAN), SCAN)
 
 # ── the drives ────────────────────────────────────────────────────────────────────────────────────────────────────────
 def run(driver, scen, calls, label):
