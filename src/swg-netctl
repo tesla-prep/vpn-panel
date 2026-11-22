@@ -1,40 +1,5 @@
 #!/usr/bin/env python3
-"""swg-netctl — the privileged network/TLS helper for swg-panel.
-
-The panel and swg-sub run UNPRIVILEGED (users swgpanel / swgsub). They cannot bind
-low ports, edit their own systemd units, or run acme.sh. This root helper performs a
-FIXED, strictly-validated set of exactly those operations on their behalf — nothing
-else — so a compromise of the panel can't turn into arbitrary root.
-
-Invoked two ways:
-
-    swg-netctl <verb> <args...>     # direct (install scripts / manual / testing)
-    swg-netctl run                  # drain the request queue (systemd .path/.timer trigger)
-
-Verbs — each touches exactly ONE unit or cert path, chosen by a hard service map the
-caller can't escape (callers pass only "panel"/"sub", never a unit name or file path):
-
-    set-listen  <panel|sub> <ip> <port>   persist the bind addr as a systemd drop-in + daemon-reload
-                                          (does NOT restart — the panel binds the new socket live first;
-                                          the drop-in just makes it survive the next restart)
-    issue-cert  <panel|sub> <domain>      acme.sh issue+install to that service's cert path (+ SIGHUP reload hook)
-    drop-cert   <panel|sub> <domain>      stop auto-renewing one domain (after a confirmed domain switch)
-    adopt-cert  <panel|sub> <cert> <key>  install an operator-supplied cert pair (TLS mode `skip`)
-    sync-acme   <panel|sub>               install acme.sh's renewed cert for that service's name when it is
-                                          newer than the served one — whoever the entry installs for
-    renew-acme  <panel|sub>               renew that name's acme.sh entry now (never --force), then sync-acme
-    restart     <panel|sub>               restart one service unit
-
-Security model:
-  - no shell, ever — every external command is an argv list (no interpolation, no word-splitting);
-  - strict per-arg validation (service enum, IP literal, 1..65535 port, FQDN regex);
-  - a hard service->{unit,cert,key,env} map — the caller can never name a unit, path, or reload command;
-  - queue requests must be regular files OWNED BY THE PANEL USER (another local user can't inject);
-  - requests/results carry NO secrets (the CF token etc. are read here, from install.conf, never passed in);
-  - every action is logged to stderr (the journal).
-
-stdlib-only Python 3, single file — same as the other swg programs.
-"""
+"""Привилегированный помощник настройки сети и TLS панели."""
 
 import contextlib
 import errno
@@ -69,13 +34,7 @@ UNIT_DIR = os.environ.get("SWG_UNIT_DIR", "/etc/systemd/system")
 CONF = os.path.join(ETC_DIR, "install.conf")
 QUEUE_DIR = os.path.join(STATE_DIR, "netctl", "queue")
 STATUS_DIR = os.path.join(STATE_DIR, "netctl", "status")
-# ⚠️ STATE_DIR/netctl IS THE PANEL USER'S DIRECTORY (it writes the queue), and so is STATE_DIR itself: the panel can
-# rename any entry in it — status/ included, whoever owns that — and put a symlink in its place. Everything this helper
-# (root) creates, writes, renames or deletes under it therefore goes through DIRECTORY FILE DESCRIPTORS opened with
-# O_NOFOLLOW, and root's own children (status/, claims/) are verified with fstat as root's, not group/other-writable,
-# before use — a path the panel can change is never resolved twice. Before this, `status` swapped for a symlink to
-# /etc/docker plus a request with id "daemon" had root overwrite /etc/docker/daemon.json (see _netctl_dirs).
-# claims/ sits BESIDE the queue (same filesystem, so taking a request is one atomic rename) and is root's alone.
+# Каталог очереди доступен панели. Открывайте его элементы через проверенные дескрипторы без перехода по симлинкам.
 NETCTL_DIR = os.path.join(STATE_DIR, "netctl")
 # Root's own state, out of the panel's reach (its parent, /var/lib, is root's): the fingerprint of the certificate
 # nginx/caddy last loaded (see _front_sync).
@@ -107,13 +66,6 @@ DOMAIN_RE = re.compile(
 )
 
 
-# ── log levels (docs/LOGS-PLAN.md §1) ────────────────────────────────────────────────────────────────────────────────
-# One level for the whole fleet, chosen in Settings → Logs. Every line carries a syslog priority: under journald the
-# `<N>` prefix, which journald files as PRIORITY; anywhere else (docker) one letter. A line above the level is dropped
-# BEFORE it is formatted — pass the arguments, not a formatted string — so a Debug line costs one comparison at Info.
-# Debug lines are capped at LOG_DEBUG_RATE a second: journald's flood guard counts per unit, and a Debug flood spending
-# this unit's bucket would make journald drop its error lines in the same window (P0 T8).
-# A copy of this block is in each swg program; keep them alike.
 LOG_OFF, LOG_ERR, LOG_WARNING, LOG_NOTICE, LOG_INFO, LOG_DEBUG = -1, 3, 4, 5, 6, 7
 LOG_LEVELS = {"off": LOG_OFF, "error": LOG_ERR, "warning": LOG_WARNING, "info": LOG_INFO, "debug": LOG_DEBUG}
 LOG_DEBUG_RATE = 100
@@ -150,10 +102,6 @@ def log_level():
     return LOG_DEBUG if (u == -1 or (u and time.monotonic() < u)) else _LOG["level"]
 
 
-# docker (no journald): every line ALSO goes to a file of our own, the one a reader can find without a docker socket,
-# kept in two files of half the budget each (`path`, `path.1`). Off until log_file() names one.
-# The lock is RE-entrant: a signal handler that logs (the panel's SIGHUP reload) runs on the thread it interrupted,
-# which may be inside a write — a plain Lock would deadlock it there.
 _LOG_FILE = {"path": None, "cap": 0, "f": None, "size": 0, "lock": threading.RLock()}
 
 
@@ -325,23 +273,12 @@ def load_conf():
     return cfg
 
 
-# ⚠️ Keep this list a SUPERSET of install-host.sh's find_acme(). The two diverged: the installer
-# searched /root/.acme.sh, $HOME/.acme.sh and `command -v acme.sh`, while this searched
-# /root/.acme.sh, /opt/acme.sh and ~/.acme.sh — neither a superset of the other. So an acme.sh on
-# PATH (a distro package, or a custom install) was found at INSTALL time and then not at RUNTIME,
-# and the panel's issue-cert button failed on a box the installer had called ready. `shutil.which`
-# is the missing arm; /opt stays because only this side ever had it.
+# Пути поиска должны покрывать пути установщика. find_acme также проверяет PATH.
 _ACME_CANDIDATES = ("/root/.acme.sh/acme.sh", "/opt/acme.sh/acme.sh",
                     os.path.expanduser("~/.acme.sh/acme.sh"))
 
 
-# ⚠️ THE STORE IS NOT THE BINARY'S DIRECTORY, and it is not $HOME either. acme.sh keeps state in
-# $LE_WORKING_DIR and falls back to "$HOME/.acme.sh" — and this process is a systemd oneshot with no
-# HOME, so it silently operated on /.acme.sh (filesystem root) while acme's own cron renewed
-# `--home /root/.acme.sh`. Every certificate the panel issued at runtime therefore had NO renewer and
-# expired at 90 days. The unit now sets LE_WORKING_DIR, but do not depend on the unit alone: pass
-# --home on every call, so a hand-run, an old unit, or a drop-in that lost the variable cannot
-# resurrect the split.
+# Передаём один --home явно, чтобы ручной вызов и systemd использовали одно хранилище ACME.
 ACME_HOME = os.environ.get("LE_WORKING_DIR") or "/root/.acme.sh"
 
 
@@ -363,19 +300,7 @@ def find_acme():
     raise Reject("acme.sh not found (looked in %s, and on PATH)" % ", ".join(_ACME_CANDIDATES))
 
 
-# ⚠️ AN ACME ENTRY WITH NO CERTIFICATE IS A TRAP, NOT STATE WORTH KEEPING — and it is self-perpetuating.
-# acme.sh writes <domain>.key BEFORE it ever contacts the CA, and leaves it behind when the order fails.
-# The next --issue then dies at "Domain key exists, do you want to overwrite it? ... add '--force'", so the
-# FIRST failure's real cause (port 80 unreachable, a bad DNS token, a rate limit) is masked for ever and
-# every retry reports the mask instead. It cannot heal itself: issue() calls createDomainKey only when the
-# requested keylength differs from Le_Keylength in the domain conf, and that value is written ONLY on a
-# successful key creation — so a failed run leaves a conf without it, the 2048 default never matches our
-# ec-256, and the next run walks straight back into the same refusal. Measured on a live box: the same
-# error, to the letter, two hours and several attempts apart. (acme.sh 3.1.4: issue():5044, createDomainKey():1669.)
-#
-# --force is the WRONG cure: _issue_acme relies on rc 2 = RENEW_SKIP, and forcing re-issues on every apply,
-# burning Let's Encrypt's 5-duplicates-per-week. Drop the useless entry instead — the same thing
-# do_drop_cert already does after a --remove, and install-host.sh's prune does for a superseded one.
+# После неудачного заказа пустая запись может мешать повторному выпуску. Удаляем только непригодную запись.
 def _acme_ecc_dir(domain):
     """The store directory OUR issuance uses for `domain` — we always issue --keylength ec-256, and acme.sh
     puts EC certs in `<domain>_ecc`. Only ever a directory sitting DIRECTLY under the store we pin: never a
@@ -502,11 +427,6 @@ def _reload_front(service):
 
 
 def reload_cmd_for(service):
-    # both the panel and swg-sub reload their cert on SIGHUP with zero downtime. nginx/caddy in front of the panel are
-    # reloaded by sync-acme when the file they serve CHANGES (_front_sync) — never baked into acme.sh's stored command,
-    # which goes stale the moment the serve mode is flipped and misses entries issued before.
-    # `|| true`: a unit that is stopped (swg-sub disabled) must not turn a renewal that DID install into acme.sh's
-    # "Reload error" — which it would report on every later renewal too.
     return "systemctl kill -s HUP %s 2>/dev/null || true" % SERVICES[service]["unit"]
 
 
@@ -517,10 +437,6 @@ def do_set_listen(service, ip, port):
     port = v_port(port)
     dropdir = os.path.join(UNIT_DIR, svc["unit"] + ".d")
     path = os.path.join(dropdir, "10-access.conf")
-    # Binding a port <1024 needs CAP_NET_BIND_SERVICE. The panel unit always carries it; swg-sub
-    # gets it here so switching it onto a privileged port (e.g. 443) from the UI just works, on any
-    # existing install, with no unit regeneration. AmbientCapabilities merges additively across
-    # drop-ins, and is compatible with the unit's NoNewPrivileges=true (the panel proves this).
     cap = "AmbientCapabilities=CAP_NET_BIND_SERVICE\n" if port < 1024 else ""
     body = ("# managed by swg-netctl — from the panel's Access & TLS settings; do not edit by hand\n"
             "[Service]\n"
@@ -672,11 +588,6 @@ def do_restart(service):
     rc, out = run(["systemctl", "restart", unit])
     if rc:
         raise Reject("restart %s failed: %s" % (unit, out.strip()))
-    # Verify it actually STAYS up. These units are Type=simple, so systemd reports "active" the instant the
-    # process is exec'd — BEFORE it binds. A bad bind (Errno 98) crashes it right after, and Restart=on-failure
-    # bounces it forever, so a momentary is-active lies. Settle well past RestartSec (2s), then require it active
-    # AND that systemd logged NO automatic restart in the meantime — the reliable crash-loop signal. This lets
-    # the caller (the panel's sub apply) detect a doomed bind and self-heal back to the previous address.
     if not DRYRUN:
         time.sleep(4.5)                          # > 2×RestartSec: a crash-loop auto-restarts at least once here
         st, _o = run(["systemctl", "is-active", unit])
@@ -730,13 +641,6 @@ def _issue_selfsigned(svc, domains):
 def _issue_acme(svc, service, domains, mode, creds, reloadcmd=True):
     acme = find_acme()
     env = dict(os.environ)
-    # ⚠️ ANOTHER PROGRAM'S ENTRY IS ASKED ABOUT FIRST — before anything is cleared or issued. `--issue` saves OUR
-    # challenge method (`--standalone`, or our DNS hook) into the entry whenever its certificate is due, over whatever
-    # that program renews with, and `_acme_clear_unusable` deletes an entry that holds no certificate yet. Neither is
-    # ours to do to an entry another program installs (the certificate series' rule). So such an entry is RENEWED by
-    # its own saved method — `--renew` skips a certificate that is not due and never rewrites the method, exactly
-    # what acme.sh's own cron does to it every day — and its certificate is copied. The panel's 6-hourly sync-acme
-    # brings every later renewal across. The reload acme's --reloadcmd would have done is ours.
     foreign = _acme_foreign_target(domains[0])
     if foreign and not DRYRUN:
         rc, out = run(acme_argv(acme, "--renew", "-d", domains[0], "--ecc"), env=env)
@@ -824,9 +728,6 @@ def _issue_cf15(svc, domains, creds):
 
 
 def do_issue_cert(service, domain, reload="reload"):
-    # reload="noreload" is used by the panel's live-apply: the new cert must NOT be reloaded into the
-    # EXISTING listener (which is still serving the old cert to Cloudflare/clients during the dual-listen
-    # window). Only the new listener loads it, at bind time. Renewals use "reload" (SIGHUP, zero-downtime).
     svc = SERVICES[v_service(service)]
     # `domain` may be a comma-separated list — a multi-SAN cert (first = primary/CN). The panel uses this on a
     # domain change to serve the OLD + NEW domain together through the node-migration grace, then reissues new-only.
@@ -864,9 +765,6 @@ def do_issue_cert(service, domain, reload="reload"):
     return "issued cert for %s (%s) via %s" % (",".join(domains), service, mode)
 
 
-# A domain-change apply issues the NEW cert over the live path (so the new listener can load it), but the
-# change isn't committed until the browser confirms. These let the panel back the live cert up first and
-# restore it on a revert, so a reverted/timed-out apply never leaves the wrong cert on disk.
 def do_backup_cert(service):
     svc = SERVICES[v_service(service)]
     n = 0
@@ -898,22 +796,7 @@ def do_clear_backup(service):
     return "cleared %s cert backup" % service
 
 
-# ── adopt an operator-supplied certificate (TLS mode `skip`) ──────────────────────
-# The operator already HAS a certificate — issued by certbot, handed over by a hoster, carried from
-# another box — and wants this panel to serve it. We COPY it into the managed path rather than pointing
-# the unit at their file, because everything else in the TLS machinery is built around that one path:
-# backup-cert/restore-cert, the .applyback self-heal, the expiry watch, SIGHUP reload, and swg-sub's
-# InaccessiblePaths mask. A second source of truth would have to be threaded through all of it.
-#
-# ⚠️ ROOT IS ABOUT TO READ A PATH THE UNPRIVILEGED PANEL NAMED, and copy it somewhere group `swg` can
-# read. The validation below is not only there to give a good error message — it is the boundary. The
-# pair must LOAD as a certificate + matching private key, which is what keeps this from being a way to
-# surface /etc/shadow, an SSH key, or an env file into the panel's cert directory. What remains, and is
-# inherent to the feature rather than a hole in it: an operator (or a compromised panel) can make a TLS
-# key pair that already exists on this host become the panel's certificate. The panel must be able to
-# read the key it serves — that is what terminating TLS means — so no arrangement of permissions avoids
-# it. Both paths are validated here; NEITHER file's CONTENT ever rides the request queue, which is
-# group-readable (see the header): the queue carries paths, and paths are not secrets.
+# Проверяем, что сертификат соответствует ключу, до копирования файлов в каталог TLS.
 _MAX_PEM = 512 * 1024          # a chain plus a key; larger than this is not what we were pointed at
 
 
@@ -1053,10 +936,6 @@ def do_drop_cert(service, domain):
         # Not ours to stop: acme.sh renews this name for another program, and --remove plus the rmtree below
         # would delete its renewal state — its certificate would expire with nothing to say why.
         return "left %s renewing — acme.sh installs it for another program (%s)" % (domain, foreign)
-    # …nor while OUR OTHER service still needs it. The panel and swg-sub commonly share one name, and one entry: when the
-    # panel moves to a new name, dropping the old one deleted the entry that renews swg-sub's certificate (whose
-    # install target it may well be — `issue-cert sub` re-points it). Kept while the other serves that name, or
-    # while the entry installs into the other's paths.
     d = _acme_ecc_dir(domain)
     for other in SERVICES:
         if other == service:
@@ -1084,16 +963,6 @@ def do_drop_cert(service, domain):
     rc, out = run(acme_argv(acme, "--remove", "-d", domain, "--ecc"))
     if rc:
         raise Reject("acme --remove failed (rc %d): %s" % (rc, out.strip()[-200:]))
-    # ⚠️ --remove DROPS THE RENEWAL CONFIG AND KEEPS THE KEY ("You can remove them by yourself"), and
-    # that stranded key makes the domain un-reissuable: the next --issue stops at "Domain key exists,
-    # do you want to overwrite it? If so, add --force". An address change that reverts once could
-    # therefore NEVER be retried to the same address, while the dialog told the operator to try again.
-    # --force is not the answer: swg-netctl relies on rc 2 = RENEW_SKIP, and --force re-issues on every
-    # apply, burning Let's Encrypt's 5-per-week duplicate limit. We have just declared we do not want
-    # this certificate, so drop its directory — the same thing install-host.sh's
-    # prune_stale_acme_installs already does for a superseded entry.
-    # Only the `_ecc` entry: we always issue ec-256, so an RSA `<domain>` directory beside it was never ours —
-    # on a shared box it is another tool's (see _acme_ecc_dir), and deleting it took their renewal state too.
     for _d in ("%s_ecc" % domain,):
         _p = os.path.join(ACME_HOME, _d)
         # only ever a domain directory directly under the store we own, and only one acme just removed
@@ -1102,19 +971,7 @@ def do_drop_cert(service, domain):
     return "stopped auto-renewing %s" % (domain,)
 
 
-# ── follow acme.sh's entry for our name, whoever owns its install target ──────────────
-# ⚠️ AN ACME ENTRY HAS ONE INSTALL TARGET, AND ANYTHING ELSE SHARING THE STORE CAN TAKE IT. acme.sh keys its
-# store by name (`<name>_ecc`) and remembers ONE --install-cert destination and reload command per entry.
-# 3x-ui's certificate menu (x-ui.sh: `--issue` for the same name, then `--installcert --force`) re-points our
-# entry at /root/cert/…, and from then on acme's cron renews on schedule and delivers every renewal THERE.
-# The panel went on serving the last certificate that reached it until it expired — a 6-day IP certificate,
-# so under a week — while the renewal itself was perfectly healthy (seen live, 2026-09-25). We do it to
-# ourselves as well: when swg-sub shares the panel's name, `issue-cert sub <name>` re-installs the panel's
-# entry into the sub's path, and the panel's copy stops being renewed.
-#
-# So stop depending on the install target: read the renewed certificate straight out of the entry and put it
-# in place here. READ-ONLY toward acme's store — the other tool keeps its target and reload command, so
-# following it never breaks it. Whatever lands is checked by do_adopt_cert exactly like an operator's file.
+# Другие программы могут менять назначение установки в acme.sh. Читаем выпущенный сертификат из хранилища.
 _ACME_FOLLOW_MODES = ("letsencrypt", "letsencrypt-ip", "cloudflare")
 
 
@@ -1143,9 +1000,6 @@ def do_sync_acme(service):
     Returns a JSON object (the panel reads it): state ∈ adopted | current | refused | no-entry | skipped,
     owner ∈ ours | other | none — who acme.sh installs this entry for — and install_path."""
     svc = SERVICES[v_service(service)]
-    # `front`: the installer's proxy that serves the panel's file ("" = the panel serves it) — the panel reports that
-    # file's health only when one does. `transient`: a skip that says nothing about who renews the certificate, so
-    # the panel keeps its last report instead of replacing it.
     res = {"service": service, "state": "skipped", "owner": "", "install_path": "", "front": _front()}
     mode = _load_access_tls()["mode"]
     host = _service_host(service)
@@ -1166,18 +1020,9 @@ def do_sync_acme(service):
     src_cert, src_key = os.path.join(d, "fullchain.cer"), os.path.join(d, "%s.key" % host)
     new_end, _ = _cert_end_and_selfsigned(src_cert)
     cur_end, cur_self = _cert_end_and_selfsigned(svc["cert"]) if os.path.exists(svc["cert"]) else (None, False)
-    # ⚠️ THE PANEL'S SELF-SIGNED CERTIFICATE IS NEVER REPLACED FROM HERE. The node installers PIN a self-signed panel
-    # certificate (trust on first use), and a pinned node refuses anything else — so installing acme.sh's CA
-    # certificate over it (an installer whose --install-cert failed fell back to self-signed while the entry stayed
-    # usable) would silently cut every such node off, and the panel cannot tell which nodes pinned. It is reported
-    # as HELD instead; the operator switches deliberately (Panel access → Save) and re-runs the node installer where
-    # pinned. The PANEL's only: nothing pins swg-sub's certificate — subscription clients never do — so a
-    # self-signed one there yields to the CA certificate like any older one.
+    # Узлы могут быть привязаны к отпечатку самоподписанного сертификата панели. Замена требует явного переключения.
     if service == "panel" and cur_self and new_end is not None:
         res["state"], res["reason"] = "held", "the panel serves a self-signed certificate that nodes may have pinned"
-        # Held HERE — but when the entry itself installs into the panel's path, acme.sh's own renewal will copy the CA
-        # certificate over it anyway (the installer's --install-cert stores that target even when it then fails).
-        # Nothing here can stop that short of editing the entry, so say WHEN, and let the operator switch first.
         if {os.path.realpath(svc["cert"]), os.path.realpath(svc["key"])} & {os.path.realpath(p) for p in (
                 _acme_conf_value(d, host, k) for k in ("Le_RealFullChainPath", "Le_RealCertPath", "Le_RealKeyPath")) if p}:
             res["swap_at"] = _acme_conf_value(d, host, "Le_NextRenewTimeStr") or "its next renewal"
@@ -1200,14 +1045,7 @@ def do_sync_acme(service):
     return json.dumps(res)
 
 
-# ── renew now (the operator's button) ─────────────────────────────────────────────
-# acme.sh's own cron renews on schedule and sends its output to /dev/null, so a renewal that fails — port 80 taken,
-# a firewall, a CA error — fails silently for days while the certificate runs out (seen live 2026-09-25). This
-# runs the same renewal on demand and hands its real error back to the screen that is warning about it.
-# NO --force: an expired, overdue or near-expiry certificate is due anyway, and forcing one that is not would
-# spend Let's Encrypt's duplicate-certificate limit; acme.sh answers "not due" instead, which we report. Works
-# whoever owns the entry (sync-acme installs the result either way) and for letsencrypt-ip, which issue-cert
-# cannot do — renewing an existing entry needs nothing but the entry.
+# renew now (the operator's button)
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 # A standalone HTTP-01 renewal is 10-60 s; well past that it is hung, and the queue behind it is stuck. Kept well under
 # the panel's own wait for the answer (see _RENEW_ANSWER_S there) so the panel always hears how it ended.
@@ -1260,9 +1098,6 @@ def do_renew_acme(service):
         res["state"], res["message"], res["source"] = "failed", "\n".join((why or [l for l in lines if l])[-6:])[-900:], "acme"
     with contextlib.suppress(Exception):
         res["sync"] = json.loads(do_sync_acme(service))            # install what acme.sh now holds, whoever owns it
-    # …and for swg-sub when it serves the same name (the common case — one hostname, two ports): otherwise the
-    # subscription page kept the old certificate until the panel's next 6-hourly follow. Only where swg-sub has
-    # a certificate already — never creating its directory on a box that does not run it.
     for other in SERVICES:
         if other != service and os.path.exists(SERVICES[other]["cert"]) and _service_host(other) == host:
             with contextlib.suppress(Exception):
@@ -1500,15 +1335,8 @@ def _sweep(dir_fd, older_than, keep=lambda n: False):
                     os.unlink(name, dir_fd=dir_fd)
 
 
-# ── the fleet's log level on the panel box (docs/LOGS-PLAN.md §1, §13) ─────────────────────────────────────────────
-# This helper is the one writer of the panel box's LogLevelMax drop-ins, masters included: the panel runs unprivileged
-# and cannot write under /run/systemd, and the local node's swg-noded writes only its own units'. Under /run, so a
-# reboot (or an uninstalled build) leaves nothing behind; the next tick writes them again.
 LOG_DROPIN_DIR = os.environ.get("SWG_LOG_DROPIN_DIR") or "/run/systemd/system"
 LOG_DROPIN_FILE = "swg-log.conf"
-# Only the two TIMER units. A cap is fixed when a unit starts, and these start every 10–30 s, so it follows the level
-# within seconds. The panel and swg-sub run for weeks and filter their own lines: a cap there would outlive the level
-# and swallow their Debug after a raise (code review, 2026-10-04).
 LOG_TIMER_UNITS = ("swg-netctl.service", "swg-update.service")
 
 
@@ -1596,12 +1424,6 @@ def log_dropins():
         log(LOG_NOTICE, "log level: %d unit drop-in(s) changed — each unit takes it at its next start", changed)
 
 
-# ── the panel box's disk budget: the `swg-panel` journal (docs/LOGS-PLAN.md §2, §18) ────────────────────────────────
-# The panel, swg-sub, this helper and swg-update log into the journald namespace `swg-panel` (their drop-ins come from
-# the installers). This helper is its one writer, masters included: /run/systemd/journald@swg-panel.conf.d/swg.conf,
-# written only when it differs — and only a change restarts that journald, which keeps its clients' streams (P0 T3).
-# What it measured goes to status/_log.json for the panel, which cannot read the journals: the same status dir as every
-# answer (a request id is hex, so it cannot be "_log"), kept out of the sweep, rewritten only when it changes.
 LOG_NS = "swg-panel"
 LOG_MB_DEFAULT, LOG_MB_MIN = 100, 16
 LOG_NS_CONF = os.environ.get("SWG_LOG_NS_CONF") or "/run/systemd/journald@%s.conf.d/swg.conf" % LOG_NS
@@ -1652,10 +1474,6 @@ def log_ns_ok():
         and not log_ns_template_only()
 
 
-# ⚠️ THE TEMPLATE IS NOT ENOUGH: where systemd runs but mount namespaces are refused (an OpenVZ/Virtuozzo-like container, an
-# LXC that denies unshare), a unit naming a namespace exits 226/NAMESPACE (1.8.9 qualification IN-11). The installers and
-# update.sh probe it and write no drop-in there; this helper must not size or restart a journald nothing logs into, and the
-# panel's budget row must read "Not supported". It reads their answer: /var/lib/swg-log-ns (ok | refused).
 LOG_NS_PROBE = os.environ.get("SWG_LOG_NS_PROBE") or "/var/lib/swg-log-ns"
 
 
@@ -1761,18 +1579,6 @@ def log_budget(ps):
     return retry
 
 
-# ── the idle gate's stamp (lib/common.sh swg_netctl_due_text; docs/CPU-PLAN.md A2) ───────────────────────────────────────
-# The timer still starts this unit every 10 s, but its ExecCondition runs the helper only for a request in the queue,
-# settings newer than this stamp, or the time written in it: when this helper next has work of its own — Debug's end, the
-# budget's retry, the journal size's refresh for the panel (DUE_EVERY_S). Written as `<due> <the run's time>`: a run that
-# lies in the future means the clock went back, and the gate runs the helper. Its mtime is the mtime of the settings
-# version this run read — a second before the read at the latest — so every later version is newer: one the panel renamed
-# into place after a slow fsync too, whose mtime is when it was written, possibly before this run read the old one; and a
-# save in the same second as the read, on a filesystem that keeps whole seconds. Copied in nanoseconds: a float holds
-# today's epoch to ~238 ns, and a stamp rounded below its own version — half of them — read as older than the settings, so
-# the gate ran the helper on every tick until the next save happened to round the other way (CPU re-qualification, LC F1).
-# A stamp that is missing, unreadable or past due runs the helper: the gate fails toward running, never toward a skipped
-# request.
 DUE_STAMP = os.environ.get("SWG_NETCTL_DUE") or "/run/swg-netctl.due"
 DUE_EVERY_S = 300
 
@@ -1855,10 +1661,6 @@ def process_queue():
         names = os.listdir(qfd)
         if not names:
             return                                   # an idle timer tick: nothing to do, nothing to log
-        # Anything in the WATCHED queue dir that is not a request keeps DirectoryNotEmpty true, and swg-netctl.path then
-        # restarts this helper in a tight loop: a `.json.tmp` the panel was killed while writing (a write takes
-        # milliseconds, so one a minute old is abandoned), a `.json.taking` claim an earlier build left there, a stray
-        # directory. Cleared through the queue fd.
         _sweep(qfd, 0, keep=lambda n: n.endswith(".json") or (n.endswith(".json.tmp") and not _older(qfd, n, 60)))
         if sfd is not None:
             _sweep(sfd, 3600, keep=lambda n: n == LOG_STATUS)   # answers: read within seconds by their waiter, who cannot
@@ -1871,11 +1673,7 @@ def process_queue():
             if not name.endswith(".json"):
                 continue
             rid = _safe_rid(name)
-            # ⚠️ TAKEN IS A STATE THE PANEL CAN SEE. The request is renamed out of the queue BEFORE it runs, so a waiter
-            # that sees `<rid>.json` still there knows the helper has not started it, and one that sees it gone knows
-            # it has. Deleting it only after dispatch() returned made a long request (a DNS-01 renewal waiting on its
-            # TXT record) look untaken, and the panel withdrew — and reported — a renewal still running. The rename is
-            # also the claim: a waiter withdrawing a request (unlinking it) and this helper cannot both win.
+            # Атомарный захват до вызова обработчика даёт панели отличить выполняемый запрос от ожидающего.
             where = qfd
             if cfd is not None:
                 try:

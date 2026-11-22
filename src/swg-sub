@@ -53,11 +53,6 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 FLEET_PATH = os.environ.get("SWG_SUB_FLEET") or os.environ.get("SWG_PANEL_FLEET", "/etc/swg-panel/fleet.json")
-# ⚠️ ABSOLUTE, ALWAYS. The containment check in `_static` compares the resolved file path against this,
-# so a RELATIVE value — `SWG_SUB_WEB=.`, which swg-panel-server accepts for its own web dir — makes every
-# asset fail that comparison and return 403. The page shell still serves, so what the operator sees is a
-# subscription page stuck for ever on "Loading…" with no stylesheet and nothing in the log. Measured
-# 2026-09-08. Resolving it here means the two programs answer the same env-var shape the same way.
 WEB_DIR    = os.path.realpath(os.environ.get("SWG_SUB_WEB", os.path.dirname(os.path.abspath(__file__))))
 # swg-sub's OWN cert (never the panel's — an internet-facing process must not hold the panel's TLS key).
 # swg-netctl issues+installs here; the file is group-swg readable so swgsub can load it. Absent → plain HTTP.
@@ -68,14 +63,6 @@ _CERT_WATCH_S = max(1, int(_w)) if _w.isdigit() else 60   # how often the certif
 DEFAULT_SUB_KEY  = os.path.join(SUB_TLS_DIR, "key.pem")
 
 
-# ── log levels (docs/LOGS-PLAN.md §1) ────────────────────────────────────────────────────────────────────────────────
-# One level for the whole fleet, chosen in Settings → Logs. Every line carries a syslog priority: under journald the
-# `<N>` prefix, which journald files as PRIORITY; anywhere else (docker) one letter. A line above the level is dropped
-# BEFORE it is formatted — pass the arguments, not a formatted string — so a Debug line costs one comparison at Info.
-# Debug lines are capped at LOG_DEBUG_RATE a second: journald's flood guard counts per unit, and a Debug flood spending
-# this unit's bucket would make journald drop its error lines in the same window (P0 T8).
-# A copy of this block is in each swg program; keep them alike. swg-sub sets its level from subs/serve.json (see
-# _log_follow below main's helpers), wrapping log() rather than changing this block.
 LOG_OFF, LOG_ERR, LOG_WARNING, LOG_NOTICE, LOG_INFO, LOG_DEBUG = -1, 3, 4, 5, 6, 7
 LOG_LEVELS = {"off": LOG_OFF, "error": LOG_ERR, "warning": LOG_WARNING, "info": LOG_INFO, "debug": LOG_DEBUG}
 LOG_DEBUG_RATE = 100
@@ -112,10 +99,6 @@ def log_level():
     return LOG_DEBUG if (u == -1 or (u and time.monotonic() < u)) else _LOG["level"]
 
 
-# docker (no journald): every line ALSO goes to a file of our own, the one a reader can find without a docker socket,
-# kept in two files of half the budget each (`path`, `path.1`). Off until log_file() names one.
-# The lock is RE-entrant: a signal handler that logs (the panel's SIGHUP reload) runs on the thread it interrupted,
-# which may be inside a write — a plain Lock would deadlock it there.
 _LOG_FILE = {"path": None, "cap": 0, "f": None, "size": 0, "lock": threading.RLock()}
 
 
@@ -215,16 +198,8 @@ ASSET_PREFIX = "/_a/"
 STATIC = {"sub.js": "sub.js", "sub.css": "sub.css", "qrcode.js": "vendor/qrcode.js",
           "turn-artifacts.js": "turn-artifacts.js"}
 
-# Reverse-proxy mount base, e.g. "/swgsub" (empty = served at root), mirroring the panel's SWG_PANEL_BASE. Set
-# once at startup from SWG_SUB_BASE or the panel-written serve.base, and stripped off every request path so the
-# routes ("/_a/…", "/api/…", "/<token>") match whether swg-sub is mounted at root or under a subpath. The page's
-# own asset/API URLs are RELATIVE, so nothing needs injecting into the HTML — the browser resolves them under the
-# path the page was served from. A base change (like a bind change) needs a restart; the panel restarts swg-sub.
 SUB_BASE = ""
 SUB_BASE_ALT = ""                                            # a SECOND base swg-sub ALSO serves during a reverse-proxy
-                                                            # PATH change — the panel keeps the OLD base here through a
-                                                            # grace so existing subscription links keep working while
-                                                            # users move to the new one. Set/cleared on SIGHUP reload.
 def _norm_base(v):
     v = "/" + str(v or "").strip().strip("/")
     return "" if v == "/" else v
@@ -328,9 +303,6 @@ def apply_iface_meta(node_cfg, interfaces):
         if ov.get("dns") is not None:
             d = ov["dns"]
             ifc["dns"] = d if isinstance(d, list) else [s.strip() for s in str(d).split(",") if s.strip()]
-        # Same rule as swg-panel-server's apply_iface_meta, and the same reason the render params live in
-        # one function: this page and the panel must hand a peer the identical config. The panel override is
-        # the desired MTU (the node converges to it), so rendering follows it rather than the reported one.
         ifc["mtu"] = ov.get("mtu") or ifc.get("mtu_reported") or 1280
         if ov.get("keepalive") is not None:
             ifc["keepalive"] = ov["keepalive"]        # client PersistentKeepalive for this interface
@@ -404,9 +376,6 @@ class State:
         self.sub_dir = fleet.get("sub_dir") or os.path.join(state_dir, "subs")
 
     def subscriptions(self):
-        # Read {enabled, serve} from the tiny subs/serve.json the panel mirrors — NOT panel-settings.json.
-        # That file also holds webhook signing secrets + API token hashes, which this public, internet-
-        # facing surface has no business being able to open (least privilege). serve.json is all we need.
         d = load_json(os.path.join(self.sub_dir, "serve.json"), {})
         return d if isinstance(d, dict) else {}
 
@@ -526,9 +495,6 @@ def share_grants(p, users, nowv, groups):
     always, a grant whose user or group is gone or whose date has passed never, a group grant reaching its members, and a
     user covered twice getting the widest date."""
     sh = p.get("share") if isinstance(p, dict) else None
-    # ⚠️ PRIVATE OUTRANKS EVERY SHARE. A private device's networks belong to its owner alone: not to a named grantee, not
-    # to a group it was shared with, and not to "everyone on the node" either — which is what an absent `share` means, so
-    # this has to be decided BEFORE that. An owner the roster no longer has grants nobody, which is the safe direction.
     if isinstance(p, dict) and p.get("private"):
         return {p["user_id"]: 0} if p.get("user_id") in users else {}
     if not isinstance(sh, dict):
@@ -631,10 +597,7 @@ def sub_networks(roster, uid, describe, nodes, nowv):
     return sorted(best.values(), key=lambda r: (r["node_name"], ipaddress.ip_network(r["prefix"])))
 
 
-# ── torrents allowed on a deployment (1.8.11 S4b) ──
-# Through the tunnel a torrent client's default µTP-TCP mixing downloads at ~⅕ of TCP only, and the node cannot help it
-# (it splits the peers' 1500-byte µTP datagrams); one client setting can. So the page tells a user whose deployment lets
-# torrents through — and only them: the same line where torrents drop would invite a try.
+# torrents allowed on a deployment (1.8.11 S4b)
 
 P2P_ACTIONS = ("block", "direct", "iface", "exit", "dev")
 
@@ -803,11 +766,6 @@ def token_lookup_rec(users, token):
     return None
 
 
-# Short-TTL cache for the HEAVY shared read — the roster, the token map, and the describe (which
-# reads EVERY node's snapshot mirror). Without it, each /api hit re-parses the whole roster + all
-# stats-<id>.json from disk, so a flood on one valid token turns into a disk-I/O storm (the panel
-# guards its own /api/state the same way). The enable flag is deliberately NOT cached — it's read
-# live per request so a panel toggle takes effect at once.
 _READ_TTL = 3.0
 _read_lock = threading.Lock()
 _READ_CACHE = {"at": -1e9, "roster": None, "describe": None, "users": None, "nodes": None}
@@ -829,11 +787,6 @@ def _shared_read(state):
         return roster, describe, users, nodes
 
 
-# Per-client token-bucket backstop. This is NOT the authoritative rate limit — put swg-sub behind a
-# reverse proxy and set real per-client limits there. It only blunts a runaway flood hitting the
-# process directly. Behind a proxy every request appears to come from the proxy IP (one shared
-# bucket), so set SWG_SUB_TRUST_XFF=1 ONLY when a trusted proxy fronts swg-sub — then the left-most
-# X-Forwarded-For hop is used instead (never trust XFF on a directly-exposed instance: clients spoof it).
 _TRUST_XFF = bool(os.environ.get("SWG_SUB_TRUST_XFF"))
 _RL_CAP = 120           # burst allowance per client
 _RL_RATE = 20.0         # sustained refill (tokens/sec)
@@ -902,16 +855,8 @@ def read_data(state, token):
     for pid, p in live.items():
         sec = (blobs.get(pid) or {}).get("sec")        # None until the admin browser provisions it
         tgts_in = p.get("targets") or []
-        # ── Which deployment is the PRIMARY one ──────────────────────────────────────────────────────
-        # Roles are the operator's own labels now, so this surface reports them and derives nothing. It used to
-        # elect a primary per protocol group when the roster held none, which put the word "Primary" on a
-        # deployment nobody had chosen and called every other one a "Backup" of it. (That grouping insight still
-        # holds — a turn proxy is no fallback for a tunnel — but it is the operator who expresses it, by marking
-        # a primary in each family; the panel lets them, since roles are not exclusive.)
+        # Which deployment is the PRIMARY one
         tgts = []
-        # Per-peer published SOURCES. The operator can hide a kind (say the turn-proxy configs) from THIS peer's
-        # subscription without touching its deployments — the panel still shows them all, the sub just narrows.
-        # A hidden source is dropped here, so its credential is never even served.
         _hide = set(x for x in (p.get("sub_hide") or []) if isinstance(x, str))
         for i, t in enumerate(tgts_in):
             if not isinstance(t, dict):
@@ -943,9 +888,6 @@ def read_data(state, token):
                 })
                 continue
             if (t.get("type") or "") == "csqtt":
-                # csqtt peer: keyless raw-TUN turn server. Its client link (csqtt://connect?v=2) carries only the
-                # panel-owned access password + the node's public host + the instance's UDP/DTLS port; the VK hashes
-                # (peer.vk_hash + the user's VK call links) are the TURN credential. No WG meta / no `sec`.
                 node_cfg = nodes.get(t.get("node")) or {}
                 inst = ((node_cfg.get("csqtt")) or {}).get(t.get("iface")) or {}
                 port = ((inst.get("listen") or "").rsplit(":", 1)[-1]) or "46000"
@@ -971,10 +913,6 @@ def read_data(state, token):
             turn = [{"service": tp.get("service"), "listen": tp.get("listen"), "wrap_key": tp.get("wrap_key"), "version": str(tp.get("version") or "").strip()}
                     for tp in (nd.get("turn") or []) if isinstance(tp, dict) and lp and _port_of(tp.get("connect")) == lp]
             _wgty = "awg" if awg else (t.get("type") or "wg")
-            # THIS deployment's client-config customisation over the peer-wide one over the interface's live
-            # defaults. A peer may span several interfaces, and the settings that describe how a client reaches
-            # one of them (DNS / MTU / AllowedIPs / keepalive) belong to that deployment; the peer-wide block
-            # stays the fallback so every peer written before per-target settings existed renders as it did.
             eff = effective_client_params(p, t, meta)
             if "turn" in _hide:
                 turn = []                       # keep the direct config, drop its proxy variants
@@ -1000,9 +938,6 @@ def read_data(state, token):
                 **({} if not _direct_off else {"direct": False}),   # its own kind is hidden: only the proxy variants publish
                 "primary": _role_of(t),
             })
-        # A blocked/expired peer still appears on the page, but the cell shows a "BLOCKED"/"EXPIRED" placeholder
-        # instead of its QR/config/buttons — so the holder sees WHY it stopped working. (A whole-user block/expiry
-        # is handled above; these per-peer flags cover the case where only some of a user's peers are cut off.)
         _exp = is_expired(p, nowv)
         if not (p.get("disabled") or _exp):
             for tg in tgts:   # torrents may leave by it → the page's client-setting line; absent otherwise (old pages ignore it)
@@ -1042,9 +977,6 @@ def read_data(state, token):
 class Handler(BaseHTTPRequestHandler):
     server_version = "swg-sub"
     protocol_version = "HTTP/1.1"
-    # Each connection's socket timeout, plain HTTP and TLS alike (the stdlib's setup() puts it on whichever socket the
-    # handler gets): an idle or half-open client is let go after 60 s, as the TLS server's accept already did. Plain HTTP
-    # had none, so every idle connection held a thread and an fd for ever (1.8.9 qualification R2 HELPERS-2).
     timeout = 60
     state = None
     _meta_warned = False        # link-preview metadata failure is reported once, not once per visit
@@ -1092,11 +1024,6 @@ class Handler(BaseHTTPRequestHandler):
         if not rel:
             return self._notfound()
         full = os.path.normpath(os.path.join(WEB_DIR, rel))
-        # Belt and braces over a hardcoded table: `rel` comes from STATIC, so nothing here is
-        # attacker-controlled and no `..` can reach this. Kept so a future STATIC entry cannot quietly
-        # widen it. ONE comparison now — WEB_DIR is resolved at read, so the second clause this used to
-        # carry (`or full.startswith(WEB_DIR)`) tested exactly the same thing, and reading it invited the
-        # conclusion that WEB_DIR might be unresolved, which is the bug that was just fixed.
         if not full.startswith(WEB_DIR):
             return self._send(403, "forbidden\n")
         try:
@@ -1123,20 +1050,6 @@ class Handler(BaseHTTPRequestHandler):
                         .replace(b'src="_a/sub.js"', b'src="_a/sub.js' + q + b'"')
                         .replace(b'src="_a/qrcode.js"', b'src="_a/qrcode.js' + q + b'"')
                         .replace(b'src="_a/turn-artifacts.js"', b'src="_a/turn-artifacts.js' + q + b'"'))
-        # Metadata in the language the ADMIN set as the subscriptions default (subs.languages.default) — not the
-        # visitor's, and not a per-browser choice: this is what a link preview shows wherever the URL is pasted,
-        # long before anyone opens it and picks a language. Body text still follows the visitor's own selection.
-        # Handler.state, NOT a bare `state`: the state object is a CLASS attribute, which is not in a method's
-        # scope, so the bare name was a plain global lookup that could only ever raise NameError. Every other route
-        # already reads it this way (`st = Handler.state`). It raised AFTER the connection was accepted, so the
-        # page replied with nothing at all — and an empty reply is invisible in every place anyone looks: the unit
-        # reads active, the journal is clean, /healthz, /api/<token> and every asset answer 200, and a CDN in front
-        # reports its own 520 as if the origin were at fault. Only the one route that renders the page was dead.
-        # Suppressed, too: the shell must be served even if the metadata step fails. A localised og: tag is worth
-        # strictly less than the page loading, and this is the whole subscription surface.
-        # Reported ONCE, not suppressed silently: this page is served on every visit, so a per-request line would
-        # be noise — but a failure nobody can see is exactly what made the bug above survive a release. Degrade,
-        # and say so a single time.
         try:
             _lg = (Handler.state.subscriptions() or {}).get("languages")
             data = _sub_meta(data, ((_lg if isinstance(_lg, dict) else {}).get("default") or "en"))
@@ -1161,19 +1074,9 @@ class Handler(BaseHTTPRequestHandler):
         self.do_GET()
 
     def do_GET(self):
-        # ⚠️ AN UNHANDLED EXCEPTION HERE SENDS THE CLIENT NOTHING AT ALL. BaseHTTPRequestHandler does not
-        # catch what do_GET raises: the traceback goes to stderr, the connection closes, and ZERO bytes reach
-        # the client — measured, not assumed. Behind Cloudflare that is a 520 with no origin status to read,
-        # which is exactly how the 1.7.11 sub outage presented: one NameError, every page down, and nothing
-        # in the reply to say why. That particular name was fixed; this makes the whole CLASS survivable —
-        # a 500 the operator can see, a traceback in the journal, and the rest of the pages still served.
         try:
             self._route()
         except (ConnectionError, TimeoutError, socket.timeout, ssl.SSLError) as e:
-            # The CLIENT went away mid-reply — a closed tab, a phone that lost its network, a reset, its TLS cut under the
-            # write. Routine on a public page, and not a fault here: one Debug line, no traceback, nothing to answer. As an
-            # ERR traceback (~20 lines each) any client could rotate the panel's history out of the journal namespace it
-            # shares with swg-sub (1.8.9 qualification HE-1).
             log(LOG_DEBUG, "sub: a client went away before its reply was written (%s)", e.__class__.__name__)
         except Exception:
             # A real fault keeps its traceback — at most one a minute, with how many were held back: the page answers
@@ -1223,18 +1126,9 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class _QuietServer(ThreadingHTTPServer):
-    # The plain-HTTP server too: the stdlib's handle_error prints ~20 bare lines to stderr for every connection reset
-    # before or between requests — a bare connect + RST is enough, before any limiter — and they went to the shared
-    # journal at Info (1.8.9 qualification HE-1). What reaches here is a connection-level failure, never a page fault:
-    # do_GET answers those itself.
     def handle_error(self, request, client_address):
         pass                                            # failed handshake / scanner / vanished client — routine noise
 
-    # At most max_conns connections at once, one thread each, in both modes: one more is closed at once, before it costs a
-    # thread (1.8.9 qualification R2 HELPERS-2). ~1000 idle connections held every fd — at the soft limit (1024 on the bare
-    # unit) accept() failed with EMFILE and the serve loop spun a core while the page and /healthz stopped answering. 256:
-    # a page visit is a few short connections, so far above real use, and 256 sockets plus the one file each may have open
-    # stay near half that limit; where the limit is high (docker) it caps the threads' RAM.
     max_conns = 256
 
     def verify_request(self, request, client_address):
@@ -1288,10 +1182,6 @@ def _serve_config(state):
     return host, port, None, None                              # no usable cert → plain HTTP (front with a proxy)
 
 
-# swg-sub's level is the fleet's, which the panel mirrors into subs/serve.json — this process never reads
-# panel-settings.json. Read from log() itself, at most every LOG_REREAD seconds: swg-sub writes a few lines a day, so
-# nothing polls. Its unit has no LogLevelMax (a cap fixed at its start would outlive the level), so this is the only
-# filter. Until the path is known (the first lines of a start), it logs at Info.
 LOG_REREAD = 5
 _LOG_SERVE = {"path": None, "at": -LOG_REREAD}
 
@@ -1319,14 +1209,8 @@ def log(prio, msg, *args):            # noqa: F811 — the shared helper's log()
 
 
 def main():
-    # As a docker container's PID 1 swg-sub IGNORED SIGTERM — a PID 1 has no default action, and a signal from outside its
-    # namespace (docker stop) reaches only a handler — so every stop waited ~10 s for SIGKILL (1.8.9 qualification, as
-    # swg-noded's NX-L1). Nothing here to flush or close. Off PID 1 (bare metal) SIGTERM's default stays.
     if os.getpid() == 1:
         signal.signal(signal.SIGTERM, lambda _sig, _frm: os._exit(0))
-    # Tolerate a cold start where the panel hasn't written fleet.json yet (docker: swg-sub and the
-    # panel come up together and share the config volume). Wait a bounded while, then let the process
-    # exit so the supervisor (systemd Restart / compose restart) retries — never spin forever.
     fleet = load_json(FLEET_PATH, None)
     for _ in range(30):
         if fleet is not None:
@@ -1339,9 +1223,6 @@ def main():
     state = State(fleet)
     Handler.state = state
     _LOG_SERVE["path"] = os.path.join(state.sub_dir, "serve.json")
-    # …and for serve.json, which the panel writes at the END of its start, well after the entrypoint wrote fleet.json. Read
-    # before it, the TLS mode is unknown, so the listener was decided plain HTTP without waiting for the certificate the
-    # entrypoint issues in the background — and stayed so until a restart (1.8.8 deferred #17: 1 fresh Docker master in 4).
     if not os.path.exists(_LOG_SERVE["path"]):
         log(LOG_INFO, "swg-sub: waiting for the panel's %s …" % _LOG_SERVE["path"])
         for _ in range(30):
@@ -1358,20 +1239,10 @@ def main():
     SUB_BASE, SUB_BASE_ALT = _read_bases()
 
     host, port, cert, key = _serve_config(state)
-    # Direct-TLS: the panel issues swg-sub's OWN cert ASYNCHRONOUSLY (docker), so it may not be on disk yet when we
-    # (re)start right after a mode change. Falling straight to plain HTTP would then 525 behind a Cloudflare Full zone.
-    # Wait a bounded while for the cert to appear, re-reading each pass; give up to plain HTTP if it never comes (a
-    # reverse proxy / CF Flexible can still front it). Skipped when a cert is already present or pinned via env.
     _sv = (state.subscriptions().get("serve") or {})
     if not (cert and key) and _sv.get("tls_mode") not in (None, "", "reverse-proxy") \
             and not (os.environ.get("SWG_SUB_TLS_CERT") and os.environ.get("SWG_SUB_TLS_KEY")):
         log(LOG_WARNING, "swg-sub: direct-TLS (%s) but no certificate yet — waiting for the panel to issue it…" % _sv.get("tls_mode"))
-        # SURVIVE THE SIGNAL THAT SAYS THE CERT IS READY. The real SIGHUP handler is installed further down,
-        # AFTER this wait — so for the whole ~90s window the default action applied and a HUP simply killed
-        # the process. And a HUP is exactly what arrives here: the panel issues the certificate and then
-        # signals swg-sub to pick it up. Observed end to end — "waiting for the panel to issue it…", cert
-        # issued 2s later, "Sent signal SIGHUP", process dead, subscription page down (Cloudflare 521).
-        # Ignoring it is enough: the loop below re-reads every 2s and finds the cert on its own.
         with contextlib.suppress(Exception):
             signal.signal(signal.SIGHUP, signal.SIG_IGN)
         for _ in range(45):                       # ~90s ceiling — a Cloudflare DNS-01 issue+install
@@ -1393,10 +1264,6 @@ def main():
         srv = _QuietServer((host, port), Handler)
 
     def _reload(_sig, _frm):
-        # SIGHUP: re-read serve.json (mount base + transitional alt base) with NO rebind, and — under TLS — swap in a
-        # renewed cert. This lets the panel apply a PATH / config / cert change to swg-sub WITHOUT a restart; only a
-        # bind (host/port) change still needs the restart + crash-loop verify. A path change thus becomes zero-downtime
-        # (dual-base keeps the old path live), and existing subscription links keep working through the transition.
         global SUB_BASE, SUB_BASE_ALT
         try:
             nb, nba = _read_bases()
@@ -1422,9 +1289,6 @@ def main():
     _seen = [_cert_sig()]
 
     def _swap_cert(why):
-        # Swap in a FRESH context, not load_cert_chain() over the live one: an SSLContext keeps one cert PER KEY
-        # TYPE, so loading a cert of a different key type (an acme renewal that flips ECDSA↔RSA) leaves the OLD
-        # cert active — a silent no-op. A new context holds only the new cert, so the swap always takes.
         _seen[0] = _cert_sig()          # a pair that fails is tried again when its files change again, not every minute
         try:
             nctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -1435,10 +1299,6 @@ def main():
             log(LOG_ERR, f"swg-sub: TLS reload failed (keeping old cert): {e}")
 
     def _watch_cert():
-        # A renewed certificate reaches swg-sub's files with no signal behind it in Docker: the panel container cannot
-        # signal this one, a sub entry installs with --reloadcmd 'true', and the panel's renewals are copied in by its
-        # loop (S9f). So the files are watched: a stat of two files a minute. A pair caught half-written fails to load
-        # and is tried again when the second file lands, the old certificate serving meanwhile.
         while True:
             time.sleep(_CERT_WATCH_S)
             with contextlib.suppress(Exception):

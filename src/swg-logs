@@ -1,27 +1,13 @@
 #!/bin/bash
-# swg-logs — read swg's logs by source name (docs/LOGS-PLAN.md §8.5).
-#
-# swg writes into two journald namespaces of its own, swg-panel and swg-node, each held to its disk budget
-# (Settings → Logs). Plain `journalctl -u <unit>` then shows only systemd's start/stop lines for a swg unit; this
-# reads the right namespace merged with the main journal (`--namespace=+…`), where a unit not yet moved still writes.
-# Every option after the source goes to journalctl as it is.
-#
-#   swg-logs [source [name]] [journalctl options…]
-#
-#   (none)          swg's journals with the main one: every line on this box, swg's among them
-#   panel           the panel                         sub      the subscription page
-#   netctl          the panel's root helper           update   one-click updates
-#   noded           the node service (and its agent operations, dnsmasq and swg-sni)
-#   sni             swg-sni's lines only              dns      smart DNS (dnsmasq)
-#   relay [iface]   the TCP relay                     turn [name]  turn proxies, WDTT and csqtt
-#   iface [iface]   wg-quick@ / awg-quick@ (they stay in the main journal)
-#   kernel          the kernel log                    p2p      the P2P guard's kernel lines
-#
-#   swg-logs noded -f        swg-logs panel --since today        swg-logs turn wdtt1 --since -1h
-#   swg-logs sni -n 100      swg-logs relay awg0 -p warning      swg-logs iface awg0
 set -u
 
-usage(){ sed -n '2,/^set -u/{/^set -u/d;s/^# \{0,1\}//;p}' "$0"; }
+usage(){
+  cat <<'HELP'
+Использование: swg-logs [источник [имя]] [параметры journalctl]
+Источники: all, panel, sub, netctl, update, noded (node), sni, dns (dnsmasq), relay, turn, iface, kernel, p2p.
+Без источника читаются все журналы. Имя можно указать для relay, turn и iface.
+HELP
+}
 
 ns_ok(){ local d; for d in /etc/systemd/system /run/systemd/system /usr/lib/systemd/system /lib/systemd/system; do
   [ -e "$d/systemd-journald@.service" ] && return 0; done; return 1; }

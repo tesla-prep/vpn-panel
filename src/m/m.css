@@ -1,15 +1,3 @@
-/* m/m.css — the panel on a phone (docs/MOBILE-PLAN.md).
- *
- * THE WHOLE FILE IS ONE RULE, html[data-ui="m"] { … }, and nothing may stand outside it but @keyframes m-*. index.html's
- * bootstrap sets data-ui="m" on a touch phone (or by the "swg-ui" override), so on a desktop no selector here can match:
- * the scope is structural, not a prefix someone has to remember. tests/mobile_css_shape_selftest.py enforces that shape.
- * app.css is never edited for the phone; its own narrow-width rules (the @media(max-width:…) blocks) still apply and this
- * builds on them. Specificity: a nested rule reads as html[data-ui="m"] .x and beats app.css's .x / .a .x; the inline
- * style= some sheets and bubbles carry (a width, a position) needs !important here, and only here.
- *
- * The class names below are the desktop's. A desktop markup change can move the phone layout without a word, which is
- * what the phone-layout gate (the screens cell's -390 arms) is for.
- */
 html[data-ui="m"] {
   --m-tabbar: 60px;                                   /* the bottom tab bar, without the home indicator's inset */
   --m-safe-b: env(safe-area-inset-bottom, 0px);
@@ -38,9 +26,6 @@ html[data-ui="m"] {
   & .appver, & #appref { display: none; }
   & .appbar-right { display: contents; }
   & .appbar-right > :not(#livepill, #more-btn, #updslot) { display: none; }
-  /* ONE line (operator, 2026-10-29): the brand, then #updslot's badges and the live pill as icons and counts — their words
-     go (font-size 0 on the pill, the icon and the count kept), then More. #updslot stays the header's ONE status renderer
-     (hook 1); its check button is left to the More sheet. A tap still runs each badge's own action. */
   & #updslot { order: 1; display: flex; gap: 6px; flex: none; }
   & #updslot #upd-check { display: none; }
   & #livepill { order: 2; flex: none; }
@@ -121,9 +106,6 @@ html[data-ui="m"] {
   & .sheet.m-typed { height: calc(100dvh - env(safe-area-inset-top, 0px) - 16px); }
   & .sheet.m-springback { transition: transform .22s var(--ease); }
 
-  /* ───── sheet footers (the operator's rule, 2026-10-21): the dismiss button (Close / Cancel / Back — .btn-dismiss) and the
-     main action share the BOTTOM line, dismiss left, in equal halves; every other action sits above in a grid of equal cells,
-     three to a row, on the same edges; a status line from the footer goes just above the bottom line, left aligned ───── */
   & :is(.sheet-foot, .editfoot) {
     flex: none; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; align-items: stretch;
     padding: 10px var(--m-gutter) calc(10px + var(--m-safe-b));
@@ -152,10 +134,6 @@ html[data-ui="m"] {
      under them at the full width (operator) */
   & :is(.sheet-foot, .editfoot):has(> .btn-warn):has(> .btn-danger):has(> .btn-dismiss):not(:has(> .btn-primary, > .m-pvrot)) > :is(.btn-warn, .btn-danger) { order: 1 !important; grid-column: span 3 !important; }
   & :is(.sheet-foot, .editfoot):has(> .btn-warn):has(> .btn-danger):has(> .btn-dismiss):not(:has(> .btn-primary, > .m-pvrot)) > .btn-dismiss { order: 4 !important; grid-column: 1 / -1 !important; }
-  /* the device editor (operator, 2026-10-29): its other actions (Targets, Networks, a QR) on the first line in equal parts;
-     Block or Unblock (`.m-pblock`) and Rotate keys — amber, as the user editor's — on the second in halves; Cancel and Save
-     on the last. A device with no Networks (a WDTT / csqtt one) has Delete instead (`.m-pdel`): Rotate then takes the first
-     line's right half and Delete the second's, beside Block (operator, 2026-10-29, 2026-10-31) */
   & :is(.sheet-foot, .editfoot):has(> .m-rotate) { grid-auto-flow: row dense; }   /* Block (after Rotate in the source) fills the left half */
   & :is(.sheet-foot, .editfoot):has(> .m-rotate) > :is(.btn, button):not(.btn-dismiss, .btn-primary, .m-rotate, .btn-danger, .btn-ok, .m-pblock) { grid-row: 1; }
   & :is(.sheet-foot, .editfoot):has(> .m-rotate) > :is(.m-rotate, .btn-danger, .btn-ok, .m-pblock):not(.btn-dismiss) { grid-row: 2; }
@@ -184,9 +162,6 @@ html[data-ui="m"] {
   & :is(.sheet-foot, .editfoot):not(:has(> .btn-dismiss)):has(> .btn-primary):has(> :is(.btn, button):not(.btn-primary, .m-wide)):not(:has(> :is(.btn, button):not(.btn-primary, .m-wide) ~ :is(.btn, button):not(.btn-primary, .m-wide))) > :is(.btn, button):not(.btn-primary, .m-wide) { grid-column: 1 / span 3 !important; }
   & :is(.sheet-foot, .editfoot):not(:has(> .btn-dismiss)):has(> .btn-primary):has(> :is(.btn, button):not(.btn-primary, .m-wide)):not(:has(> :is(.btn, button):not(.btn-primary, .m-wide) ~ :is(.btn, button):not(.btn-primary, .m-wide))) > .btn-primary { grid-column: 4 / span 3; }
 
-  /* ───── bubbles: a bottom sheet, like More (operator, 2026-10-29) — full width, rounded top, a grab handle, the page dimmed
-     behind it (its own shadow; a bubble has no overlay element) — over whatever place() computed. A tap outside closes it,
-     as it did ───── */
   & .deppop {
     position: fixed !important; left: 0 !important; right: 0 !important; top: auto !important; bottom: 0 !important; transform: none !important;
     width: auto !important; min-width: 0 !important; max-width: none !important; max-height: 70dvh !important; overflow: auto !important;
@@ -196,9 +171,6 @@ html[data-ui="m"] {
     box-shadow: 0 0 0 100vmax rgba(4, 8, 6, .5) !important;
   }
   & .deppop :is(.onrow, .netbub-row, .hub-row) { min-height: 40px; align-items: center; font-size: 14px; }
-  /* the "live" dots pulse in opacity alone, which the compositor runs on its own: the desktop's pulse also rings a box-shadow out,
-     and a shadow is repainted on the main thread every frame — measured on swgt at 6x CPU throttle (a weak phone): Overview's three
-     dots took 4.1 s of every 12 s idle, the whole rest of the page 0.4 s (operator, 2026-10-29: "too heavy for weak phones?") */
   & :is(.livepill .dot, .dot.live, .lkdot.up, .lkdot.connecting), & .nstat.online::before { animation-name: m-pulse; will-change: opacity; }   /* a pseudo-element cannot sit in :is() */
   & #livepill { cursor: pointer; }
   /* none online: a grey dot before the 0, as a peer's offline dot (operator, 2026-10-29) — the desktop keeps its bare grey count */
@@ -260,9 +232,6 @@ html[data-ui="m"] {
   & .deppop .bk-pickitem { min-height: 52px; justify-content: center; gap: 3px; padding: 10px 8px; border-radius: 0; border-top: 1px solid var(--line); }
   & .deppop :is(.bk-pickprov, .bk-pickgrp) + .bk-pickitem { border-top: 0; }
   & .deppop .bk-pickprov { padding-top: 16px; }
-  /* a QR enlargement (crypto.js qrZoom): a sheet docked at the bottom, as every other on a phone — its grab handle, the QR the
-     sheet's width on white, the caption under it; a swipe down or a tap closes it (operator, 2026-10-29: it overflowed the
-     screen's right edge, and could not be swiped away) */
   & .qr-overlay { padding: 0; align-items: flex-end; overflow: hidden; }
   & .qr-overlay-inner {
     position: relative; margin: auto 0 0; width: 100%; max-width: none; box-sizing: border-box; gap: 14px;
@@ -295,9 +264,6 @@ html[data-ui="m"] {
   /* ───── section headings: the screen's own captions, a little more air on a phone ───── */
   & .section-title { margin: 20px 0 8px; }
 
-  /* ───── Overview (T1). What it does not draw on a phone is render-gated in screen-overview.js (hook 4): the rail, the charts,
-     the doughnuts, the flow map, the ranked lists. What is left, in the mockup's order: Needs attention first (D2), the five
-     tiles with Throughput across the row (D1), the fleet, Protection as one card of three counts (D3), recent activity ───── */
   & .screen:has(> .statgrid) { display: flex; flex-direction: column; }
   & .screen:has(> .statgrid) > [data-sec="attention"] { order: -2; margin-top: 4px; }
   & .screen:has(> .statgrid) > [data-sec="attention"] + :is(.attn, .allclear) { order: -1; }
@@ -409,10 +375,6 @@ html[data-ui="m"] {
   & .act-morewrap { text-align: right; }
   & .act-more { display: inline-block; padding: 12px 0; }
 
-  /* ───── Users (T1): the search and a Filters button (the rest of the toolbar is in RosterFilterSheet), a floating New user
-     (D5), two-line rows whose actions sit behind a LEFT SWIPE — the head scrolls sideways and snaps; the actions stand just
-     past its right edge (absolute, so they add the scroll room), each with its word (data-lbl). No column header: the
-     columns are gone. TrafficRail and the traffic column are render-gated (hook 4) ───── */
   & .toolbar.mtoolbar { display: flex; flex-wrap: nowrap; gap: 8px; align-items: stretch; margin-bottom: 4px; }
   & .mtoolbar .search { flex: 1 1 auto; min-width: 0; min-height: 44px; display: flex; }
   /* one height for every control of the row (operator, 2026-10-29): the field is the visible box, not its wrapper */
@@ -446,9 +408,6 @@ html[data-ui="m"] {
     scroll-padding-left: 14px;   /* the first snap point (start) is the content edge, not the padding edge */
   }
   & .urow > .urow-head::-webkit-scrollbar { display: none; }
-  /* a row with actions behind its swipe says so (operator, 2026-10-29, chosen over a tinted edge): a quiet ⋮ in its right lane;
-     a tap on it opens the row the way the swipe does (ui.js attachSwipePeek), and it slides away with the row. ui.js also
-     slides the top row open the first few times a list opens. */
   & :is(.urow > .urow-head:has(.u-acts), table.peergrid > tbody > tr.clk:has(.rowacts), .attn-row:has(.attn-acts), .acthist .act-row:has(> .iconbtn.danger))::after {
     content: "\22EE"; position: absolute; top: 0; bottom: 0; right: 0; width: 22px; display: flex; align-items: center; justify-content: center;
     font: 700 18px/1 var(--sans); color: var(--faint); pointer-events: none;
@@ -511,9 +470,6 @@ html[data-ui="m"] {
   & .gcard > .urow-head .u-counts:first-child { grid-column: 2 / 4; }
   & .gcard > .urow-head :is(.g-peers, .g-nets) { display: none; }
 
-  /* ───── deployment rows (the target picker, a device's Deployments): TWO LINES (D4, option A) — the box, the node, the interface
-     and the type tag; then the role with its word (hook 9), the address and the gear. The desktop's --topt-col is not touched:
-     the right part simply stops being a column here ───── */
   & .targetpick > .targetopt { min-width: 0; }
   & .targetopt { flex-wrap: wrap; row-gap: 8px; column-gap: 8px; padding: 8px 10px; }
   & .targetopt::after { content: ""; order: 3; flex: 1 0 100%; height: 0; }
@@ -544,9 +500,6 @@ html[data-ui="m"] {
   & .pg2-ip { order: 7; margin: 0 0 0 auto; }
   & .pg2-act { width: 40px; height: 40px; }
 
-  /* ───── a device's sheet (sheets-crud.js PeerView): each deployment says it with values only, nothing cut (operator,
-     2026-10-29) — the node and interface, the address at the right; the live rate, when it was last online at the right;
-     what it carried in all, marked Σ, quiet under them ───── */
   & .pv-dep-grid { grid-template-columns: max-content max-content minmax(0, 1fr); gap: 6px 12px; font-size: 13.5px; align-items: baseline; }
   & .pv-dep-grid .k { display: none; }
   & .pv-dep-grid > span { overflow: visible; }
@@ -558,9 +511,6 @@ html[data-ui="m"] {
   & .pv-dep-grid > span:nth-child(5) { grid-column: 1 / -1; grid-row: 3; font-size: 12px; color: var(--dim); }
   & .pv-dep-grid > span:nth-child(5)::before { content: "\03A3"; margin-right: 6px; color: var(--faint); }
 
-  /* ───── a mesh link's sheet (iface.js ConnectionEditSheet) and the sheets like it: the link's facts as rows, its label left
-     and its value right, as the link cards on a node's page read; two dropdowns side by side stack; a verdict reads as one
-     sentence; the long explanations are quieter than the controls they explain (operator, 2026-10-29) ───── */
   & .conncard { padding: 4px 14px; }
   & .conncard-top { margin: 10px 0 6px; }
   & .conn-grid { grid-template-columns: minmax(0, 1fr); gap: 0; }
@@ -601,10 +551,6 @@ html[data-ui="m"] {
   /* a device with no config to show: its sentence in a short box, not a QR-sized empty square */
   & .qrrow .deploy .qr-none, & .deploy .qr-none { width: auto; height: auto; aspect-ratio: auto; max-width: none; min-height: 0; padding: 22px 16px; font-size: 13.5px; line-height: 1.45; }
 
-  /* ───── the peer grid (Peers, Live's peers, a user's and the unassigned lists — promoted to T1, 2026-10-29): a card per
-     deployment instead of the table's label/value stack. The title and its status; the node, the address and the live rate;
-     the owner and when it was last online. Its actions sit behind a left swipe like a user row's, each with its word. The
-     traffic-window column is not drawn (no ledger fetch on a phone) ───── */
   & .tablewrap:has(> table.peergrid) { background: none; border: 0; box-shadow: none; overflow: visible; }
   & table.peergrid, & table.peergrid > tbody { display: block; width: 100%; background: none; border: 0; }
   & table.peergrid > tbody { display: flex; flex-direction: column; gap: 6px; }
@@ -657,9 +603,6 @@ html[data-ui="m"] {
   & .mtoolbar .pmode { flex: none; }
   & .mtoolbar .pmode .pm-opt { min-height: 42px; }
 
-  /* ───── Nodes list (T1), rows the eye can follow (operator, 2026-10-29): the name; what it is, as quiet words (bare metal ·
-     Ubuntu · reporting) and its issue; a strip of three equal cells — peers, throughput, mesh; the interfaces counted by kind
-     (screen-nodes.js ifaceSummary). No drag grips, no CPU bar, no row buttons: Settings and Remove are on the node's page ───── */
   & .section-title:has(+ .nodegrid) { flex-wrap: wrap; align-items: center; }
   & .section-title:has(+ .nodegrid) .nodehint { display: none; }
   & .section-title:has(+ .nodegrid) .btn-primary { min-height: 44px; }
@@ -708,9 +651,6 @@ html[data-ui="m"] {
   & .tg.m-sum { font-size: 11.5px; padding: 3px 8px; }
   & .ncard .nc-ifaces:not(:has(.m-sum)) { display: none; }
 
-  /* ───── node detail (T1, D6): the name on one line, its chips under it; the version and the updater's branch; then Check,
-     Settings, Logs and More as labelled cells (the lifecycle doors are in the More sheet, hook 8). Health is the three meters
-     and Throughput a live figure (screen-nodes.js, hook 4); no node rail ───── */
   & .detail-head { flex-wrap: wrap; gap: 10px; align-items: flex-start; }
   & .detail-head > .title { flex: 1 0 100%; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
   & .detail-head > .title h1 { flex: 1 0 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 24px; margin: 0; }
@@ -747,10 +687,6 @@ html[data-ui="m"] {
   & .dh-ver > .iconbtn::after { content: attr(data-lbl); }
   & .dh-ver > .iconbtn svg { width: 20px; height: 20px; }
   & .drag-grip { display: none; }   /* reordering by drag is a mouse gesture; the order set on a desktop stays */
-  /* ───── a routing rule (routing.js RulesEditor, in an interface's sheet and in Settings → Network's default exit): with no
-     grip there is no rail — the rule is one column: its targets' box (the </> switch in its corner), then the × and the count,
-     then where it goes, the dropdown the line's width. "Add rule" and "Everything else → …" each take a line of their own.
-     (Its target field sat in the 16 px rail the hidden grip left: "impossible to configure at all", operator 2026-10-29) ───── */
   & .rrrow { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 10px 10px 12px; }
   & .rrrow > .tfield { grid-column: 1; }
   /* the list / text switch: a 40 px tap box in the field's corner, the field's text kept clear of it (operator, 2026-10-29: "very
@@ -815,9 +751,6 @@ html[data-ui="m"] {
   /* a panel's header actions wrap under its title instead of running off the card */
   & .panel-head { flex-wrap: wrap; row-gap: 8px; }
 
-  /* ───── Settings (T2 for Display and Authentication, T3 for the rest): a list of sections, then one section (hook 3). The
-     list keeps the dirty dots; a section has "‹ Panel settings" over it and its Back goes up to the list. A section's wide
-     block scrolls inside its card, never the page ───── */
   & .setbody { flex-direction: column; gap: 12px; }
   & .setbody:not(.m-list) .setrail { display: none; }
   & .setbody.m-list .setpane > :not(.setfoot) { display: none; }
@@ -916,10 +849,6 @@ html[data-ui="m"] {
   & .lgrow .lg-catmain { flex-wrap: wrap; row-gap: 4px; }
   & .lgrow > .lg-fleet { min-width: 0; }
   & .lgrow .lg-used { flex-wrap: wrap; gap: 4px; }
-  /* ───── Blocking's categories (operator, 2026-10-29: "looks like it's not from this project"): a card each, drawn as a user's
-     row is — the chevron in the left lane, the name with its lists under it, the switch at the right; then one row of
-     facts under the name (default, size, where it is on, what it matches). Add list belongs to an open category, at its foot;
-     its lists sit inside the card under a line ───── */
   & .lgrid:has(> .bkitem) { gap: 8px; }
   & .bkitem, & .bkitem.open, & .bkitem.open + .bkitem {
     border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); overflow: hidden;
@@ -1116,9 +1045,6 @@ html[data-ui="m"] {
   /* adding a device to a node's ways out (its own sheet on a phone): each field the sheet's width */
   & .overlay.show .sheet .exname { flex-direction: column; align-items: stretch; gap: 14px; margin: 0; }
   & .overlay.show .sheet .exname > .exname-f { flex: none; min-width: 0; width: 100%; }
-  /* a node page section's head (Interfaces, Turn proxies): ONE line (operator, 2026-10-29) — its name and count, then every
-     action at the right: logs, settings, "+ New" (the section says what is new). The section's own icon is not drawn here, to
-     give the line its room; a rare second add (a turn proxy on a node with none) wraps, at the right */
   & .panel-head:has(> .btn-mini.ico):has(> .btn-mini:not(.ico)) { flex-wrap: wrap; justify-content: flex-end; row-gap: 10px; column-gap: 8px; }
   & .panel-head:has(> .btn-mini.ico):has(> .btn-mini:not(.ico)) > .panel-ic { display: none; }
   & .panel-head:has(> .btn-mini.ico):has(> .btn-mini:not(.ico)) > .grow { order: 1; flex: 1 1 0; min-width: 0; }

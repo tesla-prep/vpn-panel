@@ -1,17 +1,3 @@
-/* crypto.js — key material, the encryption vault, and everything a client config is made of.
- *
- * LAYER 2 (see docs/APP-JS-SPLIT-PLAN.md). Imports util / store / ui / turn-catalog.
- *
- * The custody rule this module exists to keep: peer keypairs are generated HERE, in the browser. The
- * private key goes into the config and the QR and never reaches the panel — the server only ever sees a
- * public key, an assigned IP, and (when subscriptions are on) an AES-GCM blob it cannot read. Everything
- * that could break that rule is in this one file: genKeys, the subscription vault (PBKDF2 + AES-GCM), the
- * interface-key sealed box (X25519 -> HKDF -> keystream XOR + HMAC), config assembly and the QR encoder.
- *
- * VaultPromptSheet comes with it. ensureVaultUnlocked has to raise that prompt, so leaving the sheet in a
- * screen module would mean this layer importing upward — the vault's own UI belongs to the vault.
- */
-
 import { b64, esc, url, tkey } from "./util.js";
 import { T, Tsplit, srvText } from "./i18n.js";
 import { Store, api, bus } from "./store.js";
@@ -23,12 +9,7 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// ───────────────────────── crypto + config (in-browser; private key never leaves) ─────────────────────────
-// Web Crypto exists only in a SECURE CONTEXT — https://, or http:// on localhost/127.0.0.1. Anywhere else
-// `crypto.subtle` is undefined, and every key operation below dies with a bare
-// "can't access property generateKey, crypto.subtle is undefined", which reads as a panel bug rather than
-// "you are on plain http". swgSub has guarded this since it shipped; the panel never did. One named check
-// here covers every call site, because they all start by needing subtle.
+// crypto + config (in-browser; private key never leaves)
 export function cryptoReady() { return !!(window.crypto && window.crypto.subtle); }
 export function assertCrypto() {
   if (!cryptoReady()) throw new Error(T("This panel needs a secure connection: your browser only provides the Web Crypto it uses to generate keys over https:// (or http://localhost). Reach the panel over https://, or tunnel it to http://127.0.0.1."));
@@ -65,10 +46,6 @@ export async function subSlotBody(password, skBytes) {
   return { salt: b64(salt), sk_by_pw: await subEnc(wk, skBytes),
            sk_check: await subEnc(wk, new TextEncoder().encode(SUB_CHECK)) };
 }
-// First-time setup: mint the Subscription Key, wrap it with the password (convenience cache), store the
-// wrapped form + a verifier. Returns the SK (base64) to SHOW ONCE — it is never sent to the server in the clear.
-// That shown key is the ONLY way back in if the password is ever reset outside the panel (swg-passwd), so it is
-// surfaced on every path that creates a vault — and stays revealable from Settings while the vault is unlocked.
 export async function subVaultCreate(password) {
   const sk = crypto.getRandomValues(new Uint8Array(32));
   const skKey = await _importAes(sk, ["encrypt", "decrypt"]);
@@ -84,9 +61,6 @@ export async function subVaultCreate(password) {
   return b64(sk);
 }
 
-// Two small subscription-aware view helpers. They live with the vault because both answer a question
-// only this module can: is the subscription feature on, and what is this user's subscription record.
-// A user's subscription record from the cached status map: undefined=loading · null=none/feature-off · object.
 export function useSubRec(userId) {
   const [rec, setRec] = useState(undefined);
   useEffect(() => { let ok = true;
@@ -95,20 +69,12 @@ export function useSubRec(userId) {
     return () => { ok = false; }; }, [userId, Store.configEpoch]);
   return rec;
 }
-// Standout reassurance for "you'll need to re-distribute the configs" warnings: interface / turn-proxy
-// IP/port/endpoint changes are NOT baked into the encrypted blob (only the private key + PSK are), so every
-// subscription page re-renders the corrected config on its own. Renders nothing when subscriptions are off.
 export function SubAutoNote() {
   if (!subFeatureOn()) return null;
   return html`<div class="sub-auto"><${Ic} i="check"/><span><b>${T("Subscribed users need nothing")}</b>${T(" — their subscription page serves the corrected config automatically; only manually-shared QR codes / configs need re-distributing.")}</span></div>`;
 }
 
 
-// ── Subscription Key session cache + the token/URL/blob operations that ride on it ──
-// The Subscription Key (SK) is unwrapped from the vault ONCE per session with the login password
-// (the "convenience cache") and held only in memory as an AES-GCM key — never persisted, never sent
-// to the server. Every per-user secret (the unlock-key, the URL token, each peer's config) is wrapped
-// with it in the browser; the panel only ever stores ciphertext it can't read.
 export const b64url = u => b64(u).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 export async function sha256hex(s) {
   const d = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(s));
@@ -116,9 +82,6 @@ export async function sha256hex(s) {
 }
 const _importAes = (bytes, uses) => crypto.subtle.importKey("raw", bytes, { name: "AES-GCM" }, false, uses);
 
-// ── interface-key vault (P4): X25519 sealed-box (ECDH → HKDF → keystream-XOR + HMAC), byte-identical to
-//    swg-noded's pure-stdlib implementation, so a node seal opens here and a browser seal opens on the node.
-//    Lets a FULLY-WIPED node restore its interface cleanly — the panel only ever relays ciphertext. ──
 const _X25519_PKCS8 = new Uint8Array([0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x6e, 0x04, 0x22, 0x04, 0x20]);
 async function _ivkHkdf(ikm, salt, infoStr, len) {
   const k = await crypto.subtle.importKey("raw", ikm, "HKDF", false, ["deriveBits"]);
@@ -150,9 +113,6 @@ export async function ivkUnseal(privRaw, blob) {     // open a {eph, ct, mac} bl
   const ks = await _ivkHkdf(shared, ephPub, "swg-ivk-enc", ct.length);
   return ct.map((b, i) => b ^ ks[i]);
 }
-// Enable / disable interface-key escrow. Enabling mints the vault X25519 keypair once (private half SK-wrapped)
-// so nodes seal their interface keys PROACTIVELY — the key has to be escrowed BEFORE a wipe. Disabling keeps the
-// keypair + blobs (so re-enabling reuses them) and just stops the panel handing nodes the vault key.
 export async function ivkSetEscrow(enabled) {
   if (!enabled) { const r = await api.post("/api/sub/ivk", { enabled: false }); if (!r || !r.ok) throw new Error(srvText(r) || T("couldn't disable escrow")); return false; }
   const sk = subSKCached(); if (!sk) throw new Error(T("Unlock the Encryption Vault first."));
@@ -183,10 +143,6 @@ export async function ivkResealForNode(node, mi) {
   if (!tpub) throw new Error(T("The node hasn't reported its transport key yet — try again in a few seconds."));
   return await ivkSeal(tpub, await ivkUnseal(await ivkVaultPriv(), mi.key_blob));
 }
-// ANY escrowed blob → unseal with the operator vault key, re-seal to the node's transport key, so a restore
-// relays only ciphertext and the panel never holds the plaintext it is escrowing. This is the whole of the
-// browser's role in the escrow: the one place that can open a blob is the one place holding the vault key.
-// `missing` names what is absent, so the failure reads as the thing the operator was doing.
 export async function ivkResealForNodeBlob(node, keyBlob, missing) {
   if (!subSKCached()) throw new Error(T("Unlock the Encryption Vault first."));
   if (!keyBlob || !keyBlob.ct) throw new Error(missing || T("No escrowed key is stored for this."));
@@ -203,9 +159,6 @@ let _subSK = null;                       // the unwrapped encryption key (Crypto
 const _SK_CACHE = "swg_ck";              // key-cache: sessionStorage always (tab-scoped); ALSO localStorage when the
 const _SK_PERSIST = "swg_ck_keep";       // operator opts into "keep this device unlocked" (survives a browser restart).
 export function subSKCached() { return _subSK; }
-// Is device-persist opted in on THIS device? When on, the raw key also lives in localStorage so a cookie-only
-// login (browser restart, no password typed) can restore it — the same convenience the auth cookie already gives,
-// still 100% client-side (the server never receives the key; localStorage, unlike a cookie, is never transmitted).
 export function subPersistOn() { try { return localStorage.getItem(_SK_PERSIST) === "1"; } catch (_) { return false; } }
 export function subSetPersist(on) {
   try {
@@ -214,10 +167,6 @@ export function subSetPersist(on) {
   } catch (_) {}
 }
 export function subForget() { _subSK = null; try { sessionStorage.removeItem(_SK_CACHE); localStorage.removeItem(_SK_CACHE); } catch (_) {} }   // drop the key from memory + both stores (logout / password change / lock)
-// Operator-initiated lock (header padlock): drop the cached key so subscription-affecting actions prompt for it
-// again — for re-locking on a shared machine, and to exercise the unlock prompt. Also turns OFF device-persist (an
-// explicit lock means "stop keeping this device unlocked"), clears the heal skip-set so a later unlock re-checks
-// every user, and bumps configEpoch so open QR views fall back to the unlock bar.
 export function lockVault() {
   subForget();
   try { localStorage.removeItem(_SK_PERSIST); } catch (_) {}
@@ -225,9 +174,6 @@ export function lockVault() {
   Store.configEpoch++; bus.emit();
   try { toast(T("Encryption Vault locked on this device."), "ok"); } catch (_) {}
 }
-// Restore the session convenience cache after a reload (login reloads the page). Raw key bytes live in
-// sessionStorage — tab-scoped, cleared on logout, never sent to the server; the deliberate convenience-cache
-// tradeoff so a normal login auto-unlocks config encryption without re-typing the password.
 export async function subBootRestore() {
   if (_subSK) return;
   // localStorage first (device-persist survives a browser restart / cookie-only login), then sessionStorage (tab).
@@ -267,10 +213,6 @@ export async function subUnlock(password) {
   try { subAutoHeal(); } catch (_) {}   // key just became available → silently publish anything left unpublished while locked
   return _subSK;
 }
-// Re-wrap the vault under a NEW panel password so the convenience cache keeps auto-unlocking after a password
-// change. The SK itself is unchanged, so every stored config, subscription link and escrowed key stays valid.
-// Uses the raw SK from the session cache; returns false if it isn't cached (then the operator unlocks with the
-// old password or their encryption key first). Best-effort.
 export async function subRewrap(newPassword) {
   let skB64 = null; try { skB64 = sessionStorage.getItem(_SK_CACHE); } catch (_) {}
   if (!skB64 || !newPassword) return false;
@@ -280,10 +222,6 @@ export async function subRewrap(newPassword) {
     return !!(r && r.ok !== false);
   } catch (_) { return false; }
 }
-// The recovery path: unlock with the ENCRYPTION KEY itself (the value shown once at setup) instead of a password.
-// The key IS the SK, so there's nothing to unwrap — it's validated against sk_verify, which is encrypted UNDER the
-// SK, proving the pasted key belongs to THIS vault before anything trusts it. Used when the panel password was
-// reset out of band (swg-passwd) and no password opens the vault any more.
 export async function subUnlockWithKey(keyB64) {
   const raw = String(keyB64 || "").trim();
   let bytes; try { bytes = _b64ToBytes(raw); } catch (_) { throw new Error(T("That doesn't look like an encryption key.")); }
@@ -308,9 +246,6 @@ export function looksLikeVaultKey(s) { return /^[A-Za-z0-9+/_-]{43}=?$/.test(Str
 // The cached encryption key, base64 — for showing it to the operator. Null when the vault is locked.
 export function subKeyB64() { try { return subSKCached() ? sessionStorage.getItem(_SK_CACHE) : null; } catch (_) { return null; } }
 
-// Enable a user's subscription: mint a fresh 256-bit URL token, and REUSE the user's existing unlock-key if
-// they already hold one (their encrypted-config blobs are encrypted under it — minting a fresh key would orphan
-// them); only mint a fresh unlock-key for a brand-new escrow. Returns {token, unlockKeyB64} for the URL. SK unlocked.
 export async function subEnableUser(uid) {
   const sk = subSKCached(); if (!sk) throw new Error(T("Unlock the Encryption Vault first."));
   const token = b64url(crypto.getRandomValues(new Uint8Array(32)));   // the URL path segment (opaque, 256-bit)
@@ -327,9 +262,6 @@ export async function subEnableUser(uid) {
   return { token, unlockKeyB64: b64url(unlockBytes) };
 }
 
-// If "auto-generate subscription links for new users" is on, mint the new user's link in the BACKGROUND so
-// user creation stays instant. Silently defers when subscriptions are off or the encryption key isn't unlocked
-// this session — the link is then created the next time the user is opened with the key unlocked.
 export function subAutoGenIfEnabled(userId) {
   if (!userId || !subFeatureOn() || !subSKCached()) return;
   if (!(((Store.panelSettings || {}).subscriptions || {}).auto_generate)) return;
@@ -367,13 +299,6 @@ export async function subRecover(escRec) {
   return { token, unlockKey: await _importAes(unlockBytes, ["encrypt", "decrypt"]), unlockKeyB64: b64url(unlockBytes) };
 }
 
-// The shareable URL base for a user. Canonical source is Access & TLS (access.sub.url); falls back to the
-// legacy subscriptions.base_url. Blank → null (operator must set it in Access & TLS). When the public URL
-// carries no explicit port, we append the sub's listen port so a directly-reached sub — or one behind
-// Cloudflare on an alt HTTPS port like 8443 — links to the right place. 443/80 are scheme defaults → left
-// implicit; a reverse proxy that remaps the port overrides this by putting an explicit port in the URL.
-// Public URLs (panel / sub) are often typed without a scheme — store them WITH https:// so every link builds
-// correctly (and the port logic in subBaseUrl can parse them).
 export function normPublicUrl(s) {
   s = (s || "").trim().replace(/\/+$/, "");
   if (!s) return s;
@@ -381,9 +306,6 @@ export function normPublicUrl(s) {
   // drop the scheme-default port so the field shows "host", not "host:443" — the listen port is its own field
   return s.replace(/^(https:\/\/[^/:]+):443\b/i, "$1").replace(/^(http:\/\/[^/:]+):80\b/i, "$1");
 }
-// The URL always carries its port. In direct TLS the URL's port and the Port field are the SAME socket, so the two
-// are kept in sync (typing in one updates the other). These helpers read/write the port in a URL's authority,
-// hiding the scheme-default (443/80) so the URL reads clean when it's on the standard port.
 export const urlPortOf = s => { const m = /^(?:https?:\/\/)?(?:\[[^\]]+\]|[^/:]+):(\d+)/i.exec((s || "").trim()); return m ? m[1] : ""; };
 export function withUrlPort(url, port) {
   let s = (url || "").trim();
@@ -392,16 +314,6 @@ export function withUrlPort(url, port) {
   if (!p || p === 443 || p === 80) return s;                          // scheme-default → keep the URL portless
   return s.replace(/^((?:https?:\/\/)?(?:\[[^\]]+\]|[^/:]+))/i, "$1:" + p);
 }
-// Is an apply-redirect address actually reachable from THIS browser? Probed BEFORE we navigate the whole page
-// to a new panel address, so a domain that isn't wired up (DNS / Cloudflare / firewall) doesn't strand the
-// operator on a dead page with no feedback. no-cors: a genuine network failure throws; any served response
-// (even an error page) resolves — enough to tell "the address exists" from "it doesn't answer at all".
-// Build a copy-paste nginx `location` block for a reverse-proxy front end, from a section's public URL (its path
-// is the mount) and the service's internal listen host:port (the proxy upstream). 0.0.0.0 bind → dial 127.0.0.1.
-// A COMPLETE nginx server block for this service, derived from what's in the form: the public URL gives the
-// server_name (domain), the external listen port (a :port in the URL, else 443/80), and the mount path (the
-// location); the internal host:port is the proxy upstream. So the operator sees exactly what goes where — not just
-// a fragment. `upstreamHost`/`upstreamPort` are the panel's/sub's internal listen (what nginx proxies TO).
 export function nginxServerBlock(publicUrl, upstreamHost, upstreamPort) {
   let scheme = "https", domain = "", extPort = 0, path = "";
   try {
@@ -437,12 +349,6 @@ export function nginxServerBlock(publicUrl, upstreamHost, upstreamPort) {
   L.push("}");
   return L.join("\n");
 }
-// ── NixOS: a working configuration for the address this panel is already running ────────────────
-// On a declarative host Settings → Access is read-only, so the operator's next move is in another
-// file. Showing the module options alone answers "where is this set" but not "what do I write" —
-// these render the two arrangements that actually work, with THIS panel's domain, path and internal
-// port already in them, so the block can be pasted rather than adapted. The generated Nix is file
-// text, never UI copy: it is not translated, exactly like the nginx block above.
 export function nixUpstream(host) {
   const h = String(host || "").trim();
   return (h && h !== "0.0.0.0" && h !== "::") ? h : "127.0.0.1";   // a wildcard bind is dialled on loopback
@@ -452,16 +358,9 @@ function _nixLoc(base) {
   return (b && b !== "/") ? b + "/" : "/";
 }
 export function nixProxyBlock(kind, hosts) {
-  // ONE block for however many virtual hosts this panel needs — the panel, and the subscription page
-  // when it has an address of its own. Two separate blocks would each carry `services.nginx = { … }`
-  // and `security.acme.acceptTerms`, and Nix REFUSES a second definition of the same attribute: an
-  // operator pasting both would get an eval error out of a screen that said "a working configuration".
   const hs = (hosts || []).filter(h => h && h.domain);
   if (!hs.length) return "";
   const L = [];
-  // A host we are SUGGESTING an address for (subscriptions are on, but nothing has published the
-  // page yet) carries the module option that gives it one — a vhost for a domain the panel does not
-  // advertise would be a proxy to a page whose links are still empty.
   const sug = hs.filter(h => h.suggest);
   if (sug.length) {
     for (const h of sug) L.push('services.swg-panel.sub.domain = "' + h.domain + '";');   // i18n-keys: generated Nix — file text, copied verbatim
@@ -522,9 +421,6 @@ export function subBaseUrl() {
   const behindProxy = tlsMode === "" || tlsMode === "skip";   // plain HTTP → a reverse proxy fronts swg-sub on the public port
   let raw = String(sub.url || (ps.subscriptions || {}).base_url || "").trim().replace(/\/+$/, "");
   if (!raw) return "";
-  // Re-derive host:port LIVE from the settings every time (only the token is stored), so a port/host change
-  // flows into every link. The public URL is often typed WITHOUT a scheme ("sub.example.net") — default it,
-  // otherwise new URL() throws and the configured listen port silently never gets appended.
   if (!/^https?:\/\//i.test(raw)) raw = "https://" + raw;
   try {
     const u = new URL(raw);
@@ -542,9 +438,6 @@ export async function subUrlFor(escRec) {
   return base + "/" + token + "#" + unlockKeyB64;
 }
 
-// Encrypt one peer's secret (private key + PSK) under the user's unlock-key and store the ciphertext.
-// This is the ONLY way a peer's key reaches the subscription page — encrypted here, decrypted only by
-// whoever holds the URL fragment. Best-effort: callers must not let a failure here break peer creation.
 export async function subEncryptPeer(uid, pid, privkey, psk, unlockKey) {
   const sec = await subEnc(unlockKey, new TextEncoder().encode(JSON.stringify({ k: privkey, p: psk || "" })));
   const r = await api.subBlob({ user_id: uid, peer_id: pid, sec });
@@ -562,9 +455,6 @@ export async function subUsersMap(force) {
   return _subUsersCache.map;
 }
 export function subUsersForget() { _subUsersCache = { at: 0, map: null }; }
-// Get a user's encryption unlock-key, minting an escrow entry (unlock-key wrapped by the SK) the first time
-// they own an encrypted-stored peer. Idempotent: an existing key is returned as-is (every blob is encrypted
-// under it), and the server returns the authoritative one so a race can't fork keys. null if the vault is locked.
 export async function ensureUserUnlockKey(uid) {
   const sk = subSKCached(); if (!sk || !uid) return null;
   const rec = (await subUsersMap(true))[uid];
@@ -575,14 +465,6 @@ export async function ensureUserUnlockKey(uid) {
   subUsersForget();
   try { return await subRecoverUnlock(r.data); } catch (_) { return null; }
 }
-// Publish a peer's freshly-minted secret to the encrypted config store — the ONLY moment the browser holds the
-// private key (create / rekey / reassign). In encrypted mode this IS the config store (and doubles as the
-// subscription blob when the user is subscribed). Best-effort and silent: skips in "off" mode or while the
-// vault is locked (then the peer publishes on a later rekey, or via the migration/encrypt-all pass). NEVER
-// breaks peer creation.
-// Reserved bucket for UNASSIGNED peers (mirrors SUB_ORPHAN on the server): their config is encrypted under a
-// dedicated SK-escrowed key so it survives a reload just like an assigned peer's, and is re-keyed into the
-// user's bucket on assignment.
 export const SUB_ORPHAN = "_orphan";
 export async function subMaybePublish(userId, peerId, privkey, psk) {
   try {
@@ -590,22 +472,10 @@ export async function subMaybePublish(userId, peerId, privkey, psk) {
     const uid = userId || SUB_ORPHAN;                      // unassigned → the orphan bucket
     const unlockKey = await ensureUserUnlockKey(uid);
     if (!unlockKey) {
-      // NOT silent. This returns before anything throws, so it skipped the very reporting the catch below
-      // exists for — the config is simply never stored, and the operator is told nothing. It is the path a
-      // bucket whose unlock_by_sk predates the CURRENT encryption key falls down (ensureUserUnlockKey takes
-      // its recovery branch *because* a key is present, fails to unwrap it, and returns null). Seen for real:
-      // every rekey of an unassigned peer reported success while its config reached no store at all, and the
-      // QR died with the tab that made it. Say so on the peer's row, like the sibling failure does.
       throw new Error(T("its encryption bucket was sealed with a previous encryption key"));
     }
     await subEncryptPeer(uid, peerId, privkey, psk, unlockKey);
   } catch (e) {
-    // Best-effort stays best-effort: the peer itself is fine and this must never break the flow. But swallowing
-    // it ENTIRELY meant a rotate could report "keys changed" for every peer while the new config never reached
-    // the subscription — the operator saw success, the user's page kept serving the old QR (or "Not ready yet"),
-    // and nothing anywhere said otherwise. Seen for real: subs/blobs left un-writable by root-owned tooling, so
-    // every publish 500'd and the only trace was a console line. Pin it to the peer's row — the same surface
-    // rotatePeerKeys already uses for the failures it can name, auto-expiring like the rest.
     if (peerId) {
       const msg = T("its config wasn't published to the subscription — {v1}", { v1: String((e && e.message) || e) });
       Store.rowErrors["peer:" + peerId] = { msg, at: Date.now() };
@@ -614,11 +484,6 @@ export async function subMaybePublish(userId, peerId, privkey, psk) {
     }
   }
 }
-// Peers whose publish was SKIPPED while the vault was locked — peer_id → {userId, privkey, psk}. The private key
-// lives ONLY in this tab (never on the server), so this is the one chance to still save it: unlocking the vault
-// later in the SAME session flushes these into the vault, OVERWRITING any stale blob (the rotate case: the peer
-// already has a blob with its OLD key, which a count-based heal can't spot). Cleared on reload, like every
-// in-session key copy — after that the config is unrecoverable and the peer must be rekeyed.
 const _pendingPublish = new Map();
 export async function subFlushPending() {
   if (Store.storeMode !== "encrypted" || !subSKCached() || !(_pendingPublish.size || _pendingKeep.size)) return;
@@ -630,17 +495,6 @@ export async function subFlushPending() {
   for (const a of [..._pendingKeep.values()]) if ((await exitKeepRouter(...a)) === true) n++;   // a dial-in router's key, the same way
   if (n || tried) bus.emit();      // a failed keep too: the open router sheet says why (s9c F60)
 }
-// Peers the backfill confirmed have NO recoverable config server-side (no session key, no stored plaintext, no
-// blob) — the panel never held their private key, so it can't rebuild or publish them (key custody). Re-probing
-// them just re-floods the console with 404s on every heal pass / reload. Remember them keyed by PUBKEY, so a
-// rekey / re-issue (which changes the pubkey) transparently re-probes. Persisted so a reload doesn't repeat the
-// whole sweep — the whole point is to stop the recurring flood, not just the in-session repeat.
-// ⚠️ DISCARD MARKERS WRITTEN BEFORE THE UNREACHABLE FIX. Until CONF_UNREACHABLE existed, a panel that was
-// merely unreachable got recorded here as "this peer has no config" — and getConfig() consults this map
-// BEFORE it probes, so a poisoned entry keeps the QR blank for ever. The entry is cleared only by a pubkey
-// change, i.e. by re-issuing the peer: the one destructive act the wrong message recommended. So the fix is
-// incomplete without dropping what the old code already wrote. This is an optimisation cache, never truth —
-// a peer that really has no config is simply re-marked on its next probe, once.
 const _NOCONF_V = "2";
 try {
   if (localStorage.getItem("swg-sub-noconf-v") !== _NOCONF_V) {
@@ -653,10 +507,6 @@ function _saveSubNoConf() { try { localStorage.setItem("swg-sub-noconf", JSON.st
 export function subNoConfSet(pid, pubkey) { if (_subNoConf.get(pid) !== pubkey) { _subNoConf.set(pid, pubkey); _saveSubNoConf(); } }
 export function subNoConfClear(pid) { if (_subNoConf.delete(pid)) _saveSubNoConf(); }
 export function subNoConfHas(pid, pubkey) { return !!pubkey && _subNoConf.get(pid) === pubkey; }
-// Ensure the encryption vault is unlocked before an action that needs it. Resolves true when the key is
-// available (already unlocked, or the operator just unlocked it) or not needed (store mode isn't encrypted);
-// false when the operator chose to skip. Shows a modal (VaultPromptSheet) explaining the action + the cost of
-// skipping. Never throws.
 let _vaultPromptPending = null;   // the in-flight unlock promise while the modal is open — coalesces concurrent asks
 export function ensureVaultUnlocked(opts) {
   // nothing is stored encrypted → no key needed; `always`: something kept while it was on is still read with the key
@@ -684,11 +534,6 @@ export async function subPublishOrPrompt(userId, peerId, privkey, psk) {
   _pendingPublish.delete(peerId);   // published → no longer pending
   return err;
 }
-// A subscription-affecting action that DOESN'T hand us a fresh private key (e.g. assigning an EXISTING peer to a
-// user, which keeps its key) can still leave that user with an unpublished peer → an empty "Not ready yet" QR on
-// their subscription page. Publish the user's recoverable-but-unpublished peers, PROMPTING for the key first if
-// the vault is locked (Skip leaves them unpublished, as the modal warns). Only acts for a subscribed user with a
-// real gap, so it never prompts pointlessly. Best-effort; never throws.
 export async function subReconcileUser(userId) {
   if (Store.storeMode !== "encrypted" || !userId) return;
   let rec; try { rec = (await subUsersMap(true))[userId]; } catch (_) { return; }
@@ -707,9 +552,6 @@ export async function subReconcileUser(userId) {
 // Peers whose encrypted blob we've already ensured this session (so viewing a multi-deployment peer's QRs
 // doesn't re-encrypt the same blob repeatedly).
 const _blobEnsured = new Set();
-// Viewing a peer's QR/config with the vault unlocked PUBLISHES its blob if it's missing — this is the real
-// "open the peer once to publish it" path for a peer created while the vault was locked (its config lives in
-// this session or the plaintext store, but no blob was written). Idempotent + best-effort; never throws.
 export async function ensurePeerBlob(peer, conf) {
   if (Store.storeMode !== "encrypted" || !subSKCached() || !peer || !peer.id || !conf) return;   // user_id optional (orphan bucket)
   if (_blobEnsured.has(peer.id)) return;
@@ -722,20 +564,12 @@ export async function ensurePeerBlob(peer, conf) {
   } catch (_) { _blobEnsured.delete(peer.id); }                // let a later open retry
 }
 
-// Publish every EXISTING peer of a user to their (just-enabled) subscription — subMaybePublish only fires
-// at peer creation, so without this a user's current peers would never reach the sub page. One blob per
-// peer (the private key is shared across a peer's deployments). A peer whose config isn't available
-// (store_configs off, or a pre-existing/imported peer with no stored key) can't be published — counted in
-// `missing` so the caller can warn instead of leaving a silently-empty page. Best-effort per peer.
 export async function subBackfillUser(uid, unlockKey) {
   const peers = Store.peersOfUser(uid);
   let published = 0, missing = 0; const missingPeers = [];
   for (const p of peers) {
     if (subNoConfHas(p.id, p.pubkey)) { missing++; missingPeers.push(p.id); continue; }   // known: no recoverable config for this key → don't re-probe (kills the 404 sweep on every heal pass / reload)
     let conf = anySessionConf(p.pubkey);                          // just-created config still in this session
-    // the private key is the same on every deployment, so any target that has a stored config will do — try them
-    // all. Only worth probing /api/config while legacy PLAINTEXT files still await migration; in the encrypted
-    // steady state (0 plaintext) it just 404s, so skip it and rely on the blob check below.
     if (!conf && Store.configsPlaintext > 0) {
       for (const t of (p.targets || [])) {
         try { const r = await api.config(p.pubkey, t.node, t.iface); if (r && r.ok && r.data && r.data.config) { conf = r.data.config; break; } } catch (_) {}
@@ -769,47 +603,10 @@ export async function subBackfillUser(uid, unlockKey) {
   return { published, missing, total: peers.length, missingPeers };
 }
 
-// Silent safety net: publish every subscription-enabled user whose LIVE peers outnumber their provisioned
-// blobs — i.e. peers created/assigned while the vault was locked (possibly in another admin session), which
-// would otherwise show "Not ready yet" on the subscription page. Runs only with the key already available
-// (no prompt — the per-action subPublishOrPrompt owns the "ask for the password" flow); best-effort, never
-// throws. Guarded against re-entrancy so overlapping polls/unlocks don't double-run. Idempotent.
 let _autoHealRunning = false;
 const _healTried = {};   // uid → the exact blob deficit we last attempted with the key available. Peers whose key
-                         // can't be recovered (no session/plaintext config, no blob — they need a rekey) can't be
-                         // published, so re-probing them every heal is wasted work + console 404 noise at fleet
-                         // scale. Attempt a given gap once; retry only when the deficit changes (a peer added, or
-                         // one got published elsewhere). Cleared for a user the moment they're fully covered.
-/* ── T-22 · a migrated node heals its own identities ──────────────────────────────────────────────
-   The owner's point, and it is the right one: needing to go and press Restore per interface after a
-   migration contradicts what "migration" means. A migrated node should be a MIRROR, and an operator should
-   not have to know that the server keypair is the one part of it that arrives by a different road.
-
-   It cannot be done at ARM time — a sealed key is sealed to the NODE's transport key, which a brand-new
-   box does not have until it first reports — so it is done at the first moment it CAN be: the node comes
-   up, holds rather than minting (T-22 ①), and this puts the key back without anyone asking. G5's
-   "one click from the user, the rest the panel does automatically (unless it needs to ask to unlock the
-   vault)" — this is the half that never needed asking, when the vault is already open.
-
-   Silent by design: no prompt, no toast on the ordinary path. If the vault is LOCKED this does nothing and
-   the interface keeps its "needs the vault" card, which is the one click G5 allows for. Modelled on
-   subAutoHeal down to the tried-map, so a node that cannot be healed is not re-probed on every poll. */
 let _ikRunning = false;
 const _ikTried = {};
-/* ── ESCROW THE PANEL CANNOT VOUCH FOR ─────────────────────────────────────────────────────────
-   A sealed interface key names the vault it opens with. A node too old to stamp one leaves the panel
-   holding ciphertext it cannot classify — and it must not assume, because "matches the blessed key"
-   is equally true of a blob left behind by a RESET vault, which opens for nobody. So the panel asks
-   for a re-seal on every sync, the node obliges (with a fresh `eph` each time, so the ask never
-   converges), and the operator is told to go and update a node by hand.
-
-   Only the browser can settle it: the vault private key is here and nowhere else. Try the unseal. It
-   succeeding is proof — nothing else could have opened it — and the panel records that this node seals
-   to this vault, stamps what it holds, and stops asking. It failing is proof of the opposite, and the
-   blob is left exactly as it was for the operator to deal with; we simply stop retrying this session.
-
-   Silent and idempotent, like every other auto-heal here: no toast for something the operator never
-   knew was broken. */
 const _evTried = {};
 let _evRunning = false;
 export async function escrowAutoVerify() {
@@ -818,10 +615,6 @@ export async function escrowAutoVerify() {
   try {
     let priv = null;
     for (const n of (Store.nodes || [])) {
-      /* Both families, because a WDTT server identity is escrowed exactly like an interface key. Leaving
-         the twin out meant a node too old to stamp `vault` healed its interfaces and went on telling the
-         operator its WDTT servers had "no usable escrow — recreating it re-keys every user", which is the
-         same untrue sentence for the same reason. One list to walk instead of one. */
       const ifs = (Store.describe || {})[n.id] || {};
       const targets = [
         ...Object.entries(ifs).map(([ifn, m]) => [ifn, "iface", m && m.escrow_unverified]),
@@ -837,9 +630,6 @@ export async function escrowAutoVerify() {
           const opened = await ivkUnseal(priv, blob);
           if (opened) await api.escrowVerified({ node: n.id, iface: ifn, family });
         } catch (_) {
-          /* Either the blob is for a different vault (the honest answer — leave it, the panel keeps
-             asking and the node keeps re-sealing, which is how it recovers) or the vault key was not
-             readable yet. Both mean: do nothing, and do not retry this one this session. */
         }
       }
     }
@@ -862,10 +652,6 @@ export async function ifaceKeyAutoRestore() {
           if (sealed) await api.ifaceRecreate({ node: n.id, iface: ifn, sealed_key: sealed });
         } catch (_) { delete _ikTried[k]; }      // transport key not reported yet, say → let a later poll retry
       }
-      /* …and the turn-family twin, which has HELD since long before interfaces did — and until now waited
-         for a human to press its Restore button. Leaving that one manual would answer the owner's question
-         with "a migrated node is a mirror, except for the WDTT server", which is not an answer. Same key
-         material, same relay, same one-shot. */
       for (const w of ((Store.stats[n.id] || {}).wdtt || [])) {
         if (!w || !w.await_restore || !w.iface) continue;
         const k = n.id + "|wdtt|" + w.iface;
@@ -916,11 +702,6 @@ export async function captureOverridesFrom(peer, parsed) {
   if (Object.keys(ov).length) { try { await api.peerUpdate({ peer_id: peer.id, overrides: ov }); } catch (_) {} }
 }
 
-// The one-time migration pass. Touches ONLY the peers the server says still hold plaintext (O(plaintext), so a
-// 1000-peer fleet isn't a full-fleet probe): encrypt each ASSIGNED one's config into its blob, capture non-secret
-// overrides, then purge plaintext ONLY where a blob now exists (server re-checks) + clean orphan .conf files
-// (dead keys, no live peer). Resumable — re-running does only the stragglers. `flagged` = peers that couldn't be
-// encrypted (unassigned, or no stored/importable key) → the rekey affordance. Requires the vault unlocked.
 export async function runConfigMigration() {
   if (!subSKCached()) throw new Error(T("Unlock the Encryption Vault first."));
   let list = [];
@@ -957,20 +738,11 @@ export async function runConfigMigration() {
 
 export const AWG_ORDER = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5",   // i18n-keys: AmneziaWG parameter names, as the protocol spells them
   "HeaderProtectionKey", "RandomTrailers", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "DisableCookies"];   // i18n-keys: AmneziaWG 3.x (docs/AWG3-PLAN.md §7.1); twins in the panel, node, agent, sub.js, turn-artifacts.js
-// IPv6 leak-guard: a FULL v4 tunnel (AllowedIPs contains 0.0.0.0/0) MUST also capture v6 (::/0), else the client's
-// IPv6 traffic escapes the tunnel over its real IP (the tunnels are v4-only, so captured v6 is dropped node-side and
-// apps fall back to v4 — no leak). Append ::/0 when it's missing. Split-tunnel (specific v4 CIDRs, no 0.0.0.0/0) is
-// left untouched — routing only some v4 is an explicit choice and v6 staying local is expected there.
 export function guardAllowed(a) {
   const parts = ((a || "").trim() || "0.0.0.0/0, ::/0").split(",").map(s => s.trim()).filter(Boolean);
   if (parts.includes("0.0.0.0/0") && !parts.some(p => p.includes(":"))) parts.push("::/0");
   return parts.join(", ");
 }
-// The AmneziaWG lines of a client config (docs/AWG3-PLAN.md §7.5). A 3.x key is rendered only for a 3.1 interface — one
-// whose dict holds a HeaderProtectionKey (§7.1) — because a 2.0 app refuses the whole config over any key it does not know,
-// and on a 2.0 interface such a key can only be a one-sided server setting. RandomTrailers is written `1`, the one spelling
-// every client parser takes (`on` fails free-turn 3.2.0, `true` fails the tools — §3); DisableCookies never (D-cookies).
-// A 2.0 dict renders exactly as it always has. Twin: sub.js buildConf.
 const AWG3_FROM = AWG_ORDER.indexOf("HeaderProtectionKey");
 export function awgConfLines(awg) {
   awg = awg || {};
@@ -1009,9 +781,6 @@ export function parseFullConf(text) {
   const m = re => (text.match(re) || [])[1];
   const dnsLine = m(/DNS\s*=\s*(.+)/);
   const awg = {};
-  // To the end of the line: an I1–I5 value has spaces (`<b 0xc000000001><r 64><t>`), and stopping at the first one
-  // re-emitted `I1 = <b`, which every AmneziaWG datapath refuses. Within the line: an empty `I2 = ` stays absent
-  // rather than taking the next line as its value.
   for (const k of AWG_ORDER) { const v = m(new RegExp("^" + k + "[ \\t]*=[ \\t]*(.*\\S)", "m")); if (v != null) awg[k] = v; }
   return {
     privkey: m(/PrivateKey\s*=\s*(\S+)/) || "",
@@ -1028,12 +797,6 @@ export function parseFullConf(text) {
 }
 // Same config, Endpoint swapped to the turn-proxy's public listen address (import via turn-proxy).
 
-// Sparse per-peer NON-secret overrides for the roster: only the fields the operator set to something
-// OTHER than the interface's live default (so a peer left on defaults stores nothing and keeps tracking
-// fleet-wide changes). `opts` = {dns (string), mtu, allowed, keepalive}; `meta` = the interface meta of the
-// deployment being saved. The exact inverse of effectiveClientParams above (and of the server's
-// clean_overrides), so panel + sub + roster agree: what this declines to store is what that one puts back.
-// dns=[] is kept as an explicit "no DNS line" when the interface default is non-empty.
 export function configOverrides(opts, meta) {
   const ov = {}; meta = meta || {};
   const dnsArr = String(opts.dns || "").split(",").map(s => s.trim()).filter(Boolean);
@@ -1058,9 +821,6 @@ export function downloadConf(text, base, ext) {
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-// Turn-proxy client-artifact encoders live in the shared turn-artifacts.js (window.SWGTurn) so the
-// admin app and the subscription page build byte-identical configs from ONE source. _b64ToBytes stays
-// here (used beyond turn, e.g. subDec).
 function _b64ToBytes(b64) { try { const s = atob(String(b64 || "").trim()); const a = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i); return a; } catch (_) { return new Uint8Array(0); } }
 
 // Client-import artifact for a peer behind a turn-proxy — the per-fork wire formats live in the shared
@@ -1069,22 +829,10 @@ export function turnArtifact(baseConf, tp, vkLink, vkLinks, asClient, os) {
   const fork = turnFork(tp.service);
   if (SWGTurn.setForkLabel) SWGTurn.setForkLabel(forkLabel);   // {fork} in a server name is the catalog's name (q189 HE-8)
   if (SWGTurn.setCliAuthors) SWGTurn.setCliAuthors(f => ((((Store.turnCatalog || {}).servers) || []).find(x => x.id === f) || {}).cli_authors);   // the served CLI builds
-  // Every client (the server's own OR a cross-fork one) gets the admin's saved values for THIS (server, client, OS); the encoder
-  // fills anything unset with the app's own default. `os` omitted → the client's primary platform (config-gen has
-  // no device context yet; the sub page can pass the visitor's OS later).
   const native = (typeof SWGTurn.nativeEncoder === "function") ? SWGTurn.nativeEncoder(fork) : null;
   const cs = turnClientSettingsFor(fork, asClient || native, os);
   return SWGTurn.artifact(baseConf, tp, vkLink, cs, vkLinks, asClient);
 }
-// The client apps a server offers → {id, encoder, name, cls, plat, cross}, taken from the COMPAT MATRIX,
-// which is the one authority on whether a (fork, app) pairing connects at all — a client absent from it has
-// no usable connection and must never be offered. The per-fork `clients` list used to drive this, and drifted
-// from the matrix twice (ildarmaga hid its own native app; samosvalishe hid a working obfuscated pairing), so
-// membership now comes straight from the authority and the two can no longer disagree.
-// Ordered the way the sub page ranks, so both surfaces agree: native apps, friendly apps, then each band's
-// CLI, then plain last. The sort is stable, so within a band the catalog's authored order survives.
-// `clients` remains ONLY as the fallback for a legacy catalog that predates `compat` (an old serve.json) —
-// the same condition sub.js gates its own legacy fallback on.
 export function turnClientsFor(fork) {
   const cmap = (Store.turnCatalog && Store.turnCatalog.clients) || {};
   const f = turnForkList().find(x => x.id === fork) || {};
@@ -1107,18 +855,11 @@ export function turnClientsFor(fork) {
   return hasCompat ? out.sort((a, b) => rank(a.id) - rank(b.id))
                    : out.sort((a, b) => (a.cross ? 1 : 0) - (b.cross ? 1 : 0));
 }
-// A FUNCTION: a module-level T() is evaluated at import, before loadLang() resolves, and would freeze
-// this warning in English for the life of the page (same rule as ui.js's label tables).
-// the catalog client id whose encoder matches (clients map their own encoder; id==encoder for most)
 function _clientIdForEncoder(encoder) {
   const cmap = (Store.turnCatalog && Store.turnCatalog.clients) || {};
   for (const cid in cmap) if ((cmap[cid].encoder || cid) === encoder) return cid;
   return encoder;
 }
-// merged client-app settings for (server, client, OS): the client's own schema defaults overlaid by the admin's
-// saved values at panel_settings.turn_client_settings[fork][clientId][os]. `os` omitted → the client's primary
-// platform. Fed into the config/QR/link encoder (the SETTINGS SPLIT). The SCHEMA is per-client (unchanged); this
-// just selects WHICH saved value-set to apply.
 export function turnClientSettingsFor(fork, encoder, os) {
   const cmap = (Store.turnCatalog && Store.turnCatalog.clients) || {};
   const cid = _clientIdForEncoder(encoder);
@@ -1155,9 +896,6 @@ function vaultMissing(onNav) {
   return html`<${Fragment}>${before}<a href="#/panel/settings" onClick=${onNav}>${T("Settings → Client configs → Encryption")}</a>${after}<//>`;
 }
 
-// A sheet that re-renders on every poll (the router config's, while a keep may still land) shows the same config again
-// without encoding it again (backlog C review F5) — memoised PER QR, so the image (it encodes a private key) goes with the
-// QR that showed it: a module-wide cache kept up to 8 keys in the tab after the sheet closed and the vault locked (verify F7)
 export function QR({ conf, label, px }) {
   const src = useMemo(() => { try { return qrDataURL(conf, px || 360); } catch (_) { return null; } }, [conf, px]);
   if (!src) return html`<div class="qr-fail">${T("config too large")}<br>${T("to encode as QR")}</div>`;
@@ -1199,11 +937,6 @@ export function copyQrImage(text, what) {
   } catch (_) { toast(T("Copy failed."), "err", 2200); }
 }
 
-// resolve a per-target client config: session (built at creation) → stored → none
-// Resolve a peer's config and RE-RENDER it on the fly: client-side fields (private key, address,
-// DNS, MTU, AllowedIPs, keepalive, PSK) come from the stored/session source, but the server-facing
-// fields (Endpoint, server PublicKey, AmneziaWG params) are rebuilt from the CURRENT interface
-// metadata — so an interface endpoint change shows up in every config/QR without a re-issue.
 export function rerenderConf(text, node, iface) {
   if (!text) return text;
   const meta = Store.ifaceMeta(node, iface);
@@ -1226,11 +959,6 @@ export function rerenderConf(text, node, iface) {
     }
     return out;
   }
-  // …but where AmneziaWG 3.x is in play — the interface has a 3.x key, or this config was built while it did — the whole
-  // AWG block and the keepalive are rebuilt from the live meta (docs/AWG3-PLAN.md §7.5, trap 9): refreshing only the lines
-  // a config already has froze it at the generation it was built with, so one built before a switch to 3.1 never gained
-  // the HeaderProtectionKey, and one built before a switch back kept it — neither connects. The block goes where it was
-  // (or after MTU, where buildConf puts it); lines outside [Interface] are never touched.
   const L = out.split("\n");
   let end = L.findIndex(l => /^[ \t]*\[Peer\]/i.test(l));
   if (end < 0) end = L.length;
@@ -1247,12 +975,6 @@ export function rerenderConf(text, node, iface) {
   return keep.join("\n").replace(/^([ \t]*PersistentKeepalive[ \t]*=[ \t]*)(\d+)(?:[ \t]*-[ \t]*\d+)?[ \t]*$/m,
     (m, p1, k) => p1 + clientKeepalive(k, awg));
 }
-// The four non-secret render parameters for ONE deployment of one peer (DNS / MTU / AllowedIPs / keepalive):
-// the interface's LIVE defaults, under the peer-wide overrides, under THIS target's own. Byte-for-byte the
-// same rule as swg-panel-server's effective_client_params — see that docstring for why the rule lives in one
-// place and is copied rather than paraphrased. `target` is the peer's {node,iface,...} entry being rendered:
-// this used to take only (peer, meta), so it could not do the per-target merge swg-sub does, and a peer with
-// a per-target MTU rendered one config in this panel's QR and a different one on its own subscription page.
 export function effectiveClientParams(peer, target, meta) {
   const pov = (peer && peer.overrides) || {}, tov = (target && target.overrides) || {};
   const ov = { ...pov, ...tov };                       // the deployment's own setting wins, field by field
@@ -1272,19 +994,12 @@ export function effectiveClientParams(peer, target, meta) {
 // "We could not ask" — distinct from "we asked and there is none". Returned by blobConfig and consumed by
 // getConfig, which must not record a miss (nor persist a no-config marker) for a peer it never reached.
 export const CONF_UNREACHABLE = Symbol("conf-unreachable");
-// The blob EXISTS and the panel served it — but the bucket key that opens it was sealed under a previous
-// encryption key, so it can never be decrypted. Distinct from UNREACHABLE (a transport failure, retry later)
-// and from null (no config stored): this one is permanent, and the only way back is to re-issue the peer.
 export const CONF_SEALED_OLD = Symbol("conf-sealed-old");
 const _confUnreach = new Map();
 const _confSealed = new Map();   // pubkey|node|iface → seen-at; blob present but sealed under a replaced key   // "pubkey|node|iface" -> when the last lookup could not reach the panel
 export function confWasUnreachable(pubkey, node, iface) { return _confUnreach.has(pubkey + "|" + node + "|" + iface); }
 export function confWasSealedOld(pubkey, node, iface) { return _confSealed.has(pubkey + "|" + node + "|" + iface); }
 
-// The ENCRYPTED-AT-REST config path: fetch the peer's ciphertext blob, decrypt it in-browser with the
-// user's unlock-key (recovered from the vault), and rebuild the config LIVE from the decrypted {k,p} +
-// the peer's overrides + the interface's current params. Returns null (caller falls back to plaintext /
-// session) when the peer is unassigned, the vault is locked, or no blob exists yet. Never sends a key.
 export async function blobConfig(peer, node, iface) {
   if (!peer || !subSKCached()) return null;                // user_id optional — unassigned peers use the orphan bucket
   const t = (peer.targets || []).find(x => x.node === node && x.iface === iface);
@@ -1293,21 +1008,12 @@ export async function blobConfig(peer, node, iface) {
   let sec, unlockKey;
   try {
     const r = await api.subBlobGet(peer.id);
-    // ⚠️ A TRANSPORT FAILURE IS NOT AN ANSWER. `r` is null/!ok when the panel could not be reached at all
-    // (restarting, proxy blip, tab offline). Collapsing that into the same `null` as "this peer has no
-    // blob" made the sheet state, flatly, "No stored config — re-issue this peer" for a peer whose
-    // ciphertext was sitting on disk the whole time — and getConfig() then PERSISTED that verdict to
-    // localStorage, so it survived a reload and was cleared only by a rekey, which is the very
-    // destructive act the message recommends. Observed on a live panel mid-restart.
     if (!r || r.ok === false) return CONF_UNREACHABLE;
     if (!r.data || !r.data.sec) return null;
     sec = r.data.sec;
     const buid = r.data.user_id || peer.user_id || SUB_ORPHAN;   // decrypt with the key of the bucket the blob is IN
     const rec = (await subUsersMap())[buid];
     if (!rec || !rec.unlock_by_sk) return null;
-    // NOT inside the transport catch. Unwrapping is a CRYPTO step, and folding its failure into
-    // CONF_UNREACHABLE told the operator "couldn't reach the panel — try again in a minute" about a blob the
-    // panel had just served, for a key that will never open it however long they wait. Observed for real.
     try {
       unlockKey = await subRecoverUnlock(rec);   // unlock-key only (works whether or not the user is subscribed)
     } catch (_) {
@@ -1327,9 +1033,6 @@ export async function blobConfig(peer, node, iface) {
   } catch (_) { return null; }
 }
 
-// A dial-in exit's ROUTER key is kept in the same store (1.8.11 S9c), in its node's bucket (SUB_EXIT_PFX on the server):
-// {k: the router's private key, n: the node's public key}, encrypted here under the bucket's unlock-key as a peer's {k, p}
-// is. The config itself is never stored — it is rebuilt from the exit's stored profile each time it is shown.
 export const exitBucket = nid => "_x_" + nid;
 // Keeps skipped while the vault was locked — "node|exit" → exitKeepRouter's arguments. The router's private key lives only
 // in this tab, so, as a peer's in _pendingPublish, unlocking later in the same session still keeps it (subFlushPending).
@@ -1339,9 +1042,6 @@ const _keepFail = new Map();
 // What exitKeepRouter answers while the vault is locked: a sentinel, not a sentence — a sentence compared against T() stops
 // matching after a language switch (s9d F10)
 export const EXIT_KEEP_LOCKED = Symbol("exit-keep-locked");
-// The keep of this exit's router key as this tab knows it: "queued" (waiting for an unlock), a sentence (its last try failed —
-// still queued, or refused for good and dropped), or null (nothing waiting: kept). The router sheet reads it again after a
-// flush (s9d F11).
 export function exitKeepState(nid, exitId) {
   const pk = nid + "|" + exitId;
   return _keepFail.get(pk) || (_pendingKeep.has(pk) ? "queued" : null);
@@ -1396,11 +1096,6 @@ export async function exitRouterKey(nid, exitId) {
   } catch (_) { return CONF_SEALED_OLD; }                         // GCM refused it: sealed under a key this vault does not hold
 }
 
-// A config the server currently can't build (e.g. the peer's interface is a ghost — gone with no key) returns
-// EMPTY every time. Without a memory of that, a QR/config view re-requests it on every render/remount and floods
-// the console + server with identical 404s. Remember an empty result per (pubkey,node,iface) and skip re-fetching
-// it — invalidated by a configEpoch bump (an action that could change the answer: create / rekey / vault unlock)
-// or a short TTL (so a restored interface self-heals without a manual refresh).
 const _configMiss = new Map();   // "pubkey|node|iface" -> { epoch, at }
 const _CONFIG_MISS_TTL = 30000;
 function _configMissFresh(mk) {
@@ -1411,10 +1106,6 @@ export function getConfig(pubkey, node, iface) {
   const s = Store.sessionConfigs[pubkey];
   if (s && s[tkey(node, iface)]) return Promise.resolve(rerenderConf(s[tkey(node, iface)], node, iface));
   const peer = (Store.recon.peers || []).find(p => p.pubkey === pubkey);
-  // A peer PROVEN to have no config server-side (while the vault was unlocked / store isn't encrypted) survives
-  // reloads via _subNoConf — skip the blob + config probes that would just 404 again on every card render. A
-  // rekey / re-issue changes the pubkey, so this self-invalidates. A LOCKED vault is not proof, so below we
-  // neither trust nor write _subNoConf while locked (the short-TTL _configMiss handles that transient case).
   if (peer && subNoConfHas(peer.id, pubkey)) return Promise.resolve(null);
   const mk = pubkey + "|" + node + "|" + iface;
   if (_configMissFresh(mk)) return Promise.resolve(null);   // known-empty this epoch → don't re-hammer the server
@@ -1440,9 +1131,6 @@ export function getConfig(pubkey, node, iface) {
     }
     _confUnreach.delete(mk);
     if (c) { hit(); return c; }
-    // /api/config is the LEGACY plaintext endpoint; in the (normal) encrypted-at-rest steady state there are no
-    // plaintext files, so it 404s for every peer. Only probe it while legacy files still await migration —
-    // otherwise skip it, which is what killed the recurring /api/config 404 flood.
     if (Store.configsPlaintext > 0) return api.config(pubkey, node, iface).then(r => {
       const conf = rerenderConf(r.ok ? r.data.config : null, node, iface);
       if (conf) hit(); else miss();
@@ -1458,9 +1146,6 @@ export function anySessionConf(pubkey) {
 
 
 
-// A blocking prompt for a user-triggered action that needs the encryption key when it isn't unlocked this
-// session. Explains WHY the key is needed and the cost of skipping; "Unlock & continue" proceeds, "Skip"
-// continues without the encrypted step. Resolves the ensureVaultUnlocked() promise with true/false.
 export function VaultPromptSheet({ opts, onDone }) {
   const [pw, setPw] = useState(""); const [busy, setBusy] = useState(false);
   const [keep, setKeep] = useState(subPersistOn());   // "keep this device unlocked" — device-persist opt-in

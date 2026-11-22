@@ -7,10 +7,6 @@
      (e.g. /swg/) when SWG_PANEL_BASE is set, so all relative URLs resolve correctly. -->
 <base href="/">
 <title>swgPanel</title>
-<!-- A control panel has no business in a search index: a sign-in page that is findable is a list of targets
-     for anyone enumerating installs, and no operator asked to be listed. The subscription page has carried
-     this since it shipped; the panel had nothing, which is how installs ended up indexed. Chat previews
-     (Telegram/Slack/WhatsApp) ignore robots and still read the og: tags below, so this costs nothing. -->
 <meta name="robots" content="noindex, nofollow">
 <meta name="color-scheme" content="dark light">
 <!-- Description/og are rewritten per request in the panel's index.html handler, in the language the request
@@ -37,15 +33,6 @@
 <script>(function(){try{var m=localStorage.getItem("swg-theme");if(["light","dark"].indexOf(m)<0)m=matchMedia("(prefers-color-scheme: light)").matches?"light":"dark";document.documentElement.dataset.theme=m;}catch(e){document.documentElement.dataset.theme="dark";}})();</script>
 <!-- Language before first paint, mirroring the theme bootstrap above: stored pick, else the browser's. -->
 <script>(function(){try{var l=localStorage.getItem("swg-lang");if(!l){l=(navigator.language||"").slice(0,2).toLowerCase();if(l!=="ru")l="en";}document.documentElement.lang=l;}catch(e){document.documentElement.lang="en";}})();</script>
-<!-- Phone or desktop UI, before first paint. A touch phone judged by the DEVICE, not the window (a phone in landscape stays a
-     phone, a narrowed desktop window stays desktop, a tablet is desktop); localStorage "swg-ui" = "m" | "d" overrides it. A
-     browser without CSS nesting or :has() always gets desktop: m.css would not apply there (Firefox shipped :has() in 121, after
-     nesting — review F25). Only the phone UI covers the notch (viewport-fit=cover, its safe-area insets in m.css; the desktop UI
-     has none — F24), and on iOS only it pins the scale: Safari zooms a page whose focused field is under 16 px, which the
-     phone's 15 px fields are (F23); iOS still lets the user pinch-zoom, Android's pinch is left alone. A phone browser asked for the "desktop
-     site" lays the page out ~980 px wide whatever the viewport tag says, where the phone UI would be drawn at a third of its
-     size: the automatic default gives it the desktop UI it asked for (the layout is wider than the screen's longest side). Read once: js/util.js isMobile() reads the
-     attribute, never this test. The status-bar colour follows the panel's resolved theme (set just above), not the system's. -->
 <script>(function(){var d=document.documentElement;try{if(window.CSS&&CSS.supports&&CSS.supports("selector(&)")&&CSS.supports("selector(:has(*))")){var u=null;try{u=localStorage.getItem("swg-ui");}catch(e){}if(u!=="m"&&u!=="d")u=matchMedia("(pointer: coarse)").matches&&Math.min(screen.width,screen.height)<600&&d.clientWidth<=Math.max(screen.width,screen.height)+40?"m":"d";if(u==="m"){d.dataset.ui="m";var vp=document.querySelector('meta[name="viewport"]');if(vp)vp.content+=", viewport-fit=cover"+(/iP(hone|ad|od)/.test(navigator.userAgent)?", maximum-scale=1":"");}}var t=document.querySelector('meta[name="theme-color"]');if(t)t.content=d.dataset.theme==="light"?"#FFFFFF":"#10151E";}catch(e){}})();</script>
 </head>
 <body>
@@ -100,9 +87,6 @@
 <script src="vendor/qrcode.js"></script>
 <!-- shared turn-proxy client-config builders (window.SWGTurn) — one copy for the app + the subscription page. -->
 <script src="turn-artifacts.js"></script>
-<!-- Buildless: vendored Preact + htm as ESM, resolved via an import map. No bundler,
-     no npm tree shipped — edit app.js and reload. Bare specifiers below resolve
-     against <base href>, so they keep working under SWG_PANEL_BASE subpaths too. -->
 <script type="importmap">
 { "imports": {
     "preact": "./vendor/preact.module.js",
@@ -110,10 +94,6 @@
     "htm": "./vendor/htm.module.js"
 } }
 </script>
-<!-- The SPA is ~20 ES modules (docs/APP-JS-SPLIT-PLAN.md). Without these hints the browser can only
-     discover them by parsing app.js first, then each module's own imports — three request waves over an
-     HTTP/1.1 origin. Preloading flattens that to one. The panel stamps ?v= onto each href, the same
-     whole-tree key the imports carry, so a hint and its import are the SAME url and fetch once. -->
 <link rel="modulepreload" href="js/charts.js">
 <link rel="modulepreload" href="js/crypto.js">
 <link rel="modulepreload" href="js/grids.js">
@@ -142,15 +122,6 @@
 <link rel="modulepreload" href="js/util.js">
 <link rel="modulepreload" href="js/views.js">
 <script type="module" src="app.js"></script>
-<!-- Boot guard. The SPA is ~22 ES modules: if one 404s, is truncated, or the browser is too old to
-     support the importmap above, NOTHING renders and the only trace is a console line nobody opens —
-     verified by injection: a missing module leaves 40 characters of app-bar and no #view at all.
-     This script is deliberately:
-       · INLINE, because it has to run when zero modules load (the CSP allows 'unsafe-inline' scripts);
-       · ES5, because the browser it most needs to talk to is the one too old to parse modern syntax —
-         a guard written in the syntax it is warning about would fail silently with it;
-       · last in <body>, so the module tag above already exists and its load error is observable.
-     It distinguishes the two causes, because the fixes are completely different. -->
 <script>
 (function () {
   var shown = false;

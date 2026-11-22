@@ -67,9 +67,6 @@ TLS_DIR="${TLS_DIR:-/etc/swg-panel/tls}"
 ACME_WEBROOT="${ACME_WEBROOT:-/var/www/acme}"
 # ────────────────────────────────────────────────────────────────────────
 
-# ⚠️ --dry-run WHEREVER IT STANDS. Only a FIRST argument counted, and bootstrap.sh passes its flags through in the order
-# they were typed — `… master --yes --dry-run` ran a REAL install. -pass / -user are the Docker installer's flags for the
-# login (bootstrap passes them through here too) and were ignored on bare metal: the same as BASIC_PASS= / BASIC_USER=.
 DRYRUN=false; _prev=""
 for _a in "$@"; do
   case "$_a" in --dry-run) DRYRUN=true;; esac
@@ -104,15 +101,7 @@ iface_row(){ local n="$1" conf proto ep lp addr   # set -e safe; prefer a just-q
     lp="$(conf_get "$conf" ListenPort || true)"; addr="$(conf_get "$conf" Address || true)"; fi
   [ -n "$ep" ] || ep="$(detect_public_ip 2>/dev/null || true)"
   printf '    %s%s%s  %s%-10s%s  %s:%s  %s\n' "$C_GREEN" "$(printf '%-10s' "$n")" "$RESET" "$BOLD" "$(proto_label "${proto:-?}")" "$RESET" "${ep:-?}" "${lp:-?}" "${addr:-?}"; }
-# WDTT instances this node runs, from its own record. Their interfaces are brought up by the WDTT server itself and
-# have NO .conf, so detect_wg (a conf-dir scan) can never see them — list them explicitly or they look absent.
-# Emits "<iface>\t<listen>\t<subnet>" per line.
-# Every interface this node ALREADY manages (wg/awg from config.json + its WDTT instances) — the "local" set, as
-# opposed to anything else on the box, which is an adoption candidate for the panel.
 local_ifaces(){ { node_ifaces; wdtt_local | cut -f1; } 2>/dev/null | awk 'NF' | sort -u; }
-# The interfaces the panel's record for THIS node owns — the record a re-install binds to, found by the node's name as
-# LOCAL_NODE_ID finds it — read from a kept state dir; nothing on a first install. The panel hands these to the node as
-# owned_ifaces, and swg-noded takes a live one back by itself. Mesh links (system) are not listed.
 kept_panel_ifaces(){ [ -f "$STATE_DIR/nodes.json" ] && [ -n "${HOST_NODE_NAME:-}" ] && have python3 || return 0
   python3 - "$STATE_DIR/nodes.json" "$HOST_NODE_NAME" <<'PY' 2>/dev/null | drop_sys_ifaces || true
 import json, sys
@@ -128,9 +117,6 @@ for v in (d.values() if isinstance(d, dict) else []):
         break
 PY
 }
-# add-only marker: an interface ADOPTED from outside (existing peers) carries '#swg:onboarded' in its
-# conf so swg-noded never wipes its peers. The marker rides along through re-installs and conversions — and
-# an installer only ever READS it: the adoption that writes it happens in the panel (swg-noded onboard_ifaces).
 iface_onboarded(){ local c="${IF_CONF[$1]:-}"; [ -n "$c" ] && grep -q '^#swg:onboarded' "$c" 2>/dev/null; }
 info(){ _nlguard; echo "${C_BLUE}▸${RESET} ${BOLD}$*${RESET}"; }   # ▸ light-blue, bold (universal action flag)
 sub(){  _nlguard; echo "${C_BL}::${RESET} $*"; }                    # :: blue sub-item / progress detail
@@ -148,13 +134,6 @@ bringup(){ local tool="$1" ifn="$2" out
 writef(){ # writef <abs_path> <mode>   (content on stdin)
   local p="$1" m="${2:-644}" full="$PREFIX$1"; mkdir -p "$(dirname "$full")"; cat > "$full"
   chmod "$m" "$full" 2>/dev/null || true; ok "${_WROTE:-wrote} $p ($m)"; }
-# writef, but the file arrives by RENAME instead of by truncating in place — a NEW inode, not the same one
-# refilled. For a script that can be REPLACED WHILE IT IS RUNNING this is the difference between working and
-# not: /usr/local/bin/swg-update re-bakes itself during the update it is performing, and bash reads a script
-# incrementally from an open fd, so an in-place rewrite makes the running shell resume at its old byte offset
-# inside the NEW file's text. A rename leaves that fd pointing at the old, unlinked bytes, where the offset
-# is simply EOF. (It is also the only safe way to replace a root-owned executable: an interrupted `cat >`
-# leaves a truncated one behind, a rename cannot.)
 writef_atomic(){ # writef_atomic <abs_path> <mode>   (content on stdin)
   local p="$1" m="${2:-644}" full="$PREFIX$1"; mkdir -p "$(dirname "$full")"; cat > "$full.new"
   chmod "$m" "$full.new" 2>/dev/null || true; mv -f "$full.new" "$full"; ok "${_WROTE:-wrote} $p ($m)"; }
@@ -164,9 +143,6 @@ keyd(){ printf '%s%s[%s]%s%s' "$BOLD" "$C_BLUE" "$1" "$2" "$RESET"; }   # defaul
 keyg(){ printf '%s[%s]%s%s'   "$C_GREY"        "$1" "$2" "$RESET"; }   # de-emphasised label grey:  keyg n 'one'                → [n]one
 STEP="${STEP_BASE:-1}"; step(){ [ -n "${_SWG_NL:-}" ] || echo; _SWG_NL=""; echo "$(b "Step $STEP. $1")${2:+   $2}"; STEP=$((STEP+1)); }   # sequential; skip the leading blank when a prompt already printed one
 
-# ⚠️ A TERMINAL, ASKED QUIETLY FIRST. `read … </dev/tty` with none (an unattended run, `</dev/null`, no controlling
-# terminal) makes bash print a raw "line N: /dev/tty: No such device or address" before the read fails and the
-# default is taken — every prompt below then reads as a crash. Same fall-through, without the noise.
 _tty(){ swg_tty_ok; }
 ask(){ local v p="$1" d="${2:-}"; if [ -n "${!3:-}" ]; then [ -n "${_SWG_NL:-}" ] || echo; _SWG_NL=""; _given "$p" "${!3}"; _pnl; return; fi
   echo; if _tty; then read -rp "  $p${d:+ [$(col "$C_BLUE" "$d")]}: " v <"${SWG_TTY:-/dev/tty}" || true; else _notty "$p" "$d"; fi; printf -v "$3" '%s' "${v:-$d}"; }
@@ -194,11 +170,6 @@ v_freeport(){ v_port "$1" && port_free "$1"; }
 panel_owns_port(){ have ss || return 1; local pid
   pid="$(ss -lntpH "sport = :$1" 2>/dev/null | grep -oE 'pid=[0-9]+' | sed -n 1p | cut -d= -f2 || true)"
   [ -n "$pid" ] && grep -qs swg-panel-server "/proc/$pid/cgroup"; }
-# The address the start check asks — one THIS unit actually serves (write_panel_unit). A co-located node's
-# plain-HTTP loopback exists only when there is one (SWG_PANEL_LOCAL_PORT); a HOST-role panel has no such
-# listener, so asking it there reported every host install as "did NOT start" over a panel that was serving.
-# Otherwise the panel's own listener on 127.0.0.1:$PORT — TLS when it terminates TLS itself (internal + cert;
-# -k at the call: it proves the door answers, not the cert) — and /healthz under the base, unauthenticated.
 panel_probe_url(){
   if [ "$_HAS_LOCAL_NODE" = yes ]; then printf 'http://127.0.0.1:%s/' "$LOCAL_PORT"; return 0; fi
   local sch=http
@@ -283,19 +254,10 @@ detect_public_ip(){ # best public IPv4: default-route source, then first hostnam
   printf '%s' "$ip"; }
 detect_wan(){ ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | sed -n 1p; }
 
-# ⚠️ A BARE PORT IS A PORT, not a hostname. `v_url 8443` returns TRUE — digits are legal host characters —
-# so an operator answering the ":443 is in use" prompt with `8443`, which is exactly what that prompt's own
-# example suggests, set the HOST to "8443", left the port at 443, hit the same conflict and got the same
-# message again with no error. Reported from the field on 1.8.3-beta: six identical prompts, no way out but
-# ^C or `force` (which keeps the port that is busy). Read it the way it was meant — keep the host and the
-# subpath, change the port — and answer both shapes.
 answer_to_url(){ # answer_to_url <answer> -> echoes a URL, or nothing if the answer is neither
   local a="$1"
   case "$a" in
     ''|*[!0-9]*) ;;                # has a non-digit → judge it as a host/URL below
-    # ALL DIGITS: the operator is answering with a port, so it is a port or it is nothing. Falling through
-    # to v_url here is the whole bug — it would take `99999` as a hostname just as readily as `8443`, and
-    # loop again on the same conflict. Out of range is an error worth saying out loud.
     *) v_port "$a" && { printf '%s:%s%s' "${PANEL_HOST_NOPORT:-localhost}" "$a" "${PANEL_BASE:-}"; return 0; }
        return 1;;
   esac
@@ -345,25 +307,13 @@ _in(){ case " $2 " in *" $1 "*) return 0;; *) return 1;; esac; }
 choose_ifaces(){ # let the user pick which detected interfaces to manage; 'new' creates more
   local -a BACK=()   # the kept panel's own interfaces, live here (see the record-only branch)
   detect_wg
-  # ⚠️ THE MASTER PATH HAD NONE OF THIS. `MANAGE_IFACES=none bootstrap master` wrote a managed interface
-  # called `none` into config.json and the node then reported `none: cannot read interface` on every sync,
-  # for ever, under a green summary — the same defect install-node.sh had, in the installer people reach
-  # first. Same reader for both, so a fix here can't miss the twin again.
   manage_ifaces_resolve            # sets MANAGE_IFACES; must NOT be called in $( ) — see the function
   if [ -n "$MANAGE_IFACES" ]; then
     IFS=',' read -ra SELECTED <<< "$MANAGE_IFACES"
   else
-    # Approach B (record-only): no picker, no auto-adopt. Interfaces this node ALREADY manages are just listed (a
-    # re-install keeps them). Anything ELSE on the box is an adoption candidate — reported to the panel, where the
-    # operator classifies (WG / AWG / WDTT) or ignores it. Nothing is touched here; new ones are created in the panel.
     detect_wg
     local n _mine _kept; local -a cand=()
     _mine=" $(local_ifaces | tr '\n' ' ') "
-    # ⚠️ …AND WHAT THE KEPT PANEL ALREADY MANAGES FOR THIS NODE IS NOT A CANDIDATE EITHER. A master re-installed over a
-    # kept state dir (uninstall: panel data and interfaces kept, node removed) has no agent config yet, so every live
-    # interface read "NOT managed by the panel — adopt them from the panel" although the panel's record for this node
-    # still owns them, and the node takes a live one back by itself on its first sync (swg-noded's self-heal, from the
-    # reply's owned_ifaces) — within seconds (1.8.8 qualification, q1). Listed as what they are; nothing is adopted here.
     _kept=" $(kept_panel_ifaces | tr '\n' ' ') "
     for n in "${!IF_CMD[@]}"; do
       is_sys_iface "$n" && continue
@@ -396,10 +346,6 @@ choose_ifaces(){ # let the user pick which detected interfaces to manage; 'new' 
   # The LOCAL set — what this node manages after this run: wg/awg from config.json + its WDTT instances (whose
   # interfaces have no .conf, so they'd otherwise look absent). Listed, not re-asked: a re-install keeps them.
   local _l _li _lls _lsub; local -a _loc=()
-  # + this run's SELECTED: config.json is written only AFTER this listing, so they read "No local interfaces yet"
-  # right above "✓ Managing: …" (1.8.8 qualification — install-node.sh's twin of this block).
-  # …and never a mesh link (swg_*): iface_row prints none, so a convert carrying one read "Found 3 … interface(s)" over two
-  # rows (1.8.8 qualification, q4). They are the panel's links, shown apart in the summary.
   while IFS= read -r _l; do [ -n "$_l" ] && _loc+=("$_l"); done < <({ local_ifaces; printf '%s\n' ${SELECTED[@]+"${SELECTED[@]}"}; } | tr -d ' ' | awk 'NF && !s[$0]++' | drop_sys_ifaces)
   if [ "${#_loc[@]}" -gt 0 ]; then
     echo; info "Found ${#_loc[@]} wg/awg/wdtt local interface(s) on this box:"; echo
@@ -415,12 +361,7 @@ choose_ifaces(){ # let the user pick which detected interfaces to manage; 'new' 
   [ -n "${_l// /}" ] && ok "Managing: $(b "$(col "$C_GREEN" "${_l% }")")" || true
 }
 
-# ───────────────────────── turn-proxy (vk-turn-proxy) ─────────────────────────
-# Tunnels WireGuard/AmneziaWG through VK/Yandex TURN servers. Config is the systemd
-# unit's CLI args: -listen <pub-ip:port>  -connect <wg-ip:port>. We detect any such
-# unit, can install the binary from a fork's GitHub releases, and record listen→connect
-# so the panel can later tell a turn-proxied client (peer endpoint IP == a turn listen IP)
-# from a direct wg/awg one. https://github.com/cacggghp/vk-turn-proxy
+# turn-proxy (vk-turn-proxy)
 TURN_DIR="${TURN_DIR:-/opt/vk-turn-proxy}"
 TURN_RECORD="${TURN_RECORD:-/etc/swg-agent/turn-proxy.json}"
 declare -A TP_LISTEN TP_CONNECT TP_WRAP
@@ -535,14 +476,6 @@ EOF
 }
 
 ensure_wg_tools_once(){ # <awg|wg> [again] — ensure_wg_tools, once per run per tool: the answer cannot change within one, and the
-  # AmneziaWG chain can download and compile for minutes. The install steps asked twice (Datapath tooling, then "for future
-  # interface creation"), so a download that failed or crawled the first time was simply repeated (client report 2026-10-06).
-  # ⚠️ BUT A FAILURE IS NOT FINAL WHERE AN INTERFACE IS STARTED: `again` there tries a tool that failed earlier in the run
-  # once more — a dpkg lock held at the tooling step (unattended-upgrades on a fresh box) is gone by then, and that failure,
-  # kept, left an adopted wg0 DOWN after an rc-0 Docker → bare convert (1.8.9 qualification IN-18; 1.8.8 asked afresh there).
-  # Once per tool per run: a chain that really fails is not repeated for every interface. The closing "for future interface
-  # creation" check asks `again` for wg (one apt attempt; 1.8.8 asked afresh there too) but not for awg: its chain is the
-  # GitHub download + compile the 2026-10-06 memo is for.
   local _v="_WGT_RC_$1" _a="_WGT_AGAIN_$1" _rc
   if [ -n "${!_v:-}" ] && { [ "${!_v}" = 0 ] || [ -z "${2:-}" ] || [ -n "${!_a:-}" ]; }; then return "${!_v}"; fi
   [ -z "${2:-}" ] || printf -v "$_a" '%s' 1
@@ -551,10 +484,6 @@ ensure_wg_tools_once(){ # <awg|wg> [again] — ensure_wg_tools, once per run per
   return "$_rc"
 }
 ensure_wg_tools(){ # ensure_wg_tools <awg|wg> — install tools + kernel module if missing (idempotent, non-fatal -> 0/1).
-  # Success = the CLI is present AND its kernel module actually LOADS. The module part matters: `apt install
-  # amneziawg` puts the `awg` tool on disk but the datapath is a DKMS module that must COMPILE against the running
-  # kernel (needs dkms + linux-headers-$(uname -r)); without those the tool exists yet `ip link add type amneziawg`
-  # dies with "Unknown device type". So we install the build deps and verify `modprobe` before declaring success.
   local cmd="$1"
   if [ "$cmd" = wg ]; then
     have wg || { if $DRYRUN || have apt-get; then info "installing WireGuard tools via apt — this can take a minute…"; run apt-get update -qq || true; run apt-get install -y wireguard || true; else warn "WireGuard tools not found and no apt-get on this system — install 'wireguard' with your package manager, then re-run"; fi; }
@@ -562,10 +491,6 @@ ensure_wg_tools(){ # ensure_wg_tools <awg|wg> — install tools + kernel module 
     have wg && { modprobe wireguard 2>/dev/null || true; return 0; }   # wireguard is in-tree on modern kernels
     return 1
   fi
-  # awg
-  # D1 (docs/AWG-DATAPATH-RESILIENCE-PLAN.md): the userspace fallback goes on EVERY bare-metal AWG box, working module
-  # or not — awg-quick needs it on disk the day a reboot lands on a kernel with no module. Only the pinned download
-  # here; a Go build for a box whose module works is not worth its cost (ensure_awg_userspace keeps that rung).
   awg_go_needs_install && { awg_go_pinned || warn "AmneziaWG: the pinned userspace fallback could not be fetched — awg interfaces depend on the kernel module alone until an update installs it"; }   # missing, or one of our earlier pinned builds
   if have awg && modprobe amneziawg 2>/dev/null; then                 # already fully working (tool + loadable module) —
     $DRYRUN || awg_compat_patch_installed >/dev/null || true          # …its source fixed for the NEXT kernel (PR #218)
@@ -586,9 +511,6 @@ ensure_wg_tools(){ # ensure_wg_tools <awg|wg> — install tools + kernel module 
     awg_dkms_drop_unowned   # D4: one DKMS owner — the package's
     awg_ppa_module_install && build_awg_module   # a module that does not compile on this kernel is given up on, not retried
   else
-    # Not Ubuntu: the PPA publishes nothing for this system, so none of it is tried (no software-properties-common, no
-    # add-apt-repository traceback, no "Unable to locate package amneziawg") — straight to the source build below, the
-    # tools and then the kernel module under DKMS, which is how AmneziaWG always ended up installed here.
     info "installing AmneziaWG from source (tools + DKMS kernel module) — its packages are published for Ubuntu only, and this is $(awg_os_name) — this can take a few minutes…"
     run apt-get update -qq || true
   fi
@@ -601,17 +523,10 @@ ensure_wg_tools(){ # ensure_wg_tools <awg|wg> — install tools + kernel module 
     ensure_awg_userspace && return 0
     return 1
   fi
-  # The apt path did not get us there — Debian (the PPA is Ubuntu-only), a non-apt distro, or a kernel with
-  # no matching headers. Do NOT stop at a warning: build from source, which is the only route to the KERNEL
-  # datapath off Ubuntu and is what we want wherever it is possible.
   awg_build_from_source && { info "AmneziaWG: kernel datapath (built from source)"; return 0; }
   # Still no module: no headers for this kernel, or an LXC/OpenVZ guest that cannot load one at all. Fall
   # back to userspace so the node can still serve AmneziaWG — awg-quick picks it up by itself.
   if ensure_awg_userspace; then
-    # ⚠️ …but that is a DATAPATH, not the tools: with no awg / awg-quick nothing brings an AmneziaWG interface up, so it is
-    # a failure — ensure_wg_tools_once keeps it, and the switch's `again` tries once more (a dpkg lock held through the
-    # tooling step is gone by then). Counted a success, the memo kept it and an adopted awg0 + the mesh links stayed DOWN
-    # after an rc-0 Docker → bare convert, "awg-quick: command not found" (1.8.9 qualification F21; 1.8.8 asked afresh)
     have awg && have awg-quick || return 1   # a datapath, not the tools
     warn "AmneziaWG will run on the SLOWER userspace datapath — no loadable kernel module on $(uname -r).$(
       have apt-get && awg_tools_drive_3x && ! [ -e "/lib/modules/$(uname -r)/build" ] && printf ' %s' 'Installing matching linux-headers and re-running the installer switches it to the kernel module.')"
@@ -620,10 +535,6 @@ ensure_wg_tools(){ # ensure_wg_tools <awg|wg> — install tools + kernel module 
   return 1
 }
 build_awg_module(){ # FORCE the amneziawg DKMS module to COMPILE for the RUNNING kernel. Critical: `apt install
-  # amneziawg` is a NO-OP when the package is already present (the tool is on disk) but its module never built
-  # (headers were missing at first install), so nothing rebuilds it. `-k $(uname -r)` targets the running kernel
-  # explicitly — a box on an OLD kernel with newer headers installed would otherwise build for the wrong one and
-  # `modprobe` would still fail. A --reinstall of the dkms package re-runs its build postinst as a fallback.
   run dkms autoinstall -k "$(uname -r)" 2>/dev/null || run dkms autoinstall 2>/dev/null || true
   awg_dkms_build_all_kernels   # D4: every installed kernel with headers — an installed-but-not-booted kernel included
   modprobe amneziawg 2>/dev/null && return 0
@@ -638,9 +549,6 @@ ensure_smart_tools(){ # nftables (smart-routing marking, every mode) + dnsmasq (
   # for a unit masked a moment later anyway; a masked unit is not started (1.8.8 deferred #5(b))
   have dnsmasq || { run apt-get update -qq || true; run systemctl mask dnsmasq 2>/dev/null || true; run apt-get install -y dnsmasq || true; }
   have ipset   || { run apt-get update -qq || true; run apt-get install -y ipset    || true; }   # kernel-SNI mode (xt_string learn → ipset); degrades to userspace SNI if absent
-  # the node runs its OWN dnsmasq on loopback:5354 via swg-noded; keep the distro service from ever grabbing :53.
-  # mask (not just disable) so an apt postinst can't restart it, and reset-failed so a prior boot's :53 conflict
-  # (systemd-resolved already holds :53) doesn't linger in `systemctl --failed` after a reinstall.
   run systemctl disable --now dnsmasq 2>/dev/null || true
   run systemctl mask dnsmasq 2>/dev/null || true
   run systemctl reset-failed dnsmasq 2>/dev/null || true
@@ -667,9 +575,6 @@ next_free_subnet(){ local hi=7 n a o
   o=$((hi+1)); while [ "$o" -lt 255 ] && subnet_used "10.$o.0.0/24"; do o=$((o+1)); done; echo "10.$o.0.0/24"; }
 # default interface index = (highest numeric suffix across existing + queued names)+1 (awg3,wg4 → 5).
 v_subnet_free(){ v_subnet "$1" || return 1; subnet_used "$1" && return 1; return 0; }
-# Two-phase interface creation: spec_iface() only PROMPTS and queues a spec, so the user can add
-# every interface up front; apply_specs() then installs tools + writes confs + brings them all up
-# once, at the end. Queued names show in 'mine' (via CREATED) and block name collisions immediately.
 apply_specs(){ # install tools + write confs + bring up every queued interface, then prune failures
   ensure_smart_tools   # nftables (smart-routing marking) + dnsmasq (Force-DNS host tier) for this master's local node
   [ "${#SPEC_ORDER[@]}" -gt 0 ] || return 0
@@ -712,9 +617,6 @@ apply_specs(){ # install tools + write confs + bring up every queued interface, 
 
 # ───────────────────────── prompts ─────────────────────────
 [ "$(id -u)" = 0 ] || $DRYRUN || die "run as root (or use --dry-run)"
-# Fail early on a too-old interpreter: the panel uses 3.8 syntax, so it would otherwise die with an opaque
-# SyntaxError only when the service first starts. (Guard lives here in bash — an in-file check can't help, the
-# whole module fails to PARSE before any line runs.)
 $DRYRUN || { have python3 || die "python3 (>= 3.8) is required — install it with your package manager, then re-run"; \
   python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' \
     || die "this box's python3 ($(python3 -c 'import sys;print("%d.%d"%sys.version_info[:2])' 2>/dev/null || echo '?')) is too old — the panel needs Python >= 3.8; install a newer python3 and re-run"; }
@@ -749,11 +651,6 @@ if [ -f "$ETC_DIR/auth" ] || [ -f "$_unit" ]; then
     LOCAL_PORT_SAVED="$(sed -n 's/^LOCAL_PORT=//p'   "$ETC_DIR/install.conf" | sed -n 1p)"
     SUB_PORT_SAVED="$(sed -n 's/^SUB_PORT=//p'       "$ETC_DIR/install.conf" | sed -n 1p)"
     SUB_BIND_SAVED="$(sed -n 's/^SUB_BIND=//p'       "$ETC_DIR/install.conf" | sed -n 1p)"
-    # CF tokens load into *_SAVED — a prompt DEFAULT, NOT the live var. Loading them live made the prompt
-    # self-skip, so on a re-install where the operator explicitly re-picks cloudflare/cf15 (typically BECAUSE
-    # the last issue failed) they were never asked, and a saved-but-broken token was silently reused. As a
-    # default, Enter keeps it and typing replaces it — and it now gets VALIDATED either way. A token from the
-    # env / CLI still short-circuits ask_valid, so unattended installs and converts are unchanged.
     CF_TOKEN_SAVED="$(sed -n 's/^CF_TOKEN=//p'               "$ETC_DIR/install.conf" | sed -n 1p)"
     CF_ORIGIN_TOKEN_SAVED="$(sed -n 's/^CF_ORIGIN_TOKEN=//p' "$ETC_DIR/install.conf" | sed -n 1p)"
   fi
@@ -767,10 +664,6 @@ if [ -f "$ETC_DIR/auth" ] || [ -f "$_unit" ]; then
   elif [ -f "$_unit" ]; then info "Existing panel install detected — keeping your login, users, nodes + certs; your previous settings are the defaults below. To start fresh, run the uninstaller first."
   else info "Found this panel's kept data (login, certificate, users, nodes) — re-installing it as it was; its previous settings are the defaults below. To start fresh, uninstall again and delete the data."; fi
 elif [ -f "$STATE_DIR/panel-settings.json" ] || [ -f "$STATE_DIR/nodes.json" ]; then
-  # ⚠️ A STATE DIR AN OLDER UNINSTALL KEPT WITHOUT /etc/swg-panel. Its login and certificate are gone for good, but its
-  # address and its node's name are still in the store, and nothing read them: an Enter-through re-install moved the
-  # panel to the default-route address and renamed its node after the hostname (1.8.8 qualification, round 4). Offer
-  # them as the defaults; the local node is the one keyed by this box's machine-id (LOCAL_NODE_ID below).
   { IFS= read -r DOM_SAVED; IFS= read -r PORT_SAVED; IFS= read -r BASE_SAVED; IFS= read -r TLS_SAVED
     IFS= read -r NODENAME_SAVED; IFS= read -r ENDPOINT_SAVED; } < <(python3 - "$STATE_DIR" <<'PYKEPT' 2>/dev/null || true
 import hashlib, json, os, socket, sys
@@ -803,39 +696,20 @@ PYKEPT
   [ -n "$NODENAME_SAVED" ] && ROLE_SAVED=master
   [ -n "$DOM_SAVED$NODENAME_SAVED" ] && info "Found this panel's data from an earlier uninstall — its address ($(b "${DOM_SAVED:-?}${PORT_SAVED:+:$PORT_SAVED}${BASE_SAVED}")) and node name ($(b "${NODENAME_SAVED:-?}")) are the defaults below. Its login and certificate were not kept, so a new login is minted and nodes pinned to the old certificate need their installer re-run."
 fi
-# ⚠️ …AND THE SUBSCRIPTION ADDRESS IT WAS INSTALLED WITH. install.conf wrote SUB_PORT and nothing read it back: a plain
-# re-install took the 8444 default, rewrote install.conf and swg-sub's unit with it, and swg-sub — still serving the old
-# port until its next restart — then moved to 8444 while the subscription URL in Settings kept naming the old one (1.8.8
-# qualification, round 10, F92). The kept install.conf (or swg-sub's unit) is the default now; a given SUB_PORT / SUB_BIND
-# still wins. SUB_BIND is kept only when it was GIVEN once (install.conf keeps it then): the serve mode derives it
-# otherwise (127.0.0.1 behind a reverse proxy), and a re-install that changes the serve mode must derive it afresh.
 if [ -z "$_SUB_PORT_GIVEN" ] && [ -n "$SUB_PORT_SAVED" ] && v_port "$SUB_PORT_SAVED"; then SUB_PORT="$SUB_PORT_SAVED"; fi
 if [ -z "$_SUB_BIND_GIVEN" ] && [ -n "$SUB_BIND_SAVED" ]; then SUB_BIND="$SUB_BIND_SAVED"; fi
-# ⚠️ …AND A PASSWORD GIVEN TO A RE-INSTALL IS SET. The kept login stayed whatever was given: a re-install with BASIC_PASS=
-# (or -pass) said "keeping existing login" and changed nothing (1.8.8 qualification, round 10 — the bare twin of F91). A
-# given password the kept login does not hold replaces it now, under the kept user name unless one is given too; one it
-# already holds changes nothing, as before. The certificate follows the TLS step, as it always has.
 SET_PASS=no
 if [ "$KEEP_AUTH" = yes ] && [ "$_PASS_GIVEN" = yes ] && [ -s "$ETC_DIR/auth" ] && ! login_holds "$ETC_DIR/auth" "$BASIC_USER" "$BASIC_PASS"; then
   SET_PASS=yes
   if $DRYRUN; then info "dry run — would set a new panel login ($(b "$BASIC_USER")): the password given is not the one it has"
   else info "Setting a new panel login ($(b "$BASIC_USER")) — the password given is not the one it has; it replaces it."; fi
 fi
-# ⚠️ …AND THE ENDPOINT THIS BOX'S NODE ALREADY HAS. ENDPOINT_SAVED was read and then used for nothing: a master re-install
-# without HOST_ENDPOINT_IP listed its interfaces at the default-route address (10.0.2.15 where they are dialled at
-# 192.168.77.1), pinned that address on any interface it adopted, and wrote install.conf back with HOST_ENDPOINT_IP=
-# empty (1.8.8 qualification, q1). The node's own agent config is the live answer, install.conf the fallback; a value
-# given now still wins. Not the value that seeds the panel's record — that is only one GIVEN (_EP_GIVEN, above).
 if [ -z "$HOST_ENDPOINT_IP" ] && { [ "$EXISTING_HOST" = yes ] || [ -n "$ENDPOINT_SAVED" ]; }; then   # (the latter: an older uninstall's kept store)
   _aep="$(python3 -c 'import json;print(json.load(open("/etc/swg-agent/config.json")).get("endpoint_host") or "")' 2>/dev/null || true)"
   case "$_aep" in 127.*|localhost|"::1") _aep="";; esac
   HOST_ENDPOINT_IP="${_aep:-$ENDPOINT_SAVED}"
 fi
 
-# RE-INSTALL: signal "re-installing" the MOMENT the script starts (before any prompt) and ARM the lifecycle
-# traps now, so an abort/failure at ANY point is reported. Emits to BOTH the panel header (host_proc file)
-# and — if this box has a local node (master) — that node's tile. A re-install always installs the latest, so
-# the terminal is "re-installed and updated".
 if [ "$EXISTING_HOST" = yes ] && ! $DRYRUN; then
   mkdir -p "$STATE_DIR" 2>/dev/null || true
   LC_FILE="$STATE_DIR/host_proc"
@@ -857,9 +731,6 @@ if [ "$EXISTING_HOST" = yes ] && ! $DRYRUN; then
   # one thing left that tells a same-build re-install from an update (the panel writes it at every start)
   [ -n "$_SUM_BEFORE" ] || _VER_BEFORE="$(head -1 "$STATE_DIR/panel_version" 2>/dev/null || true)"
 fi
-# deferred-start convert (SWG_DEFER_START=1): install + enable the panel but DON'T start it here — the docker panel
-# still holds :443 and keeps serving the UI; convert.sh stops docker + starts it at the switch. _NOW = "--now"
-# normally, empty when deferred, applied to every `systemctl enable … swg-panel-server`.
 _NOW="--now"; [ "${SWG_DEFER_START:-}" = 1 ] && _NOW=""
 
 # Server role — skipped when already chosen (e.g. by bootstrap.sh)
@@ -880,14 +751,7 @@ echo
 echo "      Where the panel is reached — an IP, a host, or a host with a subpath to"
 echo "      live under an existing site (e.g. $(b 'vpn.example.com/swg'))."
 echo
-# default to what we ALREADY know, in order: the URL passed in (a CONVERT carries the real PANEL_DOMAIN, a -domain
-# flag sets it), then the saved re-install URL (host[:port][/subpath]), then the detected public IP, then localhost.
-# Without the first item a convert/re-install wrongly defaulted to the box's IP — or localhost — instead of its
-# real domain, which also broke Let's Encrypt cert reuse (a domain cert doesn't cover localhost).
 DEF_URL="${PANEL_DOMAIN:-}"; _URL_GIVEN="${PANEL_DOMAIN:-}"   # (a -domain / PANEL_DOMAIN the caller gave — said below, not asked)
-# A convert passes PANEL_DOMAIN as the BARE host and the port/subpath separately, so using it as-is offered
-# "swgt.example.net" for a panel actually served on :2053 — Enter silently moved the panel to 443 and every node
-# lost it. Rebuild the full host[:port][/subpath] here too, exactly like the saved-URL branch below.
 if [ -n "$DEF_URL" ]; then
   case "$DEF_URL" in *:*) :;; *) { [ -n "${PORT:-}" ] && [ "$PORT" != 443 ]; } && DEF_URL="$DEF_URL:$PORT";; esac
   case "$DEF_URL" in */*) :;; *) [ -n "${PANEL_BASE:-}" ] && [ "${PANEL_BASE:-}" != / ] && DEF_URL="$DEF_URL$PANEL_BASE";; esac
@@ -905,9 +769,6 @@ while :; do
   parse_panel_url "$PANEL_DOMAIN"
   # is the port the panel will use free on this host? (catches nginx/apache or a prior panel)
   _pp="${URL_PORT:-443}"
-  # block only on a REAL conflict — skip when our own panel already holds the port (a re-install; install
-  # stops/restarts it on the same port), and skip during a deferred-start convert (the docker panel is holding the
-  # port and is torn down at the switch, just before we start the bare panel — see convert.sh).
   if [ "${_forced:-}" != "$_pp" ] && [ "${SWG_DEFER_START:-}" != 1 ] && ! $DRYRUN && have ss && [ -n "$(ss -lntH "sport = :$_pp" 2>/dev/null)" ] && ! panel_owns_port "$_pp"; then
     _who="$(ss -lntpH "sport = :$_pp" 2>/dev/null | grep -oE '"[^"]+"' | sed -n 1p | tr -d '"' || true)"
     echo; warn "port $(col "$C_YEL" ":$_pp") is already in use${_who:+ (by $(col "$C_YEL" "$_who"))}"
@@ -945,12 +806,6 @@ PANEL_DOMAIN="$PANEL_HOST_NOPORT"
 # TLS certificate
 step "TLS certificate"
 echo
-# re-install with a cert already in $TLS_DIR → offer to KEEP it (default), no re-issue.
-# canonicals first (so [N] maps to the displayed order), letter aliases after; _tn numbers the shown items
-# Panel URL shape decides which certs are offered:
-#   domain (FQDN)   → letsencrypt / cloudflare / cf15  (the CA validates a domain)
-#   public IP       → letsencrypt-ip                   (LE short-lived IP cert, ~6d, auto-renews)
-#   private / bare  → none of the above                (no CA will issue → selfsigned/skip only)
 _url_is_domain=no; case "$PANEL_DOMAIN" in *[a-zA-Z]*) case "$PANEL_DOMAIN" in *.*) _url_is_domain=yes;; esac;; esac
 _ip_public=no; [ "$_url_is_domain" = yes ] || { ip_public "$PANEL_DOMAIN" && _ip_public=yes; }
 # default = each branch's recommended primary (NOT the saved mode — a saved letsencrypt-ip is meaningless on a
@@ -958,13 +813,7 @@ _ip_public=no; [ "$_url_is_domain" = yes ] || { ip_public "$PANEL_DOMAIN" && _ip
 if   [ "$_url_is_domain" = yes ]; then _tls_opts="letsencrypt cloudflare cf15 selfsigned none l c cf 15 15years 15cf s self n skip sk"; _tls_def=l
 elif [ "$_ip_public" = yes ];     then _tls_opts="letsencrypt-ip selfsigned none lip ip letsencrypt l s n skip sk"; _tls_def=letsencrypt-ip
 else                                   _tls_opts="selfsigned none s n skip sk";                                    _tls_def=s; fi
-# Offer 'reuse' ONLY if the existing cert actually covers this URL (host in its SAN/CN). A cert issued for a
-# different host/IP (e.g. a letsencrypt-ip cert when you now type a private IP) would be wrong here, so hide
-# reuse and let the working default win — that also avoids showing two "(default)" options.
 _reuse_avail=no
-# ...offer it for a re-install (existing host) AND for a convert (SWG_CONVERT_DIR): the convert STAGES the panel's
-# real cert into $TLS_DIR before running us, so it's just as reusable — without this a docker→bare convert would
-# never reuse a Let's Encrypt cert and would silently re-issue (→ selfsigned on a localhost/IP).
 if { [ "$EXISTING_HOST" = yes ] || [ -n "${SWG_CONVERT_DIR:-}" ]; } && [ -f "$PREFIX$TLS_DIR/fullchain.pem" ] && [ -f "$PREFIX$TLS_DIR/key.pem" ] \
    && cert_covers_host "$PREFIX$TLS_DIR/fullchain.pem" "$PANEL_DOMAIN"; then
   _reuse_avail=yes; _tls_opts="reuse $_tls_opts r"; _tls_def=r
@@ -1016,9 +865,6 @@ case "$TLS_MODE" in
   letsencrypt-ip) warn "letsencrypt-ip issues a $(b 'short-lived (~6 day)') cert for $(b "$PANEL_DOMAIN") — acme.sh renews it daily; if renewal is down for ~6 days the cert expires."
                warn "Needs host port $(col "$C_YEL" ':80') reachable for HTTP-01 and the IP hit directly (grey-cloud / no proxy)."
                ask_valid "ACME account email"                                     "${ACME_EMAIL:-$EMAIL_SAVED}" ACME_EMAIL v_email "enter a valid email, e.g. you@example.com";;
-  # ⚠️ ask_SECRET, never ask_valid: the saved token is this prompt's DEFAULT, and ask_valid shows a default — on the
-  # screen in its [brackets], and with no terminal in the "(no terminal — default taken)" line, i.e. in the install log.
-  # ask_secret reads with echo off and offers a saved value as [keep current]. Enter still keeps it, re-validated.
   cloudflare)  ask_secret "Cloudflare API token (needs Zone:DNS:Edit + Zone:Read)" "${CF_TOKEN_SAVED:-}" CF_TOKEN  v_cftoken "paste a scoped API token (40 chars)"   # saved value is the DEFAULT — Enter keeps it, and it is re-validated
                ask_valid "ACME account email"                                     "${ACME_EMAIL:-$EMAIL_SAVED}" ACME_EMAIL v_email "enter a valid email, e.g. you@example.com";;
   cf15)        warn "cf15 issues a Cloudflare Origin cert — it is ONLY trusted behind Cloudflare's proxy."
@@ -1033,12 +879,6 @@ esac
 # REUSE_TLS so the cert step skips re-issue. (reuse matched no case above, so no FQDN check / cred prompt ran.)
 REUSE_TLS=no
 if [ "$TLS_MODE" = reuse ]; then REUSE_TLS=yes; TLS_MODE="${TLS_SAVED:-selfsigned}"; ok "reusing the existing certificate in $TLS_DIR — no re-issue (TLS mode: $(b "$TLS_MODE"))"; fi
-# ⚠️ A GIVEN `selfsigned` DOES NOT MINT A NEW ONE OVER THE SELF-SIGNED CERT ALREADY HERE. Every node of this panel PINS
-# the certificate it enrolled against, and a fresh self-signed one — same host, new key — strands all of them until each
-# is re-installed (the node's pin heal only ever moves a pin to CA verification, never to another self-signed cert).
-# An unattended re-install says TLS_MODE=selfsigned because that is what the box uses, not because it wants the fleet
-# cut off. So: re-install (or convert), selfsigned given in the environment, and the cert on disk is ITSELF self-signed
-# and already covers this host → keep it. Typed at the prompt, a CA's cert, or one for another host: unchanged.
 if [ "$REUSE_TLS" = no ] && [ "$_reuse_avail" = yes ] && [ "$TLS_MODE" = selfsigned ] \
    && case "$_TLS_GIVEN" in s|self|selfsigned) true;; *) false;; esac \
    && cert_self_signed "$PREFIX$TLS_DIR/fullchain.pem"; then
@@ -1082,10 +922,6 @@ fi
 [ -z "$LOCAL_PORT_SAVED" ] && [ -f "$_unit" ] && { _lp="$(sed -n 's/^Environment=SWG_PANEL_LOCAL_PORT=//p' "$_unit" | sed -n 1p)"; [ -n "$_lp" ] && LOCAL_PORT="$_lp"; }
 while [ "$LOCAL_PORT" = "$PORT" ] || [ "$LOCAL_PORT" = "$SUB_PORT" ]; do LOCAL_PORT=$((LOCAL_PORT + 1)); done
 
-# Does this box have a co-located node? A master obviously does; but a docker→bare-metal MASTER convert runs
-# install-host as ROLE=host (the node is a SEPARATE, LATER install-node step), so HOST_HAS_WG is 'no' AND there's no
-# agent config to detect YET — the convert flags it with SWG_HAS_LOCAL_NODE=1 (and passes LOCAL_PORT). Otherwise detect
-# an already-present node from its agent config, and adopt the exact port it dials (don't strand it on a mismatch).
 _HAS_LOCAL_NODE=no; { [ "$HOST_HAS_WG" = yes ] || [ "${SWG_HAS_LOCAL_NODE:-}" = 1 ]; } && _HAS_LOCAL_NODE=yes
 if [ -f /etc/swg-agent/config.json ]; then
   _au="$(python3 -c 'import json;print((json.load(open("/etc/swg-agent/config.json")).get("panel") or {}).get("url",""))' 2>/dev/null || true)"
@@ -1096,9 +932,6 @@ if [ -f /etc/swg-agent/config.json ]; then
   esac
 fi
 
-# (existing-install detection + saved-settings load happen up-front, at the top of PANEL SETUP)
-# Admin login — auto-generated (username admin + 3 random digits, password random); both are
-# printed at the end and can be changed later in the panel (Account). Override via BASIC_USER=/BASIC_PASS= env.
 [ "$KEEP_AUTH" != yes ] && [ -z "$BASIC_PASS" ] && BASIC_PASS="$(head -c12 /dev/urandom | base64 | tr -d '/+=' | cut -c1-16)"
 if [ "$KEEP_AUTH" != yes ] && [ "${BASIC_USER}" = admin ]; then BASIC_USER="admin$(( RANDOM % 900 + 100 ))"; fi
 
@@ -1114,10 +947,6 @@ if [ "$HOST_HAS_WG" = yes ]; then
   ask_valid "Node name for THIS box" "$_HOST_NAME_DEFAULT" HOST_NODE_NAME v_name "1–40 chars: letters, digits, - or _"
   step "Datapath tooling"
   echo
-  # Approach B — no create prompts. Interfaces / turn-proxies / WDTT are all created FROM THE PANEL. Install the
-  # datapath tooling, then auto-adopt any interfaces already on this box (add-only, peers preserved) so they
-  # surface in the panel as adoption candidates on the node's page, where each is classified WG / AWG / WDTT,
-  # adopted as it stands, or ignored (ignored ones are listed under Settings -> Interfaces).
   ensure_smart_tools || true                    # nftables (smart routing, every mode) + dnsmasq (Force-DNS host tier)
   ensure_wg_tools_once awg || true              # AmneziaWG tools + DKMS kernel module (the default interface type)
   ensure_wg_tools_once wg  || true              # plain WireGuard tools too — either type works when created later
@@ -1126,14 +955,7 @@ fi
 
 echo; info "Plan: method=$METHOD role=$ROLE serve=$SERVE_MODE tls=$TLS_MODE base=${PANEL_BASE:-/} store_configs=$STORE_CONFIGS"
 
-# master: push a box-name change to the local node (the name was entered above). The lc signal + traps were
-# armed right after the role step (LC_URL/LC_TOKEN point at the local node's loopback panel); here we only
-# push the rename, if it changed — the OLD panel is still running at this point and the restart loads it.
 if [ "$EXISTING_HOST" = yes ] && ! $DRYRUN && [ "$HOST_HAS_WG" = yes ] && [ -n "${LC_URL:-}" ] && [ -n "${LC_TOKEN:-}" ]; then
-  # both carry the node token → panel_req, with the local node's own trust (never curl -k). ⚠️ With no name from the panel
-  # (whoami refused, 404, timed out) the comparison was with nothing, so the name OFFERED above was pushed as a rename
-  # (1.8.8 qualification, round 8): it goes out only when it differs from what the panel says — or, with no answer,
-  # from what was offered (typed, or given as HOST_NODE_NAME).
   _cur="$(SWG_TOK="$LC_TOKEN" panel_req GET "${LC_URL%/}/api/node/whoami" "${LC_VERIFY:-no}" "${LC_FP:-}" 8 2>/dev/null | python3 -c 'import json,sys;print((json.load(sys.stdin).get("data") or {}).get("name") or "")' 2>/dev/null || true)"
   [ -n "$HOST_NODE_NAME" ] && [ "$HOST_NODE_NAME" != "${_cur:-${_HOST_NAME_DEFAULT:-}}" ] && { SWG_TOK="$LC_TOKEN" SWG_BODY="$(python3 -c 'import json,sys;print(json.dumps({"name":sys.argv[1]}))' "$HOST_NODE_NAME")" \
     panel_req POST "${LC_URL%/}/api/node/rename" "${LC_VERIFY:-no}" "${LC_FP:-}" 8 >/dev/null 2>&1 || true; }
@@ -1147,37 +969,18 @@ id "$PANEL_USER" >/dev/null 2>&1 || run useradd -r -g swg -d "$STATE_DIR" -s /us
 usermod_to(){ [ "$(getent passwd "$1" 2>/dev/null | cut -d: -f6)" = "$2" ] && [ "$(id -gn "$1" 2>/dev/null)" = "$3" ] && return 0
   run usermod -d "$2" -g "$3" "$1"; }
 usermod_to "$PANEL_USER" "$STATE_DIR" swg
-# swg-sub runs as its OWN unprivileged user in group swg — it only READS the state (never the panel
-# user's identity), and only the group-readable subset (roster/nodes/subs blobs+serve). The secrets it
-# must never see — the login hash, the TLS key, the subscription-key vault — stay 0600/owner-only, so
-# this user simply can't open them. See swg-sub's least-privilege note + write_sub_unit's InaccessiblePaths.
 if [ -f "$SRC/swg-sub" ]; then
   id "$SUB_USER" >/dev/null 2>&1 || run useradd -r -g swg -d "$SUB_DIR" -s /usr/sbin/nologin "$SUB_USER"
   usermod_to "$SUB_USER" "$SUB_DIR" swg
 fi
 for d in "$PANEL_DIR" "$ETC_DIR" "$STATE_DIR" "$STATS_DIR"; do mkdir -p "$PREFIX$d"; done
 run chown "$PANEL_USER:swg" "$STATE_DIR"; run chmod 750 "$STATE_DIR"   # group(swg) traverse → swg-sub can reach the files it may read
-# …and everything ALREADY in it. State outlives the service user: uninstall removes $PANEL_USER but keeps
-# this directory, so its files hold a numeric uid that belongs to nobody — and `useradd -r` hands that uid
-# to whichever service account is created first next time. Found in the field with $SUB_USER wearing the
-# old panel's uid, which made session.key (0600) unreadable BY THE PANEL: it then signed cookies with a
-# throwaway secret and logged every operator out on each restart. Chowning only the files we know by name
-# never reached the ones the panel creates at runtime. Anything with its own owner on purpose (netctl/status
-# is root:swg) is re-chowned after this, further down.
 run chown -R "$PANEL_USER:swg" "$STATE_DIR"
-# ⚠️ …BUT swg-netctl's OWN claims/ AND status/ GO BACK AT ONCE, not "further down". Between here and write_netctl the panel
-# is started, its start queues requests, and the helper (installed by the run before) ran them against a claims/ and a
-# status/ this chown had just handed to the panel — and moved both aside as untrusted: a status.untrusted.* with its
-# records was left on q5 by a re-install of b42f2e1 (1.8.8 qualification, round 12, F96). write_netctl heals again below.
 $DRYRUN || netctl_dirs_heal "$STATE_DIR"
 # subs/ (vault + token map + blobs + serve.json) — group-traversable so swg-sub reaches the token map,
 # blobs, and serve.json; the vault inside stays 0600 (owner-only) so swg-sub still can't read it.
 mkdir -p "$PREFIX$STATE_DIR/subs/blobs"; run chown -R "$PANEL_USER:swg" "$STATE_DIR/subs"; run chmod 750 "$STATE_DIR/subs" "$STATE_DIR/subs/blobs"
 run chown "$PANEL_USER:swg" "$STATS_DIR"; run chmod 2775 "$STATS_DIR"   # panel writes node snapshots here for the dashboard
-# …and what is ALREADY in it, for the reason $STATE_DIR is re-chowned above. A docker→bare-metal convert carries the
-# graph history out of a container whose panel ran as root: measured (1.8.7 qualification S4), every health / presence /
-# interface rrd arrived root-owned, the panel logged "not writable (owned by another user) — recreated", and the history
-# the convert had just carried was thrown away.
 run chown -R "$PANEL_USER:swg" "$STATS_DIR"
 # the panel user must rewrite the auth file (Account tab) — that's an atomic temp+rename in
 # ETC_DIR, so the dir needs group(swg) write; setgid keeps new files in group swg.
@@ -1207,9 +1010,7 @@ fi
 [ -f "$SRC/swg-passwd" ] && { mkdir -p "$PREFIX/usr/local/bin"; cp "$SRC/swg-passwd" "$PREFIX/usr/local/bin/swg-passwd"; chmod 755 "$PREFIX/usr/local/bin/swg-passwd"; }   # `sudo swg-passwd` — reset the panel login like the system passwd (mkdir so --dry-run's $PREFIX tree exists)
 ok "installed panel + SPA to $PANEL_DIR"
 
-# ───────────────────────── subscription surface (swg-sub) ─────────────────────────
-# A read-only companion serving per-user QR pages. Installed unconditionally but INERT: the whole
-# surface 404s until the operator enables it in Settings → Subscriptions (no prompts here by design).
+# subscription surface (swg-sub)
 if [ -f "$SRC/swg-sub" ]; then
   info "Subscription server (swg-sub)"
   mkdir -p "$PREFIX$SUB_DIR/vendor"
@@ -1242,19 +1043,12 @@ if [ "$HOST_HAS_WG" = yes ]; then
   # A public address/port/path/cert flip never moves this port, so the co-located node never strands.
   LOCAL_PANEL_URL="http://127.0.0.1:${LOCAL_PORT}"
 
-  # Keep an existing agent config ONLY if it already points at THIS (local) panel — a genuine re-run on a
-  # master. If it points at a REMOTE panel (this box was a NODE for another panel before), re-point it to the
-  # local panel by re-enrolling: otherwise the "master" local node keeps syncing to the old panel and never
-  # shows up here. URL is 127.0.0.1 for a local node (see LOCAL_PANEL_URL above).
   _keep_agent=no; _agent_purl=""
   if [ -f "$PREFIX/etc/swg-agent/config.json" ]; then
     _agent_purl="$(python3 -c 'import json;print((json.load(open("/etc/swg-agent/config.json")).get("panel") or {}).get("url",""))' 2>/dev/null || true)"
     case "$_agent_purl" in *127.0.0.1*|*localhost*) _keep_agent=yes;; esac
   fi
   if [ "$_keep_agent" = yes ]; then
-    # Keep the enrolled config (panel URL + token stay put — no re-enroll), but MERGE IN any interface
-    # created/selected this run, so a re-run that adds one actually manages it (it would otherwise be
-    # created + brought up on disk yet absent from config.json → live-but-unmanaged by swg-noded).
     _newifs=""; _sep=""
     for n in ${SELECTED[@]+"${SELECTED[@]}"}; do n="${n// /}"; [ -z "$n" ] && continue
       _onb=""; iface_onboarded "$n" && _onb=', "onboarded": true'
@@ -1281,10 +1075,6 @@ d=json.load(open(p)); pan=d.setdefault("panel",{})
 if pan.get("url")!=url: pan["url"]=url; pan["verify"]=False; json.dump(d,open(p,"w"),indent=2)
 PY
     fi
-    # …and a DNS= GIVEN on this run: the node's client DNS (the DNS line of the configs the panel makes for its
-    # interfaces), as a node re-install (install-node.sh) and a Docker re-install take it. This branch kept the config
-    # whole and said nothing, so `DNS=9.9.9.9 … master` re-installed and left the node on the old one (1.8.8
-    # qualification, round 8). Not given → the node's own is kept, as before.
     _dns_set=""
     if [ -n "${DNS:-}" ] && ! $DRYRUN; then
       _dns_set="$(python3 - "$PREFIX/etc/swg-agent/config.json" "$DNS" <<'PY' 2>/dev/null || true
@@ -1309,13 +1099,7 @@ PY
     # node-level endpoint_host is now a fallback (panel uses each interface's own); default it to the first interface's
     if [ -z "$HOST_ENDPOINT_IP" ]; then for n in "${SELECTED[@]}"; do [ -n "${IF_ENDPOINT[$n]:-}" ] && { HOST_ENDPOINT_IP="${IF_ENDPOINT[$n]}"; break; }; done; fi
     [ -z "$HOST_ENDPOINT_IP" ] && HOST_ENDPOINT_IP="$(detect_public_ip)"
-    # ⚠️ THE REF THIS BOX IS BEING INSTALLED FROM, recorded so the co-located node's self-update tracks it.
-    # The panel's own wrapper already bakes this in; the node had no equivalent and fell back to `main`, so
-    # a master installed from a branch would roll its node backwards on the Update button.
     _swg_node_ref="${SWG_REF:-main}"
-    # the local node's client DNS (the DNS line of the configs the panel makes for its interfaces), as install-node.sh
-    # takes it: DNS=… when given; else the one this box's node config already has (a node of another panel becoming a
-    # master keeps it); else 1.1.1.1 — it was always 1.1.1.1 here. A re-install keeps the enrolled config whole (above).
     _dns_json="$(python3 - "${DNS:-}" <<'PY' 2>/dev/null || echo '["1.1.1.1"]'
 import json, sys
 if sys.argv[1]:
@@ -1377,19 +1161,12 @@ EOF
   # swg's own journal, held to its budget (lib/common.sh), and the command that reads it
   if swg_log_ns_ok; then swg_log_ns_text swg-node | writef "/etc/systemd/system/swg-noded.service.d/$SWG_LOG_NS_DROPIN" 644; else swg_log_ns_clear; fi
   if [ -f "$SRC/swg-logs" ]; then writef /usr/local/bin/swg-logs 755 < "$SRC/swg-logs"; fi
-  # A master runs a local node, so it needs the same AppArmor accommodation install-node.sh applies:
-  # userspace interfaces (wdtt, csqtt, awg on amneziawg-go) are driven over a UAPI socket in
-  # /run/wireguard, which a distribution's wg profile does not permit. No-op without AppArmor.
   ensure_wg_apparmor
 fi
 
 # ───────────────────────── nodes.json + fleet.json ─────────────────────────
 info "nodes.json + fleet.json"
 if [ "$HOST_HAS_WG" = yes ] && [ -n "$LOCAL_TOKHASH" ]; then
-  # STABLE co-located node id so its health-<id>.rrd (graph history) + stats survive reinstalls. Reuse the
-  # id already in nodes.json (matched by display name) if present, else derive a DETERMINISTIC one from the
-  # machine-id. Writing the entry id-keyed (id == key) stops migrate_node_ids minting a fresh RANDOM id every
-  # re-enroll — which orphaned the old RRD and reset the graphs on each install.
   LOCAL_NODE_ID="$(python3 - "$PREFIX$STATE_DIR/nodes.json" "$HOST_NODE_NAME" 2>/dev/null <<'PYID'
 import json, sys, hashlib
 path, name = sys.argv[1], sys.argv[2]
@@ -1414,20 +1191,6 @@ print(nid)
 PYID
 )"
   [ -n "$LOCAL_NODE_ID" ] || LOCAL_NODE_ID="$HOST_NODE_NAME"
-  # MERGE, never replace. This file is the WHOLE FLEET's node store — every remote entry server's token hash and
-  # per-node settings (routing mode, egress, mesh, WDTT/csqtt instances) live here, and only the local entry is
-  # ours to write. Re-running the installer on a master — a repair, an update-by-reinstall, or a "remove it and
-  # set it up again" — used to write a fresh file holding this box alone, silently unenrolling every other node:
-  # they keep syncing, get 401, show up as never-enrolled, and their peers stop converging. The roster survives,
-  # which makes it worse: the peers are all still there, pointed at nodes the panel no longer knows.
-  # Read to a variable FIRST, write after. Piping straight into writef races: both ends of a pipeline start at
-  # once and writef's `cat > file` truncates the very file python is still reading, so the merge saw an empty
-  # store and "preserved" nothing — the exact bug it exists to prevent, hidden behind a fix that looked right.
-  # The panel's node record is not only what clients dial: it is ALSO the listen address the panel pre-fills for every
-  # turn-proxy / WDTT / csqtt created on this node, and its health check flags an IP literal that is not on the box.
-  # So only an address this box actually HAS goes in (a LAN address, a public one on the NIC, a name resolving to
-  # one). A NAT'd public IP (a cloud box's elastic IP) stays out — exactly the record it had before — and is still
-  # what clients dial: it is in the agent config, which the node reports its interfaces with.
   _EP_SEED=""
   if [ -n "$_EP_GIVEN" ]; then
     if host_is_local "$_EP_GIVEN"; then _EP_SEED="$_EP_GIVEN"
@@ -1576,12 +1339,6 @@ write_sub_unit(){   # swg-sub: the public subscription surface. Read-only; inert
   local subextra=""
   [ "${SUB_PORT}" -lt 1024 ] 2>/dev/null && subextra="AmbientCapabilities=CAP_NET_BIND_SERVICE
 "
-  # NOTE: swg-sub is served as PLAIN HTTP here and is meant to sit behind the operator's TLS
-  # (reverse proxy / Cloudflare), or terminate TLS with ITS OWN cert (Settings → Subscriptions →
-  # custom cert path). It deliberately does NOT reuse the panel's certificate: a page that renders
-  # private keys in the browser must be HTTPS, but handing the panel's TLS *private key* to this
-  # internet-facing process would let a compromise of it impersonate the panel. Off by default, so
-  # nothing is exposed until the operator enables subscriptions AND puts TLS in front.
   writef /etc/systemd/system/swg-sub.service 644 <<EOF
 [Unit]
 Description=swg-sub subscription surface (public, read-only)
@@ -1621,12 +1378,6 @@ EOF
   if swg_log_ns_ok; then swg_log_ns_text swg-panel | writef "/etc/systemd/system/swg-sub.service.d/$SWG_LOG_NS_DROPIN" 644; else swg_log_ns_clear; fi
 }
 
-# swg-netctl: the privileged network/TLS helper. The unprivileged panel can't bind low ports, edit its
-# own unit, or run acme.sh — it drops a validated JSON request into a queue only IT can write, and this
-# root helper drains it. A .path watch fires instantly; a 10 s timer is the fallback for a watch that died. (A Docker
-# panel's host drainer, swg-netctl-docker, watches its bind-mounted queue the same way: the host's inotify sees the
-# container's write — a bind mount is the same inode, measured 2026-10-10.) Requests/results carry no secrets; the
-# helper reads the CF token itself.
 write_netctl(){
   [ -f "$SRC/swg-netctl" ] || return 0
   run mkdir -p "$PREFIX/usr/local/bin"; cp "$SRC/swg-netctl" "$PREFIX/usr/local/bin/swg-netctl"; chmod 755 "$PREFIX/usr/local/bin/swg-netctl"
@@ -1673,10 +1424,6 @@ Unit=swg-netctl.service
 [Install]
 WantedBy=paths.target
 EOF
-  # AccuracySec=1s: systemd's default (1 min) fires a 10 s tick whenever PID 1 next wakes for something else — ticks a
-  # median 15 s and up to 35 s apart in the CPU re-qualification's soak (AB-F1) — and a settings save, Debug's end and a
-  # request with the path watch dead all wait for a tick. update.sh ensure_timer_on_time adds it to a timer an older
-  # release wrote.
   writef /etc/systemd/system/swg-netctl.timer 644 <<EOF
 [Unit]
 Description=poll for swg-netctl requests (fallback for the path watch)
@@ -1690,27 +1437,14 @@ AccuracySec=1s
 WantedBy=timers.target
 EOF
   run systemctl daemon-reload
-  # NOT $_NOW: SWG_DEFER_START exists so the freshly-installed PANEL doesn't fight the still-running docker panel
-  # for its port. These two are a .path watcher and a 10s timer over a local queue directory — they contend with
-  # nothing, and leaving them merely enabled-but-dead made every converted box come up with "Network & TLS helper"
-  # down, so Access & TLS and address changes silently couldn't apply until the next reboot.
   run systemctl enable --quiet --now swg-netctl.path 2>/dev/null || warn "couldn't enable swg-netctl.path"
   run systemctl enable --quiet --now swg-netctl.timer 2>/dev/null || warn "couldn't enable swg-netctl.timer"
 }
 
-# One-click self-update: a root systemd updater the (unprivileged) panel triggers by touching a
-# file. swg-update.path watches the trigger and starts swg-update.service, which runs in its OWN
-# cgroup so 'systemctl restart swg-panel-server' mid-update can't kill it. swg programs only.
 mk_update_unit(){
   [ -n "${_UPDATE_UNIT_DONE:-}" ] && return 0; _UPDATE_UNIT_DONE=1   # write_panel_unit runs twice (placeholder→real cert); the TLS-independent self-update units only need writing once
-  # ⚠️ THE REF THIS BOX IS BEING INSTALLED FROM, not `main` — see the note in update.sh's copy. `bootstrap.sh`
-  # supports installing a branch or tag and exports it; baking it in here is what keeps the Update button on
-  # that branch, since nothing else on the box records which one it was.
   _swg_ref="${SWG_REF:-main}"
   swg_update_wrapper_text "$_swg_ref" | writef_atomic /usr/local/bin/swg-update 755   # the one text (lib/common.sh)
-  # The triggers are POLLED (lib/common.sh write_docker_updater says why, and why not a .path watch).
-  # FIXED unit names + a COMPREHENSIVE trigger list mean a bare panel and a docker node on the SAME box write
-  # IDENTICAL units — no collision, no runaway. (install-docker writes the exact same files.)
   swg_update_check_text | writef /usr/local/bin/swg-update-check 755   # the one text (lib/common.sh)
   writef /etc/systemd/system/swg-update.service 644 <<EOF
 [Unit]
@@ -1744,18 +1478,6 @@ EOF
 
 # (no push receiver — nodes connect outbound over HTTPS; enroll them in the Nodes screen)
 
-# ⚠️ swg-sub's UNIT EXISTS BEFORE THE PANEL'S FIRST START. The panel, starting, re-asserts the subscription server's
-# bind (_reconcile_sub_listen_at_boot: swg-netctl's 10-access.conf drop-in, from its saved settings) — only when swg-sub is
-# installed. After an uninstall that kept the data, the re-install started the panel before it wrote swg-sub's unit
-# (below, at the end), so the bind came back only at the panel's NEXT start (1.8.8 qualification, round 8). A unit that
-# is missing is written now (its final text, and its start, come at the end as before); one that exists is left alone.
-# ⚠️ …SO WHETHER THE OPERATOR TURNED swg-sub OFF IS READ HERE, before this run writes its unit: one that existed and was
-# disabled and stopped stays so at the end (1.8.8 deferred #9). Read at the end, the unit written just below looked like
-# one — a FRESH install left swg-sub disabled and stopped, and served no subscription links (1.8.9 qualification F25).
-# ⚠️ …BUT ONE PARKED WITH ITS PANEL COMES BACK WITH IT. A Docker install's guard parks the bare panel and its swg-sub
-# together (guard_second_panel: `disable --now` both); going back to bare re-enables the panel below, and its swg-sub,
-# read as the operator's choice, stayed off "as it was" — every subscription link dead (1.8.9 qualification R2 INST-2).
-# Parked is update.sh's own test (ensure_sub_server: a parked panel's swg-sub is parked with it): one rule for both.
 _sub_off=no; [ -e "$PREFIX/etc/systemd/system/swg-sub.service" ] && ! $DRYRUN && ! systemctl is-enabled --quiet swg-sub 2>/dev/null \
   && ! systemctl is-active --quiet swg-sub 2>/dev/null \
   && ! { [ -f "$PREFIX/etc/systemd/system/swg-panel-server.service" ] && bare_panel_parked; } && _sub_off=yes
@@ -1776,15 +1498,6 @@ print("%s:pbkdf2_sha256$%d$%s$%s" % (u, it, base64.b64encode(salt).decode(), bas
 PYAUTH
   fi
   chmod 640 "$PREFIX$ETC_DIR/auth" 2>/dev/null || true; run chown root:swg "$ETC_DIR/auth"
-  # A vault that predates the auth file we just minted is wrapped under a password that no longer exists
-  # anywhere, and we cannot re-wrap it — the key only ever lives in the admin's browser. Reached by
-  # uninstall(keep the data dir) -> re-install: the uninstaller takes /etc/swg-panel WITH the auth file but
-  # leaves /var/lib/swg-panel, so this function runs (it is called only when KEEP_AUTH is not yes) while
-  # subs/ still holds the old vault. Nothing is destroyed — the sign-in path refuses to mint over an existing
-  # wrap — but the ONE prompt that accepts the encryption key is gated on this marker, so without it the
-  # operator has nowhere to type the key they were told to keep, and Settings can only reveal that key while
-  # the vault is already open. Safe to drop unconditionally: if the new password happens to open the vault
-  # anyway, the panel re-wraps and clears the marker without troubling anyone.
   if [ -f "$PREFIX$STATE_DIR/subs/vault.json" ] && [ ! -f "$PREFIX$STATE_DIR/subs/vault.reset" ]; then
     if $DRYRUN; then echo "    [skip] drop ${STATE_DIR}/subs/vault.reset (an existing vault must be reconnected under the new login)"
     else
@@ -1799,49 +1512,17 @@ PYAUTH
 cert_perms(){ run chown root:swg "$TLS_DIR" "$TLS_DIR/fullchain.pem" "$TLS_DIR/key.pem" 2>/dev/null || true   # the dir too: a KEPT one comes back root:root (uninstall)
   chmod 644 "$PREFIX$TLS_DIR/fullchain.pem" 2>/dev/null || true; chmod 640 "$PREFIX$TLS_DIR/key.pem" 2>/dev/null || true; }
 san_for(){ case "$1" in *[a-zA-Z]*) echo "DNS:$1";; *) echo "IP:$1";; esac; }
-# ⚠️ THE PROGRAM AND ITS STORE ARE TWO DIFFERENT THINGS, and conflating them cost us a silent
-# renewal failure. acme.sh keeps state in $LE_WORKING_DIR, falling back to "$HOME/.acme.sh" — so the
-# SAME binary reads a different store depending on who runs it. swg-netctl runs from systemd with no
-# HOME, so it was operating on /.acme.sh (filesystem root) while the installer and acme's own cron
-# used /root/.acme.sh. A cert the PANEL issued at runtime therefore had no renewer at all: cron runs
-# `--cron --home /root/.acme.sh` only, so it expired silently after 90 days. Pin the store here, pass
-# it to every acme call, and hand it to swg-netctl as LE_WORKING_DIR — never inherit it from HOME.
 ACME_HOME="${ACME_HOME:-/root/.acme.sh}"
 find_acme(){ ACME=""; local a; for a in /root/.acme.sh/acme.sh "${HOME:-/root}/.acme.sh/acme.sh" "$(command -v acme.sh 2>/dev/null || true)"; do [ -n "$a" ] && [ -x "$a" ] && { ACME="$a"; return 0; }; done; return 1; }
 # every acme.sh invocation goes through this, so none of them can pick up an ambient store
 acme(){ run "$ACME" --home "$ACME_HOME" "$@"; }
-# does acme.sh actually hold an ISSUED cert for <domain>?  (`--info` returns 0 even with no cert,
-# e.g. on a clean box right after --register-account — so check the cert file on disk instead)
-# ⚠️ THIS PREDICATE GATES THE SELF-SIGNED FALLBACK, so it has to answer the question the callers
-# actually ask — "can --install-cert succeed?" — not the weaker "does a file exist?". acme.sh ≤3.1.3
-# writes the CA's HTTP body to <domain>.cer UNCONDITIONALLY, so a 404 from the CA lands a JSON error
-# blob there and produces NO fullchain.cer. A bare -s test then reports a certificate we do not have:
-# the installer announces "a cert already exists", skips the fallback, and --install-cert dies on the
-# missing fullchain — aborting the run half-built (swg-netctl never compiled, TLS never wired, so a
-# proxied panel answers 525). 3.1.4 added the guard upstream; this keeps us right on every version.
-# Require the file --install-cert reads, and require the leaf to actually be a PEM certificate.
 acme_has_cert(){
-  # ⚠️ NOT `dirname $ACME`. find_acme accepts `command -v acme.sh`, so on a box with a packaged or
-  # custom acme.sh that resolved to /usr/local/bin — and this looked for the cert in /usr/local/bin,
-  # never found one, and re-issued on every run. The store is ACME_HOME; the binary's location is
-  # unrelated to it.
   local h d; h="$ACME_HOME"
   for d in "$h/${1}_ecc" "$h/${1}"; do
     [ -s "$d/fullchain.cer" ] || continue
     head -1 "$d/${1}.cer" 2>/dev/null | grep -c 'BEGIN CERTIFICATE' >/dev/null && return 0
   done
   return 1; }
-# ⚠️ A FAILED ORDER LEAVES A TRAP THAT NO RE-RUN CAN CLEAR. acme.sh writes <domain>.key before it ever
-# contacts the CA and keeps it when the order fails; every later --issue then stops at "Domain key exists,
-# do you want to overwrite it? ... add '--force'" instead of reaching the CA — so the real reason (port 80
-# unreachable, a bad DNS token, a rate limit) is masked for ever, and re-running the installer reproduces
-# the mask, never the cause. It cannot heal itself either: issue() only calls createDomainKey when the
-# requested keylength differs from Le_Keylength in the domain conf, and that is written ONLY on a successful
-# key creation — so each failure leaves a conf without it and the next run repeats verbatim.
-# NOT --force (it re-issues on every run and burns Let's Encrypt's 5-duplicates-per-week): drop the entry.
-# Scoped to the _ecc entry, which is the one our --keylength ec-256 issuance uses — an RSA `<domain>` entry
-# beside it may belong to another tool on this box and is never touched. The twin of swg-netctl's
-# _acme_clear_unusable(); keep the two in step.
 acme_clear_unusable(){
   $DRYRUN && return 0
   local d="$ACME_HOME/${1}_ecc"
@@ -1850,11 +1531,6 @@ acme_clear_unusable(){
   if [ -s "$d/fullchain.cer" ] && head -1 "$d/${1}.cer" 2>/dev/null | grep -c 'BEGIN CERTIFICATE' >/dev/null; then return 0; fi
   warn "clearing a failed acme entry for $(b "$1") — a domain key with no certificate, which would make every re-issue fail with \"Domain key exists\""
   rm -rf "$d"; }
-# ⚠️ acme.sh was install-once-never-upgrade: `find_acme && return 0` meant a box provisioned years
-# ago kept whatever acme.sh it got then, forever. That matters because ≤3.1.3 caches a failed
-# issuance AS a certificate (see acme_has_cert above) and reports the CA's real complaint as an
-# empty "Signing failed:" — the defect is silent and the diagnosis expensive. Upgrade past the floor
-# when we find an older one. Best-effort by design: a box that cannot reach GitHub still installs.
 ACME_MIN=3.1.4
 acme_version(){ "$1" --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | sed -n 1p; }
 ensure_acme(){
@@ -1872,12 +1548,6 @@ ensure_acme(){
   info "Installing acme.sh"; run sh -c "curl -fsSL https://get.acme.sh | sh -s email=${ACME_EMAIL:-admin@$PANEL_DOMAIN}"
   find_acme && { ensure_acme_cron "$ACME" "$ACME_HOME"; return 0; }; $DRYRUN && { ACME=/root/.acme.sh/acme.sh; return 0; }
   die "acme.sh not found after install — install it manually or use TLS=selfsigned/skip"; }
-# A REUSED cert still needs its RENEWER. TLS_MODE carries the real mode forward, so the panel renews — and any
-# later address change re-issues — by shelling out to acme.sh. In docker acme.sh lives inside the image, so a
-# convert to bare-metal carried the cert and the renewal STATE across and left no program behind: the first
-# address change then failed with "acme.sh not found" against a /root/.acme.sh full of live cert state.
-# Non-fatal by design — a re-install that otherwise succeeded must not abort over the renewer. And the renewer's own
-# schedule: acme.sh renews only from its cron entry, which a box without cron never got (round 12b, ensure_acme_cron).
 ensure_renewer_for_reuse(){
   case "${TLS_MODE:-}" in
     letsencrypt|letsencrypt-ip|cloudflare)
@@ -1885,10 +1555,6 @@ ensure_renewer_for_reuse(){
       ( ensure_acme ) || warn "acme.sh isn't installed — renewals and address changes will fail until it is";;
   esac; return 0; }
 
-# Only ONE acme cert may own $TLS_DIR. Switching the panel URL (e.g. letsencrypt-ip → a domain) leaves the old
-# entry still installing into the same path, so acme's cron reinstalls whichever renewed last — a short-lived IP
-# cert then keeps clobbering the domain cert (Cloudflare then 526s on the IP-only origin cert). Before we install
-# for $PANEL_DOMAIN, drop any OTHER acme entry whose install path is under $TLS_DIR.
 prune_stale_acme_installs(){
   $DRYRUN && return 0
   local h conf d rp ecc; h="$ACME_HOME"   # same store as acme_has_cert — see the note there
@@ -1905,16 +1571,6 @@ prune_stale_acme_installs(){
     esac
   done
 }
-# acme.sh's install target for $1 when it is ANOTHER program's (outside our two cert dirs); empty otherwise.
-# ⚠️ acme.sh keeps ONE install target per name, and a second tool sharing the store owns it as surely as we do —
-# 3x-ui's certificate menu issues for the same name and re-points it at /root/cert/…. `--install-cert` here would
-# take it back: that tool's renewals would then land in OUR path and its certificate would silently expire, the
-# same outage it caused us. So we copy the certificate instead, and the panel's sync-acme (swg-netctl) brings every
-# later renewal across from the entry, whoever owns it. Twin of swg-netctl's _acme_foreign_target().
-# The same rule as swg-netctl's _acme_owner: all three install targets (a tool that installed with --cert-file/
-# --key-file and no --fullchain-file owns the entry just the same), and "ours" is one of our four files, compared
-# by resolved path (realpath -m), as swg-netctl does — a symlinked /etc/swg-panel or a non-canonical spelling in
-# acme's conf reads the same on both sides.
 _acme_rp(){ realpath -m -- "$1" 2>/dev/null || printf '%s' "$1"; }   # the SAME resolution on both sides of the compare
 acme_foreign_target(){
   $DRYRUN && return 0
@@ -1937,10 +1593,6 @@ mk_selfsigned(){ CERT_FULLCHAIN="$TLS_DIR/fullchain.pem"; CERT_KEY="$TLS_DIR/key
   if $DRYRUN; then echo "    [skip] openssl self-signed -> $TLS_DIR (CN=$PANEL_DOMAIN)"; : > "$PREFIX$CERT_FULLCHAIN"; : > "$PREFIX$CERT_KEY"
   else run openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -keyout "$CERT_KEY" -out "$CERT_FULLCHAIN" -subj "/CN=${PANEL_DOMAIN}" -addext "subjectAltName=$(san_for "$PANEL_DOMAIN")"; fi
   cert_perms; if $DRYRUN; then ok "dry run — would create a self-signed certificate for ${PANEL_DOMAIN} (10y)"; else ok "self-signed certificate for ${PANEL_DOMAIN} (10y)"; fi; }
-# ⚠️ AN ISSUANCE THAT FAILED IS RECORDED AS WHAT IS SERVED. install.conf and the panel's Access & TLS settings were written
-# with the mode asked for, before the issuance: after a fallback the summary, Settings and every update said Let's Encrypt
-# (an update: "the certificate renews on its own again") while a self-signed certificate was served, and nothing retried
-# (1.8.8 deferred #6, letsencrypt-ip with :80 closed). Both now say self-signed; the warning says how to ask again.
 tls_fallback_selfsigned(){
   local asked="$TLS_MODE"; mk_selfsigned; TLS_MODE=selfsigned; $DRYRUN && return 0
   sed -i 's/^TLS_MODE=.*/TLS_MODE=selfsigned/' "$ETC_DIR/install.conf" 2>/dev/null || true
@@ -2011,9 +1663,6 @@ obtain_cert_internal(){
           local _w80 _g80=""; _w80="$(ss -lntpH "sport = :80" 2>/dev/null | grep -oE '"[^"]+"' | sed -n 1p | tr -d '"' || true)"
           echo; warn "letsencrypt HTTP-01 needs host port $(col "$C_YEL" ":80"), but it's in use${_w80:+ (by $(col "$C_YEL" "$_w80"))} — issuance will fail"
           echo "    :80 is fixed by ACME (independent of the panel's port). Free it, or re-run and pick $(b cloudflare) (DNS-01), $(b cf15), or $(b selfsigned)."
-          # During a docker→bare-metal convert the holder is the docker panel we deliberately keep serving until
-          # the switch, so "free :80" reads as impossible advice. Name the real answer: the staged cert is right
-          # there, and reuse needs no ACME at all.
           [ "${SWG_CONVERT_DIR:-}" = convert-bare ] && echo "    During this convert :80 is held by the $(b 'docker panel still serving') until the switch — pick $(b reuse) to keep the certificate you already have (no re-issue, no :80)."
           ask_yn "Try acme standalone on :80 anyway?" n _g80
           [ "$_g80" = yes ] || die "aborted — free :80 or pick a TLS method that doesn't need it, then re-run"
@@ -2040,15 +1689,6 @@ obtain_cert_internal(){
       fi
       CERT_FULLCHAIN="$TLS_DIR/fullchain.pem"; CERT_KEY="$TLS_DIR/key.pem"
       prune_stale_acme_installs
-      # The reload is a SIGHUP, not a restart: the panel reloads its certificate live (zero downtime), and a restart
-      # also cut every open request and, for a Renew now pressed in Settings, the job that was waiting for this very
-      # renewal. `|| true`: at install time the unit may not be running yet, and a failing reload command is an
-      # acme.sh "Reload error" — which would send this installer to its self-signed fallback. update.sh rewrites the
-      # old `systemctl restart` in entries earlier installers stored (heal_acme_reloadcmd).
-      # ⚠️ NOT allowed to abort the run. Under `set -e` a failing --install-cert killed the installer
-      # right here — after the panel unit exists but before swg-netctl is compiled and the TLS paths
-      # are written — leaving a box that looks installed, serves plain HTTP, and 525s behind a proxy.
-      # Whatever went wrong with the CA, a self-signed cert is a working panel the operator can fix.
       local _foreign; _foreign="$(acme_foreign_target "$PANEL_DOMAIN")"
       if [ -n "$_foreign" ]; then
         # the panel serves this TLS itself, so its sync-acme keeps the copy current — leave the target alone
@@ -2067,18 +1707,12 @@ obtain_cert_internal(){
   esac
 }
 serve_internal(){
-  # acme's --install-cert reloadcmd runs `systemctl restart swg-panel-server` immediately,
-  # so the unit must exist (and be loaded) BEFORE issuance — write+enable a TLS-less
-  # placeholder first, then rewrite with the real cert paths and restart for real.
   write_panel_unit
   run systemctl daemon-reload
   run systemctl enable --quiet $_NOW swg-panel-server
   obtain_cert_internal
   write_panel_unit
   run systemctl daemon-reload
-  # Don't start the panel here during a DEFERRED-START install (a convert): the old panel still holds the port, so
-  # this restart just fails to bind — but not before the panel partial-boots and reconciles the staged settings/blessed
-  # against a not-yet-live state (blanking the saved address / TLS mode). The convert starts it once at the switch.
   if [ "${SWG_DEFER_START:-}" != 1 ] && [ -n "${CERT_FULLCHAIN:-}" ] && [ -n "${CERT_KEY:-}" ]; then run systemctl restart swg-panel-server; fi
   # …and RECORD a rule we actually opened, so uninstall.sh can take back exactly that one (it outlived every
   # uninstall). ufw says "Skipping adding existing rule" for one it already had — somebody else's, never recorded.
@@ -2258,10 +1892,6 @@ serve_skip(){
 }
 
 info "Login + TLS ($SERVE_MODE)"
-# ⚠️ A KEPT login still gets the ownership mk_auth_file gives a new one. "Untouched" kept whatever owner the file came
-# with, and a docker→bare-metal convert stages it from a container that ran as root: measured (qualification S4),
-# /etc/swg-panel/auth arrived root:root 0600, the panel — running as $PANEL_USER — could not read it, and refused
-# EVERY request ("LOGIN IS CLOSED") while telling the operator the convert kept their login.
 if [ "$KEEP_AUTH" = yes ] && [ "${SET_PASS:-no}" != yes ]; then ok "keeping existing login ($BASIC_USER)"; run chmod 640 "$ETC_DIR/auth"; run chown root:swg "$ETC_DIR/auth"
 else mk_auth_file; fi
 case "$SERVE_MODE" in
@@ -2276,24 +1906,10 @@ info "Enable services"
 run systemctl daemon-reload
 [ "$HOST_HAS_WG" = yes ] && { run systemctl enable --quiet swg-noded; run systemctl restart swg-noded || warn "couldn't start swg-noded"; }   # restart so a re-run picks up newly-added interfaces (config.json is read only at startup)
 run systemctl enable --quiet $_NOW swg-panel-server
-# Did it actually COME UP? Nothing downstream asks, so without this the script prints "✓ Host install
-# complete" over a service that died on startup — the most misleading thing an installer can do, because
-# the operator then debugs the URL instead of the cause.
-# The usual cause is the chosen port already being held. The check in the URL step does warn and offer a
-# different port, but its prompt reads from /dev/tty, so unattended (--yes, curl|bash, CI) that read fails
-# and falls through to "force" — which guarantees this. Found on a box where a leftover nginx held :443.
-# SWG_DEFER_START=1 means a convert is still holding the old panel up and starts this one later.
 if [ "${SWG_DEFER_START:-}" != 1 ] && ! $DRYRUN; then
-  # Ask the PANEL, not systemd. The unit is Type=simple, so systemd reports "active" the moment it forks the
-  # process — a panel that dies on bind a second later still looks active, and then Restart=on-failure keeps
-  # it flapping between activating and failed. Probing a port the unit serves is the only answer that means
-  # "serving" — see panel_probe_url for which one.
   _pu="$(panel_probe_url)"
   _pw=0; while [ $_pw -lt 12 ] && ! curl -kfsS -o /dev/null --max-time 2 "$_pu" 2>/dev/null; do sleep 1; _pw=$((_pw+1)); done
   if ! curl -kfsS -o /dev/null --max-time 2 "$_pu" 2>/dev/null; then
-    # ⚠️ THE PORT THE UNIT BINDS, and NEVER BLAME OUR OWN PANEL FOR HOLDING IT. This read the URL's port (443 when
-    # the URL names none), which is the web server's in a proxy mode, and it named whatever held it — so a panel
-    # that was serving (probed at the wrong door, above) was reported as "held by python3", which was itself.
     _bp="$PORT"
     if panel_owns_port "$_bp"; then
       warn "the panel is running (it holds :$_bp) but did not answer $_pu within ${_pw}s"
@@ -2316,22 +1932,13 @@ if [ "${SWG_DEFER_START:-}" != 1 ] && ! $DRYRUN; then
   fi
 fi
 if [ -f "$PREFIX$SUB_DIR/swg-sub" ]; then   # inert until enabled in Settings → Subscriptions
-  # ⚠️ …AND A UNIT THAT CHANGED TAKES EFFECT NOW. `enable --now` starts a stopped swg-sub but leaves a running one on its
-  # old unit: a re-install that moved its port kept it serving the old one until a reboot or an update restarted it —
-  # the moment the move then happened, far from the run that caused it (1.8.8 qualification, round 10, F92).
   _subu="$PREFIX/etc/systemd/system/swg-sub.service"; _subu_was="$(cat "$_subu" 2>/dev/null || true)"
   _sub_was_up=no; ! $DRYRUN && systemctl is-active --quiet swg-sub 2>/dev/null && _sub_was_up=yes
-  # ⚠️ …AND ONE THE OPERATOR DISABLED AND STOPPED STAYS SO, as an update keeps it (F93): a re-install enabled and started it
-  # again — a public listener back on its port, the operator's choice silently replaced (1.8.8 deferred #9). _sub_off was
-  # read before this run wrote the unit (above, F25).
   write_sub_unit; run systemctl daemon-reload
   if [ "$_sub_off" = yes ]; then ok "swg-sub left disabled and stopped, as it was (systemctl enable --now swg-sub to serve subscriptions)"
   else run systemctl enable --quiet $_NOW swg-sub || warn "couldn't start swg-sub"; fi
   if [ "$_sub_was_up" = yes ] && [ "$(cat "$_subu" 2>/dev/null || true)" != "$_subu_was" ]; then
     if run systemctl restart swg-sub; then ok "swg-sub restarted — its unit changed (it listens on ${SUB_BIND}:${SUB_PORT} unless the panel's Settings set another address)"
-      # ⚠️ …AND THE PANEL RECORDS WHERE IT LISTENS NOW. The panel was (re)started above, before swg-sub moved: its start
-      # read swg-sub on the old port, so Settings kept naming that one (and flagged a URL naming the new one) until the
-      # panel's next start (1.8.8 qualification, round 12, on q5). Its start is where the record happens: one more.
       if ! $DRYRUN && [ "${SWG_DEFER_START:-}" != 1 ] && systemctl is-active --quiet swg-panel-server 2>/dev/null; then
         run systemctl restart swg-panel-server && sub "the panel restarted, so its settings record swg-sub's new address"
       fi
@@ -2339,9 +1946,6 @@ if [ -f "$PREFIX$SUB_DIR/swg-sub" ]; then   # inert until enabled in Settings �
   fi
 fi
 write_netctl   # privileged network/TLS helper for the panel's Access & TLS settings (root; drains a validated queue)
-# …and what the panel queued at its first start — the subscription bind it re-asserts (see the unit written before that
-# start), a restart — is done before this run says it finished, not by the path watch a moment after it (1.8.8
-# qualification, round 8). Bounded: a long request (a DNS-01 issuance) carries on in its own unit.
 if ! $DRYRUN && [ -n "$(ls -A "$STATE_DIR/netctl/queue" 2>/dev/null)" ]; then run timeout 60 systemctl start swg-netctl.service 2>/dev/null || true; fi
 [ "$SERVE_MODE" = nginx ] && { run nginx -t && run systemctl reload nginx || warn "nginx -t failed; fix the vhost then: systemctl reload nginx"; }
 
@@ -2354,14 +1958,9 @@ elif [ "${LC_SUCCESS:-}" = reinstalled-updated ] && [ -z "${_SUM_BEFORE:-}" ] &&
    && [ "$_VER_BEFORE" = "$(head -1 "$REPO/VERSION" 2>/dev/null)" ]; then
   LC_SUCCESS=reinstalled
 fi
-# ───────────────────────── SUMMARY ─────────────────────────
-# A convert (SWG_CONVERT_DIR set) prints ONE unified summary at the very end in convert.sh — suppress this
-# mid-flow panel summary so the converted box doesn't show two (matches bare→docker's single end summary).
+# SUMMARY
 if [ -z "${SWG_CONVERT_DIR:-}" ]; then
 echo
-# ⚠️ A DRY RUN HAS NOTHING TO SUMMARISE — install-docker.sh's rule, here too. print_summary describes the LIVE box, so a
-# dry run said "Host install complete" and "INSTALL COMPLETE … new login — save the password now", and beside a Docker
-# panel it printed that panel's user with this run's password as its login (1.8.8 qualification, round 5, q6).
 if $DRYRUN; then
   _dsch=https; [ "$TLS_MODE" = skip ] && [ -z "${CERT_FULLCHAIN:-}" ] && _dsch=http
   _dps=":$PORT"; case "$PORT" in 443|80|"") _dps="";; esac
@@ -2372,10 +1971,6 @@ else
 # the paths) — but it must not call a dead panel a success.
 if [ "${PANEL_UP:-yes}" = no ]; then warn "Host install finished, but the panel is NOT running (see above)."
 else ok "Host install complete."; fi
-# We MINTED this login → hand the plaintext to the summary, the only place it's ever shown (the auth file keeps
-# just the pbkdf2 hash, so it can't be recovered afterwards — only reset). Kept login ⇒ nothing to show.
-# ⚠️ …AND A PASSWORD THE OPERATOR GAVE (BASIC_PASS=) IS NEVER PRINTED: they have it, and an unattended install's log
-# then held it in plaintext (1.8.8 qualification, round 8; 1.8.7 did the same). The summary says it was given.
 if [ "$KEEP_AUTH" != yes ] || [ "${SET_PASS:-no}" = yes ]; then
   if [ "$_PASS_GIVEN" = yes ]; then export SWG_SUMMARY_PASS_GIVEN=1; else export SWG_SUMMARY_PASS="$BASIC_PASS"; fi
 fi

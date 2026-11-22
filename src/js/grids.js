@@ -1,16 +1,3 @@
-/* grids.js — the shared peer table.
- *
- * LAYER 8 (see docs/APP-JS-SPLIT-PLAN.md). Above sheets-crud, because a row opens one.
- *
- * PeerGrid is one row per (peer, target) DEPLOYMENT, not per peer, and it is deliberately the same
- * component everywhere it appears — the Peers screen, the Live monitor, a user's expanded grid and the
- * interface detail page — so a deployment reads identically wherever you meet it. `live` swaps the pill
- * badge for an animated dot and drops the row actions; `agg` adds the Server/IF column.
- *
- * It sits here rather than in views.js because it OPENS things: the peer view, the edit sheet, the QR
- * modal. views.js is layer 3 and derives rows; this renders them and acts on them.
- */
-
 import { esc, tkey, seen, dur, fmtBytes, isMobile } from "./util.js";
 import { T } from "./i18n.js";
 import { Store, api, useStore } from "./store.js";
@@ -39,17 +26,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// `live` (the Live monitor): status is the animated connDot (not the pill badge), an Endpoint column is added
-// (turn peers show "Local turn-proxy"), the row actions + assign-to-user dropdown are dropped (read-only).
-// `sort`/`dir`/`onSort` make every column header a clickable order-by.
-// NETWORKS P3 (feature 7) — this peer fronts networks: an icon + count chip beside its interface tag, lit while the deployment
-// shown is online; the networks themselves are on hover. Built from the peer record and the row's own online flag, so it
-// costs the grid nothing it did not already have. ⚠️ It used to follow the TITLE with the word "network(s)", and a long
-// title ran it into the next column (Peers, Online) — the interface tag's cell is sized for chips.
-// ⚠️ NO `title`. The caption listed the prefixes and whether the deployment was up; the bubble says that AND who actually
-// reaches them, which is the question the chip raises. A native tooltip would also sit on top of the bubble it competes with.
-// The chip also opens the device's Networks window (operator, 2026-09-17), and so does the bubble's View — a click on it never
-// reaches the row, which `_rowInteractive` skips by this class.
 const gwTag = (p, t) => html`<${Popover} hoverOnly cls="grp-pop" popCls="netroute-bub netbub-wide"
   trigger=${html`<span class=${"tg tg-gw" + (t.online ? "" : " muted")} role="button" tabIndex="0" onClick=${() => openPeerNetworks(p)}
     onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPeerNetworks(p); } }}
@@ -58,15 +34,9 @@ const gwTag = (p, t) => html`<${Popover} hoverOnly cls="grp-pop" popCls="netrout
   <${ReachedByBody} peer=${p} blocked=${!!(p.selfDisabled || p.userDisabled) || p.status === "expired"} down=${!t.online} onView=${() => openPeerNetworks(p)}/>
 <//>`;
 
-// `ranged` (the Peers screen and the Users screen's lists): the Total column is the window's (traffic.js), not the live
-// wire counter, which moves into that cell's bubble (O2). `owner`: a user's own list — a device's figure is what it
-// carried while it was theirs, so the list adds up to the user's row.
 export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hideUser, loc, live, grouped, sort, dir, onSort, ranged, owner }) {
   const arrow = c => sort === c ? (dir < 0 ? "↓ " : "↑ ") : "";
   const th = (c, label, cls) => onSort ? html`<th class=${(cls ? cls + " " : "") + "clk"} onClick=${() => onSort(c)}>${arrow(c)}${label}</th>` : html`<th class=${cls || ""}>${label}</th>`;
-  // A GROUPED row stands for the peer's deployments THAT THIS VIEW MATCHES, so its count badge must too:
-  // under "All AmneziaWG" a peer on awg0 + wdtt3 is one awg deployment here, not two interfaces. The
-  // peer's other deployments are not lost — they are what the +N beside the address already covers.
   const matchedOf = p => (p.targets || []).filter(d => (node === "*" || d.node === node) && ifaceMatch(d.iface, iface, d));
   return html`<div class="tablewrap"><table class=${"peergrid" + (live ? " live" : "") + (loc ? " loc" : "")}>
     <thead><tr>${th("status", live ? "" : T("col|Status"), "h-status")}${loc
@@ -83,9 +53,6 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
         const gw = (p.routes || []).length ? gwTag(p, t) : null;   // beside the interface tag, wherever this layout puts it
         return html`<tr key=${p.id + "|" + tkey(t.node, t.iface)} data-peer=${p.id} class=${"clk" + (fresh ? " pcreate" : "")} title=${T("Double-click for QR / configs")} onMouseDown=${rowNoSelect} onClick=${e => rowSingle(e, () => openPeerView(p.id, t.node, t.iface))} onDblClick=${e => rowDouble(e, () => openPeerConfigs(p))}>
           <td data-label=${T("col|Status")} class="c-status">${(() => {
-            // ⚠️ THE NETWORKS CHIP IS ITS OWN HOVER BUBBLE, so it must not sit inside the status wrappers below:
-            // .turnwrap opens its bubble on any hover in its subtree, and uncatPop is a Popover around whatever it is
-            // handed — with the chip inside either, hovering it opened two bubbles at once, anchored differently.
             const ifaceB = loc ? gridIfaceTag(t, live) : null;   // live: inside the status bubbles below — no native tooltip over them
             const gwB = loc ? gw : null;   // the Private tag is not here: it rides the title — see titleCell
             if (!live) return html`${gridStatusBadge(t, p, re)}${ifaceB}${gwB}`;
@@ -94,9 +61,6 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
               return html`<span class="turnwrap" title="">${dot}${ifaceB}
                 <span class="turnbub statusbub err"><span class="statusbub-h" style="color:var(--dangling)"><${Ic} i="err"/>${T("Error")}</span>${re.msg}</span></span>${gwB}`;
             }
-            // Uncategorised: the live view has no pill to recolour, so the DOT carries it — amber and pulsing,
-            // "online, but not being category-routed". Same bubble as the grid badge, shared from ui.js so the
-            // sentence exists once. Ranked below a real fault: a faulty/blocked peer has a worse problem.
             if (peerUncategorised(t) && t.status !== "faulty" && t.status !== "blocked") {
               return html`${uncatPop(html`<span class="condot uncat"></span>${ifaceB}`)}${gwB}`;
             }
@@ -110,11 +74,6 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
           ${(() => {
             const titleCell = html`<td data-label=${T("col|Title")} class="c-name">${lifecycleIcon(p, t.status)}${(() => {
               const nm = p.title ? html`<b>${p.title}</b>` : html`<span class="faint">${T("Untitled")}</span>`;
-              // ⚠️ PRIVATE WAS INVISIBLE EVERYWHERE BUT ITS OWN EDIT SHEET, so it was given a tag — and the tag first went
-              // into the STATUS cell, a fixed-width column already holding a nowrap pill: on the Peers screen it ran 30px
-              // into the owner's name ("личное" over "n-anna", measured at 1420px). It belongs to the DEVICE, in every
-              // layout, so it sits by the title like the networks chip below: in one row with it, the TITLE truncating
-              // and the tags never pushed past the cell's edge.
               const priv = p.private ? html`<span class="tg tg-priv" title=${T("Only this user's own devices reach it and the networks behind it")}>${T("tag|private")}</span>` : null;
               const rtr = p.router ? html`<span class="tg tg-router" title=${T("Several devices share this address — the torrent guard never cuts it as a whole")}>${T("tag|router")}</span>` : null;
               // No interface column in this layout, so the networks chip stays by the title too.
@@ -125,9 +84,6 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
             const addrCell = html`<td data-label=${T("col|Address")} class="c-addr"><span class="addr">${t.ip || "—"}</span>${hidden.length ? html`<${DepBadge} others=${hidden}/>` : null}</td>`;
             const epCell = html`<td data-label=${T("col|Endpoint")} class="c-ep">${endpointCell(t)}</td>`;
             const nodeCell = html`<td data-label=${T("col|Node")} class="c-node"><div class="srvcell"><span class="srv-name" style=${"color:" + (Store.nodeColor(t.node) || "var(--ink)")}>${Store.nodeName(t.node)}</span></div></td>`;
-            // The row's tooltip advertises "Double-click for QR / configs", but this cell is a SINGLE-click link to
-            // the user — so it carries its own title, overriding the row's. A cell whose tooltip describes a
-            // different action than the one it performs is worse than no tooltip.
             const userCell = hideUser ? null : html`<td data-label=${T("col|User")} class=${"usercell" + (u ? " linked" : "")}
               title=${u ? T("Click to open this user's details") : (live ? "" : T("Assign this peer to a user"))}
               onClick=${u ? (e => { e.stopPropagation(); revealUser(u.id); }) : (e => e.stopPropagation())}>
@@ -179,16 +135,6 @@ export function UsersHeader({ sort, dir, onSort, live }) {
   </div>`;
 }
 
-// A self-contained peers panel (toolbar + shared PeerGrid + pager) over a GIVEN peer set. Reused for the
-// unassigned grid and each user's expanded grid, so they look/behave exactly like the Peers screen. The
-// server / interface dropdown options are derived from the set itself (only servers/ifaces that have rows).
-// A list's toolbar on a phone (MOBILE-PLAN P0): the search stays, the filters go behind one Filters button into a sheet — five
-// controls do not fit a 390 px row. A dot on the button while one is set. `controls(redraw)` draws them; each filter's own
-// handler re-renders the screen, `redraw` the sheet.
-// ⚠️ THE SCREEN'S LATEST CONTROLS, not the ones it opened with: its node and interface dropdowns are built from that render's
-// values, so a closure kept from the opening tap showed the old selection and the old node's interfaces after a pick (review
-// F6). Every render of the screen hands filterBtn its controls; the open sheet draws those and redraws when they arrive.
-// Which button: `key` (a grid's own view object where one screen draws several), else the call site's code.
 let _fsCtl = null, _fsRedraw = null, _fsKey = null;
 export function FilterSheet({ controls }) {
   useStore();
@@ -301,14 +247,6 @@ export function EmbeddedPeers({ peers, view, onNew, newLabel, hideUser, hideTool
   </div>`;
 }
 
-// Quick node→node nav as a pinned SIDE RAIL — the exact Overview node rail (reused via NodesRailPanel), in nav
-// mode: the current node highlighted, click navigates. Same markup/CSS as the dashboard's node selector.
-// Once you scroll the dashbar out of view, the SAME node selector + range dock as a compact vertical rail pinned to the
-// right edge, vertically centred and travelling with the scroll. It shrinks further when the pointer leaves it (a "peek")
-// and grows back on hover; scrolling back to the top slides it away and the inline dashbar takes over again. Self-contained
-// scroll state (rAF-throttled, no-op when the boolean doesn't flip) so it never taxes the poll path.
-// The node rail panel — shared by the Overview rail (nav=false: toggle a node in/out of the dashboard) and the
-// node/interface-detail rail (nav=true: jump to a node). Identical markup/CSS; only the per-row behaviour differs.
 export function NodesRailPanel({ nav, active }) {
   const ns = Store.nodes || [];
   return html`<div class="railpanel railmenu railmenu-nodes">

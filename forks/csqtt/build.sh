@@ -40,10 +40,6 @@ fi
 rustup toolchain install 1.97.1 --profile minimal >/dev/null 2>&1 || true
 rustup target add "$TARGET" --toolchain 1.97.1 >/dev/null 2>&1 || true
 
-# 2.1.5 pulled in C/C++ dependencies — rusqlite (bundled SQLite, C) and snmalloc-rs (build_cc, C++) — beside
-# the aws-lc-sys that was already there. cargo-zigbuild alone does NOT wire those up: the `cc` crate needs an
-# explicit cross compiler, which is what upstream's own rust-server/build_linux.sh does with zig wrappers.
-# The wrapper drops the `--target=<rust triple>` rustc passes through, which `zig cc` does not understand.
 WRAP="$WORK/zig-wrappers"; mkdir -p "$WRAP"
 cat > "$WRAP/zigcc" <<SH
 #!/usr/bin/env bash
@@ -59,13 +55,6 @@ printf '#!/usr/bin/env bash\nexec zig ar "$@"\n' > "$WRAP/zigar"
 chmod +x "$WRAP"/zig*
 export CC_$CENV="$WRAP/zigcc" CXX_$CENV="$WRAP/zigcxx" AR_$CENV="$WRAP/zigar"
 export CARGO_TARGET_${ENVA}_LINKER="$WRAP/zigcc"
-# Upstream's .cargo/config.toml sets link-self-contained=no for x86_64 ONLY. Without it here, rustc adds its own
-# crt1.o beside zig's and ld.lld fails with `duplicate symbol: _start`. Setting it for both arches keeps the two
-# builds identical instead of one carrying a silent exception.
-# ⚠️ As of 2.1.9 upstream DOES build arm64 (rust-server/build_linux.sh: `build_variant aarch64-unknown-linux-musl
-# ... csqtt-linux-arm64`) — an earlier version of this comment said they never did, which is no longer true. We
-# still do not use their script: it sets no aarch64 rustflags and .cargo/config.toml still covers x86_64 only, so
-# their own arm64 path would hit the duplicate-_start failure this line exists to avoid.
 export CARGO_TARGET_${ENVA}_RUSTFLAGS="-C link-self-contained=no"
 
 ( cd "$WORK/csqtt/rust-server" && cargo +1.97.1 zigbuild --release --target "$TARGET" )

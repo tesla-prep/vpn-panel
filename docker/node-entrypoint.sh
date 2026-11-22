@@ -4,12 +4,6 @@ set -eu
 log(){ printf '\033[0;36m[swg-node]\033[0m %s\n' "$*"; }
 
 : "${PANEL_URL:?PANEL_URL required (host-node: https://swg-panel:8443)}"
-# systemd's LoadCredential= puts the enrolment token in a per-unit tmpfs and exports its directory
-# here. Preferred over NODE_TOKEN when present, because an EnvironmentFile= token stays in this
-# process's environment for the life of the daemon and is inherited by every subprocess it spawns —
-# a credential is read once and gone. A no-op everywhere else: CREDENTIALS_DIRECTORY is unset in a
-# container, so the images and their compose contract are untouched (D15 — this file is shared
-# verbatim, and a fork of it would cost a sixth AWG params generator).
 if [ -n "${CREDENTIALS_DIRECTORY:-}" ] && [ -r "${CREDENTIALS_DIRECTORY}/token" ]; then
   NODE_TOKEN="$(tr -d '\r\n' < "${CREDENTIALS_DIRECTORY}/token")"
 fi
@@ -17,20 +11,12 @@ fi
 : "${NODE_ENDPOINT:?NODE_ENDPOINT required (public IP/host clients dial)}"
 AWG_DIR=/etc/amnezia/amneziawg
 mkdir -p "$AWG_DIR" /var/lib/swg-noded /etc/swg-agent
-# A self-learned re-point (operator changed the panel host/port; swg-noded verified the new address presents the
-# same trusted cert and switched) is persisted to the state volume — honour it ahead of the .env PANEL_URL so it
-# survives a container recreate (which regenerates config.json from the env).
 if [ -f /var/lib/swg-noded/panel-url ]; then
   _pu="$(head -n1 /var/lib/swg-noded/panel-url 2>/dev/null | tr -d '[:space:]')"
   if [ -n "$_pu" ] && [ "$_pu" != "$PANEL_URL" ]; then
     log "using self-learned panel URL $_pu (was ${PANEL_URL})"; PANEL_URL="$_pu"
   fi
 fi
-# ...and the CREDENTIAL and TLS posture that go with it. A same-panel address swap only ever moves the URL,
-# which is why this used to be one file. A TRANSFER to a DIFFERENT panel (T-10) moves the token too, and can
-# move the posture: without these three, a container recreate — or a nixos-rebuild, which runs this same
-# script on the native arm — would restore the OLD panel's token from the environment and the node would 401
-# against its new panel for ever, while that panel reported a completed transfer.
 if [ -f /var/lib/swg-noded/panel-token ]; then
   _pt="$(head -n1 /var/lib/swg-noded/panel-token 2>/dev/null | tr -d '[:space:]')"
   if [ -n "$_pt" ] && [ "$_pt" != "$NODE_TOKEN" ]; then
@@ -43,31 +29,13 @@ if [ -f /var/lib/swg-noded/panel-verify ]; then
 fi
 if [ -f /var/lib/swg-noded/panel-fp ]; then
   _pf="$(head -n1 /var/lib/swg-noded/panel-fp 2>/dev/null | tr -d '[:space:]')"
-  # `[ -n ]`, like panel-verify above. An empty or truncated panel-fp used to blank TLS_FINGERPRINT, and a
-  # blank pin does not fail closed — it drops the check entirely and accepts ANY certificate, silently turning
-  # a pinned node into an unverified one. Falling back to the configured pin is the safe reading of a file we
-  # could not read.
   if [ -n "$_pf" ]; then
-    # A learned pin OVERRIDES the configured one so a node that was re-pointed or transferred to another panel
-    # keeps working. That is right for an installed node, but on a DECLARATIVE host (NixOS) the operator edits
-    # the config, rebuilds, and nothing happens — the learned value quietly wins. Cost a 13h outage to find, so
-    # say it out loud rather than change the precedence, which transfer depends on.
     if [ -n "$TLS_FINGERPRINT" ] && [ "$_pf" != "$TLS_FINGERPRINT" ]; then
-      # `printf %.16s`, not ${var:0:16}: this file is #!/bin/sh and /bin/sh is dash in the node image, where
-    # substring expansion is a fatal "Bad substitution" — it would kill the entrypoint at exactly the moment
-    # this warning fires, i.e. a re-pointed node would fail to BOOT instead of logging a line. It was the only
-    # such expansion in the file; verified under the image's own dash.
     log "panel pin: using the LEARNED fingerprint $(printf %.16s "$_pf")… (from an earlier re-point/transfer), NOT the configured $(printf %.16s "$TLS_FINGERPRINT")…. To force the configured one, remove /var/lib/swg-noded/panel-fp and restart."
     fi
     TLS_FINGERPRINT="$_pf"
   fi
 fi
-# ⚠️ …AND A LEARNED "VERIFY THROUGH ITS CA" WITH NO LEARNED PIN MEANS NO PIN. swg-noded writes the posture a transfer
-# promoted with (_persist_panel_auth): panel-verify=yes and NO panel-fp when the new panel answered under CA
-# verification. The configured pin is then the pin of the panel the node LEFT, and keeping it pinned the new panel to
-# the old one's certificate: from this start on every sync was refused ("tls fingerprint mismatch"), though the node
-# had synced fine until the restart. A learned verify=no keeps the configured pin, as above — never "verify nothing".
-# (lib/common.sh docker_node_panel, uninstall.sh and convert.sh read the learned files by the same rule.)
 if [ "${_pv:-}" = yes ] && [ -z "${_pf:-}" ] && [ -n "$TLS_FINGERPRINT" ]; then
   log "panel pin: this node verifies its panel through its CA since it was transferred — the configured pin $(printf %.16s "$TLS_FINGERPRINT")… (the previous panel's) is not used"
   TLS_FINGERPRINT=""
@@ -76,9 +44,6 @@ fi
 # truth — a bootstrap interface deleted from the panel must NOT be regenerated on the next reboot.
 BOOT_MARKER=/var/lib/swg-noded/.bootstrapped   # persisted with ./data/node
 FIRST_BOOT=no; [ -f "$BOOT_MARKER" ] || FIRST_BOOT=yes
-# Per-interface "seeded" list: a NODE_IFACES entry with no conf is created the FIRST time we see it
-# (a freshly-added interface on a re-install), but NOT regenerated once seeded (so a panel-deleted one
-# stays gone). Replaces the all-or-nothing FIRST_BOOT gate, which skipped interfaces added on re-install.
 SEEDED=/var/lib/swg-noded/.seeded-ifaces
 if [ ! -f "$SEEDED" ]; then : > "$SEEDED"
   if [ "$FIRST_BOOT" = no ]; then   # legacy node: treat the interfaces it already HAS (confs on disk) as seeded
@@ -89,20 +54,7 @@ iface_seeded(){ grep -qxF "$1" "$SEEDED" 2>/dev/null; }
 mark_seeded(){ iface_seeded "$1" || echo "$1" >> "$SEEDED"; }
 MANAGED=""                                  # space-separated interface names
 IFJSON=""; IFSEP=""                          # swg-agent interfaces map (built per-interface, with its endpoint)
-# A CONVERTED node keeps its plain-WireGuard confs in WG_DIR — that is where bare-metal wrote them, and the
-# convert carries them over as-is. Every place that turns an interface NAME into a conf path has to know that,
-# or the interface silently drops out of the managed set on the next container start.
 iface_conf(){ [ -f "$AWG_DIR/$1.conf" ] && { printf '%s\n' "$AWG_DIR/$1.conf"; return; }; printf '%s\n' "${WG_DIR:-/etc/wireguard}/$1.conf"; }
-# WHICH TOOL DRIVES AN INTERFACE — the conf's own answer first, its location only as a fallback. Location is
-# not evidence: a container writes EVERY conf to the AmneziaWG directory, so a plain-WireGuard interface that
-# has been through one (a convert, a run-model switch) came back up as `awg`, silently changing what it is —
-# the panel re-badges it, `wg show` stops reading it, and setting obfuscation on it later would break every
-# client. The content cannot be probed either: an AmneziaWG conf with no obfuscation set looks exactly like a
-# WireGuard one. So swg-agent writes `#swg:cmd <tool>` when it creates the file.
-# ONE derivation, used by everything that needs the answer — the bring-up loop below used to repeat it from
-# the directory alone, so a marked plain-WireGuard conf in the AmneziaWG dir was handed to swg-noded as `wg`
-# and brought up with `awg-quick`: an amneziawg device that `wg show` cannot read, reported to the panel as
-# "cannot read interface" on every reconcile, for ever. The two answers must come from the same place.
 iface_cmd(){ # iface_cmd <conf-path> → wg | awg
   _ic="$(sed -n 's/^#swg:cmd \{1,\}\([a-z]\{1,\}\).*/\1/p' "$1" 2>/dev/null | head -1)"
   case "$_ic" in wg|awg) printf '%s\n' "$_ic"; return ;; esac
@@ -173,9 +125,6 @@ elif [ -n "${NODE_IFACES:-}" ]; then
   done
   IFS="$OIFS"
 elif ls "$AWG_DIR"/*.conf >/dev/null 2>&1; then
-  # No mounted confs and no NODE_IFACES spec, but the node already has panel-created confs persisted
-  # in AWG_DIR (e.g. kept across an uninstall/reinstall). THOSE are the interface set — handled by the
-  # re-manage loop below. Do NOT also invent the default awg0: it would collide on :51820 and show DOWN.
   log "using persisted interface conf(s) — not generating a default bootstrap interface"
 elif [ -n "${NODE_IFACE:-}" ]; then
   # single bootstrap interface — ONLY when explicitly named (NODE_IFACE). Blank => zero interfaces (panel-managed).
@@ -188,9 +137,6 @@ else
   log "no bootstrap interface configured — this node is managed from the panel (add one: Interfaces → Load new interface)"
 fi
 
-# also re-manage any interfaces created from the panel and persisted in the conf dir (survives a
-# container recreate when /etc/amnezia/amneziawg is a mounted volume) — they're not in the bootstrap
-# set above. config.json is rebuilt every start, so listing them here is what keeps them after re-up.
 for _c in "$AWG_DIR"/*.conf "${WG_DIR:-/etc/wireguard}"/*.conf; do
   [ -f "$_c" ] || continue
   _n="$(basename "$_c" .conf)"
@@ -202,13 +148,6 @@ done
 # ───────── 2) bring each up + NAT its subnet ─────────
 WAN="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* dev \([^ ]*\).*/\1/p' | head -n1)"; WAN="${WAN:-eth0}"
 
-# Clear our OWN leftovers: with host networking our wg/awg devices live in the HOST netns and survive a
-# container recreate, where they can still hold one of our ListenPorts (→ "Address already in use").
-#
-# Only ever delete a device that is actually IN THE WAY. "Not in the managed set" is not the same as "ours":
-# it also matches every pre-existing WireGuard/AmneziaWG interface on the box — the ones adoption exists to
-# discover and take over — and deleting those destroyed a working setup the first time the container started.
-# So: take a device only when it occupies a port one of our managed interfaces is about to bind.
 _wants=""                                   # ports our managed confs are going to listen on
 for _c in $MANAGED; do
   _p="$(sed -n 's/^[[:space:]]*ListenPort[[:space:]]*=[[:space:]]*\([0-9]\+\).*/\1/p' "$(iface_conf "$_c")" 2>/dev/null | head -n1)"
@@ -218,9 +157,6 @@ for _i in $(ip -o link show 2>/dev/null | sed -n 's/^[0-9]\+: \([^:@]*\).*/\1/p'
   case " $MANAGED " in *" $_i "*) continue ;; esac
   ip -d link show "$_i" 2>/dev/null | grep -qE 'amneziawg|wireguard' || continue
   _lp="$( { awg show "$_i" dump 2>/dev/null || wg show "$_i" dump 2>/dev/null; } | head -n1 | cut -f3 )"
-  # A USERSPACE interface (wireguard-go, amneziawg-go, every WDTT server) answers over its UAPI socket in
-  # /var/run/wireguard, which is not mounted into this container — so we read nothing. Unknown port means we
-  # cannot claim it is in our way, and this is the exact class of interface adoption exists to take over.
   if [ -z "$_lp" ]; then
     log "leaving unmanaged interface $_i alone (couldn't read its listen port — likely userspace)"
     continue
@@ -232,23 +168,12 @@ for _i in $(ip -o link show 2>/dev/null | sed -n 's/^[0-9]\+: \([^:@]*\).*/\1/p'
   esac
 done
 
-# ⚠️ AN INTERFACE THE OPERATOR STOPPED STAYS STOPPED. The panel's Stop takes it down and swg-noded records it
-# (iface-stopped.json in its state dir); on bare metal it also disables the interface's unit, so a reboot keeps it down.
-# This loop brought up every conf at every start, so on a Docker node a Stop lasted until the next container restart —
-# a reboot, an update, a recreate — and swg-noded then cleared the mark (1.8.8 qualification, round 10, N7). A stopped
-# interface is left down here, with its conf kept, until it is started from the panel — nothing else is done for it, as on
-# bare metal: no NAT of this loop's own (swg-noded's egress baseline, swg-egress:<iface>, covers a client subnet whatever
-# its conf carries, and a Start brings the conf's own hooks up with it).
 STOPPED_IFACES="$(python3 -c 'import json,sys; v=json.load(open(sys.argv[1])); print(" ".join(x for x in v if isinstance(x, str)) if isinstance(v, list) else "")' \
   /var/lib/swg-noded/iface-stopped.json 2>/dev/null || true)"
 for IFACE in $MANAGED; do
   dest="$(iface_conf "$IFACE")"
   case " $STOPPED_IFACES " in *" $IFACE "*)
     log "leaving $IFACE down — it was stopped from the panel, and stays down until it is started there"; continue;; esac
-  # A plain-WireGuard conf is brought up with wg-quick; awg-quick would look for it under ITS OWN dir and fail
-  # ("does not exist"), leaving an interface listed as managed but down. Pass the PATH, not the name, so
-  # neither tool re-resolves it against the wrong directory. Which tool: the SAME answer add_iface wrote into
-  # config.json — see iface_cmd.
   _q="$(iface_cmd "$dest")-quick"
   log "bringing up $IFACE via $_q"
   # clear any leftover SAME-NAMED device first (host netns survives a container stop → plain `up` = "File exists").
@@ -259,9 +184,6 @@ for IFACE in $MANAGED; do
   addr_line="$(awk -F= 'tolower($1) ~ /^[[:space:]]*address[[:space:]]*$/ {print $2; exit}' "$dest" | tr -d ' ' | cut -d, -f1)"
   SUBNET="$(python3 -c "import ipaddress,sys;print(ipaddress.ip_network(sys.argv[1],strict=False))" "$addr_line" 2>/dev/null || echo "")"
   [ -n "$SUBNET" ] || { log "WARNING: could not read subnet for $IFACE — skipping its NAT"; continue; }
-  # ITS OWN MASQUERADE, named after it (swg-nat:<iface>, as swg-agent's hooks write it): one untagged rule per SUBNET was
-  # shared by every interface on it, so one interface's down took another's NAT (a mesh link re-made on the same /31).
-  # The untagged copy an older start (or an older conf's hooks) left for this subnet goes; the tagged one is ensured.
   if ! iptables -t nat -C POSTROUTING -s "$SUBNET" -o "$WAN" -m comment --comment "swg-nat:$IFACE" -j MASQUERADE 2>/dev/null; then
     iptables -t nat -A POSTROUTING -s "$SUBNET" -o "$WAN" -m comment --comment "swg-nat:$IFACE" -j MASQUERADE \
       && log "NAT: masquerading $SUBNET out $WAN ($IFACE)" \
@@ -294,24 +216,6 @@ chmod 600 /etc/swg-agent/config.json
 # mark bootstrap done — from now on ./data/node-confs is the source of truth (deletes stick across reboots)
 touch "$BOOT_MARKER" 2>/dev/null || true
 
-# ───────── 3b) nft tables an earlier image left, in a form the host's own nft can read ─────────
-# ⚠️ THE HOST READS WHAT THIS NODE WRITES. With host networking the node's nft tables live in the host's kernel, and nft ≥ 1.1
-# (this image's) records a set or map declared with a plain `type ipv4_addr` / `type ifname` / `type inet_service` key in a
-# form Debian 12's nft 1.0.6 crashes on: set_make_key() calls the key's missing parse_udata, so `nft list ruleset`, `nft list
-# tables`, even `nft delete table` segfaulted on the host for as long as such a set existed — every host tool on nft with them
-# (1.8.8 qualification, R27). swg-noded declares a single key by the expression it is matched with now (`typeof ip daddr`),
-# which every nft reads; a table an earlier image wrote still holds the old sets, so each such table is re-loaded here, in
-# ONE transaction — the whole table as nft lists it, elements, timeouts and counters included, only its keys re-spelled —
-# before swg-noded runs. A clean table is left alone; a table that will not re-load stays as it was (never deleted: its
-# rules are what enforce), and says so.
-# ⚠️ ONLY THE SETS swg-noded DECLARES DECIDE, EACH RE-SPELLED BY ITS OWN EXPRESSION (round 12d, R29). A `meter` makes its own
-# set (swg_mech's psc_<subnet>), which every nft — 1.0.6 included — lists as `type ipv4_addr` and reads fine as the meter wrote
-# it: counted on the key word alone it re-loaded swg_mech after every rebuild and said "the host reads it now" of a table the
-# host already read. So it never decides. But a table re-loaded for another set declares it again, and declared plain by this
-# image's nft it is what 1.0.6 cannot read (measured on Debian 12: re-loaded as listed → `nft list tables` 139; as `typeof ip
-# saddr`, the key the meter counts by → 0), so there it is re-spelled with the rest. One expression for every set labelled the
-# source-keyed ones `typeof ip daddr` (the same datatype and bytes, the wrong words): NFT_TYPEOF_AWK knows the names swg-noded
-# declares and the expression it declares each with; any other set is left exactly as listed, and counts for nothing.
 NFT_TYPEOF_AWK='
 function key(s, t) {
   if (t == "inet_service") return (s == "ports") ? "th dport" : ""
@@ -348,10 +252,4 @@ nft_typeof_migrate
 # ───────── 4) sync loop: sample interfaces -> POST snapshot -> reconcile desired peers ─────────
 log "syncing to ${PANEL_URL} (interfaces:${MANAGED}, endpoint ${NODE_ENDPOINT})"
 export SWG_AGENT_CONFIG=/etc/swg-agent/config.json SWG_NODED_STATE=/var/lib/swg-noded
-# The two overrides above and here are what let this same script bootstrap a node whose programs
-# live somewhere other than /opt — a Nix store path, say. Defaults unchanged, so every existing
-# container behaves exactly as before. This script is the node's bootstrap on BOTH delivery
-# methods: it generates config.json, brings up every persisted interface before the daemon starts,
-# and sets up NAT — which is also the answer to "what brings interfaces up at boot on a host where
-# `systemctl enable` cannot work".
 exec "${SWG_NODED_BIN:-/opt/swg-noded/swg-noded}"

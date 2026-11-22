@@ -1,12 +1,3 @@
-/* sheets-crud.js — the create/edit dialogs for users, peers, targets and nodes.
- *
- * LAYER 7 (see docs/APP-JS-SPLIT-PLAN.md). Imported by the roster screens and by iface.js.
- *
- * These are where a peer is BORN: CreatePeerSheet mints the keypair in the browser (crypto.js), hands the
- * private key to the config and the QR, and sends the panel only a public key, an IP and a PSK. The same
- * TargetPicker drives create, add-target and edit, so one peer's several deployments stay one credential.
- */
-
 import { T, Trich, Tsplit, plural, srvText } from "./i18n.js";
 import { esc, tkey, V, BASE, seen, panelNowS, configErrors, orderedTargets, isPrimaryTarget, useStableOrder,
          isSelfContainedKind, ipOf, portOf, ipPickerVal, isMobile } from "./util.js";
@@ -66,9 +57,6 @@ export function CreateUserSheet() {
 }
 
 export function openAddPeers(userId, userName) { openModal(html`<${AddPeersSheet} userId=${userId} userName=${userName}/>`); }
-// One peer as a bordered block: a deployment row per (node, iface) — status · title (once) · node · iface+address ·
-// action. Multi-deployment peers stack their targets under one border with the PRIMARY tagged and backups beneath, so
-// the set reads as one identity. `mode` picks the row action: "mine" unassigns (rotates the key), "free" assigns.
 export function PeerBlockGrid({ peers, mode, act }) {
   useStore();
   const gridRef = useRef(null);
@@ -94,10 +82,6 @@ export function PeerBlockGrid({ peers, mode, act }) {
           ? html`<${Fragment}><span class="pg2-nm">${(p.title || "").trim() || html`<span class="faint">${T("tag|untitled")}</span>`}</span>${multi ? html`<span class="pg2-rel primary">${T("Primary")}</span>` : null}<//>`
           : html`<span class="pg2-bk">${T("Backup")}</span>`}</span>
         <span class="pg2-c pg2-tags">${t.node ? (mode === "mine"
-          // On the user's OWN peers these tags are the publish switches for that kind of config, exactly as
-          // they are on the deployment cards — the operator was already used to clicking them there and had
-          // to leave this sheet to do it. Left plain in the unassigned pool: publishing is about what a
-          // HOLDER is offered, and an unassigned peer has no holder for the switch to mean anything to.
           ? html`<${TargetFrontBadge} node=${t.node} iface=${t.iface} peer=${p} dim=${!t.online}/><${PubTag} peer=${p} src=${targetType(t)} label=${targetType(t)} dim=${!t.online} gen3=${tgt3(t)}/>`
           : html`<${TargetFrontBadge} node=${t.node} iface=${t.iface}/><${Tag} kind=${targetType(t)} label=${targetType(t)} gen3=${tgt3(t)}/>`) : null}</span>
         <span class="pg2-c pg2-ifn">${t.node ? t.iface : ""}</span>
@@ -106,9 +90,6 @@ export function PeerBlockGrid({ peers, mode, act }) {
       </div>`)}</div>`;
   })}</div>`;
 }
-// Add peers to a user — two grids: the user's own peers (unassign) and the unassigned pool (assign, key kept). Both
-// actions persist immediately (assign is non-destructive; unassign rotates the key, so it confirms). "Create fresh
-// peer" opens the normal new-peer flow with this user locked in. No carousel, no staging, no Save.
 export function AddPeersSheet({ userId, userName }) {
   useStore();
   const rep = p => orderedTargets(p.targets || [])[0] || {};
@@ -152,15 +133,6 @@ export function allTargets() {
   const out = [];
   for (const node of Object.keys(Store.describe)) for (const iface of Object.keys(Store.describe[node] || {}))
     if (!Store.ifaceIsSystem(node, iface)) out.push({ node, iface });   // never offer a mesh link (swg_*) as a peer target
-  // WDTT/csqtt servers own their interface, which isn't a panel-managed WG iface (so it's absent from
-  // `describe`) — add each so it is selectable as a (keyless) peer target.
-  //
-  // ⚠️ From the PANEL'S OWN instance map, not the node's live readback. A node can be running an instance
-  // this panel knows nothing about — a box that moved fleets carries its old panel's servers across — and
-  // the password set is derived per instance FROM THAT MAP (desired_wdtt_for_node), so a peer deployed to
-  // one is inert: no password is ever shipped, while the deployment reports Ready because a keyless target
-  // has no wg peer to observe. Offering it was offering a dead end. Such an instance has to be adopted
-  // first; the panel's map is also populated the moment one is created, so nothing legitimate is lost.
   for (const n of (Store.nodes || [])) {
     for (const iface of Object.keys(n.wdtt_cfg || {}))
       if (!out.some(t => t.node === n.id && t.iface === iface)) out.push({ node: n.id, iface });
@@ -174,15 +146,6 @@ export function allTargets() {
 // and only then — asked on hover, when the browser has laid it out.
 const nmTip = e => { const el = e.currentTarget; el.title = el.scrollWidth > el.clientWidth ? el.textContent : ""; };
 
-// What sits IN FRONT of a target interface, as one badge — so a targets grid says what a peer will actually
-// connect through, not just which interface it lands on. Two cases, never both:
-//   WDTT  — the server owns the interface: its operator title, else the fork name, in that fork's colour.
-//   turn  — one proxy: its title, else the fork name, in that fork's colour. SEVERAL: a neutral "turn" badge
-//           (naming one of several would be a lie), with the full list on hover.
-// Nothing in front → nothing rendered; a plain wg/awg interface keeps the grid quiet.
-// The badge naming what fronts a deployment. For a wg/awg target that is its turn-proxies — and since that IS
-// the peer's "turn" config source, passing `peer` makes the badge itself the publish switch for it. One chip:
-// a separate TURN toggle beside a "turn ×3" badge said the same thing twice.
 export function TargetFrontBadge({ node, iface, peer, dim }) {
   useStore();          // it is a publish switch when `peer` is set — without this it never re-renders after a toggle
   if (!node || !iface) return null;
@@ -219,13 +182,7 @@ export function TargetFrontBadge({ node, iface, peer, dim }) {
   <//>`;
 }
 
-// Reusable (node,iface) picker with per-target IP allocation. `exclude` is a Set of tkeys
-// to hide (interfaces a user is already on); `onChange` receives the chosen target list
-// [{node,iface,ip,ipHint}]. Used by the create-peer, create-user and add-peers flows.
 export function TargetPicker({ prefill, exclude, onChange, initial, pubPeer }) {
-  // `pubPeer` (Targets sheet only): rows that are ALREADY deployments of that peer get their protocol tag as a
-  // publish switch. A row you haven't ticked yet is a candidate — there is nothing of it to publish, so it stays
-  // a plain tag.
   const pubHave = useMemo(() => new Set(((pubPeer && pubPeer.targets) || []).map(t => tkey(t.node, t.iface))),
                           [pubPeer && pubPeer.targets]);
   const all = useMemo(allTargets, [Store.describe, Store.stats]);
@@ -273,12 +230,6 @@ export function TargetPicker({ prefill, exclude, onChange, initial, pubPeer }) {
   useEffect(() => { onChange(Object.values(sel)); }, [sel]);
 
   if (!targets.length) return html`<div class="hint">${T("No interfaces available — is a node online?")}</div>`;
-  // Steady order — by node, then interface. Ticking a target does NOT move its row (an on-the-fly "checked rows jump
-  // to the top" reshuffle read as confusing); the arrangement stays put while you pick, and re-sorts only on re-open.
-  // Every interface stays listed whatever is already ticked. A peer used to be locked to ONE kind here —
-  // ticking awg0 hid every wg, wdtt and csqtt row — which was a product rule, not a technical limit: the peer
-  // record has always held the three credentials side by side and the node reply builders have always been
-  // target-driven. One peer may now span wg + awg + wdtt + csqtt, and each row carries its own settings.
   const ordered = [...targets].sort((a, b) =>
     Store.byNode(a.node, b.node) || (a.iface || "").localeCompare(b.iface || ""));
   return html`<div class="targetpick">${ordered.map(t => {
@@ -294,9 +245,6 @@ export function TargetPicker({ prefill, exclude, onChange, initial, pubPeer }) {
         ${(pubPeer && pubHave.has(k)) ? html`<${PubTag} peer=${pubPeer} src=${ity} label=${ity} gen3=${tgt3(t)}/>` : html`<${Tag} kind=${ity} label=${ity} gen3=${tgt3(t)}/>`}
         ${t.missing ? null : html`<${TargetFrontBadge} node=${t.node} iface=${t.iface} peer=${(pubPeer && pubHave.has(k)) ? pubPeer : null}/>`}
         ${(s && (s.wdtt || s.csqtt || isSelfContainedKind(ity)))
-          // `ity` (the interface's real type), not just the flag set when a row is TOGGLED: an already-deployed
-          // target is seeded straight from the peer, so it never went through toggle and rendered an editable
-          // address box for a self-contained server — which mints the client IP itself on connect and can't be told one.
           ? html`<span class="topt-ip faint" title=${T("The server assigns the address on connect")}>${T("val|auto IP")}</span>`
           : (s ? html`<input class=${"topt-ip " + (s.ip && !V.ipv4(s.ip) ? "bad" : "")} value=${s.ip} placeholder=${s.ipHint || T("address")} title=${s.ip && !V.ipv4(s.ip) ? T("not a valid IPv4 address") : ""} onInput=${e => setIp(k, e.target.value)}/>` : null)}
         ${/* a phone shows no title: the reason goes under the field (MOBILE-PLAN hook 5) */""}
@@ -307,18 +255,7 @@ export function TargetPicker({ prefill, exclude, onChange, initial, pubPeer }) {
   })}</div>`;
 }
 
-// CONTROLLED interfaces grid for the Add-peers carousel: `value` = {tkey:{node,iface,ip,existing?}}; `onChange`
-// takes a functional updater so an async IP allocation merges against the LATEST selection. `lockExisting` keeps
-// already-deployed rows checked + read-only (removing a live deployment isn't done here). Scrolls past 5 rows.
-
-// ── ONE DEPLOYMENT's client-config settings ─────────────────────────────────────────────────────
-// AllowedIPs / DNS / MTU / keepalive used to be ONE block at the bottom of the peer sheet, applying to the
-// whole peer. That worked only while a peer was all of one kind. Now that a peer can hold wg + awg + wdtt +
-// csqtt at once, a single block would show fields that are meaningless for some of that same peer's
-// deployments — WDTT and csqtt mint the client address on connect and have no client config at all — so the
-// settings moved to where they were always true: the individual deployment, behind the gear on its row.
-// wdtt/csqtt rows have no gear, which is the whole confusion designed out. A side effect worth having: two
-// deployments of one peer can now route differently (full tunnel on one interface, split on another).
+// ONE DEPLOYMENT's client-config settings
 export const tgtDefaults = (meta) => ({
   dns: ((meta || {}).dns || []).join(", "), mtu: String((meta || {}).mtu || 1280),
   // keepalive reads the interface like dns/mtu do. It used to be a hardcoded "25", so the gear seeded 25
@@ -373,10 +310,6 @@ export function TargetGear({ node, iface, kind, opts, onSave, readOnly }) {
     onClick=${e => { e.preventDefault(); e.stopPropagation(); openTargetSettings({ node, iface, opts, meta, onSave, readOnly }); }}><${Ic} i="gear"/></button>`;
 }
 
-// Mint ONE peer per chosen target (own keypair + PSK each), assigned to userId. Builds each
-// config in-browser, stashes it in sessionConfigs (so the QR shows), and creates the peer via
-// the Phase-2 endpoint. Returns { ok, made, fails:[...] }.
-
 // New peer (mint a fresh keypair) deployed to one OR MORE (node,iface) targets as ONE
 // credential (redundancy / failover). For per-interface devices, use a user's "Add peers".
 export function openCreatePeer(prefill, child) { (child ? pushModal : openModal)(html`<${CreatePeerSheet} prefill=${prefill || {}}/>`); }
@@ -387,11 +320,6 @@ export function CreatePeerSheet({ prefill }) {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  // One peer, ANY mix of kinds. Each chosen target is classified on its own and gets what IT needs: a wg/awg
-  // target an address, a client config and the shared keypair; a wdtt/csqtt target neither (its server mints
-  // the address on connect, and the panel-owned access password is its whole credential). The client-config
-  // fields that used to sit at the bottom of this sheet now live behind each wg/awg row's gear — see
-  // TargetSettingsSheet for why a peer that may not be wholly WireGuard can't have one shared block.
   const kindFor = t => (t.wdtt ? "wdtt" : t.csqtt ? "csqtt" : iTypeOf(t.node, t.iface));
   const keyed = chosen.filter(t => !isSelfContainedKind(kindFor(t)));
 
@@ -469,9 +397,6 @@ export function CreatePeerSheet({ prefill }) {
   <//>`;
 }
 
-// Copy peer interface→interface (same key + PSK, new target). Needs the client's
-// private key (session config, or stored) to build the new client config / QR.
-// `back` = where Cancel / Deploy / Esc returns to (e.g. reopen the peer view); default just closes.
 export function openAddTarget(peer, back) {
   const child = modalDepth() > 0;   // opened from another modal (peer view / edit) → child; Cancel pops back to it
   (child ? pushModal : openModal)(html`<${AddTargetSheet} peer=${peer} back=${back || closeModal} child=${child}/>`);
@@ -616,11 +541,6 @@ export function AddTargetSheet({ peer, back, child }) {
   <//>`;
 }
 
-// Edit a peer's client-config settings (DNS / MTU / keepalive / AllowedIPs) and re-issue
-// the config for every target. The private key only lives in the existing config, so this
-// rebuilds from it — available right after creation, or whenever store_configs is on.
-// (Address / interface / server are deployment moves — use copy + remove for those.)
-// Read-only peer view: all the peer's info + actions (edit / unassign|delete / close).
 export function openPeerView(pid, node, iface, child) { (child ? pushModal : openModal)(html`<${PeerViewSheet} pid=${pid} node=${node} iface=${iface}/>`); }
 export function PeerViewSheet({ pid, node, iface }) {
   useStore();
@@ -628,17 +548,10 @@ export function PeerViewSheet({ pid, node, iface }) {
   const depsOrdered = useStableOrder(p ? p.targets : []);   // frozen at open — toggling ★ won't re-shuffle the cards
   if (!p) return html`<${Sheet} title=${T("sheet|Peer")} foot=${html`<button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Close")}</button>`}><div class="empty"><b>${T("Peer not found")}</b>${T("It may have been removed.")}</div><//>`;
   const u = p.user_id ? Store.user(p.user_id) : null;
-  // Editing is peer-WIDE (keys, AmneziaWG params, DNS, address apply to every deployment), so it's locked while any
-  // deployment is on a missing (dangling) or misconfigured (broken) interface — a change there can't reach that
-  // deployment and would leave the peer inconsistent. The operator must Restore/Fix the interface, or drop it from Targets.
   const editLocked = p.targets.some(t => t.status === "dangling" || t.status === "broken");
   // Same status treatment as the peer QR modal: in a subscription → subscription status in the header (right) + the
   // peer's own status on a line under it; not in a subscription → the peer's own status takes the header slot.
   const headExtra = u ? html`<${SubStatusLine} user=${u} pos="hr"/>` : html`<${PeerStatusLine} peer=${p} pos="hr"/>`;
-  // ⚠️ MEASURED in Russian, the tight case: Close · QR · Targets · Edit · Block/Unblock · Unassign/Delete need 658–669px of
-  // footer (Unblock the widest), so at 640 the last button fell to a second row. 700 holds one row; 760 also keeps the traffic block's
-  // tabs and a custom window's two dates on the Traffic line (the peer, user and group windows share that width). A narrower window
-  // still wraps (the sheet caps itself at calc(100vw - 32px)).
   return html`<${Sheet} title=${p.title || (u ? u.name : T("Unassigned peer"))} width=${760} headExtra=${headExtra} subject=${{ kind: "peer", id: pid }}
     foot=${html`<${Fragment}>
       <button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Close")}</button><span class="grow"></span>
@@ -665,9 +578,6 @@ export function PeerViewSheet({ pid, node, iface }) {
       const proto = targetType(t);
       return html`<div class=${"pv-dep" + (node === t.node && iface === t.iface ? " hl" : "")} key=${tkey(t.node, t.iface)}>
         <div class="pv-dep-top">${peerUncategorised(t) && t.status !== "blocked" && t.status !== "faulty"
-          // same treatment as the grid and the QR card: the status word goes amber with a warning triangle and
-          // the bubble explains, rather than a green pill that says everything is fine about a peer whose
-          // traffic is not being category-routed.
           ? uncatPop(html`<span class="badge b-uncat ic"><${Ic} i="warn"/>${statusLabel(t.status)}</span>`)
           : badgeWithReason(t.status, t.status === "blocked" ? blockedReason(t.type) : statusReason(t.status))}
           <span class="tags">
@@ -698,9 +608,6 @@ export function PeerViewSheet({ pid, node, iface }) {
   <//>`;
 }
 
-// Read-only user view (O12): the user-level twin of the peer view — the user's graph over the shared window, and every
-// device they held in it with what it carried while it was theirs. A device deleted or handed on stays in the list (and
-// in the sum), so the list adds up to the Users grid's figure. Paged at 15, for a user with two devices or two hundred.
 export function openUserView(uid, child) { (child ? pushModal : openModal)(html`<${UserViewSheet} uid=${uid}/>`); }
 export function UserViewSheet({ uid }) {
   useStore();
@@ -741,11 +648,6 @@ export function UserViewSheet({ uid }) {
   <//>`;
 }
 
-// Read-only group view: the group's graph (its members' slots added together) over the windows' own window, and each member
-// with what they carried in it — the list adds up to the figure above. A member opens their own view. Paged like the devices.
-// child: over the sheet it was opened from (the group editor's Traffic on a phone), which stays under it with its edits and comes
-// back when this closes — openModal replaced the editor and its unsaved changes with no question (review F53). Its Edit group is
-// then that editor itself: a second one pushed over it brought the stale one back after a save (F65).
 export function openGroupView(gid, child) { (child ? pushModal : openModal)(html`<${GroupViewSheet} gid=${gid} child=${!!child}/>`); }
 export function GroupViewSheet({ gid, child }) {
   useStore();
@@ -773,10 +675,6 @@ export function GroupViewSheet({ gid, child }) {
   <//>`;
 }
 
-// Edit a peer: title (peer-wide), the focused target's address, and the client-config settings
-// (DNS/MTU/keepalive/AllowedIPs, applied to every target with a known config). Also offers copy
-// → another interface and key rotation (keeps the PSK). `focus` = the {node,iface} to edit IP for.
-// `done` = where Cancel / Save returns to (reopen the peer view when edit came from it, else close).
 export function openEditPeer(peer, focus, done, flash) {
   const child = modalDepth() > 0;   // opened from another modal (peer view) → child; closing pops back to it
   (child ? pushModal : openModal)(html`<${EditPeerSheet} peer=${peer} focus=${focus} done=${done || closeModal} flash=${flash} child=${child}/>`);
@@ -815,16 +713,10 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
     let ok = true;
     (async () => {
       const found = {};
-      // LIVE pubkey, not the `peer` prop's: a Rotate mints a new keypair and stores the config under the NEW
-      // pubkey while the prop stays the snapshot from when the sheet opened. Looking it up by the stale key found
-      // nothing, so the sheet kept saying "the client's private key isn't available" even after a good rotate.
       const _pk = (live && live.pubkey) || peer.pubkey;
       for (const t of (live.targets || peer.targets)) { const c = await getConfig(_pk, t.node, t.iface); if (c) found[tkey(t.node, t.iface)] = c; }
       if (!ok) return;
       setConfs(found); setLoaded(true);
-      // Each deployment's own config is the source of its own fields. The old code read ONE config (the focused
-      // target's, else whichever came first) and applied its values to every target on Save — so opening the
-      // sheet on one interface and saving quietly pushed that interface's DNS/MTU onto all the others.
       const seed = {};
       for (const k of Object.keys(found)) { const c = parseFullConf(found[k]);
         seed[k] = { dns: (c.dns || []).join(", "), mtu: String(c.mtu), keepalive: String(c.keepalive), allowed: c.allowed }; }
@@ -871,10 +763,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
       if (router !== (peer.router === true)) {
         const r = await api.peerUpdate({ peer_id: peer.id, router }); if (!r.ok) fails++;
       }
-      // persist the roster copy of the non-secret overrides (custom DNS/MTU/AllowedIPs/keepalive), so a
-      // blob-only render (encrypted store / the sub page) reproduces this peer's config faithfully. Written
-      // per DEPLOYMENT now: each target carries its own, and the peer-wide block stays only as the fallback
-      // for peers written before per-target settings existed.
       for (const t of (live.targets || peer.targets)) {
         const k = tkey(t.node, t.iface);
         if (!topts[k] || !optsChanged(k)) continue;
@@ -918,17 +806,10 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
     done(); await Store.poll();
   };
 
-  // A peer can hold a MIX of kinds, so "is this a WDTT peer?" is no longer one question with one answer.
-  // What each control actually needs is narrower: does this peer HAVE a wdtt deployment (→ offer Rotate link),
-  // a csqtt one, and does it have any KEYED deployment at all (→ offer Rotate keys / QR). The old `isKeyless`
-  // read "has any keyless deployment", which on a mixed peer hid its WireGuard addresses and its QR.
   const { hasWdtt, hasCsqtt, hasKeyed } = rotateParts(peer);   // the live peer's, one copy with the phone's Rotate (review F72)
   const isKeyless = !hasKeyed;   // EVERY deployment is self-contained: panel-owned password, no browser keypair
   const isWdttPeer = hasWdtt, isCsqttPeer = hasCsqtt;   // (rotate-link wording below)
   const rotate = () => {
-    // A MIXED peer holds several independent credentials — a keypair for its wg/awg deployments and one access
-    // password per keyless kind — so rotating it means rotating all of them, cumulatively (the same shape the
-    // bulk rotate in peer-actions.js uses). The single-kind cases below are what that reduces to.
     if (hasKeyed && (hasWdtt || hasCsqtt)) {
       openConfirm({ title: T("Rotate credentials"), confirmLabel: T("Rotate credentials"), warn: true,
         body: T("This peer holds several credentials — a WireGuard keypair and an access password per turn server. All of them are replaced: every config, QR and link this peer already handed out stops working and must be re-imported."),
@@ -949,22 +830,11 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
       return;
     }
     if (isKeyless) {   // keyless turn peer: no browser keypair — rotate the panel-owned access password (revokes the old link)
-      // Called ON the api object, never pulled off it: these are shorthand methods that do `this.post(...)`, so a
-      // detached reference loses `this` and the call throws SYNCHRONOUSLY — before .then/.catch are attached, so
-      // the catch never runs, the button sits on "Rotating link…" for ever and the request never leaves the
-      // browser. The password was never rotated either, so retrying the same button looked equally dead.
       const rotateApi = b => (isCsqttPeer ? api.csqttPeerRotate(b) : api.wdttPeerRotate(b));
       openConfirm({ title: T("Rotate link"), confirmLabel: T("Rotate link"), warn: true,
         body: isCsqttPeer
           ? T("A fresh access password is generated. The current csqtt link stops working — send the user their new link (from the subscription page) to re-import.")
           : T("A fresh access password is generated. The current WDTT link stops working — send the user their new link (from the subscription page) to re-import."),
-        // try/finally, not .catch: a .catch only runs on a REJECTED promise, so anything that throws before one
-        // exists leaves the button stuck. finally clears it whatever happened — and the operator is told, rather
-        // than left watching a disabled button that will never change.
-        // Deliberately NOT an async onConfirm: ConfirmSheet awaits it, which would hold the dialog open for the
-        // whole request. The design here (and on the keypair path below) is that the confirm closes at once and
-        // the BUTTON carries the progress. So: fire-and-forget, but with the clearing guaranteed on all three
-        // routes out — a synchronous throw, a rejection, and success. `.catch` alone covered only the middle one.
         onConfirm: () => {
           setRotating(true);
           try {
@@ -986,9 +856,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
     openConfirm({ title: T("Rotate keys"), confirmLabel: T("Rotate keys"), warn: true,
       body: T("A fresh keypair and preshared key are generated. The current config stops working — you'll need to send out the fresh QR / config to re-import. Useful if a config may have leaked."),
       onConfirm: () => {
-        // confirm pops back to the edit sheet (its parent); the rotate runs and reports via a toast. The button
-        // reads "Rotating keys…" meanwhile, and the poll refreshes the LIVE pubkey — which re-runs the config
-        // load, clearing the "private key isn't available" notice and filling in the real form fields.
         setRotating(true);
         rotatePeerKeys(peer).then(async () => {
           await Store.poll();
@@ -999,9 +866,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
       } });
   };
 
-  // A dangling / broken deployment replaces "Rotate keys" with its fix (Restore recreates the missing
-  // interface; Correct reassigns an in-subnet IP) — targeting the deployment the edit is focused on, or the
-  // first problem deployment when it's not target-scoped. Otherwise the normal Rotate-keys button shows.
   const _rp = Store.peer(peer.id) || peer;
   const _isGhostT = t => { const g = t && ghostIface(t.node, t.iface); return !!(g && g.ripe); };
   const _fixT = (focus && (_rp.targets || []).find(t => t.node === focus.node && t.iface === focus.iface))
@@ -1016,10 +880,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
             (hasKeyed && (hasWdtt || hasCsqtt)) ? (rotating ? T("Rotating credentials…") : T("Rotate credentials"))
             : isKeyless ? (rotating ? T("Rotating link…") : T("Rotate link"))
             : (rotating ? T("Rotating keys…") : T("Rotate keys"))}</button>`;
-  // ⚠️ MEASURED, not eyeballed, and measured in RUSSIAN because that is the tight case: the seven footer controls (QR,
-  // Targets, Networks, Rotate keys, Block, Cancel, Save) need ~686px of button plus a QR that is not always there, so 780
-  // fitted six labels and nothing more — the moment a peer had configs to show, they were shoulder to shoulder again.
-  // Sheet still caps itself at calc(100vw - 32px), so this is a ceiling and not a floor.
   return html`<${Sheet} title=${T("Edit peer")} width=${880} onClose=${done} onBack=${child ? done : null} subject=${{ kind: "peer", id: peer.id }}
     foot=${footRow({ left: html`${editable && hasKeyed ? html`<button class="btn btn-ghost" onClick=${() => openPeerConfigs(peer, { child: true })}><${Ic} i="qr"/>QR</button>` : null}<button class="btn btn-ghost" onClick=${() => openAddTarget(peer)}><${Ic} i="copy"/> ${T("Targets")}</button>${hasKeyed
         ? html`<button class="btn btn-ghost" onClick=${() => openPeerNetworks(live)}><${Ic} i="network"/> ${(live.routes || []).length ? T("Networks · {n}", { n: live.routes.length }) : T("Networks")}</button>` : isMobile() ? html`<button class="btn btn-danger m-pdel" onClick=${() => confirmDeletePeer(peer, null, true)}>${T("Delete")}</button>` : null}${fixBtn}${peerBlockBtn(peer)}`, onCancel: done, disabled: busy || !_dirty, title: _dirty ? "" : T("No changes to save"), onAction: save, action: T("Save") })}>
@@ -1073,10 +933,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
     <div class="field"><label>${T("label|Deployments")}</label>
       <div class="targetpick">${targetsOrdered.map(t => {
         const k = tkey(t.node, t.iface);
-        // ONE list for every kind. It used to be two mutually-exclusive lists chosen by whether the peer was
-        // "a WDTT peer", which on a mixed peer showed only one of its halves. Each row now asks its OWN kind
-        // what it should offer: an address box and a settings gear for wg/awg, "auto" and no gear for a
-        // self-contained server that mints the address on connect.
         const ity = targetType(t);
         const sc = isSelfContainedKind(ity);
         return html`<div class="targetopt sel locked" key=${k}>
@@ -1094,9 +950,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
         </div>`;
       })}</div>
       <div class="hint">${hasKeyed
-        // The gear renders only where a stored config exists (`!sc && confs[k]`), so a keyed peer whose
-        // config we cannot rebuild used to be told about a control that was never drawn. `editable` is the
-        // same signal the warning below uses.
         ? (editable
             ? T("Changing an address moves the peer on that interface. The gear holds that deployment's DNS, MTU and routing.")
             : T("Changing an address moves the peer on that interface."))
@@ -1108,12 +961,6 @@ export function EditPeerSheet({ peer, focus, done, flash, child }) {
   <//>`;
 }
 
-// ── networks behind a peer (docs/NETWORKS-PLAN.md §4.5, §4.6, §5, D8) ──────────────────────────────
-// A peer can front networks — the office LAN behind a router, a NAS behind a home box. The field declares
-// them; the report under it is what matters. WHO can now reach the network: everyone on the node, because the
-// node cannot tell peers apart — an exposure disclosure, not a detail. Which narrowed peers still can't. And
-// the far side's setup, which nothing the panel does can make exist. The draft is judged by the server as it
-// is typed and nothing is written until "Save networks", so all of that is on screen BEFORE the save.
 const netList = s => String(s || "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
 // The ranges home routers hand out by default (TP-Link/D-Link/Asus, Netgear, Huawei, Xiaomi, MikroTik, ISP boxes). A network
 // overlapping one is unreachable from any home that uses it — the home LAN's own route wins on the user's device.
@@ -1132,9 +979,6 @@ const netPeerName = id => {
   const q = Store.peer(id);
   return q ? ([q.name, q.title].filter(Boolean).join(" / ") || T("an unnamed peer")) : T("another peer");
 };
-// Every reason a network is not carried, in words. The tokens come from the panel (network_subnet_refusal,
-// node_networks) and from the node (network_route_refusal, net_route_install); one missing here falls through
-// to the last line rather than printing a token.
 function netWhy(r, node) {
   const v = { p: r.prefix, a: r.addr || "", node: node || "", by: r.by ? netPeerName(r.by) : "" };
   switch (r.why) {
@@ -1142,9 +986,6 @@ function netWhy(r, node) {
     case "not_v4": return T("{p} is IPv6 — only IPv4 networks can be carried.", v);
     case "default_route": return T("{p} would send all of the node's internet traffic into this device.", v);
     case "reserved": return T("{p} is a reserved range — loopback, link-local, multicast or cloud metadata.", v);
-    // ⚠️ TRUE ONLY WHILE THE NODE SHARES ITS LAN. With "Clients can reach it" off (NETWORKS P2) its clients reach nothing on
-    // that network, and the sentence told the operator the opposite. The refusal still stands — the node is the provider —
-    // so the closed case names the switch that lets them in. `node` is a display name here; names are unique per panel.
     case "node_lan": return ((Store.nodes || []).find(n => n.name === node) || {}).lan_share === false
       ? T("{node} is already on {p} ({a}), but it keeps its clients off that network. Turn on “Clients can reach it” under Local network on {node} to let them in.", v)
       : T("{node} is already on {p} ({a}), so its clients reach it without a gateway device.", v);
@@ -1170,17 +1011,6 @@ function netWhy(r, node) {
   }
 }
 
-// ── P5: who can reach these networks (docs/NETWORKS-PLAN.md §15) ─────────────────────────────────────────────────────
-// `share` null = everyone on the node, as before. An object = the device's owner, always, plus the people named, each
-// until a day or for good. The panel refuses with tokens (share_clean); the words are here.
-// THREE AUDIENCES, ONE STORED SHAPE: `null` = everyone on the node, `{users: {}}` = the owner only, `{users: {...}}` = the
-// owner and the people named. "Only the owner" was always storable — as "people you choose" with nobody chosen, which read
-// as a half-finished form — so it is a mode of the draft, not a new field.
-// GROUPS (docs/GROUPS-PLAN.md G4, G6): the same shape names groups beside people. The draft carries both, and the body always SENDS
-// `groups` — the panel refuses a save without it for a device whose share names groups, because that is what a tab opened before
-// groups existed sends. ⚠️ A deleted group's id is KEPT here, exactly as stored: filtering it changed the stored key the moment
-// someone deleted a group, and an open Networks window then claimed "someone changed these networks" (G7). It grants nothing,
-// the panel drops a stored one quietly on the next save, and `shownGroups` decides what is on screen.
 const shareOf = s => {
   if (!(s && typeof s === "object" && s.users && typeof s.users === "object")) return { mode: "everyone", users: {}, groups: {} };
   const groups = s.groups && typeof s.groups === "object" ? { ...s.groups } : {};
@@ -1228,18 +1058,11 @@ function NetShare({ peer, draft, setDraft, nodes, noShare, routes }) {
   const gids = shownGroups(draft.groups, storedGroupsOf(peer));
   const reaches = draftReaches(ids, draft.groups);
   const everyone = nodes.length === 1 ? T("Everyone on {node}", { node: nodes[0] }) : T("Everyone on its nodes");
-  // ONE control, the panel's pill switch (the link datapath's Forward | Relay): the narrowest, the widest, then the one that
-  // needs a list. ⚠️ The list lived here, one row per person, and a network shared with 100 people is not a form field — it
-  // opens in its own window (ShareListSheet), searched and paged; here it is a count.
   const modes = [...(owner ? [["owner", T("Only {name}", { name: owner.name })]] : []), ["everyone", everyone], ["chosen", T("People you choose")]];
   const label = T("Who can reach these networks");
   const openList = () => pushModal(html`<${ShareListSheet} peer=${peer} users=${draft.users} groups=${draft.groups || {}} routes=${routes}
     onApply=${(u, g) => setDraft(d => ({ ...d, mode: "chosen", users: u, groups: g }))}/>`);
   const pick = m => { setDraft(d => ({ ...d, mode: m })); if (m === "chosen" && !ids.length && !gids.length) openList(); };
-  // ⚠️ PRIVATE OVERRIDES THIS ENTIRELY, so the control must not go on offering an audience it cannot deliver. Without
-  // this an operator could pick people here, see them listed as having access, and `share_grants` would hand them
-  // nothing — the panel saying one thing while the node does another, which is the contradiction this codebase keeps
-  // paying for. Shown, not hidden: the way OUT is naming the flag that is overriding it.
   if (peer && peer.private) {
     return html`<div class="netshare">
       <label class="netshare-l">${label}</label>
@@ -1274,9 +1097,7 @@ function NetShare({ peer, draft, setDraft, nodes, noShare, routes }) {
   </div>`;
 }
 
-// ── a list sized by the fleet, not by the operator ──────────────────────────────────────────────────────────────────────────
-// Everything here must read as well with 2 rows as with 200 (operator, 2026-09-14): a long list is paged, 15 rows at a time,
-// with the panel's own pager markup (Activity's).
+// a list sized by the fleet, not by the operator
 const NET_PAGE = LIST_PAGE, pageOf = pageSlice, NetPager = ListPager;   // the shared pager (js/ui.js), also the user sheet's
 // Rows inside a disclosure, paged; `total` is the server's count when it capped the list it sent.
 function NetPagedRows({ rows, total, render }) {
@@ -1287,9 +1108,6 @@ function NetPagedRows({ rows, total, render }) {
     <${NetPager} page=${pg} setPage=${setPage} total=${rows.length}/>`;
 }
 
-// The people a network is shared with, in their own window: add by search, filter, a paged grid. Each person's devices are a
-// colour-coded count — green reach it, amber will once connected, red can't — with the per-node detail on hover. The window
-// asks the panel what its own draft would mean (the same preview the Networks window uses), so the counts follow edits.
 function ShareListSheet({ peer, users: initial, groups: initialGroups, routes, onApply }) {
   useStore();          // a group deleted while this window is open must turn into its "no longer exists" row on the next poll
   const owner = peer.user_id ? Store.user(peer.user_id) : null;
@@ -1343,9 +1161,6 @@ function ShareListSheet({ peer, users: initial, groups: initialGroups, routes, o
   };
   const drop = r => (r.g ? setGroups : setUsers)(m => { const n = { ...m }; delete n[r.id]; return n; });
   const apply = () => { onApply(users, groups); dirtyRef.current = false; if (cleanRef.current) cleanRef.current(); closeModal(); };
-  // Sheet marks itself dirty on ANY input event, so typing in the filter or the person search — which change nothing — asked
-  // "Discard unsaved changes?" on close. What changed is known exactly (`dirtyRef`, the list's key against the one it
-  // opened with), so every input here hands the guard back to that: this handler runs after Sheet's capture listener.
   const typedOnly = () => { if (cleanRef.current) cleanRef.current(); };
   const devices = id => {
     const r = reach[id];
@@ -1417,9 +1232,6 @@ function ShareListSheet({ peer, users: initial, groups: initialGroups, routes, o
   <//>`;
 }
 
-// Who can reach it on one node, as four numbers on the networks' line — all, green (reach it), amber (will, once they fix their
-// routing or connect), red (can't) — and the sentences on hover. ⚠️ These were six lines under every network plus one row per
-// person; with 100 people that buried the node's block. Per-person detail lives in the People window.
 function NetCounts({ t, node }) {
   const s = t.share, c = (s && s.cut_off) || {}, st = s && s.node;
   let soonKl = 0, noKl = 0;
@@ -1454,16 +1266,10 @@ function NetCounts({ t, node }) {
   <//>`;
 }
 
-// The device's networks badge on the peer view — the way in to the Networks window, shown only once the device HAS networks:
-// an empty "Networks" button on every phone read as something left to set up. New ones are added from Edit. Amber while
-// nothing can reach them through it — blocked, expired, or connected on no node — since a lit badge said "working".
 function NetworksBadge({ peer }) {
   const n = (peer.routes || []).length;
   const blocked = !!(peer.selfDisabled || peer.userDisabled) || peer.status === "expired";
   const down = blocked || !peer.targets.some(t => !isSelfContainedKind(targetType(t)) && t.online);
-  // ⚠️ NO `title`. The caption said what the bubble now says, and better — and a native tooltip on a hover target is the
-  // one thing guaranteed to sit on top of the bubble it competes with. Everything it carried (the prefixes, and the
-  // blocked / offline caveats) is a line in `ReachedByBody`.
   return html`<${Popover} hoverOnly cls="grp-pop" popCls="netroute-bub netbub-wide"
     trigger=${html`<button type="button" class=${"badge ic b-nets " + (down ? "warn" : "on")} onClick=${() => openPeerNetworks(peer)}
       aria-label=${T("Who reaches the networks behind this device")}>
@@ -1474,9 +1280,6 @@ function NetworksBadge({ peer }) {
 
 export function openPeerNetworks(peer) { (modalDepth() > 0 ? pushModal : openModal)(html`<${NetworksSheet} pid=${peer.id}/>`); }
 
-// NETWORKS — the networks behind one device, who reaches them, and what that means on each node, in its own window. One
-// Save writes the networks and their audience together (one request, one roster write), so a network never lands open
-// to everyone for the moment before its restriction does. Removing them is its own, confirmed, action.
 function NetworksSheet({ pid }) {
   useStore();
   const found = Store.peer(pid);
@@ -1527,11 +1330,6 @@ function NetworksSheet({ pid }) {
   // Someone else saved these networks while this window was open (another operator, another tab): saving now would put the
   // old list back over theirs without a word. Caught on the poll that brings their change, before anything is written.
   const stale = storedKey + "|" + shareStoredKey !== base.current;
-  // A device with no owner, restricted to nobody: a network no one can reach, saved as if it were a choice.
-  // A group counts only while it exists and has members — an empty or deleted one lets nobody in either.
-  // ⚠️ NOT for a private device: its audience is not chosen by this control at all, so the control's own "nobody has
-  // access yet" gate does not apply — and for an unassigned private device it fired on every render, greying out Save
-  // with its explanation hidden inside the control the private guard replaces. The guard states that case itself now.
   const nobody = want.length > 0 && !owner && !peer.private && share.mode === "chosen" && !draftReaches(Object.keys(share.users), share.groups);
   const noShare = ((rep && rep.targets) || []).filter(x => x.can_share === false).map(x => Store.nodeName(x.node));
   const clash = homeClash(want);
@@ -1600,10 +1398,6 @@ function NetworksSheet({ pid }) {
   <//>`;
 }
 
-// ── P4: the reachability test (docs/NETWORKS-PLAN.md §8 P4) ────────────────────────────────────────────────────────
-// Carried and connected is not the same as working: the device behind may never pass a packet on. So the node sends
-// one probe into the network THROUGH this device and says what came back (swg-noded net_probe_run). The panel and the
-// node send tokens; every sentence is here. → [dot, sentence, a second line or null].
 function netProbeSays(v, node) {
   const r = v.result || {};
   const o = { addr: v.addr, node, port: v.port || "", ms: r.ms, from: r.from || "", dev: r.dev || "", detail: r.detail || "" };
@@ -1709,18 +1503,6 @@ function NetProbe({ pid, nid, node, nets, restricted }) {
   </div>`;
 }
 
-// ── the far side, per kind of device (docs/NETWORKS-PLAN.md §18) ────────────────────────────────────────────────────────
-// ⚠️ The first version was one `sysctl -w` + one `iptables -A` for every device: gone at the router's first reboot, and no
-// `iptables` at all on current OpenWrt (fw4/nftables). Each recipe below survives a reboot: UCI commits to flash; RouterOS saves as
-// you go; Keenetic saves from its web UI; wg-quick re-runs its PostUp on every start and starts at boot. Where the tunnel runs ON
-// the network's router, nothing needs translating — the LAN already answers through it. Commands and config lines, never prose.
-// ⚠️ ONE SUBNET IS ENOUGH, because the node makes it so: clients of its other interfaces reach a network translated to the gateway
-// interface's own address (swg-noded reconcile_net_snat). Before that a router set up exactly this way answered only that subnet —
-// measured through a real Keenetic on swgt, 2026-09-17. Re-checked the same day against each vendor's current docs (KeeneticOS 5.x
-// labels, fw4, RouterOS 7) and, for Linux, in namespaces: wg-quick fails to start on a `DNS =` line where resolvconf is missing
-// (Debian, Raspberry Pi OS), `iptables` is often not installed there, and `enable --now` does not reload a tunnel already up.
-// "Route on the router" is gone: it needs the router to pass replies that bypass its connection tracking, which the stock
-// firewalls of MikroTik and pfSense drop.
 const netAddrMask = sub => {                        // Keenetic asks for the network address and the mask separately
   const m = /^(\d+\.\d+\.\d+\.\d+)\/(\d+)$/.exec(sub || "");
   if (!m || +m[2] > 32) return [sub, ""];
@@ -1794,10 +1576,6 @@ function NetSetup({ sub }) {
   </div>`;
 }
 
-// The device's own routing on this node, as a VALUE on the node's line: the config's AllowedIPs, what it means on hover, and
-// the gear that opens the same per-deployment settings as Edit peer's. ⚠️ A full tunnel was a yellow warning box on every
-// gateway, and it is the normal setup for a phone — it read as "something needs your attention". Only a config that leaves
-// the tunnel subnet out (answers never come back) is still a warning, under the line.
 function NetRouting({ t, node, sub, pid, onSaved }) {
   const g = t.gateway, p = Store.peer(pid);
   const tg = p && (p.targets || []).find(x => x.node === t.node && x.iface === t.iface);
@@ -1932,9 +1710,6 @@ function migrateIntro(name) {
   const [b, c] = [r1.split("{name}")[0], r1.split("{name}").slice(1).join("{name}")];
   return html`<${Fragment}>${a}<b>${T("new box")}</b>${b}<b>${name}</b>${c}<//>`;
 }
-/* T-10's opening line, and it exists to say the one thing that surprises people: NOTHING HAPPENS TO THE
-   BOX. Migrate rebuilds the node somewhere else; Transfer leaves it exactly where it is and changes only
-   which panel it answers to. */
 function transferIntro(name) {
   const [a, r1] = Tsplit("This hands {name} to another panel. The server itself is {untouched} — same box, same interfaces, same addresses — it just starts syncing over there. Its users, their peers and their stored configs go with it.", "name");
   const [b, c] = [r1.split("{untouched}")[0], r1.split("{untouched}").slice(1).join("{untouched}")];
@@ -1953,22 +1728,7 @@ function oldBoxLive(name, when) {
   return html`<${Fragment}>${a}<b>${name}</b>${b}<b>${when}</b>${c}<//>`;
 }
 
-/* What the arming actually did, shown ABOVE the command that must not be run until it has been read.
-   There is no dry-run: arming IS how these lists are computed, so this is the only moment they exist —
-   after the token is rotated and before the box is wiped, which is exactly when they are useful.
-   `no_escrow` is the one that costs a user something, so it is the one that shouts. (T-11 refines the
-   presentation; it does not own whether the operator is told.) */
 export function RebuildOutcome({ d, preview }) {
-  /* TWO BLOCKS, and every line names the thing before its fate.
-     The first version wrote each fact as a sentence ending in a list of names — "The panel holds no config
-     for these …: awg9, awg1, wg0" — which never said what the names WERE, and folded three different
-     reasons into one wording that fitted none of them. So: what will not survive, then what will, each as
-     labelled rows in the `ifrow` form this sheet already uses for addresses. The label is the category and
-     the value is the thing it happened to, which is the question an operator actually has.
-
-     `preview` = shown by T-11's pre-flight, before anything is armed. Every line reads as a prediction
-     either way; only the rollback block below is past tense, and both confirm sheets already say that in
-     their own words, so the preview drops it rather than repeating it wrongly. */
   if (!d) return null;
   const armed = d.armed || [], ne = d.no_escrow || [], un = d.unrestorable || [];
   const turn = d.turn || [], addr = (d.address || []).filter(a => a && a.action);
@@ -1976,12 +1736,6 @@ export function RebuildOutcome({ d, preview }) {
   const orph = d.orphan_escrow || [], incomp = d.incomplete || [], tdead = d.turn_dead || [];
   const row = (label, value) => html`<div class="ifrow"><span class="l">${label}</span><span class="r">${value}</span></div>`;
 
-  /* WHAT COMES BACK — three rows, named the way the node names them. The first cut had six, and they were
-     six ANSWERS to questions nobody asked: which keys came out of the vault, that csqtt regenerates its own
-     owner password, that a WDTT server takes its config from the panel and its users from the roster. All
-     true, all mechanism, and between them they buried the only thing an operator is reading this box for —
-     WHICH INTERFACES COME BACK. A turn-family server is an interface here because that is what it is on the
-     node page and on the box; splitting it out was the panel explaining its own internals. */
   const kept = [
     (armed.length || fam.length)
       ? [T("Interfaces"), [...armed, ...fam.map(x => x.iface)].join(", ")] : null,
@@ -1990,9 +1744,6 @@ export function RebuildOutcome({ d, preview }) {
     (d.mesh_ifaces || []).length ? [T("Mesh links"), (d.mesh_ifaces || []).join(", ")] : null,
   ].filter(Boolean);
 
-  /* WHAT DOESN'T — the same three sections, but per ITEM and with the reason, because here the reason is
-     the whole message. One name can carry several (unrestorable AND no escrow AND missing its MTU), so
-     they are collected by name and joined rather than listed as three separate rows about one interface. */
   const FIELD = { mtu: T("MTU"), listen_port: T("port"), address: T("address"), awg_params: T("obfuscation") };
   const lostBy = new Map();      // name -> { proxy: bool, why: [reason, ...] }
   const note = (name, why, proxy) => {
@@ -2002,12 +1753,6 @@ export function RebuildOutcome({ d, preview }) {
     if (!e.why.includes(why)) e.why.push(why);
     lostBy.set(name, e);
   };
-  /* The reason is phrased HERE, from the structured fields, not taken from the server's `why`. Two reasons,
-     and the second is the one that decided it: these render beside a name, so they have to be a clause and
-     not a paragraph — the server's `why` is a full explanation written for the API; and the server's copy
-     is not translatable (the i18n extractor cannot take `"why":` wholesale, because the same key carries
-     the fingerprint diff's `%s`-formatted diagnostics, which its own gate rejects). An unknown shape still
-     falls back to `why`, so a category added server-side reads as English rather than vanishing. */
   const famNames = new Set(fam.map(x => x && x.iface));
   const REASON = {
     unrecorded_turn: x => (x.users
@@ -2041,9 +1786,6 @@ export function RebuildOutcome({ d, preview }) {
   const lostIf = lostRows(false), lostTp = lostRows(true);
   const lost = lostIf.length || lostTp.length;
 
-  /* Two boxes, and the colour is still the summary: DANGER when something comes back re-keyed or a server
-     the panel never recorded does not come back at all — the two cases with a guaranteed cost to the people
-     using them. */
   const danger = ne.length || un.some(x => x && x.kind === "unrecorded_turn");
   const box = (cls, icon, heading, rows, tail) => html`<div class=${"notice " + cls}>
     <${Ic} i=${icon}/>
@@ -2056,16 +1798,6 @@ export function RebuildOutcome({ d, preview }) {
   const sect = (title, rows) => (rows.length ? html`<${Fragment}>
       <div class="seclabel" style="margin:10px 0 4px">${title}</div>
       <div class="ifcard-rows">${rows}</div><//>` : null);
-  /* ADDRESSES BELONG IN HERE, not in a bare section of their own below the green box. They are the same
-     KIND of thing as the rows above them — something to notice before you go, not a blocker — and putting
-     them outside every box left them reading as body text nobody had classified, after two boxes that had
-     been. The heading follows the tone: a genuine loss still says so. */
-  /* ONE ROW PER THING, but only the things that CHANGE — which is what makes naming them worth the room
-     again. Everything derived (a hostname endpoint, a wildcard bind, an auto source) is silent, so a row
-     here is always an address somebody typed. Name it, put the port with the name where it never changes,
-     and keep the mapping to hosts alone. The earlier version fought a dotted record path against a quoted
-     sentence in two columns and both wrapped; the one before this collapsed to the address and lost which
-     server it belonged to. */
   const hostOf = v => String(v == null ? "" : v).replace(/:\d+$/, "");
   const portOfAddr = v => { const m = String(v == null ? "" : v).match(/:(\d+)$/); return m ? ":" + m[1] : ""; };
   const addrLabel = a => {
@@ -2155,24 +1887,8 @@ export function NodeCreateSheet() {
   <//>`;
 }
 export const BOOTSTRAP_URL = "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh";
-// The one-liner every screen hands out: `sudo bash -c "$(curl …)" -- <args>`, never `curl … | sudo bash -s <args>`. Under the
-// pipe, sudo-rs (Ubuntu 26.04's sudo) runs the script in the background of the terminal and its first question freezes it
-// (bootstrap.sh _swg_tty_fg; client report 2026-10-06). Handed to `bash -c`, sudo's stdin is the terminal — with sudo-rs
-// and classic sudo alike, root or not. transfer_parse (the panel) reads both shapes, so commands already copied still work.
 export const bootCmd = args => `sudo bash -c "$(curl -fsSL ${BOOTSTRAP_URL})" -- ${args}`;
 
-/* THE TRANSFER TOKEN. One value carrying the two things a transfer needs — this panel's address and a
-   token valid here — so the other panel's Transfer window can ask for ONE thing instead of "the whole
-   enrolment command". The command was always the wrong artifact to ask for: it is a carrier for these
-   two values, and for a declarative (NixOS) node there is no `-key` in it at all, so an operator had
-   nothing to copy and no way to tell which of the offered commands was the right kind.
-
-   Minted here, in the browser, from the same address the commands use (NodeTokenSheet's `host`), so the token and the
-   commands can never name two different panels.
-
-   It does NOT replace the enrolment token, and the commands below are byte-identical to before: every
-   bootstrap.sh already published passes `-key` through verbatim, so a compound value there would fail
-   authentication on every existing installer. Two fields, two jobs. */
 function transferToken(host, token) {
   const json = JSON.stringify({ u: host, t: token, k: "" });
   const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)));
@@ -2186,47 +1902,18 @@ export function NodeTokenSheet({ name, token, isNew, kind, platform, rebuild }) 
   const bare = bootCmd(`node -key ${token} -host ${host}`);
   const docker = bootCmd(`docker node -key ${token} -host ${host}`);
   const nixos = platform === "nixos";
-  /* A migration can also change the installation method. The command used to be
-     pinned to the kind the node has now — right for a rotate (same box, same install) and needlessly
-     narrow here: a migration installs onto a DIFFERENT box, nothing in what it carries is run-model
-     specific (keys, peers, escrow, turn identities all restore either way), and the panel adopts whatever
-     the new node reports on its first sync. */
   const bothWays = !!rebuild;
   const [armedOpen, setArmedOpen] = useState(false);   // the pre-flight, folded — see below
-  /* THREE SHEETS SHARE THIS ONE, and they do not ask the same question:
-       create   — a node that does not exist yet: how do I install it?
-       migrate  — a node that exists: how do I stand it up on a NEW box? (rebuild is armed)
-       rotate   — a node that exists and is fine: its credential changed, how do I tell it?
-     Only the last one has an answer that is not an install command, and it was being shown the install
-     commands anyway — under a sentence about "restoring" a node nobody is restoring. */
   const rotate = !isNew && !rebuild;
 
   const copyBlock = (label, code) => html`<div class="field"><label>${label}</label>
     <div class="cmdrow"><div class="tokenbox">${code}</div>
       <button class="copyaction" onClick=${() => copy(code, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>`;
 
-  /* T-20 — THE CREDENTIAL ALONE. Every command on this sheet re-installs the node; none of them just fixes
-     its token. Measured the hard way twice in one session: a rotate landed on the wrong node and on the
-     wrong panel, and both times the only doors were a full re-install or "Restore or migrate", which arms a
-     rebuild — a baseline, a create request per interface, a mesh re-provision — for a box that is perfectly
-     healthy and merely holding the wrong credential.
-
-     Per run-model, because where the token LIVES differs and nothing detects it reliably from inside a
-     one-liner: bare-metal swg-noded reads /etc/swg-agent/config.json directly, while docker and NixOS launch
-     through node-entrypoint.sh, which prefers the /var/lib/swg-noded/panel-token mirror — and that mirror is
-     on the bind mount (survives a container recreate) and outranks the flake's token file (survives a
-     nixos-rebuild), which is exactly why the entrypoint reads it first.
-
-     It changes the TOKEN and nothing else. Not the URL, not `verify`, not the pinned fingerprint: the node
-     is already reaching this panel on that posture, and rewriting it is how you turn a locked-out node into
-     an unreachable one. A node that must move to a different ADDRESS is a re-point, which has its own verb. */
   const fixBare = `sudo python3 -c 'import json,sys;p="/etc/swg-agent/config.json";c=json.load(open(p));c.setdefault("panel",{})["token"]=sys.argv[1];json.dump(c,open(p,"w"),indent=2)' ${token} && sudo systemctl restart swg-noded`;
   const fixCtr = `sudo docker exec swg-node sh -c 'printf %s "$1" > /var/lib/swg-noded/panel-token; chmod 600 /var/lib/swg-noded/panel-token' sh ${token} && sudo docker restart swg-node`;
   const fixNix = `sudo sh -c 'printf %s "$1" > /var/lib/swg-noded/panel-token; chmod 600 /var/lib/swg-noded/panel-token' sh ${token} && sudo systemctl restart swg-noded`;
   const fixCmd = nixos ? fixNix : kind === "docker" ? fixCtr : fixBare;
-  /* …and NOT on a migration. "Fix only the credential" repairs a node whose install is fine and whose
-     token is stale — which is not the situation on a box that does not have the node yet. It was the last
-     thing on the screen and the longest command on it, answering a question this step never asks. */
   const fixBlock = ((kind || nixos) && !rebuild) ? html`<div class="field"><label>${T("Only fix the credential — no re-install")}</label>
     <div class="cmdrow"><div class="tokenbox">${fixCmd}</div>
       <button class="copyaction" onClick=${() => copy(fixCmd, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div>
@@ -2337,13 +2024,6 @@ export function NodeEditSheet({ node }) {
         ${/* §3.1: the door for a node that IS reporting — the old box is alive, so this one supersedes it
               and keeps a rollback point. The other door ("Restore or migrate") lives on the details header
               and only appears when the node is silent. T-10's Transfer lands next to this one. */
-          /* ⚠️ THE SERVER'S OWN VERDICT, deliberately — not recon's (see model.js nodeStatusOf). This door is not
-             asking "is this node live enough to act on", it is asking what the PANEL will do when the plan is
-             armed: plan_rebuild sets `supersede = live` from `node_seen` against its fixed NODE_OFFLINE
-             (swg-panel-server, §3.1). Read through the operator's own stale window instead and a wider window
-             opens this door for a node silent past NODE_OFFLINE — the sheet promising a one-click rollback while
-             the server arms the plan with supersede=False, so no rollback point is made and the tag never comes
-             (caught in review). Two clocks would be a bug; two QUESTIONS, each answered by the side that acts. */
           node.status === "online" ? html`<${Fragment}>
           <button class="btn btn-ghost" title=${T("Move this node to another server — the panel gives you a command that rebuilds it there from what it holds")} onClick=${() => openNodeMigrate(node)}><${Ic} i="server"/> ${T("Migrate")}</button>
           <button class="btn btn-ghost" title=${T("Hand this node to another panel — the box keeps running exactly as it is and starts syncing there instead")} onClick=${() => (node.transfer ? openNodeTransferWatch(node) : openNodeTransfer(node))}><${Ic} i="link"/> ${T("Transfer")}</button>
@@ -2371,21 +2051,6 @@ export function NodeEditSheet({ node }) {
     ${msg ? html`<div class=${"formmsg " + msg.k}>${msg.t}</div>` : null}
   <//>`;
 }
-/* ── Restore / migrate: one verb, two doors ──────────────────────────────────────────────────────────
-   The DOOR is the answer to the one question nobody can answer for the operator — "is the old box still
-   alive?" — so neither sheet asks it (plan §3.1):
-
-     reporting      -> "Migrate", from the node's settings. The old box keeps running and is marked
-                       superseded, which is what makes the one-click rollback possible.
-     not reporting  -> "Restore or migrate", from the details header. No marker: there may be nothing
-                       out there to supersede, and the sheet says so rather than implying a way back.
-
-   Both emit the same thing — a rotated token and a paste-on-the-server command that pulls whatever the
-   panel holds. "or migrate" is load-bearing: not reporting is not the same as gone for good.
-
-   NOT api.nodeRotate. That rotates a token and nothing else — no baseline, no armed interface restores,
-   no turn capture, no rollback point. §3.1 called this "already mostly built" back when rotation was all
-   there was; the rebuild adapter is what makes the command mean "be this node again". */
 async function armRebuild(node) {
   const r = await api.nodeRebuild({ node: node.id });
   if (!r.ok) { toast(srvText(r) || T("couldn't prepare the command"), "err"); return; }
@@ -2393,14 +2058,6 @@ async function armRebuild(node) {
   openModal(html`<${NodeTokenSheet} name=${node.name} token=${r.data.token} isNew=${false}
     kind=${node.kind} platform=${node.platform} rebuild=${r.data}/>`);
 }
-/* T-11 — the PRE-FLIGHT. Both doors ask the panel what this rebuild WOULD do and show it while the
-   operator can still walk away. T-9 shipped these lists but could only show them AFTER the token had
-   rotated, which is a report about a decision that can no longer be taken: `nixos/wdtt2` is a live example
-   — a WDTT server whose identity cannot be unsealed, worth knowing BEFORE the box is wiped, not after.
-
-   The answer comes from `rebuild_plan` on the server, the same call the arming applies, so the preview and
-   the act cannot disagree. A pre-flight that FAILS never blocks the rebuild: the box may be broken, which
-   is exactly when this is needed most, so it degrades to a note and the button still works. */
 function useRebuildPreflight(node) {
   const [pf, setPf] = useState(undefined);          // undefined = still asking · null = unavailable
   useEffect(() => {
@@ -2450,48 +2107,20 @@ export function NodeMigrateSheet({ node }) {
   <//>`;
 }
 
-/* ── T-10 · Transfer: hand this node to ANOTHER panel ────────────────────────────────────────────
-   The other half of §3's pair, and the opposite operation to Migrate in every way that matters:
-   Migrate moves a node to a new BOX and the panel under it never changes; Transfer moves the PANEL
-   and the box never changes. Nothing is installed, no address moves, and the only thing that happens
-   on the node is that it starts dialling somewhere else.
-
-   The operator pastes the TRANSFER TOKEN the other panel shows under Add node — one value carrying that
-   panel's address and a node key valid there. It used to ask for the whole enrolment command, which is a
-   carrier for those same two values and a confusing one: for a declarative (NixOS) node the command has
-   no `-key` in it at all, so there was nothing to copy, and with two commands offered there was no way to
-   know which kind was even wanted. Nothing is installed by a transfer, so the kind never mattered. A
-   pasted command is still accepted, for anyone who already has one.
-
-   This panel reaches that address, pushes everything the node needs, and then offers it to the node as a
-   CANDIDATE. The node keeps syncing HERE until the far panel answers it, so
-   a wrong or unreachable target costs a wait rather than a server. */
 export function TransferOutcome({ d, preview }) {
   if (!d) return null;
   const strip = d.strip || [], split = d.split || [], un = d.unrestorable || d.unrecorded || [];
   const vkfb = d.vk_fallback || [], fam = d.turn_family || [], ifaces = d.ifaces || [];
   const users = d.users || [], subs = d.sub_links || [], esc = d.escrow || [], rk = d.router_keys || [];
   const names = xs => xs.map(x => (typeof x === "string" ? x : (x.iface || x.title || x.peer))).join(", ");
-  /* A row is label-left / value-right, which is right for "5 configs" and wrong for a sentence: the
-     sentence wraps to two lines while one name sits alone in the right-hand column. Such a row STACKS —
-     the sentence on its own line, what it applies to underneath — by passing a third element. */
   const row = (label, value, stack) => html`<div class=${"ifrow" + (stack ? " ifrow-stack" : "")}><span class="l">${label}</span><span class="r">${value}</span></div>`;
 
-  /* WHAT STAYS BEHIND. Every row is something no field list would have caught, which is why each is
-     named rather than summarised: an escrow sealed to THIS panel's vault, a user whose peers straddle
-     two panels, an interface this panel never recorded, a call link that is the operator's and not the
-     node's. None of them stops a client connecting; all of them are things an operator has to know
-     BEFORE the roster is on someone else's panel. */
   const lost = [
     split.length ? [T("These users have peers on other nodes here too — only this node moves, so those peers stay"),
                     [...new Set(split.map(x => x.user_name || x.user))].join(", "), "stack"] : null,
 
     vkfb.length ? [T("Peers on the panel-wide call link — the other panel resolves its own"), names(vkfb)] : null,
     un.length ? [T("Never set up through this panel — nothing to hand over"), names(un)] : null,
-    /* ⚠️ NOT "re-wrapped there the next time you unlock the vault" — nothing does that (NODE-TRANSFER I.18). Each user's
-       encryption key arrives wrapped under THIS panel's key, which the other panel does not hold: their links keep opening
-       (the blobs and the public token map travel), but that panel can neither open these users' stored configs nor store
-       a new one for them — it never overwrites a key that exists. */
     esc.length ? [T("These users' encryption keys stay sealed to this panel's vault — their links keep working, but the other panel can't show their stored configs or store new ones"),
                   plural(esc.length, "user"), "stack"] : null,
     rk.length ? [T("Dial-in exits' router configs are sealed to this panel's vault, so they stay here — open them here first, or regenerate one there"),
@@ -2509,14 +2138,6 @@ export function TransferOutcome({ d, preview }) {
     d.blobs ? [T("Stored configs — the links your users already hold keep opening them"),
                plural(d.blobs, "config")] : null,
     d.mesh_links ? [T("Mesh links — the other panel builds its own"), plural(d.mesh_links, "link")] : null,
-    /* ⚠️ ESCROW BELONGS HERE, not in the red box it used to sit in. The ciphertext genuinely cannot
-       travel — a blob is sealed to THIS panel's vault, so the far panel would hold something openable by
-       nobody, which is why transfer_strip clears it. But the ESCROW is not lost with it: the identity
-       (`public_key`) does travel, the box is not touched and still holds its own key backups, so the far
-       panel asks for a sealed copy on its first syncs and the node seals one to ITS vault. Listing that
-       under "what stays with this panel — only you can put right there" described a repair the operator
-       neither has to make nor can make, next to a genuine one (a split user), which is what made a
-       healthy transfer read as damage. */
     strip.length ? [T("Escrowed server keys — re-sealed to the other panel's vault, not carried"),
                     names(strip)] : null,
   ].filter(Boolean);
@@ -2548,9 +2169,6 @@ export function NodeTransferSheet({ node }) {
   const [msg, setMsg] = useState(null);
   const [busy, setBusy] = useState("");
 
-  /* TWO STEPS, deliberately. The paste is an address this panel has never spoken to, so "check" is a
-     real action with a real answer — it reaches the target, proves the token works there, and reports
-     what would move — and only then is there anything to confirm. Checking writes nothing. */
   const check = async () => {
     if (busy) return;
     setBusy("check"); setMsg(null);
@@ -2610,11 +2228,6 @@ export function NodeTransferSheet({ node }) {
   <//>`;
 }
 
-/* The wait, and it is a real one. The node learns the new address on its next sync, verifies it, and
-   only then moves; until it does, this panel is still its panel and nothing has been lost. So the
-   question this screen answers is the one G1 asks — "is it Reporting on the target panel?" — and it
-   answers it by ASKING that panel, not by noticing our own silence, which cannot tell a node that moved
-   from a node that died. */
 export function openNodeTransferWatch(node) { openModal(html`<${NodeTransferWatch} node=${node}/>`); }
 export function NodeTransferWatch({ node }) {
   const [st, setSt] = useState(undefined);
@@ -2656,10 +2269,6 @@ export function NodeTransferWatch({ node }) {
   <//>`;
 }
 
-/* The other end of the migration: the old box is still out there, and both of the operator's decisions
-   about it are one click. Rolling back puts its own unmodified token back — it needs no shell on either
-   box. Discarding forgets the credential, so the badge stops claiming a box that no longer exists;
-   removing the old box was never the panel's call to make (G14). */
 export function openNodeRollback(node) { openModal(html`<${NodeRollbackSheet} node=${node}/>`); }
 export function NodeRollbackSheet({ node }) {
   const [busy, setBusy] = useState("");
@@ -2735,10 +2344,6 @@ export function NodeRemoveSheet({ node }) {
   const note = !here.length ? T("No peers reference it.")
     : onlyHere ? T("{v1} reference it; {n} live only here and will be dropped.", { v1: plural(here.length, "peer"), n: onlyHere })
     : T("{v1} reference it.", { v1: plural(here.length, "peer") });
-  // A declaratively-managed node cannot be uninstalled by `bootstrap.sh uninstall` — that command
-  // REFUSES on such a host (it would write into /opt the configuration cannot see). And removing the
-  // module does NOT tell the panel (nothing calls /api/node/goodbye), so the node does not sign off
-  // on its own — it lingers until Force-removed here. Both facts change the instructions below.
   const declarative = !!node.declarative;
   const nixos = node.platform === "nixos";
   const uninstall = declarative

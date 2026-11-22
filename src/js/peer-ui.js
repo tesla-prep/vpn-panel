@@ -1,16 +1,3 @@
-/* peer-ui.js — everything an operator sees when they open a peer or a user.
- *
- * LAYER 6 (see docs/APP-JS-SPLIT-PLAN.md). Imports every layer below; imported by the roster screens.
- *
- * The QR modal and the target cards are one unit even though they read like two: the modal is a stack of
- * per-deployment cards, each card resolves its own config through the vault, and both the peer view and
- * the user view render the same cards with different chrome. Splitting card from modal would have meant
- * threading the config-resolution state between two modules for no gain.
- *
- * Everything secret here comes from crypto.js and stays in the browser — these components render a
- * private key into a QR and a .conf and never send one anywhere.
- */
-
 import { T, Trich, Tsplit, plural, srvText } from "./i18n.js";
 import { esc, tkey, dur, ago, seen, fmtBytes, ipOf, portOf, orderedTargets, isPrimaryTarget, targetRole,
          useStableOrder, isSelfContainedKind, isMobile } from "./util.js";
@@ -49,9 +36,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// `child` = opened from another modal (user modal, peer view, edit peer). Then it's PUSHED onto the modal
-// stack so the parent stays mounted behind it (no reload, scroll preserved) and ✕/Esc/backdrop/"Back" just
-// pop back to it. Root (from a table) replaces the top as before.
 export function openPeerConfigs(peer, opts) {
   opts = opts || {};
   const child = !!opts.child;      // pushed onto the stack (opened from another modal) → "Back" pops to the parent
@@ -82,9 +66,6 @@ export function openPeerConfigs(peer, opts) {
 // A horizontal carousel of fixed-width cards. Steps ONE card at a time; the counter + ‹/› enabled-state derive
 // from live scroll metrics (not a mid-scroll index guess), so it never jumps back or gets stuck before the last.
 export const QR_ITEM = 292, QR_GAP = 14;   // card width; mirrored by `.qrrow > .deploy` in app.css
-// ← / → scroll the carousel. Only the TOPMOST mounted (paged) carousel responds — a peer modal opened over a
-// user modal steals the arrows until it closes — so nested modals don't scroll in lockstep. Each paged QRRow
-// pushes a stepper; the last one registered wins. Ignored while typing or with a modifier held.
 const _qrNavStack = [];
 function _qrNavKey(e) {
   if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
@@ -194,9 +175,6 @@ export function SubLinkActions({ user }) {
   const settingsLink = html`<a href="#/panel/settings" onClick=${() => closeAllModals()}>${T("Settings → Subscriptions")}</a>`;
   const confirm = opts => pushModal(html`<${ConfirmSheet} ...${opts}/>`);   // stacks over the user modal; pops back on cancel/confirm
   const act = fn => async () => { setBusy(true); try { await fn(); } catch (e) { toast((e && e.message) || T("Failed"), "err"); } setBusy(false); await after(); };
-  // Enable is OPTIMISTIC: the confirm closes instantly and the panel shows the link building right away while
-  // the token-mint + config-publish runs in the background (the browser already holds everything the link needs;
-  // the server only stores the token hash). On failure we roll the optimistic state back and toast.
   const enableBg = async () => {
     try { await subEnableUser(user.id); const r2 = (await subUsersMap(true))[user.id]; if (r2 && r2.enabled && r2.unlock_by_sk) { const { unlockKey } = await subRecover(r2); await subBackfillUser(user.id, unlockKey); } }
     catch (e) { setOptim(false); toast((e && e.message) || T("Couldn't create the subscription link"), "err"); }
@@ -232,16 +210,9 @@ export function SubLinkActions({ user }) {
     </div>
   </div>`;
 }
-// One user-modal card: a peer's PRIMARY/only QR under a two-line clickable header that opens the peer's own
-// modal. Line 1: title (or "Peer .{last IP octet}") · server name + protocol badge. Line 2: interface badge
-// (+N when there are more deployments) · status. Reuses TargetCard's QR body + actions via its `head` override.
 export function UserPeerCard({ peer, onOpen }) {
   useStore();   // re-render on each poll so the status badge (looked up live below) tracks block/unblock, like TargetCard
   const targets = peer.targets || [];
-  // The peer's PRIMARY deployment represents it here. `targets[0]` was whichever happened to be written first,
-  // which on a peer spanning several kinds picked one arbitrarily to stand for the whole peer — and the card
-  // then claimed a single protocol badge for a peer that may hold four. orderedTargets puts the primary first,
-  // and where the peer spans more than one KIND the deployment count names them instead of hiding the rest.
   const t = orderedTargets(targets)[0] || {};
   const kinds = [...new Set(targets.map(targetType))];
   const col = Store.nodeColor(t.node);
@@ -258,9 +229,6 @@ export function UserPeerCard({ peer, onOpen }) {
       : html`<${Badge} s=${lt.status}/>`}${/* a phone: how many targets, ×N beside the status (operator, 2026-10-29) */""}${isMobile() && targets.length > 1 ? html`<span class="upc-xn" title=${kinds.join(" · ")}>×${targets.length}</span>` : null}</div>
     <div class="upc-l2"><span class="upc-srv" style=${"color:" + col}>${dnode}</span><${Tag} kind=${ltype} label=${t.iface} gen3=${tgt3(t)}/><span class="grow"></span>${targets.length > 1 && !isMobile() ? html`<span class="upc-deps" title=${kinds.join(" · ")}>${kinds.length > 1 ? kinds.join(" · ") : plural(targets.length, "deployment")}</span>` : null}</div>
   </div>`;
-  // Only a MULTI-config peer opens its own modal (a single-config peer has nothing extra to show — it's already
-  // fully presented here). When it does: the whole card opens it EXCEPT the QR image (enlarges) and the action
-  // buttons (their own jobs). `.hot` is toggled by the pointer so the card highlights only over clickable regions.
   if (!onOpen) return html`<div class="upc-wrap upc-static">
     <${TargetCard} peer=${peer} t=${t} bare=${true} head=${head}/>
   </div>`;
@@ -272,9 +240,6 @@ export function UserPeerCard({ peer, onOpen }) {
     <${TargetCard} peer=${peer} t=${t} bare=${true} head=${head}/>
   </div>`;
 }
-// The VK link baked into a peer's turn configs IN THE PANEL: the owning user's own link, falling back to the
-// panel-wide test link (Settings → Turn proxies) for the admin's own testing + for unassigned peers. The
-// subscription page never falls back — it uses only the per-user link (see swg-sub).
 export function userVkLink(user) {
   return (((user && user.vk_link) || "").trim()) || (((Store.panelSettings || {}).vk_link || "").trim());
 }
@@ -286,24 +251,12 @@ export function userVkLinks(user) {
   if (!arr.length) { const t = ((Store.panelSettings || {}).vk_link || "").trim(); if (t) arr = [t]; }
   return arr.map(s => (s || "").trim()).filter(Boolean);
 }
-// Does this peer have a VK hash OF ITS OWN — its own vk_hash, or its user's link(s)? When it doesn't, the
-// generator above still produces a complete-looking link by baking in the panel-wide fallback, and the operator
-// has no way to tell the two apart by looking. That matters twice over: the fallback is one link shared by every
-// such peer, and the SUBSCRIPTION page deliberately uses only per-user links — so the user's own page hands out
-// a link without it. Says so at the moment a config is generated, which is the only moment anyone would act.
-// Note `user` is also null when peer.user_id does not resolve, which is the same situation from here.
 export function vkOwnHash(peer, user) {
   if (((peer || {}).vk_hash || "").trim()) return true;
   const own = (user && Array.isArray(user.vk_links) && user.vk_links.length) ? user.vk_links
             : (user && (user.vk_link || "").trim() ? [user.vk_link] : []);
   return own.some(s => (s || "").trim());
 }
-// Is any of these deployments behind a turn-proxy? (turn feature on AND a proxy forwards to the interface.) Gates
-// the per-user VK field + the sub's VK warning — no turn-proxy on a user's interfaces ⇒ they never use a VK link.
-// Does this peer ride a VK call — i.e. does it need the user's VK link? Two ways in: fronted by a turn-proxy,
-// or ON a WDTT server. WDTT carries its own vk_hash per user but FRONTS nothing, so turnProxiesFor() finds
-// nothing for it — which left a WDTT-only user with no VK field at all, and no way to set the link their
-// config needs.
 export function targetsWantVk(targets) {
   if (turnEnabled() && (targets || []).some(t => turnProxiesFor(t.node, t.iface).length > 0)) return true;
   return (targets || []).some(isSelfContainedTgt);
@@ -314,9 +267,6 @@ export const _VK_CALL_RE = /^https:\/\/(?:[\w.-]+\.)?vk(?:ontakte)?\.(?:com|ru)\
 export const VK_JOIN_URL = "https://vk.ru/call/join/";
 export function normVkLink(s) { s = (s || "").trim(); if (/^[A-Za-z0-9_-]{16,}$/.test(s)) return VK_JOIN_URL + s;
   return s && !/^https?:\/\//i.test(s) ? "https://" + s : s; }
-// Per-user VK call link, editable inline from the QR modals. Shown only when the user has a peer behind a
-// turn-proxy. Empty → amber border + a hint (the panel falls back to the test link; the subscription page won't).
-// Saves on blur / Enter; re-renders turn configs with the new link.
 export function VkLinkField({ user }) {
   useStore();   // re-render on each poll so the count + field reflect a Manage-modal save (or an inline Add) without reopening the modal
   const lu = (Store.recon.users || []).find(x => x.id === user.id) || user;   // live user — the modal's `user` prop is a stale snapshot
@@ -376,9 +326,6 @@ export function VkLinksSheet({ user }) {
   useStore();   // re-render on each poll so a link just taken from the pool shows as a POOL link, not a personal one
   const lu = (Store.recon.users || []).find(x => x.id === user.id) || user;   // live user — the modal's `user` prop is a stale snapshot
   const start = (lu.vk_links && lu.vk_links.length ? lu.vk_links : (lu.vk_link ? [lu.vk_link] : [])).slice();
-  // Which of this user's links came from the shared pool. Keyed by URL (provenance is stored pool-id → URL),
-  // so a link the operator retypes by hand stops reading as a pool link — which is exactly right: once it no
-  // longer matches the pool entry, the pool no longer owns it and won't rewrite it under them.
   const poolUrls = new Set(Object.values(lu.vk_pool || {}));
   const fromPool = (url) => poolUrls.has(url);
   const [rows, setRows] = useState(start.length ? start.map(u => ({ url: u })) : [{ url: "" }]);
@@ -525,20 +472,7 @@ export function openUserEdit(user) {
   // per network with its node and device counts — and at 640 those rows wrapped while the fields beside them sat half empty.
   openModal(html`<${Sheet} title=${T("Edit · {v1}", { v1: user.name })} width=${780} subject=${{ kind: "user", id: user.id }}><${UserEditCard} user=${user} done=${closeModal}/><//>`);
 }
-// Every QR/config the user owns, grouped by peer — one horizontal row of deployment QRs per peer (the peer's
-// PRIMARY deployment first, tagged, when it has more than one). Same TargetCard the peer QR modal uses, so a
-// stored-config / session-config peer renders its QR and an un-stored one shows the same hint.
-// The subscription URL + one-tap copy. Hovering highlights the whole row (URL + button) as a single
-// click target; clicking anywhere copies. Used under the title in the user + peer QR modals.
-// Shown at the top of the QR/config modals when the encryption vault is configured but not unlocked this
-// session: the stored configs are ciphertext, so a peer's QR can't be rebuilt until the admin unlocks the
-// key with the panel password. Unlocking caches the SK (subUnlock) and bumps configEpoch so every open
-// TargetCard re-resolves via the blob. Renders nothing when there's no vault or it's already unlocked.
 
-// The one-time "save your encryption key" moment, shown right after a vault is created — including the automatic
-// setup at first sign-in, where the key used to be minted and silently discarded. It is the operator's only way
-// back into their configs if the panel password is ever reset from the server, so it is deliberately a modal with
-// an explicit acknowledgement rather than a toast. The key never leaves the browser; this reads the session cache.
 /* Sentences that carry a STYLED run inside them (a bold warning, a bold link target). Each is one key with
    a marker, split around the styled element — see Tsplit in js/i18n.js for why this beats concatenation. */
 function keyOnlyCopy() {
@@ -594,15 +528,6 @@ export function SubUrlBar({ url }) {
   </div>`;
 }
 
-// The owning user's subscription link, shown under the title in the peer QR modal. Only appears when the
-// peer is assigned to a subscription-enabled user; if the Subscription Key isn't unlocked this session it
-// points the operator to the user's QR view (where unlocking lives), rather than a dead control here.
-
-// Per-user subscription control: enable/create the shareable link, show + copy it, rotate (kill the old
-// link), or disable. All the crypto is client-side — enabling needs the Subscription Key, which is
-// unlocked once per session with the panel password (the convenience cache). Off entirely unless the
-// subscriptions feature is enabled in Settings.
-
 export function openUserConfigs(user, back) {
   const peers = Store.peersOfUser(user.id);
   // the user modal shows ONE card per peer, so size by the peer COUNT (up to 3 across), not the widest peer's
@@ -622,10 +547,6 @@ export function openUserConfigs(user, back) {
       : html`<div class="empty" style="padding:24px">${T("This user has no peers yet.")}</div>`}
   <//>`);
 }
-// Turn-proxy client configs for one deployment — one section per turn-proxy on the interface, generated
-// on the fly for the DEPLOYED fork. `conf` is the base WG config (needs the private key, so session/stored).
-// Turn always opens FROM another modal (a peer or user QR view), so it's PUSHED — ✕/Esc/backdrop/"Back" pop
-// straight back to whatever it was launched from, with that view intact.
 export function openTurnConfigs(peer, t, conf) {
   pushModal(html`<${Sheet} title=${T("Turn configs · {v1}", { v1: peer.title || peer.name || T("val|peer") })} width=${560} noGuard=${true} onClose=${closeModal} onBack=${closeModal} subject=${{ kind: "peer", id: peer.id }}>
     <${TurnConfigSheet} peer=${peer} t=${t} conf=${conf}/>
@@ -682,11 +603,6 @@ export function TurnConfigSheet({ peer, t, conf }) {
     <${TurnCfgItem} key=${cur.service + "|" + (client ? client.encoder : "") + "|" + curOs} conf=${conf} tp=${cur} vk=${vk} vkLinks=${vkLinks} base=${base} client=${client} os=${curOs}/>
   </div>`;
 }
-// One turn-proxy's client artifact. Sync forks fill `text`; wingsv:// fills `buildAsync` (needs zlib), so
-// we resolve it in an effect and show a generating placeholder until ready. A QR⇄text toggle (default QR where the
-// client scans one, per `a.qr`) mirrors the sub page: in QR view the wg/awg config or link is a scannable
-// QR (tap to enlarge) and Copy grabs the IMAGE; the CLI command (`a.cmd`) always stays text — you can't scan a
-// shell line. Text view is the wrapping, auto-growing textarea.
 export function TurnCfgItem({ conf, tp, vk, vkLinks, base, client, os }) {
   const a = turnArtifact(conf, tp, vk, vkLinks, client ? client.encoder : undefined, os);
   const [text, setText] = useState(a.text != null ? a.text : null);
@@ -726,13 +642,6 @@ export function TurnCfgItem({ conf, tp, vk, vkLinks, base, client, os }) {
 
 // Inline-editable peer title (optimistic). The operator's label to tell a user's devices apart.
 
-// NETWORKS P3 (feature 13) — what this user's devices can reach beyond the internet: networks other devices front
-// on the same node, and the node's own local network. Asked for ONCE when the sheet opens, never per poll — it is a
-// cross-product (docs/NETWORKS-PLAN.md §4.10). Renders nothing when there is nothing beyond the internet to show.
-// ⚠️ ONE ROW PER NETWORK ON A NODE, not per deployment. It listed every deployment of every device with the networks under it,
-// so a user with 8 devices read as 12 blocks, and a device's turn-server deployments (the "+3" in the peer grid) looked like
-// devices of their own. Each row: the network, how it is reached, the node, and how many of this user's devices there route
-// it — the devices themselves on hover, capped. Paged, so 2 rows and 200 read the same.
 function UserNetworksPanel({ user }) {
   const [data, setData] = useState(null), [page, setPage] = useState(1);
   useEffect(() => {
@@ -765,9 +674,6 @@ function UserNetworksPanel({ user }) {
     || (a.lan ? 1 : 0) - (b.lan ? 1 : 0) || a.prefix.localeCompare(b.prefix));
   if (!list.length) return null;
   const pages = Math.max(1, Math.ceil(list.length / LIST_PAGE)), pg = Math.min(page, pages);
-  // ⚠️ OWNERSHIP IS ASKED FIRST. `share_grants` always puts the owner into its own grant list, so a restricted device of
-  // this user's own granted to them and the row read "shared with this user" — about their own device. It is not shared
-  // with them; it is theirs, and it sits behind one of their own devices.
   const ownDev = r => { const p = r.via ? Store.peer(r.via) : null; return !!(p && p.user_id === user.id); };
   // Which of their devices it sits behind — "their own device" alone left the operator to go and look it up. The address
   // is the one that device answers on THIS node, since that is the deployment carrying the network.
@@ -810,14 +716,6 @@ function UserNetworksPanel({ user }) {
     <div class="hint">${T("Worked out when this sheet opens. A device whose routing leaves a network out can be widened from its own settings.")}</div></div>`;
 }
 
-// ── USER GROUPS (docs/GROUPS-PLAN.md G11) ────────────────────────────────────────────────────────────────────────────────────────
-// A user's groups on their sheet: chips that open each group, six shown and the rest counted with the names on hover — and, on the
-// label's own line, the way IN. Putting someone in a group used to mean leaving this sheet for Users → Groups, opening the group
-// and searching for them there: the one screen that knows who this person is could not do the one thing you came to it for. The
-// list offers the groups they are NOT in, and ends with a new group that opens already holding them.
-// A type-to-filter GROUP picker for a person's sheet. It replaced a Dropdown listing every group there is — five rows on this
-// fleet, and 200 groups rendered one 7,300px list with nothing to search it by (measured, 1.8.7 qualification §C9). The first
-// matches, how many more there are, and "Create new group…" always last and always in view, the way UserPicker offers people.
 function GroupCombo({ groups, onPick, onCreate, disabled }) {
   const [q, setQ] = useState(""); const [open, setOpen] = useState(false);
   const hits = groups.filter(g => searchMatch(g.name, q.toLowerCase()));
@@ -848,10 +746,6 @@ function GroupCombo({ groups, onPick, onCreate, disabled }) {
   </div>`;
 }
 function UserGroupsField({ user }) {
-  // ⚠️ OPTIMISTIC. A membership is one delta against a roster that only refreshes on the next poll, so waiting for the
-  // round trip left a badge sitting there after it had been removed — the click looked ignored. `pend` holds what this
-  // sheet has just done, is applied over the store's answer, and each entry clears itself the moment the roster agrees;
-  // a refusal puts it straight back and says so, so the optimism is never a lie that outlives the request.
   const [pend, setPend] = useState({});          // gid -> "in" | "out"
   const base = Store.groupsByUser(user.id);
   const baseIds = new Set(base.map(g => g.id));
@@ -934,9 +828,6 @@ function UserGroupsField({ user }) {
 function ReachBody({ user }) {
   const rows = userReach(user.id);
   const anyOnline = rows.some(r => r.online);
-  // Open on what is live when anything is: an operator looking at a lit chip is asking who is reachable NOW. With nothing
-  // online there is no such question, so it opens on everything rather than on an empty list. Mounted per opening, so the
-  // default is decided each time the bubble is shown.
   const [all, setAll] = useState(!anyOnline);
   const show = all ? rows : rows.filter(r => r.online);
   const devs = r => (all ? r.devices : r.devices.filter(d => d.online));
@@ -961,11 +852,6 @@ function ReachBody({ user }) {
   <//>`;
 }
 
-// Who reaches the networks behind ONE device — the inverse of the bubble above, hung off every networks indicator (the grid's
-// chip and the peer view's badge). ⚠️ SHARING IS PER DEVICE, NOT PER NETWORK, so this is ONE audience rather than one per
-// prefix: its owner alone, everyone on the node, or the people and groups it was shared with. Each grantee is shown what the
-// grant is actually worth — devices on a node this one is deployed to, since reach is judged per node and a grantee whose
-// devices are all elsewhere reaches nothing.
 export function ReachedByBody({ peer, blocked, down, onView }) {
   useStore();
   const rep = peerAudCached(peer.id);
@@ -985,9 +871,6 @@ export function ReachedByBody({ peer, blocked, down, onView }) {
       ${a.mode === "everyone" ? html`<div class="rb-u"><b>${T("Anyone on {v1}", { v1: namedFew(a.nodes.map(n => Store.nodeName(n))) })}</b></div>`
         : a.mode === "owner" ? html`<div class="rb-u"><b>${a.owner ? T("Only {v1}'s devices", { v1: a.owner.name }) : T("Only its owner's devices")}</b>
             ${a.private ? html`<span class="grow"></span><span class="tg tg-priv">${T("tag|private")}</span>` : null}</div>`
-        // ⚠️ NO DOTS HERE. A grant is not a connection: a green dot beside a name would read as "online" when all it means
-        // is "allowed". The number beside each name is the honest signal — devices on a node this one is deployed to, so a
-        // grant worth nothing shows as 0 rather than looking the same as one that works.
         : html`<${Fragment}>
           <div class="rb-u"><b>${T("Shared with")}</b><span class="grow"></span><span class="faint">${a.owner ? T("owner: {v1}", { v1: a.owner.name }) : ""}</span></div>
           <${CapList} items=${a.users} cap=${8} row=${u => html`<div class=${"rb-d" + (u.devices ? "" : " none")} key=${u.id}><b>${u.name}</b>
@@ -1005,9 +888,6 @@ function NetsBody({ user }) {
   const [, force] = useState(0);
   const hit = netsCached(user.id);
   useEffect(() => { if (!hit) netsFetch(user.id).then(() => force(x => x + 1)); }, [user.id]);
-  // ⚠️ THE REACH BUBBLE'S RULE, for the chip that now says the same thing: open on what is live when anything is, on everything
-  // when nothing is. The choice is decided when the rows are KNOWN, not at mount — a bubble opened before its answer lands
-  // would otherwise have settled on "all" while it still read "Loading…".
   const rows = hit ? hit.rows : [];
   const anyOnline = rows.some(netRowOnline);
   const [pick, setPick] = useState(null);
@@ -1015,10 +895,6 @@ function NetsBody({ user }) {
   const [shown, more] = useCapped(all ? rows : rows.filter(netRowOnline), 12);   // before the early return: a hook runs on every render
   if (!hit) return html`<${Fragment}><span class="netroute-h">${T("Networks")}</span>
     <div class="netbub-row sub">${T("Loading…")}</div><//>`;
-  // ⚠️ GROUPED BY HOW THEY GET IT, and "how" is the heading rather than a phrase buried mid-row — so every row can then be
-  // the same shape: prefix, the device carrying it, the node. ⚠️ The first bucket used to read "shared with this user",
-  // which was WRONG for a user's own device: `share_grants` always puts the owner in its own grant list, so a restricted
-  // device of theirs granted to them and the row repeated it back. Ownership is asked BEFORE sharing is.
   const ownerOf = r => (r.via ? Store.peer(r.via) : null);
   const mine = r => { const p = ownerOf(r); return !!(p && p.user_id === user.id); };
   const BUCKETS = [
@@ -1027,9 +903,6 @@ function NetsBody({ user }) {
     [T("Open to everyone on the node"), r => !r.lan && !mine(r) && !r.restricted],
     [T("The node's own local network"), r => !!r.lan],
   ];
-  // One dot, reachability first (operator's choice): a network this user's devices do not route is unreachable whatever the
-  // device carrying it is doing, and that is the thing worth seeing first. Otherwise it is live or not by `netRowOnline` — the
-  // rule the chip counts with, so a green dot here is exactly one of the chip's online number.
   const dot = r => r.covered === false ? "no" : r.covered == null ? "unk" : netRowOnline(r) ? "on" : "idle";
   const dotTitle = r => r.covered === false ? T("Not in this user's routing — they can't reach it")
     : r.covered == null ? T("Routing unknown — this device's build doesn't say") : "";
@@ -1061,10 +934,6 @@ function NetsBody({ user }) {
   <//>`;
 }
 
-// The two things a LIST can say about a person: who their devices reach, and which networks they reach. Same chip and bubble as
-// the Groups screen's counts, so one fact reads the same wherever it appears. A zero count renders nothing — a row of zeroes on
-// every line is noise. ⚠️ The networks count is the roster's own (their devices' networks + what is shared with them) until the
-// bubble has been opened once; from then on it is the panel's number, which is what the user's sheet shows.
 export function UserCounts({ user, className }) {
   useStore();                                     // both the batch and netsFetch() emit when an answer lands
   useEffect(() => { wantNetsCount(user.id); });   // this row asks for its own number; the asks go out as one request
@@ -1072,16 +941,9 @@ export function UserCounts({ user, className }) {
   // in the same case, which is what tells you the bubble will open on the live ones.
   const reach = reachTally(user.id);
   const people = reach.shown;
-  // The networks chip says it the same way (operator, 2026-09-17): the online count, lit in the connection colour, while any
-  // network is live; otherwise all of them — and its bubble opens on the same set. The panel's rows the moment they are known,
-  // never replaced by the roster's guess afterwards; the guess is only what the very first paint shows, and cannot say what is
-  // live, so it is never lit.
   const nt = netTally(user.id);
   const nets = nt.shown;
   if (!people && !nets) return null;
-  // ⚠️ title="" ON PURPOSE. The user ROW carries title="Double-click for QR / configs", and a title on an ancestor is
-  // what the browser shows over every descendant — so hovering these chips raised a caption about something else
-  // entirely, on top of the bubble they do open. An empty title on the way down suppresses it.
   return html`<span class=${"ucounts" + (className ? " " + className : "")} title="" onClick=${e => e.stopPropagation()}>
     ${people ? html`<${Popover} hoverOnly cls="grp-pop" popCls="netroute-bub netbub-wide"
       trigger=${html`<span class=${"grp-n" + (reach.online ? " lit" : "")} data-chip="reach" aria-label=${reach.online
@@ -1098,9 +960,6 @@ export function UserCounts({ user, className }) {
   </span>`;
 }
 
-// One group: its name and its members, saved as ONE change — a rename plus an add/remove delta against the members this window
-// opened with, so two operators editing one group never undo each other. The members are the People window's list: search to add,
-// a filter past a page, 15 rows a page. When networks are shared with the group, the window says what adding or removing does.
 export function openGroup(gid) { (modalDepth() > 0 ? pushModal : openModal)(html`<${GroupSheet} gid=${gid}/>`); }
 // `seed` are the members a new group opens with — the user whose sheet asked for it. It is also wired straight to a click handler
 // ("New group" on the Groups screen), so anything that is not a list of ids is no seed at all.
@@ -1280,9 +1139,6 @@ export function UserEditCard({ user, done }) {
       return gws.length ? " " + T("Their devices that carry networks ({devices}) take them down too — everyone who reaches them through those devices loses access.",
         { devices: gws.map(p => p.title || T("Untitled")).join(", ") }) : "";
     })(),
-    // Delete closes the editor it was opened from — see confirmDeletePeer for why `back` is not enough.
-    // Two frames, not the whole stack: the confirm and this editor. Identical when the editor is the only
-    // thing open (the usual case), and correct rather than lucky when something opened it.
     onConfirm: () => { closeModals(2);
       return mutate({ key: "user:" + user.id,
         patch: s => { delete s.roster.users[user.id]; for (const p of Object.values(s.roster.peers)) if (p.user_id === user.id) p.user_id = null; },
@@ -1329,11 +1185,6 @@ export function TargetCard(props) {
        : tt === "wdtt" ? html`<${TargetCardWdtt} ...${props}/>`
        : html`<${TargetCardWg} ...${props}/>`;
 }
-// The wdtt:// client artifact input for a peer's WDTT deployment, assembled from the node read-back (endpoint /
-// ports / iface) + the panel-owned per-peer password + the user's VK link. Mirrors what swg-sub builds server-side.
-// A link shown on a card: the same readonly textarea + corner copy button the Alternatives sheet uses, so the
-// two places a config appears behave the same way (click selects, the icon copies). autoGrow keeps it to the
-// text's own height; the CSS caps it so one long link can't stretch the card past its neighbours.
 export function LinkBox({ uri }) {
   const ref = useRef(null);
   useEffect(() => { autoGrow(ref.current); }, [uri]);
@@ -1343,13 +1194,6 @@ export function LinkBox({ uri }) {
     <button class="cmd-copy" title=${T("Copy link")} onClick=${() => copy(uri, T("Link copied"))}><${Ic} i="copy"/></button>
   </div>`;
 }
-// An artifact's label is English prose composed in turn-artifacts.js, so T() on the finished string can never
-// match a key — it carries a fork and an author. Recompose it here from the parts instead; a fork with no client
-// metadata (the CLI clients) keeps its own label, which IS a fixed sentence and translates directly.
-// How this app takes the config, in the order that is easiest for the person holding the phone: a deeplink it
-// can open itself, else a QR to scan, else a link to paste. The label used to say "imports a pasted link"
-// whichever it was, so an app that opens on a tap — the ⚡ in the picker beside it — read as the most laborious
-// of the three. autostart is per-OS, because the same app can register the scheme on Android and not on desktop.
 export function clientHandoff(cl, cid, qr, os) {
   const name = (cl && cl.name) || cid;
   const deeplink = !!((((cl || {}).platforms || {})[os] || {}).autostart);
@@ -1367,11 +1211,6 @@ export function wdttArtInput(peer, t) {
   const rb = ((Store.stats[t.node] || {}).wdtt || []).find(w => w && w.iface === t.iface) || {};
   const nrec = (Store.nodes || []).find(n => n.id === t.node) || {};
   const user = (peer.user_id != null) ? (Store.roster.users || {})[peer.user_id] : null;
-  // Host a client dials: the server's OWN bind IF it's a real IP → the node's endpoint_host → the node's reported
-  // public IP. The bind wins because it is the operator's per-server choice and the only address that answers: on a
-  // node with several public IPs, a node-wide endpoint_host pointed clients at an address this server never bound.
-  // Same rule wg/awg already follow, where a per-interface endpoint_host beats the node's (apply_iface_meta).
-  // A wildcard (0.0.0.0/blank) means bound-to-all, so there the node's endpoint is right. Never 0.0.0.0 — a dead link.
   const _lh = ipOf(rb.listen || "");
   const _pub = (((Store.stats[t.node] || {}).node_ips) || []).find(ip => ip && !/^(0\.|10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(ip)) || "";
   return { password: peer.wdtt_password || "",
@@ -1402,9 +1241,6 @@ export function csqttClientCfg(inp, cid) {
   const art = (typeof SWGTurn !== "undefined" && SWGTurn.csqttArtifact) ? SWGTurn.csqttArtifact(inp, cl.encoder || "csqtt", inp.line) : null;
   return { cl, art, uri: art && art.text, qr: !!(art && art.qr) };   // the encoder decides; a 2.5 link is a QR, a 2.1 one is not
 }
-// csqttClientCfg for a component: a 2.5 link is sealed with Web Crypto, so it arrives a tick later — `uri` is null and
-// `pending` true until then. Keyed by the payload the link seals (`art.src`), so a stale link is never shown for a new one.
-// `inp` null → nothing (lets a component call it unconditionally, as hooks must be).
 export function useCsqttCfg(inp, cid) {
   const dc = inp ? csqttClientCfg(inp, cid) : { cl: {}, art: null, uri: null, qr: false };
   const src = dc.art && dc.art.text == null && dc.art.buildAsync ? (dc.art.src || "") : null;
@@ -1431,9 +1267,6 @@ export function TargetCardCsqtt({ peer: peerProp, t, bare, primary, head }) {
   const dc = useCsqttCfg(inp, clientIds[0] || "csqttapp");
   // the link is complete, but only because the panel-wide fallback filled it in — see vkOwnHash
   const vkFallbackHere = !vkOwnHash(peer, (peer.user_id != null) ? (Store.roster.users || {})[peer.user_id] : null);
-  // An UNASSIGNED peer has no user, so the half of this note about "their subscription page" and "set a VK link
-  // on the user" names something that does not exist — it reads as an instruction the operator cannot follow.
-  // State the fact that still applies, and stop.
   const vkUnassigned = peer.user_id == null;
   const vkNote = (dc.art && dc.art.vkMissing)
     ? html`<div class="hint vk-note">${T("No VK call link on this user — the link won't authenticate until one is set.")}</div>`
@@ -1470,10 +1303,6 @@ export function TargetCardCsqtt({ peer: peerProp, t, bare, primary, head }) {
     </div>` : null}
   </div>`;
 }
-// The clients a WDTT fork can drive (catalog ids the SPA knows) + one client's encoded artifact.
-// Same authority and same order as every other client list — see turnClientsFor. This one matters twice
-// over: [0] is the client whose config the peer card shows by default, so it must be the fork's OWN app by
-// compat class rather than by whichever id happened to be authored first.
 export function wdttClientIds(fork) {
   const cmap = (Store.turnCatalog && Store.turnCatalog.clients) || {};
   return turnClientsFor(fork).map(c => c.id).filter(cid => cmap[cid]);
@@ -1487,10 +1316,6 @@ export function csqttClientIds(rb) {
 export function wdttClientCfg(w, cid, fork, os) {
   const cl = ((Store.turnCatalog && Store.turnCatalog.clients) || {})[cid] || {};
   const enc = cl.encoder || "wdtt";
-  // SETTINGS SPLIT, applied here rather than in wdttArtInput because it is keyed by the CLIENT, which only this
-  // layer knows. qWDTT is the one family app whose link carries a knob (`workers`); the encoder has always had
-  // the branch for it and nothing ever populated it, so the admin's value was saved and silently dropped. The
-  // other encoders take no client values at all, so there is nothing to pass them.
   const wIn = (enc === "qwdtt" && fork) ? { ...w, ...pickDefined(turnClientSettingsFor(fork, enc, os), ["workers"]) } : w;
   const art = (typeof SWGTurn !== "undefined" && SWGTurn.wdttArtifact) ? SWGTurn.wdttArtifact(wIn, enc) : null;
   return { cl, qr: !!cl.qr, art, uri: art && art.text };   // qr = the app scans a QR; else it imports a pasted link
@@ -1516,9 +1341,6 @@ export function TargetCardWdtt({ peer: peerProp, t, bare, primary, head }) {
   const dc = wdttClientCfg(w, clientIds[0] || "wdttapp", fork);
   // same as the csqtt card: complete-looking link, filled in from the panel-wide fallback — see vkOwnHash
   const vkFallbackHere = !vkOwnHash(peer, (peer.user_id != null) ? (Store.roster.users || {})[peer.user_id] : null);
-  // An UNASSIGNED peer has no user, so the half of this note about "their subscription page" and "set a VK link
-  // on the user" names something that does not exist — it reads as an instruction the operator cannot follow.
-  // State the fact that still applies, and stop.
   const vkUnassigned = peer.user_id == null;
   const vkNote = (dc.art && dc.art.vkMissing)
     ? html`<div class="hint vk-note">${T("No VK call link on this user — the link won't authenticate until one is set.")}</div>`
@@ -1647,21 +1469,11 @@ export function TargetCardWg({ peer: peerProp, t, bare, primary, head }) {
         : primary ? html`<span class="qr-primary">${T("Primary")}</span>` : null}
       ${conf ? html`<${QR} conf=${conf} label=${label}/>`
         : html`<div class="qr-none">${!loaded ? T("loading…")
-            // ⚠️ Say which of the two it is. "No stored config — re-issue this peer" is a claim about what
-            // is ON DISK, and it was being printed whenever the panel merely could not be reached — telling
-            // an operator their config was gone, and recommending the one action that would actually destroy it.
             : confWasSealedOld(peer.pubkey, t.node, t.iface)
-              // A THIRD state, and the honest one: the ciphertext is on the panel, but the key that opens it was
-              // replaced. No amount of unlocking or waiting brings it back — re-issuing is genuinely the answer
-              // here, which is exactly why it must not share wording with the two states where it is destructive.
               ? T("This config was encrypted with a previous encryption key and can no longer be opened. Re-issue this peer to give it a fresh config and QR.")
             : confWasUnreachable(peer.pubkey, t.node, t.iface)
               ? T("Couldn't reach the panel just now, so this peer's stored config could not be read. It has not been lost — try again in a moment.")
             : (Store.storeMode === "encrypted" && !subSKCached())
-              // A FOURTH state, found by testing the other three: the vault is merely LOCKED. blobConfig()
-              // returns null before it reads anything, so this fell through to "No stored config — re-issue",
-              // which recommends destroying a config that is intact and one unlock away. Same defect as the
-              // two above, and the one an operator meets most often — every fresh tab starts here.
               ? T("The Encryption Vault is locked, so this peer's stored config can't be read. Unlock it to show the QR — the config has not been lost.")
             : Store.storeConfigs ? T("No stored config — re-issue this peer to enable its QR & download.")
             : T("Config shown right after creation, or enable store_configs to keep it.")}</div>`}

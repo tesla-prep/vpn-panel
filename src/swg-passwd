@@ -121,9 +121,6 @@ def _docker_panel_dir():
 
 def main():
     etc = os.path.dirname(AUTH) or "/"
-    # A missing auth DIRECTORY is not a permission problem, and saying "need root" to a user who is already root
-    # sends them chasing sudo. The usual cause is a docker install: /etc/swg-panel exists only inside the
-    # container, so this host copy (left behind by an earlier bare-metal install) has nothing to reset.
     if not os.path.isdir(etc):
         d = _docker_panel_dir()
         if d:

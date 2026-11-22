@@ -1,17 +1,3 @@
-/* turn.js — the turn-proxy family: the proxies themselves, their client apps, and WDTT.
- *
- * LAYER 5 (see docs/APP-JS-SPLIT-PLAN.md). The largest domain in the SPA.
- *
- * WDTT lives here rather than in its own module because it IS a member of this family — a self-contained,
- * key-owning server that an operator reaches through the same cards, the same fork tags and the same
- * lifecycle badges as any other fork. Splitting it out would organise the code by implementation rather
- * than by what the operator is looking at.
- *
- * What is NOT here: the interface PAGE that renders these (iface.js, next), the fork catalog itself
- * (turn-catalog.js), and the shared lifecycle/egress primitives that both this and iface.js need — those
- * were distributed to ui.js and routing.js first, which is what let this come out with a one-way edge.
- */
-
 import { openLogs, TURN_SOURCES } from "./journal.js";   // a turn proxy's live logs
 import { T, Trich, Tsplit, plural, pluralWord, srvText } from "./i18n.js";
 import { esc, portOf, ipOf, ipChoices, ipPickerVal, seen, ago, dur, fmtBytes, isSelfContainedKind, isPrivIp, isMobile } from "./util.js";
@@ -40,10 +26,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// turn create/edit sheet heading: "Turn-proxy · <title> · <fork>" (title omitted when blank)
-// A phone: a turn-family sheet's head in two lines — the kind a small tag before the name (and the X); then the fork with its
-// version at the left and the version gear with the head's other buttons at the right (operator, 2026-10-29: the one long title
-// wrapped onto two lines with its gear stranded at the end)
 const mTurnHead = (kind, name, fork, ver, gear, extras) => ({
   title: html`<span class="m-th-kind">${kind}</span>${name}`,
   headExtra: html`<span class="m-th-fork">${fork}${ver ? html` <span class="sheet-ver">${ver}</span>` : ""}</span>${gear}${extras || null}` });
@@ -53,26 +35,6 @@ const errMsg = setMsg => t => setMsg(t ? { k: "err", t } : null);
 // a fresh 64-hex wrap key (browser crypto) — used to pre-fill the create form's params for obfuscation forks
 export function randWrapKey() { const a = new Uint8Array(32); crypto.getRandomValues(a); return Array.from(a, b => b.toString(16).padStart(2, "0")).join(""); }
 
-// Which listen address a NEW turn-proxy's form should PRE-SELECT.
-//
-// ⚠️ THE REPORTED ENDPOINT IS A CANDIDATE, NOT AN ANSWER. `epIp` is read out of the node's own snapshot,
-// and that value is built from the node's local config — which the panel never corrects, so it goes stale
-// the moment a provider moves the box. This form used to default to it unconditionally, and because
-// `ipChoices` also puts it FIRST in the candidate list, the "does this land on this box?" check validated
-// it against a list containing itself and always answered yes. Measured 2026-09-16: every proxy created
-// after an address change was born binding an address the kernel refused, panicked and crash-looped, and
-// the operator saw only clients that connected and carried no traffic.
-//
-// So: prefer the reported endpoint only when the node's OWN reported addresses corroborate it; otherwise
-// prefer an offered address that they do. `nodeIps` empty means the node has not said — no basis to doubt
-// anything, so nothing changes. And a bridge node keeps defaulting to `epIp`: its real addresses are
-// container-private and filtered out of the picker, so nothing there could ever corroborate, and that
-// absence must not be read as "the endpoint is wrong".
-//
-// A box whose reported addresses hold no public IPv4 at all sits behind NAT (a home server, a cloud 1:1 NAT): none of its
-// own addresses is one a client can dial, so the default is the first public host offered — the node's ingress address
-// (a DDNS name, say), which the node then listens on every address for (useListenState). A bridge node is exempt: its
-// addresses are container-private by construction and say nothing about NAT.
 export function listenHostInit(epIp, ips, nodeIps, bridge) {
   const have = (nodeIps || []).filter(Boolean);
   if (have.length && !bridge && !have.some(ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip) && !isPrivIp(ip)))
@@ -83,24 +45,6 @@ export function listenHostInit(epIp, ips, nodeIps, bridge) {
   return (ips || [])[0] || "__custom__";
 }
 
-/* ── WHERE A TURN LISTENER LISTENS ────────────────────────────────────────────────────────────────────────────────────
-   The "Endpoint host / IP" of a WDTT, csqtt or vk-turn-proxy server is what clients DIAL — any of the node's names, any
-   host. The node binds it when it lands on the box; otherwise (a DDNS name resolving to the router in front of a box
-   behind NAT, an IP the box does not carry) the server listens on every address, as the upstream servers do by default
-   (swg-noded turn_bind). A node older than that binds what was typed, and the server crash-loops. What the field says:
-     wild    the address itself is the wildcard (an older setup) — clients dial `fallback`
-     any     not on this box → every address; `multi` = the interface of its default route carries several IPv4
-             addresses, so a reply (sent from that route's source) can leave from one clients did not dial, and the VK
-             relay (which accepts only the address it was told) drops it. Addresses on other interfaces — a Tailscale or
-             libvirt bridge, a second NIC — never carry replies to the internet, so they do not count
-     old     not on this box, and the node binds it as typed → the bind fails
-     stale   the node could listen on every address, but this server still binds the host as typed (set up before it
-             could) — Restart service rewrites it
-   A "Listen on" address (`pin`, ListenOnField) that the node carries overrides all of it: the server binds exactly that one.
-     bridge  not on this box on a bridge node, where the listener binds the wildcard inside its container anyway
-     {}      on this box, or not known yet — nothing beyond the field's own hint
-   For the SAVED host the node's own report answers (`bound`, what it binds); an edit not saved yet is predicted with the
-   panel's DNS (useHostOnNode, checked against the node's reported addresses). */
 const _WILD = ["0.0.0.0", "::", "[::]", "*"];
 export function useListenState(node, host, saved, bound, pin) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
@@ -120,18 +64,12 @@ export function useListenState(node, host, saved, bound, pin) {
   return { any: true, multi: wanV4(nrec).length > 1 };
 }
 
-// The IPv4 addresses on the node's default-route interface (`wan_iface`, `ip_ifaces` from its report). Judged by all its
-// IPv4 addresses instead, as before, when it does not report them (an older build) or none sit on that interface — a
-// default route through a tunnel (WARP), which the panel filters out of `ip_ifaces`, must not hide the warning.
 const wanV4 = nrec => {
   const v4 = ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip || "");
   const onWan = nrec.wan_iface ? (nrec.ip_ifaces || []).filter(p => p && p.iface === nrec.wan_iface && v4(p.ip)).map(p => p.ip) : [];
   return onWan.length ? onWan : (nrec.ips || []).filter(v4);
 };
 
-// The host a wildcard listener's links fall back to — the same fallback the link builders take. A WDTT/csqtt link: the
-// node's ingress address, then its reported public IP (js/peer-ui.js wdttArtInput). A vk-turn-proxy link (`fwdIface`
-// given): the Endpoint of the interface it forwards to, which turn-artifacts.js dialListen reads out of its config.
 export function turnDialFallback(node, fwdIface) {
   if (fwdIface !== undefined) {
     const ep = String((((Store.describe || {})[node] || {})[fwdIface] || {}).endpoint || "");
@@ -167,11 +105,6 @@ export function ListenNotice({ st }) {
   return null;
 }
 
-// "Listen on" (`bind_ip`): the one address of this node a turn server binds, whatever clients dial. Offered only where it
-// matters — a node with several IPv4 addresses, private ones included (behind NAT the LAN address the router forwards to
-// is exactly the one to pick) — and never on a bridge node (its listener binds the wildcard inside the container) or a
-// node too old to honour it. Auto = the node decides (useListenState). An address the node no longer reports stays
-// selectable, marked, so a stale choice is visible rather than silently shown as Auto.
 const _v4 = ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip || "");
 export function ListenOnField({ node, value, onChange }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
@@ -199,19 +132,10 @@ export function ListenOnField({ node, value, onChange }) {
 
 
 
-// turn badges for an interface card: one fork-coloured "turn" chip per distinct forwarding fork
-// (collapses to one in the common single-fork case), greyed when that fork's proxies are all down / node stale.
-// When MORE THAN 3 turn-proxies forward here the per-fork list gets noisy, so collapse to ONE badge in the
-// general turn colour + a "×N" count; hovering opens a small portaled bubble listing each proxy as a
-// fork-coloured badge + its title.
-// hover bubble body for a set of forwarding proxies: one line each — fork badge (own colour) + title.
 export function turnListRows(list) {
   return list.map(tp => { const f = turnFork(tp.service); return html`<div class=${"turnlist-row" + (turnDown(tp) ? " muted" : "")}>
     <span class="tg tg-turn" style=${"--tfc:" + turnColor(f)}>${forkLabel(f)}</span>${tp.title ? html`<span class="turnlist-ttl">${tp.title}</span>` : null}</div>`; });
 }
-// each turn badge on an interface card gets a hover-only bubble listing its proxies; clicks fall through to
-// the card link (hoverOnly). ≤3 forwarding proxies → one fork-coloured chip per fork; >3 → collapse to one
-// general-colour "turn ×N" badge (the per-fork list gets noisy), same bubble listing all of them.
 export function ifaceTurnBadges(node, fwdTurns, compact) {
   if (!fwdTurns || !fwdTurns.length) return null;
   const stale = nodeStale(node);
@@ -230,9 +154,6 @@ export function ifaceTurnBadges(node, fwdTurns, compact) {
   });
 }
 
-// Optimistic title: a title is a cosmetic panel-side label with no node round-trip, so show the new value on the
-// card the instant Save is clicked (pushOptTitle) instead of waiting for the next poll. Cleared once the server
-// reports it, or after 20s as a safety net.
 const _optTitle = {};   // "kind|node|id" -> { title, at }
 export function pushOptTitle(key, title) { _optTitle[key] = { title: (title || "").trim(), at: Date.now() }; Store.apply(); }
 export function shownTitle(key, real) {
@@ -248,9 +169,6 @@ export function turnLoopText(tp) {
     + ". " + T("Clients can reach it, but every session through it is cut each time it dies. Its journal on the node says why.");
 }
 
-// One turn-proxy card — shared by the node detail (Forwards-to shown) and the interface detail
-// (showForwards=false, that view is already scoped to the fronted iface). Same data, status tags,
-// online/down dimming, click-to-manage. `metas` = the node's all-interface metas (Store.describe[node]).
 export function TurnCard({ node, tp, nrec, metas, showForwards = true, reorder }) {
   metas = metas || {};
   const it = reorder ? reorder.item(tp.service) : null;
@@ -276,15 +194,8 @@ export function TurnCard({ node, tp, nrec, metas, showForwards = true, reorder }
   const k = node + "|" + tp.service;
   const justRestarted = !pend && turnRestarted[k] && Date.now() < turnRestarted[k];
   const updating = pend && turnUpdating[k] && Date.now() < turnUpdating[k];   // a pending reinstall triggered by an "Update" click
-  // in-flight label: a fresh install/reinstall reads "creating"; any other queued action (manage/rotate/…) reads its
-  // action word. An Update-click reinstall walks pending (queued, node hasn't picked it up) → updating (node is
-  // actively downloading/recreating — signalled by the install marker or a live progress note).
   const pendLabel = updating ? ((installing || prog) ? T("updating") : T("turn|pending"))
     : (pend && pend !== "install" && pend !== "reinstall") ? (turnPendLabel(pend) || T("turn|creating")) : T("turn|creating");
-  // Two dims (see app.css): `dim` = THIS proxy needs attention or is in flight — dim through the whole
-  // 'creating' phase (installing/queued/assigned) plus failed/down/stopped/deleting; only a settled card is
-  // full-bright. `nblocked` = the NODE forbids editing (offline / converting / re-installing / updating), which
-  // is exactly what disables the buttons — so every card on the page dims together, not just the mesh ones.
   const dim = !justRestarted && (installing || queued || pend || failed || looping || down || stopped || err);
   const nblocked = nodeStale(node) || inProc(nrec.proc_status);
   const _busy = !!(queued || installing || (pend && pend !== "delete"));   // any in-flight create / install / op
@@ -319,10 +230,6 @@ export function TurnCard({ node, tp, nrec, metas, showForwards = true, reorder }
       <div class="ifrow"><span class="l">${T("Turn-proxy fork")}</span><span class="r">${forkLabel(turnFork(tp.service))}</span></div>
       <div class="ifrow"><span class="l">${T("Listen")}</span><span class="r addr">${tp.listen || "—"}</span></div>
       ${(() => {
-        // The proxy's OWN losses. It has no interface, so nothing else on this page can show them: these
-        // packets reached the box and died at the socket before any interface saw them. Shown only when
-        // there are some — a "0" on every healthy card is a row nobody reads. Absent (a TCP-mode proxy,
-        // where the kernel exposes no per-socket count) stays absent rather than reading as clean.
         const _pd = ((Store.stats[node] || {}).turn_drops || {})[tp.service];
         if (!_pd || !(_pd.win_drops > 0)) return null;
         return html`<div class="ifrow"><span class="l">${T("col|Drops")}</span><span class="r addr"
@@ -333,24 +240,11 @@ export function TurnCard({ node, tp, nrec, metas, showForwards = true, reorder }
     </div></div>`;
 }
 
-// The turn-proxies block — ONE component for both the node screen and the interface screen, so the cards
-// never drift. Pass `iface` to scope it to one interface: it then (1) uses a different title, (2) shows only
-// the proxies that forward to that interface, and (3) drops the "Forwards to" row. Everything else (the
-// cards, the Setup button, pending/onboarding chips) is the node view and is omitted when scoped.
 export function TurnProxiesBlock({ node, nrec, snap, metas, title, iface }) {
   snap = snap || Store.stats[node] || {}; metas = metas || Store.describe[node] || {}; nrec = nrec || {};
   const all = snap.turn_proxies || [];
-  // A turn-proxy fronts a USER wg/awg interface (exactly what SetupTurnSheet offers — never a mesh link, never a
-  // WDTT iface, which owns its own transport). With none on the node there is nothing to forward to, so hide the
-  // button rather than open a sheet with an empty target list. Inline, not isSysName(): that is a local of the
-  // node screen, and calling it here throws at render and takes the whole panel down.
   const _canFrontTurn = Object.entries(metas).some(([n, b]) => (b || {}).listen_port && !((b || {}).system || String(n).startsWith("swg_") || isSelfContainedName(n)));
   const cards = iface ? turnProxiesFor(node, iface) : orderById(all, nrec.turn_order, tp => tp.service);
-  // WDTT forks are self-contained turn-family servers (own their interface) — rendered as cards in THIS section
-  // (node view only; a WDTT instance doesn't "forward to" an iface, so it never appears in the per-iface subset).
-  // On a WDTT interface page the section shows the server that OWNS that interface: a WDTT fork IS a
-  // turn-family server, so its card belongs here — it just isn't something a proxy "forwards to", which is
-  // why the per-iface list of `cards` is empty for it and the block used to disappear entirely.
   const wdttInsts = !iface ? (snap.wdtt || []).filter(w => w && w.iface)
                            : (snap.wdtt || []).filter(w => w && w.iface === iface);
   const csqttInsts = !iface ? (snap.csqtt || []).filter(c => c && c.iface)
@@ -384,11 +278,6 @@ export function TurnProxiesBlock({ node, nrec, snap, metas, title, iface }) {
       </div></div>`; };
   return html`<${Panel} icon="relay" title=${title} tone="turn" count=${cards.length + optTurns.length + wdttInsts.length + csqttInsts.length}
       actions=${nrec.turn_manage ? html`<${Fragment}>${(() => {
-        // Servers on THIS node that are behind. The header badge speaks for the fleet; an operator looking at
-        // one node should not have to open it to find out whether this box is the one that is stale. Node view
-        // only (`!iface`): an update covers every instance of that fork on the node, so showing it on a single
-        // interface would imply a scope it does not have. The sheet opens filtered, so this count is the count
-        // you then see. Facts before verbs — it sits left of the gear and the setup button.
         const _u = iface ? [] : (Store.turnUpdates || []).filter(r => r.node === node);
         return _u.length ? html`<button class="btn btn-mini updbtn" title=${T("Deployed servers on this node are behind their newest build — review and update")} onClick=${() => openTurnUpdates(node)}><${Ic} i="download"/> ${plural(_u.length, "update")}</button>` : null;
       })()}<button class="btn btn-mini ico" title=${T("These turn proxies' live logs")} onClick=${() => openLogs({ nodes: [node], src: TURN_SOURCES })}><${Ic} i="doc"/></button><button class="btn btn-mini ico" title=${T("Turn-proxy settings in Settings → Turn proxies")} onClick=${() => goSettings("turn")}><${Ic} i="gear"/></button>${_canFrontTurn && !(iface && isSelfContainedName(iface)) ? html`<button class="btn btn-mini" disabled=${blocked || archNo} title=${blocked ? T("Unavailable while the node is down / converting") : archNo ? archTip : ""} onClick=${() => openSetupTurn(node, iface)}><${Ic} i="plus"/> ${isMobile() ? T("rowact|New") : T("Setup new proxy")}</button>` : null}<//>` : null}>
@@ -424,9 +313,6 @@ export function TurnProxiesBlock({ node, nrec, snap, metas, title, iface }) {
 
 
 const _forkTag = svc => {
-  // A self-contained VK-turn server (WDTT/csqtt) collects relay IPs too; its service is `swg-<kind>-<iface>`, which
-  // turnFork can't parse. Resolve the running instance to its actual fork (WDTT has several; csqtt is single) so it
-  // renders a proper fork tag at parity with the turn-proxies, falling back to the kind's default fork.
   const scm = /^swg-(wdtt|csqtt)-/.exec(String(svc || ""));
   if (scm) {
     const kind = scm[1];
@@ -443,17 +329,6 @@ const _forkTag = svc => {
 };
 const _lastSeen = last => last ? T("{v1} ago", { v1: seen(Math.max(0, Math.floor(Date.now() / 1000) - last)) }) : "—";
 
-// The "Turn IPs" header control on the turn-edit modal: the unique remote peers reaching THIS proxy. A client
-// never dials a proxy directly — it goes through a VK TURN server which relays to us — so these are VK relays.
-// The active count comes from the live snapshot (no fetch); the hover bubble lists them (green dot = online) with
-// a Flush that drops the offline ones. `src_ips` is node-collected (nft); history persists on the panel.
-// Socket drops beside the Turn IPs control, on every sheet that fronts a listening server — turn-proxy,
-// WDTT and csqtt alike. Shown even at zero: this is a detail sheet an operator opened deliberately, and
-// "0" is the answer to "is it dropping?" — the scannable CARD is where a clean row would be noise.
-//
-// ⚠️ A RATE, NOT A PERCENTAGE. /proc/net/udp reports no received count, so there is no denominator, and
-// putting a "%" here would invent one — the exact mistake `peak` made with a 5-second sample. The bubble
-// carries the counts.
 export function ProxyDropsHeader({ node, svc }) {
   useStore();
   const d = ((Store.stats[node] || {}).turn_drops || {})[svc];
@@ -464,9 +339,6 @@ export function ProxyDropsHeader({ node, svc }) {
       r ? dropRate(r) + T("unit|/min") : "0"}</b></span>`}/>`;
 }
 
-// One proxy's collected VK relay IPs, live: the header's count and bubble, and on a phone the sheet its tap opens, each read it
-// for themselves — a sheet built from the header's values at the tap never changed again (review F54: still "No connections seen
-// yet" after the list arrived, flushed IPs still listed).
 function useTurnIps(node, svc) {
   useStore();
   const [data, setData] = useState(null);
@@ -568,9 +440,6 @@ export function TurnManageSheet({ node, tp }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const snap = Store.stats[node] || {};
   const isBridge = nrec.kind === "docker" && (nrec.net_mode || "host") === "bridge";
-  // node's PUBLIC endpoint (what clients dial): on a bridge node the reported nrec.ips are container-private (and
-  // filtered out), so surface the public endpoint so the LISTEN-IP dropdown offers it — noded rebinds it to
-  // 0.0.0.0 inside the netns, so binding "the public IP" works there despite it not being a local container address.
   const epIp = (() => { for (const b of Object.values(snap.interfaces || {})) { const ep = (b.meta || {}).endpoint || ""; if (ep) return ep.includes(":") ? ep.slice(0, ep.lastIndexOf(":")) : ep; } return ""; })();
   const ips = ipChoices(nrec, epIp);
   const lInit = ips.includes(lh) ? lh : "__custom__";
@@ -616,9 +485,6 @@ export function TurnManageSheet({ node, tp }) {
   const looping = turnLooping(tp);
   const owner = turnOwner(svc);
   const doReinstall = async (verb, tag) => {
-    // `verb` stays a CANONICAL id — it is compared below — and is translated only where it is shown. It
-    // used to be both at once, so the status line and the toast rendered English inside a Russian panel,
-    // via a .toLowerCase() that is itself an English-only assumption about how a word starts a sentence.
     const shown = verb === "update" ? T("val|update") : T("val|reinstall");
     setBusy(true); setMsg({ k: "work", t: shown + "…" });
     if (verb === "update") turnUpdating[node + "|" + svc] = Date.now() + 120000;   // card shows "updating" (not "installing") while it applies
@@ -681,9 +547,6 @@ export function TurnManageSheet({ node, tp }) {
         ? html`<button class="btn btn-ghost" style="margin-left:8px" disabled=${dis} title=${T("Start the service on the node")} onClick=${() => { startTurn(node, svc); closeModal(); }}><${Ic} i="play"/> ${(isMobile() ? T("rowact|Start") : T("Start service"))}</button>`
         : installing
         ? html`<button class="btn btn-ghost" style="margin-left:8px" disabled=${true} title=${T("Installing…")}><${Ic} i="refresh"/> ${T("Reinstall service")}</button>`
-        // a looping proxy keeps Stop + Restart however its state flickers between crashes — systemd is still
-        // retrying it, so those are the controls that act on it, and a footer that swapped to Reinstall on every
-        // crash would blink as badly as the verdict once did
         : ((!turnDown(tp) || looping) && !failed)
         ? html`<${Fragment}>
             <button class="btn btn-ghost" style="margin-left:8px" disabled=${dis} title=${T("Stop the service on the node (stays down until started)")} onClick=${() => { stopTurn(node, svc); closeModal(); }}><${Ic} i="stop"/> ${(isMobile() ? T("rowact|Stop") : T("Stop service"))}</button>
@@ -743,10 +606,6 @@ export function DeleteTurnSheet({ node, service, label }) {
   <//>`;
 }
 
-// RAW-IP's ONE port, and who holds it. The qWDTT app resolves the raw port from a single app-wide
-// preference (default 56003) and REPLACES the link's port with it, so the port is never per-server — but the
-// HOST comes from the link untouched. RAW is therefore one listener per ADDRESS: instances on a node's other
-// IPs keep theirs. `rawOwnerOn` returns the instance already holding it on `iface`'s address, or "".
 export const RAW_PORT = 56003;
 const _listenIp = s => { const v = String(s || ""); const i = v.lastIndexOf(":"); const ip = i > 0 ? v.slice(0, i).trim() : ""; return (ip === "0.0.0.0" || ip === "::" || ip === "[::]") ? "" : ip; };
 export function rawOwnerOn(node, iface) {
@@ -766,20 +625,9 @@ export function rawOwnerOn(node, iface) {
   return "";
 }
 export function turnEnabled() { return !(Store.panelSettings && Store.panelSettings.turn_enabled === false); }
-// the forks offered in the "install a fork" picker — toggled in Panel settings → Turn proxies. Disabling a fork
-// only hides it here; deployed proxies are untouched. A hidden fork in this list is offered nowhere all the same.
-// The forks offered in the install picker before settings load / on a panel with no stored list. MUST mirror
-// PANEL_SETTINGS_DEFAULTS["enabled_turn_forks"] server-side; it lived as three separate literals and two of them
-// had fallen behind, hiding wdttplus and xxcipherx — two of the four WDTT servers we build and publish.
 export const TURN_FORKS_DEFAULT = ["WINGS-N", "MYSOREZ", "samosvalishe", "anton48", "Moroka8",
                             "amurcanov", "ildarmaga", "wdttplus", "xxcipherx", "csqtt", "qwdtt"];
-// The enabled fork ids — the stored list (else the default) — and every HIDDEN fork, which has no switch to tick: the
-// Overview's traffic-by-fork row reads this, so a proxy of a hidden fork a node still runs keeps its traffic there
-// whatever the stored list says. The pickers filter hidden forks out again (enabledTurnForks).
 export function enabledTurnForkIds() {
-  // Mirror of PANEL_SETTINGS_DEFAULTS["enabled_turn_forks"] server-side — used before settings load, and on a
-  // panel with no stored list. It was missing wdttplus and xxcipherx, so two of the four WDTT server forks we
-  // build and publish were hidden from every picker until the operator ticked them by hand.
   const ids = new Set((Store.panelSettings && Store.panelSettings.enabled_turn_forks) || TURN_FORKS_DEFAULT);
   for (const f of turnForkList()) if (f.hidden) ids.add(f.id);
   return ids;
@@ -790,13 +638,7 @@ export function enabledTurnForks(keep) {
   return turnForkList().filter(f => (set.has(f.id) && !f.hidden) || (keep && f.id === keep));   // hidden (dead) forks never appear in operator pickers
 }
 
-// ═══════════ Typed turn-proxy settings (Axis 1) ═══════════
-// A fork's `settings` schema (served in the catalog) describes its obfuscation knobs as typed fields; the editor
-// renders a form from it and SERIALISES back to the ExecStart params tail (the wire truth the node applies
-// verbatim). A raw textarea stays as the escape hatch, so a flag we don't model is never lost. Descriptor:
-//   {key, flag, type, default, label, help?, secret?, rotatable?, values?, showIf?}
-//   type: bool (bare flag when true) · enum (-flag <value>) · flagenum (mutually-exclusive; value carries its own
-//   flag) · hexkey (-flag <64hex> + generate/copy) · string/int (-flag <value>). See TURN-PROXY-OVERHAUL-PLAN.md.
+// Typed turn-proxy settings (Axis 1)
 export function forkSettings(forkId) {
   const f = turnForkList().find(x => x.id === forkId);
   return (f && Array.isArray(f.settings)) ? f.settings : [];
@@ -815,11 +657,6 @@ export function defaultSettingValues(schema, opts) {
 export function settingShown(d, values) {
   return !d.showIf || Object.keys(d.showIf).every(k => values[k] === d.showIf[k]);
 }
-// options normalised to [{value,label}] for enum (string values) + flagenum (object values).
-// A schema parameter's values as Dropdown options, label translated. Two controls render it — the create
-// sheet's obfuscation row and the live per-proxy editor — and they must not disagree about how a value is
-// spelled. It was two functions, a raw one and a translating wrapper, because the raw one fed the
-// `<option>` renderers; those are gone, so it is one.
 export const turnOptions = d => (d.values || []).map(o => {
   const [value, raw] = d.type === "flagenum" ? [o.value, o.label] : [o, null];
   return { value, label: raw ? T(raw) : String(value) };
@@ -862,10 +699,6 @@ export function parseTurnSettings(schema, params) {   // params tail → {values
   }
   return { values, ok: leftover.length === 0, leftover };
 }
-// Shared server-config form — used by the panel-settings DEFAULTS sheet AND the per-proxy create/edit editor.
-// An obfuscation control (+ Generate key, shown only for keyed modes with a live "Not generated yet"), a read-only
-// "-listen … -connect … <obf>" line, and a free-entry extra-flags textarea. `template`=true → the placeholder
-// (defaults) copy; false → a real proxy's actual listen/connect.
 export function TurnServerFields({ schema, vals, setV, extra, setExtra, listen, connect, template, wdtt, noHint }) {
   const keyField = schema.find(d => d.type === "hexkey");
   const obfFields = schema.filter(d => d.type !== "hexkey");
@@ -898,9 +731,6 @@ export function TurnServerFields({ schema, vals, setV, extra, setExtra, listen, 
     </div>
   <//>`;
 }
-// Controlled per-proxy editor: `value` is the ExecStart params tail (after -connect), `onChange` gets the new one.
-// Splits it into typed obfuscation (curated schema) + free extra flags; anything the schema doesn't model rides in
-// the extra box (the raw escape hatch). `listen`/`connect` feed the read-only preview line.
 export function TurnParamsEditor({ fork, node, value, onChange, listen, connect }) {
   const schema = forkSettings(fork);
   const [obfVals, setObfVals] = useState(() => parseTurnSettings(schema, value).values);
@@ -931,17 +761,11 @@ export function TurnDefaultsForm({ schema, values, onSet, busy }) {
       ? html`<input type="number" value=${cur(d)} min=${d.min != null ? d.min : undefined} max=${d.max != null ? d.max : undefined} disabled=${busy} placeholder=${d.default === "" ? T("app default") : String(d.default)} onInput=${e => onSet(d.key, e.target.value)}/>`
       : d.type === "textarea"
       ? html`<textarea class="ta" rows="3" value=${cur(d) || ""} disabled=${busy} spellcheck="false" placeholder=${d.placeholder || ""} onInput=${e => onSet(d.key, e.target.value)}></textarea>`
-      // A phone keyboard treats these as prose by default: autocapitalise, autocorrect and the space-insertion
-      // that fires on punctuation runs, which is how "https://" arrives as "https: /". These fields hold URLs,
-      // hostnames and templates, so turn all of it off — the hexkey branch above has always done the same.
       : html`<input value=${cur(d)} disabled=${busy} spellcheck="false" autocomplete="off" autocorrect="off"
           autocapitalize="off" onInput=${e => onSet(d.key, e.target.value)}/>`}
     ${d.help ? html`<div class="hint">${T(d.help)}</div>` : null}
   </div>`)}</div>`;
 }
-// Servers-tab "Clients" icon → the end-user apps that can connect to this fork's proxies, grouped by device/OS.
-// Four OS tabs; a tab with no app for the fork is disabled. Native app sorts first in the per-OS picker; under it,
-// how that app takes its config (import scheme, where to get the app, its in-app knobs).
 export const _OS_TABS = [["android", "Android"], ["ios", "iOS"], ["linux", "Linux"], ["windows", "Windows"], ["macos", "macOS"]];
 const _OS_ICON = { android: "android", ios: "apple", linux: "os_linux", windows: "windows", macos: "finder" };
 // A compact styled OS dropdown (glyph + name), matching the Clients-sheet OS tabs. `value` is an os key, `options`
@@ -962,9 +786,6 @@ export function OsDropdown({ value, options, onChange }) {
 // Name colour by the client's relation to the fork: native (green), friendly (blue), plain (red), CLI (gold).
 const _APP_REL_COLOR = { native: "var(--online)", friendly: "#5FA8E0", friendly_core: "#5FA8E0", plain: "var(--dangling)" };
 export function appNameColor(rel, isCli) { return isCli ? "#D9B84A" : (_APP_REL_COLOR[rel] || "#5FA8E0"); }
-// A client-app picker styled like OsDropdown. options: [{id, name, author, color, nameColor?, plain?}]. The label
-// reads "<app name> by <author>" — the name in its relation colour, the author in its own — with a red PLAIN badge
-// on an unobfuscated client (the exp note lives under the config, so it's not repeated here).
 export function AppDropdown({ value, options, onChange }) {
   const [open, setOpen] = useState(false);
   const opts = options || [];
@@ -988,10 +809,6 @@ export function ServerClientsSheet({ fork, initialOs, initialLine }) {
     <${ServerClientsBody} fork=${fork} initialOs=${initialOs} initialLine=${initialLine}/>
   <//>`;
 }
-// ── Client-picker entry model ── the apps/CLIs that can drive THIS fork's server, each a rich row for the styled
-// dropdown. GUI apps come from the compat map; the CLI is expanded into one entry PER author (native build first) so
-// the admin picks which binary end-users get. Three independent badge axes: relation (native vs cross), obfuscation
-// (the fork's wire, or plain), and kind (app vs CLI). `key` = the client id, or "sidecar@<author>" for a CLI build.
 export const TURN_OBF_LABEL = { "Moroka8": "WRAP", "samosvalishe": "rtpopus", "anton48": "SRTP", "MYSOREZ": "WRAP", "WINGS-N": "WRAP",
                          // WDTT family: every client speaks WRAP-A (DTLS + RTP-AEAD). Never "plain".
                          "amurcanov": "WRAP-A", "ildarmaga": "WRAP-A", "wdttplus": "WRAP-A", "xxcipherx": "WRAP-A", "qwdtt": "WRAP-A",
@@ -999,10 +816,6 @@ export const TURN_OBF_LABEL = { "Moroka8": "WRAP", "samosvalishe": "rtpopus", "a
 const _FORK_GUI_OBF = { "Moroka8": 1, "samosvalishe": 1, "anton48": 1, "MYSOREZ": 1, "WINGS-N": 1,       // a native/friendly GUI app rides the fork's obfuscation
                         "amurcanov": 1, "ildarmaga": 1, "wdttplus": 1, "xxcipherx": 1, "qwdtt": 1, "csqtt": 1 };   // WDTT apps always obfuscate (WRAP-A); csqtt always obfuscates (RTP-AEAD)
 const _FORK_CLI_OBF = { "Moroka8": 1, "samosvalishe": 1, "anton48": 1, "MYSOREZ": 1 };                 // a listed CLI author obfuscates (NOT WINGS — its wrap needs the app's SessionHello)
-// "Don't offer on this OS" — a stored choice in turn_client_default[fork][os], alongside a client id or
-// "sidecar@<author>". The sub page's turnGetApp() returns nothing for it, and every caller there already hides a
-// deployment with no app, so the card simply isn't rendered. NOT a pickerEntries member: it isn't an app, and
-// letting it into that list would put it into ranking, system-default and "has any app" logic.
 export const NONE_KEY = "none";
 export function pickerEntries(f, os) {
   const cmap = (Store.turnCatalog && Store.turnCatalog.clients) || {};
@@ -1022,9 +835,6 @@ export function pickerEntries(f, os) {
       name: ((cl.platforms || {})[os] || {}).name || cl.name || cid,
       color: turnClientColor(cid) || turnColor(fork) });
   });
-  // The generic UDP-relay sidecar CLI is a VK-TURN-PROXY-family client — offer it ONLY to forks whose compat
-  // declares it (per _TURN_CLIENT_COMPAT). Self-contained kinds (WDTT/csqtt) own their datapath and the sidecar
-  // can't front them, so they must NOT get it (they'd else show a bogus "Sidecar by samosvalishe" desktop client).
   const sc = cmap.sidecar;
   if (sc && sc.platforms && sc.platforms[os] && compat.sidecar) (f.cli_authors || ["samosvalishe"]).forEach(author => {
     out.push({ key: "sidecar@" + author, cid: "sidecar", isCli: true, native: author === fork, autostart: false,   // a CLI is a copy-and-run command, never a one-tap open
@@ -1036,15 +846,7 @@ export function pickerEntries(f, os) {
   // ones — so the sub hands out a clickable app by default wherever the band offers one. No per-app hardcoding.
   return out.sort((a, b) => rank(a) - rank(b) || ((b.autostart ? 1 : 0) - (a.autostart ? 1 : 0)) || ((b.native ? 1 : 0) - (a.native ? 1 : 0)) || String(a.name).localeCompare(String(b.name)));
 }
-// The system default (before any operator choice) for a fork/OS is the top-ranked entry — a WDTT fork's own app, as
-// on the sub page. (Until 2026-10-14 a WDTT fork whose own app cannot open one-tap handed out XXcipherX's instead; its
-// repository is gone, so the operator made each fork's own app the default. The catalog's default_client went with
-// it: both forks that set it named their only native app, which the rank already puts first.)
-// The OS-picker order (matches the sub page). Each fork row shows one platform button per OS that has a client.
 const _TURN_OS = [["android", "Android"], ["ios", "iOS"], ["windows", "Windows"], ["macos", "macOS"], ["linux", "Linux"]];
-// For a fork, the BEST client per OS (native app > friendly app > native sidecar > … , from pickerEntries' rank) →
-// the flags that colour its platform button: fill = native/crossplatform · border = plain (unobfuscated) · icon =
-// sidecar (CLI). OSes with no connectable client are dropped.
 export function turnForkPlatforms(f) {
   const defs = ((Store.panelSettings || {}).turn_client_default || {})[f.id] || {};   // the admin's saved per-OS default clients
   return _TURN_OS.map(([os, label]) => {
@@ -1081,18 +883,10 @@ export function ClientEntryBadges({ e }) {
 export function autostartIcon(on) {
   return html`<span class=${"ce-auto " + (on ? "on" : "off")} title=${on ? T("Opens the app automatically") : T("Manual import — copy the link, then paste or scan it in the app")}><${Ic} i=${on ? "bolt" : "copy"}/></span>`;
 }
-// Reusable Clients body — OS segmented tabs + native-first app dropdown + per-(server,client,OS) config reference &
-// default-settings form. Used by the settings modal above AND inline (collapsible) in the create/edit-proxy sheets.
-// ── Shared client-picker state: OS tab + selected app + staged in-app settings — one hook so a proxy sheet can show
-// the app picker inline (under "Forwards to") and its settings in the "Client parameters" section, both driven off the
-// same selection. `commitRef` (embedded) lets the parent sheet's Save commit the staged default+settings (true iff changed). ──
 export function useTurnClients(fork, commitRef, initialOs, initialLine) {
   useStore();
   const f = turnForkList().find(x => x.id === fork) || {};
   const cmap = (Store.turnCatalog && Store.turnCatalog.clients) || {};
-  // csqtt's two lines do not speak to each other, so each has its own default (operator, 2026-10-29): 2.1's is stored under
-  // "csqtt", 2.5's under "csqtt@2.5". The switch exists only while more than one line is on offer, or a server already runs
-  // a line other than 2.1 — a one-line panel sees exactly what it saw before.
   const isCsq = fork === "csqtt";
   const linesOn = isCsq && (csqttLinesOn() || (Store.nodes || []).some(n => Object.values(n.csqtt_cfg || {}).some(c => c && c.line && c.line !== CSQTT_DEFAULT_LINE)));
   const [line, setLineRaw] = useState(linesOn && initialLine === "2.5" ? "2.5" : CSQTT_DEFAULT_LINE);
@@ -1112,9 +906,6 @@ export function useTurnClients(fork, commitRef, initialOs, initialLine) {
   // 2.5 with no choice of its own hands out what the sub page does: 2.1's choice if it speaks 2.5 (or "not offered"), else
   // the line's top app — shown, so an operator sees that FOCSQ on Windows becomes La Lune there
   const inherited = (o) => dkey === "csqtt@2.5" && savedDefault(o) === undefined;
-  // NONE_KEY = "don't offer this server on this OS": a real, storable choice, not the absence of one — so it is
-  // valid wherever a client id is, and it round-trips through settings. It has no `cid`, so anything keyed by
-  // client id must skip it (see save()).
   const noneEntry = (o) => ({ key: NONE_KEY, cid: null, none: true, isCli: false, native: false, obf: "",
                               autostart: false, coreFork: null, author: "", color: "",
                               name: T("Not offered on {v1}", { v1: (_OS_TABS.find(([x]) => x === o) || [])[1] || o }) });
@@ -1161,9 +952,6 @@ export function useTurnClients(fork, commitRef, initialOs, initialLine) {
   return { f, byOs, os, setOs, setSel, selEntry, entries, e, cSchema, osLabel, cName, appColor, effVals, stageSetting, dirty, isDefault, settingsDirty, save, busy, flash,
            linesOn, line, setLine, inherited };
 }
-// The app picker — OS tabs + the styled client dropdown (the app the fork's sub page hands out). Shown inline, right
-// under "Forwards to", so the choice is visible without opening a section.
-// "<app> by <author> [with <core> core]" — same colouring as the dropdown row (name plain, author + core tinted)
 export function clientAppLabel(e) {
   if (!e) return "";
   const _a = html`<span style=${"color:" + e.color}>${forkLabel(e.author)}</span>`;
@@ -1172,9 +960,6 @@ export function clientAppLabel(e) {
     ? Trich("by {v1} with {v2} core", { v1: _a, v2: _c })
     : Trich("by {v1}", { v1: _a })}`;
 }
-// Per-OS app matrix — one button per OS showing its chosen app (icon · name · author in the author's colour). Hover
-// reveals the tags + "offered to <OS> users"; clicking a button makes that OS active (drives the Client-parameters
-// body) and expands its app list to pick from. `offered` → phrase the bubble as an end-user offer (proxy sheets).
 export function TurnAppsPicker({ ctl, offered }) {
   const { f, byOs, os, setOs, setSel, selEntry, linesOn, line, setLine } = ctl;
   const [openOs, setOpenOs] = useState(null);
@@ -1255,9 +1040,6 @@ export function ServerClientsBody({ fork, initialOs, initialLine }) {
     <div style="margin-top:16px"><${TurnClientParams} ctl=${ctl} embedded=${false}/></div>
   <//>`;
 }
-// "Check client rosters" → fetch each client app's curated schema SOURCE from GitHub and flag drift vs the last-
-// acknowledged commit. Detection only (heterogeneous sources → the schema edit is a code change); "Mark reviewed"
-// records that we've caught up to the current upstream.
 export function openRosterCheck() { pushModal(html`<${RosterCheckSheet}/>`); }
 // Always-on client grid: parseable forks (p4/report) get per-field counters + adopt + Set-version rollback; the
 // ack-only forks (Markdown/Kotlin-pending, roster-check) show commit drift + whole-client acknowledge.
@@ -1280,9 +1062,6 @@ export function RosterCheckSheet() {
   const setVersion = (cid, index) => withBusy(cid, async () => { await api.p4SetVersion(cid, index); await load(false); });
   const p1c = (data && data.p1) || {}, p4c = (data && data.p4) || {};
   const cids = Object.keys(p1c).length ? Object.keys(p1c) : Object.keys(p4c);
-  // `unwatched` is a state, not a failure: a client nobody watches used to be dropped from this list entirely,
-  // which read as full coverage. Falling back to `unknown` here would have said "couldn't check" — we tried and
-  // failed — when the truth is we never look (amurcanov's WDTT: upstream discontinued 2026-08-04).
   const TAG = { up_to_date: ["tg-ready", "check", T("up to date")], changed: ["tg-pending", "warn", T("changed")],
                 unknown: ["tg-off", "info", T("couldn't check")], unwatched: ["tg-off", "info", T("not watched")] };
   return html`<${Sheet} title=${T("Client rosters")} width=${740} noGuard=${true} onClose=${closeModal} onBack=${closeModal}
@@ -1409,9 +1188,6 @@ export function rosterChanges(client) {
   }
   return items;
 }
-// "Review" → child modal listing each upstream change with a checkbox. "Adopt changes" records we've caught up
-// (rosterAck); "Preserve current" backs out untouched. Field selection is a review aid — ack is whole-client (the
-// schema edit itself, when one's needed, stays a code change), so this confirms the operator has seen the drift.
 export function openRosterReview(cid, client, onAdopt) { pushModal(html`<${RosterReviewSheet} cid=${cid} client=${client} onAdopt=${onAdopt}/>`); }
 export function RosterReviewSheet({ cid, client, onAdopt }) {
   const items = rosterChanges(client);
@@ -1437,12 +1213,6 @@ export function RosterReviewSheet({ cid, client, onAdopt }) {
         </div>`}
   <//>`;
 }
-// Servers-tab gear → set a fork's SERVER-flag defaults (turn_server_defaults[fork]) — pre-fills new proxies of that fork.
-// Version & rollback for a whole fork, PER NODE. A fork shares ONE binary per node (both -connect and WDTT), so the
-// version + rollback hold live per (node, fork) — every instance of the fork on a node moves together. Lives in the
-// fork settings modal (not the per-instance sheet) because that's the granularity. -connect rolls back by reinstalling
-// each of the fork's services to the pinned tag; WDTT sets the per-fork hold (its reconcile swaps the shared binary).
-// Compare version-ish tags numerically (v2.0.1 > v1.8.0 > v11-vs-v2 by segment) → >0 when `a` is newer.
 export function verCmp(a, b) {
   const seg = s => String(s).replace(/^v/i, "").split(/[^0-9]+/).filter(x => x !== "").map(Number);
   const pa = seg(a), pb = seg(b);
@@ -1520,10 +1290,6 @@ export function ForkVersionPanel({ f, commitRef, onDirty }) {
     </div>`; })}
   </div>`;
 }
-// Apply one row of Store.turnUpdates. The action differs by kind because the update UNIT differs: a
-// turn-proxy is reinstalled per service, while WDTT and csqtt share one binary per (fork,node) / per node —
-// there, releasing the hold is the update, and the node swaps the binary and restarts every instance itself.
-// Returns "" on success, else a human-readable error.
 export async function applyTurnUpdate(row) {
   const { fork, kind, node, ids = [], latest } = row || {};
   if (kind === "csqtt") { const r = await api.csqttVersion({ node, iface: ids[0] || "", ver: "" }); return (r && r.ok) ? "" : (srvText(r) || T("failed")); }
@@ -1545,9 +1311,6 @@ export function TurnUpdateSheet({ node }) {
   const [busy, setBusy] = useState("");          // "" | fork|node key | "*" for Update all
   const [done, setDone] = useState({});          // key -> "" (ok) | error text
   const key = r => r.fork + (r.line ? "@" + r.line : "") + "|" + r.node;   // a csqtt version other than 2.1 is its own update unit (`line`)
-  // What restarts, named. A turn-proxy's id is its service (vk-turn-proxy-<fork>-56006); the fork half just
-  // repeats the row's own label, so it shows as ":56006" — the same name:port convention turn-catalog.js
-  // documents. WDTT and csqtt ids are already the interface name.
   const idLabel = (kind, id) => {
     if (kind !== "turn") return id;
     const m = String(id).match(/-(\d+)$/);
@@ -1566,33 +1329,18 @@ export function TurnUpdateSheet({ node }) {
   const pending = rows.filter(r => done[key(r)] === undefined);
   const servers = rows.reduce((n, r) => n + (r.ids || []).length, 0);
   const nodes = new Set(rows.map(r => r.node)).size;
-  // Grouped by FORK. A fleet of any size repeats the same fork and, almost always, the same version pair on
-  // every node — flat rows spent three lines saying "csqtt 2.0.1 → 2.1.5" and buried the node, the one thing
-  // that actually differed, in muted text mid-row. The pair moves up to the fork when every node agrees and
-  // drops to the node line when they do not, so a shared fact is stated once and a varying one stays visible.
   const groups = [];
   for (const r of rows) {
     let g = groups.find(x => x.fork === r.fork && x.line === r.line);
     if (!g) groups.push(g = { fork: r.fork, line: r.line, latest: r.latest, rows: [] });
     g.rows.push(r);
   }
-  // Ordered by what is READ, not by the key. The server sorts rows by fork id, which was the same string
-  // until labels arrived; now "qwdtt" prints as SpaceNeuroX and "wdttplus" as Ivan4537, so an id-ordered list
-  // looks shuffled — uppercase ids first, then authors in no visible order. Sorting on the rendered label puts
-  // the column back in reading order and keeps one author's servers adjacent (amurcanov · WDTT, · CSQTT).
   groups.sort((a, b) => forkPickLabel(a.fork).localeCompare(forkPickLabel(b.fork), undefined, { sensitivity: "base" }) || String(a.line || "").localeCompare(String(b.line || "")));
   for (const g of groups) {
     g.same = g.rows.every(r => r.installed === g.rows[0].installed) ? g.rows[0].installed : "";
     g.pend = g.rows.filter(r => done[key(r)] === undefined);   // the fork button disappears once its last node is done
   }
   const pair = (inst, latest) => html`<span class="mono">${inst}</span><span class="verarrow">→</span><span class="mono vernew">${latest}</span>`;
-  // The footer button is always there, and it always owns the WIDEST action on screen — so whatever that widest
-  // action is, it is not also drawn in the list. Two controls with one blast radius is the pair an operator
-  // reads twice and still guesses about; hoisting the top one to the fixed, primary position leaves each
-  // remaining button unambiguously narrower than the one below it.
-  //   many forks  → footer updates the fleet; every fork keeps its own button
-  //   one fork    → footer IS that fork's button; the head loses it, nodes keep theirs
-  //   one node    → footer IS that node's button; the row loses it and shows only its result
   const solo = groups.length === 1 && groups[0].rows.length === 1 ? groups[0].rows[0] : null;
   const forkHoisted = groups.length === 1 && groups[0].rows.length > 1;
   // Result still belongs in the row even when the button was hoisted — that is where you look to see which
@@ -1624,9 +1372,6 @@ export function TurnUpdateSheet({ node }) {
         <span class="grow"></span>
         ${g.rows.length === 1 ? act(g.rows[0], !!solo)
           : forkHoisted || !g.pend.length ? null
-            // Names its own scope. The footer one column away says "Update all" and means the whole fleet — two
-            // identical labels with different blast radii is exactly the button an operator presses at 2am and
-            // regrets. This one counts the nodes it will restart.
             : html`<button class="btn btn-mini" disabled=${!!busy} onClick=${() => run(g.pend, "g:" + g.fork + (g.line || ""))}>${busy === "g:" + g.fork + (g.line || "") ? T("Updating…") : T("Update {v1}", { v1: plural(g.pend.length, "node") })}</button>`}
       </div>
       ${g.rows.length === 1
@@ -1657,10 +1402,6 @@ export function ServerDefaultsSheet({ fork }) {
   const [verOpen, setVerOpen] = useState(true);   // open the Version & rollback section by default (both WDTT and turn-proxies)
   const verCommitRef = useRef(null); const [verDirty, setVerDirty] = useState(false);   // version dropdowns → applied on Save
   const setV = (k, v) => setVals(o => ({ ...o, [k]: v }));
-  // RAW-IP: only forks that actually carry a second listener have it, so it belongs in THEIR defaults rather
-  // than on the Turn screen where it read as a fleet-wide switch. ⚠️ The stored setting IS still one value for
-  // every raw-capable fork — the node reads a single wdtt_raw_default when it creates a server — so the copy
-  // below says "raw-capable" rather than naming this fork, and changing it here changes it in the other one too.
   const rawCap = !!f.raw;
   // Per fork, stored beside this fork's other server defaults. `wdtt_raw_default` is the fleet-wide key this
   // used to be — still the fallback, so a panel that set it keeps what it chose until this fork is saved once.
@@ -1813,13 +1554,6 @@ export function SetupTurnSheet({ node, forwardIface }) {
   const lhost = ipPickerVal(lsel, lcustom);
   const [pin, setPin] = useState("");   // Listen on ("" = Auto)
   const lst = useListenState(node, lhost, "", "", pin);   // a new listener: predicted (useListenState checks the node's reported addresses)
-  // WDTT (kind:"wdtt") owns its OWN built-in userspace-WG interface, so there's no Forwards-to. The internals
-  // (iface / subnet / internal WG port) are auto-assigned to avoid collisions with this node's existing wdtt
-  // instances + interfaces, and stay advanced-editable. Listen IP/port above are the PUBLIC DTLS endpoint.
-  // WDTT (kind:"wdtt") is a SELF-CONTAINED server — it owns its built-in userspace-WG interface, so its Setup body
-  // (interface/subnet/ports) + submit are entirely different from a -connect fork. Rather than branch turn-shaped
-  // code, its fields live in <WdttInstanceBody/> (dispatched in the body below); it registers its save() in
-  // wdttSaveRef, which this sheet's shared save() delegates to. Keeps this component turn-only.
   const isWdtt = f.kind === "wdtt";
   const isCsqtt = f.kind === "csqtt";
   const isSelfContained = isWdtt || isCsqtt;   // both create their own interface (no Forwards-to picker)
@@ -1854,10 +1588,6 @@ export function SetupTurnSheet({ node, forwardIface }) {
     let connect;
     if (isCustom) { connect = custom.trim(); if (!/:\d+$/.test(connect)) return fail(T("Forwards-to must be host:port.")); }
     else { connect = "127.0.0.1:" + ifaces.find(i => i.name === fwd).port; }
-    // OPTIMISTIC: seed the card and close NOW — the install takes as long as it takes on the node (binary
-    // download), and its progress belongs on the card, not behind a blocked modal. The service id is predictable
-    // (vk-turn-proxy-<fork>-<port>); if the panel returns a different one we re-key the placeholder, and if the
-    // request is rejected we drop it again and say so.
     const svc = "vk-turn-proxy-" + f.id + "-" + lport.trim();
     const _tkey = node + "|" + svc;
     Store.turnNew[_tkey] = { listen: lhost + ":" + lport.trim(), connect, title: title.trim(), at: Date.now() };
@@ -1919,10 +1649,6 @@ export function SetupTurnSheet({ node, forwardIface }) {
   <//>`;
 }
 
-// WDTT (self-contained server) Setup body — the built-in interface/subnet/ports a -connect fork has no concept of.
-// Kept OUT of SetupTurnSheet so that sheet stays turn-shaped; it registers its save() in saveRef, which the sheet's
-// shared footer triggers. Auto-assigns a free iface + /24 subnet + internal WG port for this node, scanning its
-// interfaces, turn-proxies and existing WDTT instances so nothing collides.
 export function WdttInstanceBody({ node, snap, saveRef, setBusy, setMsg, fail }) {
   const used = (() => {
     const ifaces = new Set(), subs = new Set(), ports = new Set();
@@ -1979,16 +1705,10 @@ export function WdttInstanceBody({ node, snap, saveRef, setBusy, setMsg, fail })
   <//>`;
 }
 
-// ── WDTT is a self-contained, key-owning member of the TURN-PROXY fork family: its server card renders inside
-//    TurnProxiesBlock (folded there), its interface shows in the interfaces section, and its clients reuse the
-//    turn app flow. WDTT-specific bits (keyless peers, built-in interface, vault restore) are kind-dispatched. ──
 export const WDTT_COLOR = "#A78BFA";
 export function WdttCard({ node, w, reorder }) {
   const active = w.active === "active";
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
-  // This card had NO node-state handling: while the node was converting (or offline, or re-installing) every
-  // other card on the page dimmed and said so, and the WDTT ones sat there bright and clickable, offering to
-  // open a manage sheet whose actions are all disabled. Mirror TurnCard exactly.
   const converting = (nrec.proc_status || "").startsWith("converting");
   const nblocked = nodeStale(node) || inProc(nrec.proc_status);
   const restoring = (nrec.wdtt_restoring || []).includes(w.iface);
@@ -2007,18 +1727,9 @@ export function WdttCard({ node, w, reorder }) {
     : restoring ? html`<${StatusTag} cls="tg tg-pending" icon="clock" label="restoring…" title=${T("Restoring the vaulted server identity")}/>`
     : awaiting ? html`<${StatusTag} cls="tg-busy del" icon="shield" label=${T("Restore")} title=${T("A vaulted identity exists — restore it to bring this server back with its original key")}/>`
     : active ? null   // healthy → no persistent tag (matches normal turn/interface cards; reuse the standard status vocabulary)
-    // STOPPED BY THE OPERATOR is not a stage of starting. Without this branch the card fell through to
-    // "starting" and sat there for good — beside its own Start button, which only appears when it is stopped.
-    // The turn-proxy card and the interface page both already say "stopped"; this is the same vocabulary.
     : wstopped ? html`<span class="tg-off" title=${T("Stopped from the panel — open to Start it")}><${Ic} i="stop"/>${T("tag|stopped")}</span>`
     : html`<${StatusTag} cls="tg tg-pending" icon="clock" label="starting" title=${T("Installing / starting on the node")}/>`;
   const _wopBusy = _wop && _wop.phase === "busy";   // mid-save → don't let the card re-open the edit modal
-  // awaiting restore → the SAME treatment as the interface card for the same server: dimmed with the danger
-  // border (.ifcard.down), not a quiet amber pill on a full-brightness card. One server in one state should not
-  // look like two different severities depending on which section you happen to be reading.
-  // Same reason this covers `starting` (and converting/restoring): the SAME server shows as a dimmed interface
-  // card above and, until this, a full-brightness proxy card below — the two sections disagreed about whether
-  // anything was happening. This is the interface card's `idim`, term for term.
   const wdim = deleting || adopting || converting || awaiting || restoring || !active || _wopBusy;
   const wCanOpen = !_wopBusy && !nblocked && !deleting && !adopting;   // don't open a sheet whose every action is disabled
   return html`<div class=${"ifcard tp" + (wCanOpen ? " clickable" : "") + (wdim ? " down" : "") + (nblocked ? " locked" : "") + (it ? it.cls : "")} data-rid=${it ? it.rid : null} onClick=${() => { if (!wCanOpen) return; openModal(html`<${WdttManageSheet} node=${node} w=${w}/>`); }}>
@@ -2037,13 +1748,6 @@ export function WdttCard({ node, w, reorder }) {
       <div class="ifrow"><span class="l">${T("Forwards to")}</span><span class="r"><a class="tg tg-wdtt" href=${"#/node/" + encodeURIComponent(node) + "/" + encodeURIComponent(w.iface)} onClick=${e => e.stopPropagation()}>${w.iface}</a></span></div>
     </div></div>`;
 }
-// The turn-half management surface, reached from the WDTT turn-proxy card (the interface card goes to the
-// full interface detail instead). TODO Phase 2 (fork dimension): reshape this into the real turn modal —
-// fork switch + client-apps picker + server params — and let the interface detail own lifecycle/peers, so
-// the two views stop overlapping (see docs/WDTT-FORK-FAMILY-PLAN.md §"UI corrections").
-// CLIENT DNS for a WDTT / csqtt server (docs/DNS-SETTINGS-PLAN.md §3). The server hands it to every client when it
-// connects; it never resolves with it. 1–2 IPv4 — Android's VPN API takes addresses only, and csqtt / wdttplus refuse
-// a third. Empty = the fork's own default, read from the catalog (`client_dns`), so the operator sees what clients get.
 const _dnsParts = v => String(v || "").split(/[\s,]+/).map(x => x.trim()).filter(Boolean);
 // Twin of swg-panel-server `turn_dns_usable`: canonical IPv4, not 0/8, loopback, link-local, multicast or reserved.
 const _dnsUsable = x => /^(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)){3}$/.test(x)
@@ -2057,9 +1761,6 @@ function turnDnsErr(v) {
 // The value as the server compares it: split, de-duplicated, joined — so retyping the same address twice is no change.
 const _dnsNorm = v => [...new Set(_dnsParts(Array.isArray(v) ? v.join(",") : v))].join(",");
 const turnDnsDefault = fork => ((turnForkList().find(x => x.id === fork) || {}).client_dns || "").split(",").join(", ");
-// What clients get when the panel sets no DNS: the value the server had before the panel first set one (`dns_orig`,
-// kept by the panel), else what a server that remembers its own reports holding now (`dns_server`: csqtt, wdttplus),
-// else the fork's catalog default. `own` = it came from the server, not from the catalog.
 function turnDnsBaseline(cfg, fork, rep) {
   if ((cfg.dns_orig || []).length) return { v: cfg.dns_orig.join(", "), own: true };
   if (!(cfg.dns || []).length && rep && rep.dns_server) return { v: String(rep.dns_server).split(",").join(", "), own: true };
@@ -2105,11 +1806,6 @@ function TurnDnsField({ node, fork, rep, dns, params }) {
 export function WdttManageSheet({ node, w: w0 }) {
   useStore();   // live status / config while open
   const iface = w0.iface;
-  // openModal captures the vnode — and therefore this prop — at CLICK time, so `w` is a frozen snapshot of the
-  // server as it was when the modal opened. nrec below was already re-read live, but every status came from that
-  // stale object: after "Recreate fresh" the node reported a healthy new server and the sheet still showed
-  // "This server was wiped… Restore", because await_restore was true in a copy nothing ever updates.
-  // Re-read from the live snapshot each render; fall back to the prop until the node reports it.
   const w = ((Store.stats[node] || {}).wdtt || []).find(x => x && x.iface === iface) || w0;
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const cfg = (nrec.wdtt_cfg || {})[iface] || {};
@@ -2128,10 +1824,6 @@ export function WdttManageSheet({ node, w: w0 }) {
   const oldListen = cfg.listen || w.listen || "";
   const lhost = oldListen.includes(":") ? oldListen.slice(0, oldListen.lastIndexOf(":")) : oldListen;
   const lport = oldListen.includes(":") ? oldListen.slice(oldListen.lastIndexOf(":") + 1) : "";
-  // ⚠️ `0.0.0.0` is a REAL stored value, not "unset". Discarding it here made the editor open on the
-  // node's own IP while the record held the wildcard — so a form that looked untouched would, on Save,
-  // silently re-pin the bind to an address §1.5 had deliberately reset after a migration. It selects
-  // Custom with the wildcard in the field, which is what the record actually says.
   const initHost = lhost || "";
   const [hostSel, setHostSel] = useState(initHost ? (ips.includes(initHost) ? initHost : "__custom__") : (ips[0] || "__custom__"));
   const [hostCustom, setHostCustom] = useState(initHost && !ips.includes(initHost) ? initHost : "");
@@ -2142,19 +1834,10 @@ export function WdttManageSheet({ node, w: w0 }) {
   const lst = useListenState(node, ipPickerVal(hostSel, hostCustom), lhost, w.bind, pin);
   const [port, setPort] = useState(lport || "");
   const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false);   // sheetSend holds Save while it sends (q189 F22)
-  // RAW-IP mode — a SECOND listener on the same server, capability-gated (qWDTT + ildarmaga) and off unless
-  // the operator asks for it. One per listen ADDRESS across ALL forks: turning it on here takes it from
-  // whichever instance held it, because the app resolves one raw port for every server (see rawOwnerOn).
-  // On/off only: the port is fixed at RAW_PORT because the app dials that one number and nothing else
-  // (TunnelService resolves it from a single app-wide preference and REPLACES the link's port with it), so a
-  // custom port would only ever reach users who hand-edit app settings. Same reason it is one per node.
   const rawCapable = !!(turnForkList().find(x => x.id === fork) || {}).raw;
   const rawCur = String(cfg.raw_port || w.raw_port || "");
   const [rawOn, setRawOn] = useState(!!rawCur);
   const rawHolder = rawOwnerOn(node, iface);          // instance already offering RAW on THIS listen address
-  // The server-internal WireGuard port: the DTLS half forwards to 127.0.0.1:<this>, no client ever dials it
-  // and no link carries it. Editable because it is the one thing that can squat RAW's fixed port — which is
-  // exactly how 56003 was lost on the first fleet — and there was no way to move it without hand-editing state.
   const wgCur = String(cfg.wg_port || w.wg_port || "56001");
   const [wgIn, setWgIn] = useState(wgCur);
   const wgPort = (wgIn.trim() && /^\d+$/.test(wgIn.trim())) ? wgIn.trim() : wgCur;
@@ -2181,9 +1864,6 @@ export function WdttManageSheet({ node, w: w0 }) {
       ? T("This server is using port {v1} itself — move its listen or internal WG port before turning RAW on.", { v1: RAW_PORT })
       : "";
   const doSave = async () => {
-    // "Listen on" only when the pick changed, as TurnManageSheet does: the field is seeded from the node's report too, which
-    // trails a save — resent with every params save, a stale report re-pinned a saved Auto (q189 SPA-7). Sent before the sheet
-    // closes (q189 SPA-3): a refusal stays here, in the panel's words, with every edit kept.
     const r = await sheetSend(() => api.wdttSet({ node, iface, listen: newListen, wg_port: wgPort, fork, title: title.trim(), params: params.trim(), raw: rawWant, block: cfg.block || [], ...(pinDirty ? { bind_ip: pin } : {}), ...egressBody(egressInit(cfg)) }),
       errMsg(setMsg), setBusy);
     if (!r.ok) return;
@@ -2273,11 +1953,6 @@ export async function wdttRestoreIdentity(node, iface) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const kb = (nrec.wdtt_vault || {})[iface];
   if (!kb) return toast(T("No escrowed identity is stored for this server."), "err");
-  // ASK for the key, don't just report that it is missing. The escrowed identity can only be opened with the
-  // operator's vault key, so a locked vault is the NORMAL state at the moment they press this — and "Unlock the
-  // Encryption Vault first" sent them somewhere else to do it, with nothing to click and no way back. Every
-  // other action that needs the key raises this prompt; this one is where the cost of not having it is highest,
-  // because the alternative on offer beside it is Recreate fresh, which every user then has to re-import.
   if (!(await ensureVaultUnlocked({
         title: T("Unlock to restore this server's identity"),
         reason: T("This server's original keypair and owner password are escrowed under your encryption key — the panel only ever held the ciphertext. Unlock it to bring the server back exactly as it was, with every existing user config still working."),
@@ -2310,9 +1985,6 @@ export function WdttDeleteSheet({ node, iface }) {
     setBusy(true); setMsg({ k: "work", t: "removing…" });
     const r = await api.wdttDelete({ node, iface });
     if (!r.ok) { setBusy(false); return setMsg({ k: "err", t: srvText(r) || T("Request failed.") }); }
-    // Card goes inert + "deleting" NOW. Capture the identity WITH it: the server process dies first, so by the
-    // next render it is gone from snap.wdtt and the card had nothing left to render itself from — it flipped to
-    // a green "wg" badge with empty rows. Same reason the optimistic CREATE card carries the entered values.
     const _w = ((Store.stats[node] || {}).wdtt || []).find(x => x && x.iface === iface) || {};
     const _c = (((Store.nodes || []).find(n => n.id === node) || {}).wdtt_cfg || {})[iface] || {};
     const _port = String(_w.listen || _c.listen || "").split(":").pop();
@@ -2329,9 +2001,6 @@ export function WdttDeleteSheet({ node, iface }) {
   <//>`;
 }
 export function openEditWdtt(node, iface) { openModal(html`<${EditWdttSheet} node=${node} iface=${iface}/>`); }
-// WDTT interface EDIT modal — the interface modal for a WDTT server: endpoint / fork / ports (the 2 extra WDTT
-// fields) PLUS the same egress picker + routing rules + Filters & abuse an ordinary interface has. Saves the
-// whole instance via /api/wdtt/set (an upsert); the routing/filters ride the SAME subnet-based node datapath.
 export function EditWdttSheet({ node, iface }) {
   useStore();   // re-render on each poll so live status / desired config stays current while open
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
@@ -2380,9 +2049,6 @@ export function EditWdttSheet({ node, iface }) {
     }
     doSave();
   };
-  // The same Delete / Stop / Restart the WDTT-proxy modal carries. A self-contained server IS its interface,
-  // so an operator who opened the interface to change its egress should not have to find the other modal to
-  // bounce it — every other interface edit sheet offers these in its footer.
   const blocked = (Store.recon.nodeStatus[node] !== "live") || inProc(nrec.proc_status);
   const awaiting = !!w.await_restore;
   const notup = w.active !== "active" && !awaiting;
@@ -2429,34 +2095,14 @@ export function EditWdttSheet({ node, iface }) {
   <//>`;
 }
 
-// ── csqtt (amurcanov/csqtt) — a SELF-CONTAINED, key-owning member of the fork family like WDTT, but a raw-IP TUN
-//    datapath (no WireGuard). Its setup/card/manage/edit mirror the WDTT ones (dedicated, kind-dispatched); it is
-//    simpler — no fork/wg-port/vault. Users attach directly (keyless, panel-owned csqtt_password) and get a
-//    csqtt:// link (turn-artifacts.js csqttArtifact). ────────────────────────────────────────────────────────────
 export const CSQTT_COLOR = "#F97316";
 
-// ── csqtt VERSIONS (docs/CSQTT-LINES-PLAN.md) — which csqtt a server runs (2.1, 2.5 …), switchable both ways while
-//    its users stay. Not the build row in "Version, rollback & server defaults": that picks a build WITHIN a version.
-//    The panel offers the versions (Store.csqttLines); with one on offer there is no control anywhere — unless a server
-//    already runs another one, which stays visible. A node says which it can run (snap.csqtt_lines) — an older one can
-//    run only 2.1, and the panel refuses the rest there.
 export { CSQTT_DEFAULT_LINE };   // defined in turn-catalog.js (ui.js reads it too)
-// A server's version as the PANEL reads its record (swg-panel-server _csqtt_line_of): a line no longer on offer is 2.1, which is
-// what the node is sent — so the card never says "switching" to a version nothing moves to (q189 SPA-11: a record left naming
-// a stand-in line read "switching" for ever).
 export const csqttLineOf = cfg => { const l = String((cfg && cfg.line) || "").trim(); return (Store.csqttLines || []).includes(l) ? l : CSQTT_DEFAULT_LINE; };
 export const csqttLinesOn = () => (Store.csqttLines || []).length > 1;
 const csqttNodeLines = node => (Store.stats[node] || {}).csqtt_lines || [CSQTT_DEFAULT_LINE];
-// What each version means to the people on it.
-// csqtt 2.1 and 2.5 do not speak to each other, either way (csqtt25 rig, 2026-10-16): an app connects only to a server
-// of its own line. A switch keeps the users and their passwords, but every device needs the app of the new line; the
-// iPhone app (Anton48) and the other third-party apps speak 2.1 only.
 const csqttLineNote = l => l === CSQTT_DEFAULT_LINE ? T("Stable. For the csqtt {v1} apps, iPhone included.", { v1: l })
   : T("Needs the csqtt {v1} app on every device. No {v2} app connects to it, the iPhone app included.", { v1: l, v2: CSQTT_DEFAULT_LINE });
-// The switch as the node reports it: `want` = what the panel asked, `run` = what the server runs, `failed` = why the
-// node put it back (it reverts a version that will not start, and waits for a Restart or a new build to try again).
-// `blocked` = asked for a version this node cannot run (a record carried to an older node): it never moves until the
-// node is updated, and "switching" would say otherwise for ever.
 export function csqttSwitchState(node, iface) {
   const cfg = (((Store.nodes || []).find(n => n.id === node) || {}).csqtt_cfg || {})[iface] || {};
   const c = ((Store.stats[node] || {}).csqtt || []).filter(Boolean).find(x => x.iface === iface) || {};
@@ -2466,9 +2112,6 @@ export function csqttSwitchState(node, iface) {
   const blocked = moving && !csqttNodeLines(node).includes(want);
   return { want, run, failed, blocked, switching: moving && !blocked };
 }
-// The line a csqtt server RUNS, for its fork badge ("amurcanov 2.5"): the two lines speak different protocols, so the
-// version is part of what the server is — shown in the badge rather than on a line of its own (operator, 2026-10-16).
-// A server the node does not report (awaiting restore, adopting, a stale node) runs nothing to read: its configured line.
 export const csqttRunLine = (node, iface) => {
   const s = csqttSwitchState(node, iface);
   const seen = ((Store.stats[node] || {}).csqtt || []).some(x => x && x.iface === iface);
@@ -2500,11 +2143,6 @@ function confirmCsqttSwitch(node, iface, cfg, from, to, onConfirm) {
       : !n ? null : html`<p class="hint">${T("The iPhone app (Anton48) does not connect to csqtt {v1}: iPhone users lose access until you switch back.", { v1: to })}</p>`}
     onConfirm=${onConfirm}/>`);
 }
-// The questions a version change asks before `go` saves it — one place for both sheets that offer the Version (the
-// csqtt-proxy modal and the csqtt interface sheet). A switch away from what runs asks first; going back to the 2.1 that
-// already runs restarts nothing, and asks only when the App routing it cannot keep would go. False = nothing to ask.
-// `sw` is the switch state the sheet shows (csqttSwitchState), so the question is about what the operator is looking at;
-// `cfg` is the record as the save leaves it (the csqtt interface sheet's App routing draft over the stored one).
 export function askCsqttLine(sw, node, iface, cfg, line, go) {
   if (line !== sw.run) { confirmCsqttSwitch(node, iface, cfg, sw.run, line, go); return true; }
   if (csqttArDropAsk(cfg, line)) {
@@ -2514,12 +2152,6 @@ export function askCsqttLine(sw, node, iface, cfg, line, go) {
   }
   return false;
 }
-// The Version a sheet edits. Only what the operator PICKED is held: untouched, the field follows the record as the poll
-// moves it (another tab, an adopt), and only a pick that differs from the record is a change to send. Holding the value
-// the sheet opened with instead either sent it back over a newer record or kept showing a version the server no longer
-// runs. `pick` = a pick handed over from the sheet this one was opened from.
-// Choosing the version the record already says is no pick at all (the selected row clicked again, or a pick taken back):
-// held, it would read as a change the moment the record moved, and send the old version back over it.
 export const csqttPickState = (picked, cfg) => { const cur = csqttLineOf(cfg), line = picked || cur; return { line, lineDirty: line !== cur }; };
 export const csqttPickOf = (v, cfg) => (v && v !== csqttLineOf(cfg) ? v : null);
 export function useCsqttPick(cfg, pick) {
@@ -2625,10 +2257,6 @@ export function CsqttManageSheet({ node, c: c0 }) {
   const oldListen = cfg.listen || c.listen || "";
   const lhost = oldListen.includes(":") ? oldListen.slice(0, oldListen.lastIndexOf(":")) : oldListen;
   const lport = oldListen.includes(":") ? oldListen.slice(oldListen.lastIndexOf(":") + 1) : "";
-  // ⚠️ `0.0.0.0` is a REAL stored value, not "unset". Discarding it here made the editor open on the
-  // node's own IP while the record held the wildcard — so a form that looked untouched would, on Save,
-  // silently re-pin the bind to an address §1.5 had deliberately reset after a migration. It selects
-  // Custom with the wildcard in the field, which is what the record actually says.
   const initHost = lhost || "";
   const [hostSel, setHostSel] = useState(initHost ? (ips.includes(initHost) ? initHost : "__custom__") : (ips[0] || "__custom__"));
   const [hostCustom, setHostCustom] = useState(initHost && !ips.includes(initHost) ? initHost : "");
@@ -2723,9 +2351,6 @@ export function CsqttDeleteSheet({ node, iface }) {
   <//>`;
 }
 
-// ── csqtt 2.5 App routing (docs/CSQTT-APP-ROUTING-PLAN.md) — one rule for every user of the server, which the server
-// hands each user's CSQTT app when it connects. "direct" = what is listed bypasses the tunnel; "tunnel" = only what is
-// listed uses it. The lists are edited as text, one entry a line; the panel validates and normalises them.
 const AR_LINES = s => String(s || "").split(/[\s,;]+/).filter(Boolean);   // the app's list separators (the panel's too)
 export const arInit = cfg => { const a = (cfg && cfg.app_routing) || {};
   return { apps_mode: a.apps_mode || "all", domains_mode: a.domains_mode || "direct", ips_mode: a.ips_mode || "direct",
@@ -2764,13 +2389,7 @@ function AppRoutingFields({ value: a, onChange }) {
       ${list("ips", "149.154.160.0/20\n91.108.4.0-91.108.7.255", T("One IPv4 address, network or range (a-b) per line."))}</div>`;
 }
 
-// App routing EXCEPTIONS (docs/CSQTT-APP-ROUTING-WHO-PLAN.md): these people get their own rule, or none. The panel resolves
-// them per password (a device's beats its user's, a user's a group's, the upper group a lower one), so the browser keeps no
-// copy of that order: a row says whom it names and what it gives them, and the hint says how they win.
 const AR_EXC_MAX = 20;                                               // the panel's cap
-// What one exception's sheet stores: the kinds it names (an empty one left out), and null for "No App routing" — the panel
-// sends the server's "no rule" for it; an own rule goes as the form reads (the panel validates it). An own rule that sets
-// nothing IS no App routing (the panel stores it so), and the row says so from the start.
 export const arxEntry = (sel, own, ar) => ({ who: Object.fromEntries(["users", "groups", "peers"].filter(k => (sel[k] || []).length).map(k => [k, sel[k]])),
   app_routing: own && arOn(ar).length ? arBody(ar) : null });
 // …and the server's list as the save sends it: the rows in their order, without the sheet's own keys.
@@ -2859,16 +2478,10 @@ export function EditCsqttSheet({ node, iface, pick }) {
   const dns = useTurnDns(cfg, c.fork || cfg.fork || "csqtt", c);   // Client DNS — see EditWdttSheet
   const [ar, setAr] = useState(() => arInit(cfg));                   // App routing — a 2.5 server's
   const [ax, setAx] = useState(() => (Array.isArray(cfg.app_routing_except) ? cfg.app_routing_except : []).map(e => ({ ...e, _id: newGid() })));   // …and its exceptions
-  // The App routing fold is all clicks and child sheets, which the Sheet's own input listener never sees: its draft
-  // against the one it opened with is the discard guard, and a save sends the rule and the list only when they changed —
-  // re-sending them unchanged would put this tab's old copy back over another tab's newer one.
   const arKey = useRef(null), axKey = useRef(null), dirtyRef = useRef(false), closeRef = useRef(null);
   const arNow = JSON.stringify(arBody(ar)), axNow = JSON.stringify(arxSend(ax));
   if (arKey.current === null) { arKey.current = arNow; axKey.current = axNow; }
   const { line, setLine, lineDirty } = useCsqttPick(cfg, pick);   // the csqtt version, here too (operator, 2026-10-17)
-  // The sheet's other click-only edits — the egress mode, the Block traffic toggles, Device access, the version — are
-  // judged the same way: against what the sheet opened with, so a flip and a flip back asks nothing.
-  // `blk` as a SET: the Block toggles re-append an id, so a flip and a flip back reordered it and Cancel asked (F19)
   const clickKey = useRef(null), clickNow = JSON.stringify([reach, egressBody(eg), [...(blk || [])].sort()]);
   if (clickKey.current === null) clickKey.current = clickNow;
   dirtyRef.current = arNow !== arKey.current || axNow !== axKey.current || clickNow !== clickKey.current || !!lineDirty;
@@ -2940,9 +2553,6 @@ export function EditCsqttSheet({ node, iface, pick }) {
   <//>`;
 }
 
-// A WDTT fork chip: the fork's own colour, with the WDTT colour as the fallback until applyThemeColors has
-// injected the tunable one. The style string, the `turnColor(fork) || WDTT_COLOR` fallback and the label lookup
-// were written out at four separate sites, which is how they drifted (some showed the raw id, some the label).
 export function ForkTag({ fork, suffix, title }) {
   if (!fork) return null;
   const col = turnColor(fork) || WDTT_COLOR;

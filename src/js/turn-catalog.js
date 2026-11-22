@@ -1,27 +1,6 @@
-/* turn-catalog.js — which turn-proxy forks exist, and what each one is.
- *
- * LAYER 1 (see docs/APP-JS-SPLIT-PLAN.md). Imports store + theme.
- *
- * Both halves of the catalog live here: the boot/offline FALLBACK data, and the accessors that prefer the
- * SERVED catalog (Store.turnCatalog) over it. They were split across 6,000 lines of app.js — the fallback
- * const near the top and the accessors down in the turn UI — which is what forced turnOwner's hand-rolled
- * TDZ guard. One module, one answer to "what is this fork".
- *
- * It started as a layer-0 leaf holding only the data; the accessors read Store, so bringing them here
- * moves the whole module up a layer rather than leaving the catalog answerable from two places.
- */
-
 import { Store } from "./store.js";
 import { pickThemed } from "./theme.js";
 
-// `turnForks()` returns the served catalog mapped to the shape the SPA has always used ({id,label,owner,wrap,
-// keyflag,color,colorL,protocols}); this array is only the boot/offline FALLBACK (and a mixed-version safety
-// net if the panel predates the catalog). Keep it in step with TURN_SERVERS. `protocols` (a fork missing "awg"
-// is WireGuard-only) supersedes the old TURN_WG_ONLY set. See docs/TURN-PROXY-OVERHAUL-PLAN.md.
-// WireGuard-only rationale: anton48 (iOS) has no AmneziaWG fields. samosvalishe (hack-diaz) carries AmneziaWG since
-// free-turn-proxy v3.2.0, as TURN_SERVERS says. WINGS-N is app-integrated but DOES support awg; the sidecar forks relay UDP transparently.
-// Order mirrors the panel's TURN_SERVER_ORDER (cacggghp + WINGS-N pinned, then by server+app stars). This is
-// only the boot/offline fallback; the served catalog is authoritative.
 export const TURN_FORKS_FALLBACK = [
   { id: "cacggghp", label: "cacggghp", owner: "cacggghp/vk-turn-proxy", wrap: "", keyflag: "-wrap-key", color: "#5FB0E0", colorL: "#2C7EC0", protocols: ["wg", "awg"], hidden: true },
   { id: "WINGS-N", label: "WINGS-N", owner: "WINGS-N/vk-turn-proxy", wrap: "-wrap-mode on", color: "#C98BE0", colorL: "#9B4FC7", protocols: ["wg", "awg"] },
@@ -48,12 +27,6 @@ export function turnOwner(svc) {
   return fk ? fk.owner : (f && f !== "turn" ? f + "/vk-turn-proxy" : "");
 }
 
-// the installable turn-proxy forks (owner repo + the fork's obfuscation flags — the node appends a
-// fresh -wrap-key). Mirrors the installer's turn_wrap_flags.
-// each fork has a dark-mode `color` and a deeper `colorL` (light-mode default, legible on white).
-// The turn fork registry is now SERVER-OWNED (swg-panel-server TURN_SERVERS → /api/state.turn_catalog).
-// the live fork list — served catalog mapped to the SPA shape, else the fallback (mixed-version safe).
-// (named turnForkList, not turnForks — the Settings card has a local `turnForks` Set for the picker toggles.)
 export function turnForkList() {
   const cat = Store.turnCatalog;
   if (cat && Array.isArray(cat.servers) && cat.servers.length)
@@ -68,32 +41,16 @@ export function turnForkList() {
       cli_authors: Array.isArray(s.cli_authors) ? s.cli_authors : ["samosvalishe"] }));
   return TURN_FORKS_FALLBACK;
 }
-// Operator-facing fork list — the full catalog MINUS hidden/dead forks (cacggghp). Lookups (turnColor/
-// turnFork label) use the FULL turnForkList() so a deployed hidden-fork instance still resolves; only the pickers/
-// toggles/dropdowns use this filtered view.
 export function turnForksVisible() { return turnForkList().filter(f => !f.hidden); }
-// Dropdown options for a list of forks — the "Server fork" picker, which the interface sheets ask for five
-// times over (WDTT create/adopt/edit, csqtt create, the fork row). Five hand-written option lists were five
-// chances to label the same fork differently; `forkPickLabel` was already the one name, this is the one list.
 export const forkOpts = (forks, off = null) => (forks || []).map(f => {
   const why = off ? off(f) : "";      // a reason this fork cannot be picked, or "" — the row greys and says it
   return { value: f.id, label: forkPickLabel(f.id) + (why ? " — " + why : ""), disabled: !!why };
 });
-// A fork's OPERATOR-FACING name (the catalog label), never the internal id. They differ for every fork whose author
-// name isn't its id — Ivan4537/wdttplus, XXcipherX/xxcipherx, SpaceNeuroX/qwdtt, amurcanov/csqtt — and the id leaking
-// into a label position is a recurring drift (see ForkTag). One lookup, so there is a single place to be right.
 export function forkLabel(fork) { return (turnForkList().find(f => f.id === fork) || {}).label || fork || ""; }
-// A fork has TWO names and they are not interchangeable: `label` is the AUTHOR (SpaceNeuroX) and `product` is the
-// server software they ship (qWDTT). Author identifies who maintains it — the fork tag, the settings row, the
-// version board; product identifies what is running — the Listen row of an interface card. The picker needs both,
-// because "SpaceNeuroX" alone doesn't say it's a qWDTT server and "qWDTT" alone doesn't say whose.
 export function forkProduct(fork) {
   const f = turnForkList().find(x => x.id === fork) || {};
   return f.product || (f.kind === "wdtt" ? "WDTT" : f.label) || fork || "";
 }
-// ONE NAME PER FORK FOR A LIST OF THEM SIDE BY SIDE — a legend, a ring: the author, as everywhere, except where two listed
-// forks share an author, and then "author · product". amurcanov ships both a WDTT and a CSQTT server, and the Overview's
-// turn-proxy rings drew them as two rows both reading "amurcanov" (1.8.8 qualification, O1). Only the colliding rows grow.
 export function forkNames(forks) {
   const n = {}, out = {};
   (forks || []).forEach(fk => { const l = forkLabel(fk); n[l] = (n[l] || 0) + 1; });

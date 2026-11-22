@@ -1,22 +1,7 @@
-/* swg-panel — "Relay": a covert network-operations instrument.
-   Self-hosted fonts (offline-safe, no third-party fetch). Cool blue-slate field,
-   one warm-amber signal, a cool jewel-tone status spectrum. */
 @font-face{font-family:"JetBrains Mono";src:url(vendor/fonts/jetbrains-mono-400.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap}
 @font-face{font-family:"JetBrains Mono";src:url(vendor/fonts/jetbrains-mono-500.woff2) format("woff2");font-weight:500;font-style:normal;font-display:swap}
-/* Cyrillic rides in its own @font-face with a unicode-range, rather than being folded into the Latin
-   subsets. Two reasons: an English reader never downloads it, and the Latin files stay byte-identical, so
-   the look nobody asked me to change cannot drift. The vendored Latin subsets carry NO Cyrillic at all —
-   every Russian glyph was falling through to the OS font, which is why Russian read a size larger. */
 @font-face{font-family:"JetBrains Mono";src:url(vendor/fonts/jetbrains-mono-400-cyrillic.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
 @font-face{font-family:"JetBrains Mono";src:url(vendor/fonts/jetbrains-mono-500-cyrillic.woff2) format("woff2");font-weight:500;font-style:normal;font-display:swap;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
-/* Hanken Grotesk has no Cyrillic AT ALL — 0 of the 64 Russian letters — so Onest carries that script under
-   the same family name, restricted by unicode-range. It was drawn for Latin and Cyrillic together, which
-   matters here because this panel mixes them constantly ("Нода fra-edge-01").
-
-   size-adjust is the point of the pairing, not a flourish. Onest's x-height is 527 per 1000em against
-   Hanken's 493; left alone, every Russian word sits a size larger than the Latin beside it, which is
-   exactly the complaint that started this. 493/527 = 93.5% brings the two x-heights level, so a mixed line
-   reads as ONE typeface. Weights are declared separately because the panel uses all four. */
 @font-face{font-family:"Hanken Grotesk";src:url(vendor/fonts/onest-400-cyrillic.woff2) format("woff2");font-weight:400;font-style:normal;font-display:swap;size-adjust:93.5%;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
 @font-face{font-family:"Hanken Grotesk";src:url(vendor/fonts/onest-500-cyrillic.woff2) format("woff2");font-weight:500;font-style:normal;font-display:swap;size-adjust:93.5%;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
 @font-face{font-family:"Hanken Grotesk";src:url(vendor/fonts/onest-600-cyrillic.woff2) format("woff2");font-weight:600;font-style:normal;font-display:swap;size-adjust:93.5%;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
@@ -62,9 +47,6 @@
   --r:11px; --r-sm:8px; --shadow:0 24px 60px -14px rgba(0,0,0,.62);
   --ease:cubic-bezier(.2,.7,.2,1);
 }
-/* LIGHT theme — the whole palette is variable-driven, so this only re-defines the structural surfaces / ink /
-   lines / troughs / glows / shadow. The status + brand accents (green/cyan/orange/etc.) carry across both modes;
-   the per-mode brand accent is injected by applyThemeColors(). Selected via <html data-theme="light">. */
 :root[data-theme="light"]{
   --flowdot:rgba(255,255,255,.9);   /* travelling signal-flow dots (light) — bright pips on the coloured lines */
   --bg:#EDF1F7; --bg2:#E1E7F0; --surface:#FFFFFF; --surface-2:#F4F7FB; --raise:#FFFFFF; --row-hover:#E7EEF7;
@@ -117,9 +99,6 @@ body{
 a{color:inherit;text-decoration:none}
 ::selection{background:color-mix(in srgb,var(--brand) 32%,transparent);color:var(--ink)}   /* --ink adapts per theme so selected text stays legible in light AND dark */
 :focus-visible{outline:2px solid var(--brand);outline-offset:2px;border-radius:5px}
-/* buttons / toggles / tabs carry their own hover + active/selected feedback, so the full-strength global ring read
-   as a stray heavy border on them — soften it here, but keep it VISIBLE for keyboard navigation (:focus-visible ⇒
-   plain mouse clicks stay ring-free). Text inputs keep their own focus styling. */
 button:focus-visible,[role=button]:focus-visible,.tabs a:focus-visible,summary:focus-visible,label:focus-visible{outline:2px solid color-mix(in srgb,var(--brand) 60%,transparent);outline-offset:2px}
 @media(prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}
 button{font-family:inherit}
@@ -143,42 +122,22 @@ h1,h2,h3{font-family:var(--sans)}
 .tabs a{padding:8px 11px;font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:.1em;
   color:var(--faint);font-weight:500;transition:color .15s;position:relative}
 .tabs a:hover{color:var(--ink-2)}
-/* The tab row and the icon cluster share one line with no wrap and no scroll, so the bar has a width
-   below which they collide. Translation moves that threshold: Russian's tabs run ~30px wider than
-   English's (ПОЛЬЗОВАТЕЛИ vs USERS), which pulled the collision from ~1153px up to ~1243px. Trimming the
-   horizontal padding before that band buys ~40px in EVERY language — it fixes English's own limit too,
-   rather than making one translation fit and leaving the next one to rediscover this. */
 @media(max-width:1300px){.tabs a{padding:8px 7px}}
 .tabs a.active{color:var(--ink)}
 .tabs a.active::after{content:"";position:absolute;left:11px;right:11px;bottom:-1px;height:2px;border-radius:2px;
   background:var(--brand);box-shadow:0 0 9px color-mix(in srgb,var(--brand) 55%,transparent)}
 .appbar-right{margin-left:auto;display:flex;align-items:center;gap:14px}
-/* Russian's header words are wider: with every header control on (an update pill, the deployment badge, the vault lock) the bar ran
-   past the screen up to 1 365px and pushed Log out off it. There its parts sit closer together. Russian only, in that band: English
-   fits at 1 280px by a hair, and every other width keeps its spacing. */
 @media (min-width:1280px) and (max-width:1365px){html[lang="ru"] .appbar{gap:14px}html[lang="ru"] .appbar-right,html[lang="ru"] .updslot{gap:8px}
   html[lang="ru"] .tabs a{padding:8px 7px}}
-/* NOWRAP ON EVERY HEADER PILL. These are single-token status chips — a count and a word, a version, an
-   action — and the English happens to be short enough that none of them ever wrapped. Russian is not:
-   "FIX 2 ISSUES" becomes "ИСПРАВИТЬ 2 ПРОБЛЕМЫ" and broke onto FOUR lines, taking the whole header bar with
-   it. A pill that wraps is not a pill, and there is nothing here worth wrapping — they are short by
-   construction, so let them size to their text. */
 .livepill,.onlinetag,.onl-toggle,.tport{white-space:nowrap}
 .livepill{display:flex;align-items:center;gap:7px;font-size:11px;text-transform:uppercase;letter-spacing:.08em;
   color:var(--dim);font-family:var(--mono);padding:5px 11px;border:1px solid var(--line-solid);border-radius:99px;background:var(--surface-2)}
 .livepill b{color:var(--online);font-weight:600;font-size:13px;letter-spacing:-.02em}
-/* the node-detail update lifecycle pills (update to … / updating / up to date) — sized to match the reporting
-   and docker/bare-metal badges (10px, tighter padding), a touch smaller than a normal livepill.
-   Asymmetric top/bottom padding nudges the mono label ~1px down so it optically centres against the icon
-   (the icon is pulled back up 1px so it stays put). */
 .updpill,.upd-busy,.upd-uptodate{font-size:10px;padding:4px 9px 2px;gap:6px;letter-spacing:.06em;line-height:1}
 button.upd-uptodate{cursor:pointer}   /* up-to-date pill is clickable → re-run/repair (heals the datapath with no new version) */
 button.upd-uptodate:hover{border-color:var(--online);background:color-mix(in srgb,var(--online) 12%,transparent)}
 .updpill b,.upd-busy b,.upd-uptodate b{font-size:11px}
 .updpill svg,.upd-busy svg,.upd-uptodate svg{width:11px;height:11px;position:relative;top:-1px}
-/* on the panel header (appbar) these pills sit next to the ONLINE / bare-metal pills — stretch to the same
-   row height so the header reads as one uniform band; align-items:center keeps the label+icon centred, and
-   the 1px padding-top bias still nudges the mono label down to sit on the icon's centre line */
 .appbar-right .updpill,.appbar-right .upd-busy,.appbar-right .upd-uptodate{font-size:11px;padding:9px 12px 8px;letter-spacing:.08em}
 .appbar-right .updpill b,.appbar-right .upd-busy b,.appbar-right .upd-uptodate b{font-size:12px}
 .appbar-right .updpill svg,.appbar-right .upd-busy svg,.appbar-right .upd-uptodate svg{width:13px;height:13px}
@@ -206,25 +165,10 @@ button.upd-uptodate:hover{border-color:var(--online);background:color-mix(in srg
 .fixpill b{color:#b7791f}
 .fixpill svg{width:12px;height:12px;position:relative;top:-1px}
 .fixpill:hover{border-color:#e0a83a;background:color-mix(in srgb,#e0a83a 12%,transparent)}
-/* turn-family updates. Deliberately NOT the fixpill amber: amber in this product means something is broken and
-   wants attention, and a server merely being a build behind is neither. --ready is the palette's existing
-   "available" blue and adapts per theme, so the badge reads as an offer rather than an alarm. */
-/* A version pair reads as one movement, old → new. The arrow and the middot are separators, not data, so they
-   are muted and given room. They are set in the MONO face, like the numbers they sit between: in the body face
-   they carry different metrics, land off the digits' baseline and read as an underscore — which no amount of
-   nudging fixes, it only moves the mismatch around. The destination is what is being offered, so it keeps the
-   ink while the current version stays quiet. */
 .verarrow{padding:0 5px;color:var(--faint);font-family:var(--mono)}
 .vernew{color:var(--ink)}
-/* Which servers this row restarts, named. The sheet's whole warning is that an update drops that server's
-   clients — "2 servers" states the count and hides the one thing needed to judge whether now is a quiet
-   moment. Chips inherit --tfc from the row, so a glance ties them to their fork without repeating its name. */
 .tus-ids{display:flex;flex-wrap:wrap;gap:5px}
 .tus-id{background:color-mix(in srgb,var(--tfc,var(--muted)) 13%,transparent);color:var(--tfc,var(--dim))}
-/* One fork, several nodes: the sub-lines hang off a spine in the FORK's colour, and carry no fill of their
-   own. A tinted row background was the first attempt and it was wrong — a few percent of each fork colour
-   washed over the card reads as three different shades of grime rather than one system, and it fights the
-   node's own dot for the same job. The spine spends the fork colour once, in a place nothing else uses. */
 .tus-nodes{display:flex;flex-direction:column;margin:0 0 0 3px;
   border-left:2px solid color-mix(in srgb,var(--tfc,var(--muted)) 55%,transparent)}
 .tus-node{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0 6px 11px}
@@ -298,9 +242,6 @@ button.upd-uptodate:hover{border-color:var(--online);background:color-mix(in srg
 .tbadge:hover{color:var(--dim);border-color:color-mix(in srgb,var(--c) 45%,var(--line))}
 .tbadge.on{color:var(--c);border-color:color-mix(in srgb,var(--c) 55%,transparent);background:color-mix(in srgb,var(--c) 16%,transparent)}
 
-/* Side rail — three identical menus (jump · ranges · nodes) pinned right-centre, ALWAYS visible. Each is a column of
-   icons that slides its labels out when the panel is hovered; each row highlights on hover with the ICON in the theme
-   colour (label stays neutral). */
 .dashrail{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:60;pointer-events:none}
 .dashrail-stack{display:flex;flex-direction:column;align-items:flex-end;gap:11px;max-height:94vh;pointer-events:none}
 .railpanel{display:flex;flex-direction:column;gap:2px;padding:8px 9px;pointer-events:auto;
@@ -530,13 +471,7 @@ html[lang=en] .prot-cat-nm{text-transform:capitalize}
 .tport.baremetal{color:var(--tport-bare);background:color-mix(in srgb,var(--tport-bare) 14%,transparent)}
 .tport.docker{color:var(--tport-dock);background:color-mix(in srgb,var(--tport-dock) 16%,transparent)}
 .tport.nix{color:var(--tport-nix);background:color-mix(in srgb,var(--tport-nix) 13%,transparent)}   /* platform, beside the deploy pill — never instead of it */
-/* the same platform pill on a node whose installation the panel CAN still touch. Every node reports its distro
-   now, so the pill can no longer double as "this host is declarative" the way it did when only NixOS had one —
-   that meaning moves to the colour, and the muted one is just a label. */
 .tport.os{color:var(--tport-os);background:color-mix(in srgb,var(--tport-os) 13%,transparent)}
-/* the node's OS bubble: the distribution's own name as the header, then label/value rows. A two-column grid so
-   the values line up whatever the labels translate to — the reason this is not just a `title`. It rides a
-   Popover rather than the CSS-only .turnbub because the node card clips (see platformPill). */
 /* keeps .deppop's standard 5px outer padding and 8px row inset — same frame as every other hover
    bubble (deprow / cpu-row / onpop-h); only the header stays a tone-coloured title, not an eyebrow. */
 .osbub{min-width:210px;display:flex;flex-direction:column;gap:1px}
@@ -638,9 +573,6 @@ tbody tr.clk:hover .rowarrow{color:var(--dim);transform:translateX(2px)}
 .badge.ic svg{width:11px;height:11px}
 .b-online{background:color-mix(in srgb,var(--online) 13%,transparent);color:var(--online)} .b-online::before{animation:blink 2.6s infinite}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.4}}
-/* Peer status badges. Thirteen of these were deleted in a86b6ce together with the .ustat set, leaving every
-   chip except online/blocked with no colour at all — a lost peer read the same ink as a ready one. Restored
-   from a86b6ce^; the stray comments that commit welded onto surviving lines are back on their own rules. */
 .b-ready{background:color-mix(in srgb,var(--ready) 12%,transparent);color:var(--ready)}   /* blue — deployed everywhere, awaiting first connection */
 .b-partial{background:color-mix(in srgb,var(--partial-r) 16%,transparent);color:var(--partial-r)}   /* LIGHT RED — a problem that isn't a stopper (present on some targets, missing on others) */
 /* ORANGE faults: blocked = reaching the server but no handshake; faulty = handshake up but no inbound data */
@@ -685,12 +617,6 @@ a.ifcard:hover{border-color:var(--brand);box-shadow:0 6px 16px rgba(0,0,0,.28)} 
 .ifcard.tp.clickable{cursor:pointer}
 .ifcard.down{opacity:.5;border-color:color-mix(in srgb,var(--dangling) 35%,var(--line-solid))}
 .ifcard.down:hover{opacity:.72}
-/* Two distinct dims, and they can co-occur:
-     .down   — THIS card's own state needs attention (iface down/stopped/error, proxy failed, mesh link down).
-               Red-tinted border: something here is wrong.
-     .locked — the NODE forbids editing right now (offline, converting, re-installing, updating). Nothing is
-               wrong with the card, so no red: just muted, matching the disabled buttons. Every card on the
-               page carries it together, so a node-wide state never dims one section and leaves the rest lit. */
 .ifcard.locked{opacity:.55}
 .ifcard.locked:hover{opacity:.75}
 .ifcard.locked.down{opacity:.45}             /* both → keep the red border, dim a little further */
@@ -706,10 +632,6 @@ a.ifcard:hover{border-color:var(--brand);box-shadow:0 6px 16px rgba(0,0,0,.28)} 
 .ifcard-top>.iftype,.ifcard-top>.drag-grip{flex:none}
 .ifcard-top .tg,.ifcard-top .tg-off,.ifcard-top .tg-busy{flex:none;white-space:nowrap}   /* status badges stay whole on the line */
 .tg-turn.mini{padding-left:7px;padding-right:7px;text-transform:uppercase}   /* compact "t" badge */
-/* hover edit affordance on an interface card: absolutely positioned in the card's top-right (so its padded
-   hit-area escapes .ifcard-top's overflow clip and is hoverable on every side), hidden until card hover;
-   hovering the area highlights only the icon (no area background); click opens Edit (not the detail page).
-   The header reserves a right gutter so badges never sit under it. */
 /* the edit button sits inline right after the interface name, revealed on card hover */
 /* the interface name IS the edit trigger: name + pencil are one button, so hovering the name reveals/highlights
    the pencil and a click opens the edit modal (the rest of the card still links to the detail page) */
@@ -728,9 +650,6 @@ a.ifcard:hover{border-color:var(--brand);box-shadow:0 6px 16px rgba(0,0,0,.28)} 
 @keyframes edithint{0%,100%{color:var(--faint)}45%{color:var(--brand)}}
 .ifcard-top .tg{flex:none}          /* status tags keep their full width — the name ellipsis-shrinks instead */
 .ifcard-top .onlinetag{flex:none}   /* connections count in a turn card header — don't stretch */
-/* turn-card header must NOT clip: the connection-count hover pill uses a negative-margin box (like the
-   interface-card online count) that breathes into the card's padding — overflow:hidden would shear its
-   top/right edge. The name still ellipsizes via .ifname's own overflow, so one-line layout is preserved. */
 .ifcard.tp .ifcard-top{overflow:visible}
 /* a status tag carrying a node message is clickable (opens it) — pointer + hover highlight as the affordance */
 /* any error/detail tag that opens a popup on click — on hover just brighten its text/icon colour so it
@@ -767,10 +686,6 @@ a.ifcard:hover{border-color:var(--brand);box-shadow:0 6px 16px rgba(0,0,0,.28)} 
 .ifrow .r.addr{font-size:11px}
 /* A row whose label is a SENTENCE: it takes the full width and what it applies to sits under it, rather
    than wrapping to two lines beside a single name marooned in the right-hand column. */
-/* Section headings INSIDE a notice box: the shared .seclabel underlines itself, which puts a rule between
-   a heading and its own rows — the two things that belong together — while the boundary that matters, one
-   section ending and the next beginning, had no line at all. So: no underline here, and a divider above a
-   heading that FOLLOWS another section's rows. */
 .notice .seclabel{border-bottom:none;padding-bottom:0;margin:14px 0 6px}
 .notice .seclabel:first-child{margin-top:6px}
 .notice .ifcard-rows + .seclabel{border-top:1px solid var(--line);padding-top:12px}
@@ -783,19 +698,12 @@ a.ifcard:hover{border-color:var(--brand);box-shadow:0 6px 16px rgba(0,0,0,.28)} 
 .iftype{font-family:var(--mono);font-size:10px;font-weight:500;letter-spacing:.06em;text-transform:uppercase;padding:2px 7px;border-radius:6px}
 .iftype.wg{background:rgba(63,216,154,.14);color:var(--online)}
 .iftype.awg{background:rgba(31,200,214,.15);color:var(--brand)}
-/* Every AWG badge of an AmneziaWG 3.1 interface (model.js awg3Cls / ui.js tgt3) — its own colour (--awg3: the :root default pair
-   or the operator's Settings pick, which applyThemeColors sets on <html>) plus the "AmneziaWG 3.1" tooltip, so colour
-   is not the only carrier. Out-specifies the tunable awg colour applyThemeColors injects (.iftype.awg, .tg-awg);
-   .tg.muted's !important still greys an inactive row's tag. */
 .iftype.awg.awg3,.tg-awg.awg3{background:color-mix(in srgb,var(--awg3) 15%,transparent);color:var(--awg3)}
 .iftype.wdtt{background:rgba(129,181,18,.16);color:#81B512}   /* WDTT type badge fallback until applyThemeColors injects the tunable colour */
 .iftype.csqtt{background:rgba(249,115,22,.16);color:#F97316}   /* csqtt type badge fallback until applyThemeColors injects the tunable colour */
 /* Approach-B adoption candidates — a wg/awg interface found on the node the panel doesn't manage yet: orange
    "found" cards in the same grid → open to Adopt or Ignore. */
 .ifcard.candidate{border-color:color-mix(in srgb,var(--fault) 45%,var(--line-solid));background:color-mix(in srgb,var(--fault) 6%,var(--surface-2))}
-/* A found server's card carries an action AND a status in its header, and an interface name runs to 15 characters: on one
-   line the name was cut to "csq…". So its header is always two lines — kind + the whole name, then the action and status
-   together on the right — the same on every found card, whatever fits. The empty .grow becomes the line break. */
 .ifcard.candidate .ifcard-top{flex-wrap:wrap;row-gap:0}
 .ifcard.candidate .ifcard-top .ifname{flex:0 1 auto;max-width:100%}
 .ifcard.candidate .ifcard-top .grow{flex:0 0 100%;height:6px}
@@ -813,9 +721,6 @@ a.ifcard.candidate.ignored:hover{opacity:.85;border-color:var(--brand)}
 .tg-ign svg{width:11px;height:11px}
 /* Type picker: one pill per protocol, the chosen one outlined in ITS OWN colour — the same wg=green,
    awg=teal, wdtt=lime language the interface badges use, so the choice reads the same as the result. */
-/* "Adopt existing" — a MODE toggle sharing the protocol row, deliberately NOT another protocol chip: the type
-   is chosen once and applies whether the interface is created or taken over. Same on/off control as the Live
-   screen's Online button, in the fault orange every adoption surface uses. */
 .adoptsw{appearance:none;flex:none;margin-left:auto;height:30px;padding:0 14px;border:1px solid var(--line-solid);border-radius:99px;
   background:var(--surface-2);color:var(--dim);font:inherit;font-size:12px;font-weight:600;cursor:pointer;
   transition:background .12s var(--ease),color .12s var(--ease),border-color .12s var(--ease)}
@@ -857,11 +762,6 @@ a.ifcard.candidate.ignored:hover{opacity:.85;border-color:var(--brand)}
 .targetopt.locked .topt-main{cursor:default}
 .targetopt .box{width:17px;height:17px;border:1.5px solid var(--line-solid);border-radius:5px;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--brand)}
 .targetopt.sel .box{border-color:var(--brand);background:color-mix(in srgb,var(--brand) 16%,transparent)}
-/* A long node name ends in an ellipsis (its full name in the tooltip); the interface is never cut — it is what tells
-   two rows of one node apart (wg11001 / wg11002) — and neither is a "missing" tag (a flex item's floor is its content).
-   The name is laid out at its own width (flex-basis max-content) but counts nothing toward the row's minimum
-   (width:0), so a 64-character title is cut instead of widening its row; the name area's floor keeps it ≥ 7ch. Only
-   on a "missing" row, whose tag can outgrow that floor, does the name carry its own 7ch — and so widen the row. */
 .targetopt .nm{font-weight:600;flex:0 1 max-content;width:0;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .targetopt.missing .nm{min-width:7ch}
 .targetopt .tp{font-size:13.5px;color:var(--faint);font-family:var(--mono);white-space:nowrap}
@@ -869,33 +769,11 @@ a.ifcard.candidate.ignored:hover{opacity:.85;border-color:var(--brand)}
 .targetopt.missing{border-color:color-mix(in srgb,var(--dangling) 34%,var(--line-solid));background:color-mix(in srgb,var(--dangling) 5%,transparent)}
 .topt-missing{font-family:var(--mono);font-size:9px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--dangling);border:1px solid color-mix(in srgb,var(--dangling) 34%,transparent);border-radius:99px;padding:1px 6px}
 .targetopt .tg{flex:none;margin-right:2px}   /* wg/awg type tag sits just before the address */
-/* The row's right-hand controls as ONE fixed-width column, so the same things sit at the same x on every row.
-   Its LEFT end carries the badges — the ★ in the edit sheet's Deployments list, then the protocol chip (44px on
-   every row), then a front badge whose width is content; its RIGHT end carries the address and the gear
-   (`.topt-ip` margin-left:auto, below; a row with no gear keeps the gear's place). The slack of a row with less
-   in it sits between the two, so neither end moves: a self-contained turn row (badges, "auto IP", no gear) and a
-   wg/awg row line up. Width = a full wg/awg row: chip 44 + address 130 + gear 28 + two 10px gaps. */
 .targetopt .topt-right{flex:none;display:flex;align-items:center;gap:10px;width:222px}
-/* `hasprim` adds the FRONT badge: chip 44 + front badge (≤12ch, ~66) + address 130 + gear 28 + three 10px gaps.
-   The ★ (the edit sheet's main-deployment toggle) takes 30 + a gap more, on every row of a list that has one —
-   RoleToggle shows it on all of a peer's rows or none. It was 296 for all, sized before the ★ joined the column:
-   on a peer with two deployments the badge was left ~24px, so a "TURN ×4" pushed the address and gear off the row
-   (and the list grew a sideways scrollbar), and one proxy's name was cropped to its middle ("INGS-" of WINGS-N).
-   It stays rigid, and a row never goes below its content (min-content): the column + the name area, which is its floor
-   (~220) or, when its interface, "missing" tag and 7ch of name need more, that — so nothing in a row is ever drawn under
-   anything else. Edit peer (880px) and New peer / Peer targets (620px) are wider than a usual row; on a narrower
-   sheet (a phone) the rows keep their minimum and the list scrolls sideways — usual rows together, columns lined up;
-   only a row whose name area needs more than its floor (a long interface beside a "missing" tag) is wider. */
 .targetpick{--topt-col:300px}
 .targetpick:has(.primtog){--topt-col:340px}
 .targetopt .topt-right.hasprim{width:var(--topt-col)}
 .targetpick > .targetopt{min-width:min-content}
-/* BOTH pickers use hasprim. The narrow 222 has no room for a front badge, and .tgt-front is the only
-   shrinkable item in the column (the node name, before it, is the other one in the row) — so on a turn-fronted interface it was squeezed to 10px and its text ran
-   under the address box. Whether a row HAS a front badge cannot be known before render (TargetFrontBadge
-   decides from live turn/wdtt state), and widening only the rows that do would stagger the leading chip,
-   which is the misalignment the fixed width exists to prevent. Widening all of them costs slack on the
-   right of a bare row, which is exactly what the note above says is the acceptable trade. */
 .targetopt .topt-right > .tg{min-width:44px;justify-content:center;margin-right:0}   /* uniform badge width, so the column after it lines up too */
 .targetopt .topt-right .tgt-front{min-width:0;flex:0 1 auto;overflow:hidden}         /* a long proxy title shrinks rather than shoving the row —
    `flex:0 1 auto` is load-bearing: `.targetopt .tg` sets flex:none, so the min-width:0 alone never let it give
@@ -914,9 +792,6 @@ a.ifcard.candidate.ignored:hover{opacity:.85;border-color:var(--brand)}
 .targetopt .topt-right .topt-ip.faint{padding-left:2px}   /* "auto" is a word in the address column, starting where the boxes do */
 .targetopt .topt-ip.existing{display:inline-flex;align-items:center;justify-content:flex-end;font-family:var(--mono);color:var(--ink-2);text-align:right}   /* already-deployed address, read-only */
 .targetopt .topt-ip[readonly]{color:var(--ink-2);text-align:right;font-family:var(--mono)}
-/* Per-deployment settings (DNS/MTU/routing) live behind this gear — see TargetSettingsSheet. It sits after the
-   address box on wg/awg rows only; a wdtt/csqtt row has no client config, and that missing gear is the tell.
-   `.on` = this deployment differs from its interface's defaults, so a row's customisation is visible unopened. */
 .targetopt .topt-gear{flex:none;width:28px;height:28px;padding:0;color:var(--faint)}
 .targetopt .topt-gear:hover{color:var(--ink)}
 .targetopt .topt-gear.on{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 40%,transparent);background:color-mix(in srgb,var(--brand) 10%,transparent)}
@@ -949,9 +824,6 @@ a.ifcard.candidate.ignored:hover{opacity:.85;border-color:var(--brand)}
 .pg2-rel{flex:none;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;border-radius:4px;padding:1.5px 6px}
 .pg2-rel.primary{color:var(--brand);background:color-mix(in srgb,var(--brand) 15%,transparent)}
 .pg2-bk{font-style:italic;font-weight:400;color:var(--dim)}
-/* The interface name and the address are their OWN columns of the outer grid, not a nested one: every row
-   is a subgrid of .pg2, so a max-content track sizes to the widest row and the names/addresses line up down
-   the list. A nested grid per row could only align within that row, which is what left them ragged. */
 .pg2-tags{display:flex;align-items:center;gap:6px;min-width:0;justify-content:flex-end}   /* shared track, packed
   RIGHT: a one-badge row then sits against the interface name it belongs to, not stranded a chip-width away */
 .pg2-tags .tgt-front{max-width:none;flex:none}   /* the fork name identifies the server — never the thing that clips */
@@ -981,9 +853,6 @@ input:focus,select:focus{outline:none;border-color:var(--brand)}
 /* read-only field value — matches an input's box but visibly non-editable (create-time settings shown in an edit sheet) */
 .ro-field{background:var(--surface);border:1px dashed var(--line-solid);color:var(--dim);border-radius:var(--r-sm);
   padding:9px 12px;font-size:13px;width:100%;box-sizing:border-box;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* read-only row that carries an action. The button must never be the thing that gets clipped — .ro-field's own
-   overflow:hidden would eat it, and a wider sheet only moves the breakpoint (a longer translation re-breaks it).
-   So the identity and the button hold their size and the descriptive note is what truncates. */
 .ro-field.ro-act{display:flex;align-items:center;gap:8px;overflow:visible}
 .ro-act>.mono,.ro-act>.btn{flex:0 0 auto}
 .ro-act>.ro-note{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -996,17 +865,7 @@ textarea.ta::-webkit-scrollbar-track{background:transparent}
 textarea.ta::-webkit-scrollbar-thumb{background:var(--line-solid);border-radius:8px;border:2px solid var(--surface-2)}
 textarea.ta::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 .search input{padding-left:34px}
-/* The hand-drawn caret for a native <select> lived here. There are no native selects in this SPA any more —
-   every one is the shared `Dropdown`, which draws its own — so the rule had nothing left to style. The
-   grouped `input,select{…}` above stays: it costs nothing and it means a stray future <select> is merely
-   unstyled rather than unreadable, while still looking wrong enough to send its author to `Dropdown`. */
 .selwrap{width:auto;min-width:150px}
-/* ⚠️ `.selwrap` IS A SIZING HOOK NOW, NOT A NATIVE <select>. Every one of those became the shared Dropdown,
-   which renders `.dropdown` — and `.dropdown{min-width:0}` is declared LATER in this file, so a bare
-   `.selwrap` would lose the tie and every toolbar control would collapse to its text. This rule wins on
-   specificity (0,2,0). It is placed HERE, early, on purpose: the parent rules that resize a particular slot
-   (`.tf-trail`, `.pager-size`, `.turninst`, `.field`, `.rrrow`) are also (0,2,0), so they beat it only by
-   coming later. Move this below them and they all silently stop applying. */
 .dropdown.selwrap{width:auto;min-width:150px}
 /* in a form field a dropdown should match the text inputs (full width), not size to its content */
 .field .selwrap:not(.mini){width:100%;min-width:0}
@@ -1047,10 +906,6 @@ textarea.ta::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 /* "check for updates": cyan + spinning while polling, back to grey when done. The extra
    .appbar-right selector beats `.appbar-right .iconbtn{color:--dim}` (same specificity, later). */
 .iconbtn.checking, .appbar-right .iconbtn.checking{color:var(--brand);pointer-events:none}
-/* Spin the whole BUTTON, not the root <svg>. transform-box:view-box/fill-box on a root HTML-embedded SVG isn't
-   reliably honoured by Chrome on first paint (esp. right after Ctrl+Shift+R) → the icon sometimes span around an
-   off-centre point. .iconbtn is a fixed 30/36px flex-CENTRED box, so its border-box centre exists from parse time
-   and the icon sits dead-centre → rotating the button pivots exactly on the icon's own centre, every time. */
 .iconbtn.checking{animation:spin .8s linear infinite;transform-origin:center}
 .detail-head .title h1{margin:0;font-family:var(--mono);font-size:22px;line-height:1;font-weight:600;color:var(--ink)}
 .detail-head .grow{flex:1}
@@ -1071,10 +926,6 @@ textarea.ta::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 /* carousel WDTT card: body fills between header and the (bottom-pinned) actions, link vertically centred — so Copy/
    Alternatives line up with the QR cards' Config/Copy row and the short link sits mid-card */
 .qrrow .deploy .deploy-body{flex:1;align-items:center;justify-content:center}
-/* link instead of a QR: STACK. The body is a flex row (a QR beside its meta), and there a sibling — the
-   "no VK call link" hint, or the meta table — keeps its intrinsic width while the link's flex:1;min-width:0
-   lets it collapse to zero, so break-all sets the wdtt:// link one character per line. The first selector
-   is not redundant: `.deploy-body-stack` alone loses to the align-items:center on the line above. */
 .qrrow .deploy .deploy-body-stack, .deploy-body-stack{flex-direction:column;align-items:stretch;justify-content:center;gap:8px}
 .deploy-body-stack .wdtt-link{flex:0 0 auto;align-self:stretch}
 .deploy-body{padding:15px;display:flex;gap:15px;position:relative}
@@ -1098,9 +949,6 @@ textarea.ta::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 .notice{display:flex;gap:9px;align-items:flex-start;padding:11px 14px;border-radius:var(--r-sm);font-size:12.5px;margin-bottom:16px}   /* consistent gap below every notice; :last-child trims it */
 .notice:last-child{margin-bottom:0}
 .notice.warn{background:rgba(232,192,75,.08);border:1px solid rgba(232,192,75,.25);color:var(--pending)}
-/* Insecure context: the panel is on plain http, so Web Crypto is absent and every key operation fails.
-   A full-width bar above the app chrome — not a toast (it must not be dismissible or time out) and not a
-   blocking screen (monitoring still works; only crypto does not). Same warn palette as .notice.warn. */
 .insecure-banner{padding:9px 16px;font-size:13px;line-height:1.45;color:var(--pending);
   background:rgba(232,192,75,.10);border-bottom:1px solid rgba(232,192,75,.28)}
 .insecure-banner b{margin-right:6px}
@@ -1150,9 +998,6 @@ textarea.ta::-webkit-scrollbar-thumb:hover{background:var(--dim)}
 .sheet-head h3 .sheet-verset svg{width:14px;height:14px;display:block}
 .sheet-head .x{margin-left:auto;background:none;border:0;color:var(--dim);cursor:pointer;font-size:22px;line-height:1;position:relative;top:-2px}   /* the "×" glyph renders ~2.5px LOW in its box — pull it up so its optical centre lines up with the header text row */
 .sheet-head .x:hover{color:var(--ink)}
-/* Blocked-access treatment: a modal whose peer/user is blocked reads red at a glance — a red border + soft
-   ring, a faintly red-tinted header, and a solid BLOCKED chip. Restrained on purpose (no full-red fill) so the
-   configs/QRs inside stay legible. */
 .sheet.blocked{border-color:color-mix(in srgb,var(--dangling) 60%,transparent);
   box-shadow:var(--shadow),0 0 0 3px color-mix(in srgb,var(--dangling) 22%,transparent)}
 .sheet.blocked .sheet-head{background:color-mix(in srgb,var(--dangling) 9%,transparent);
@@ -1191,9 +1036,6 @@ input.bad,.bad{border-color:var(--dangling) !important;box-shadow:0 0 0 3px colo
 .advtoggle{background:none;border:0;color:var(--dim);font-size:12px;cursor:pointer;padding:2px 0;display:flex;align-items:center;gap:6px}
 .advtoggle:hover{color:var(--ink)}
 .adv{display:none}.adv.open{display:block;margin-top:6px}
-/* ⚠️ WRAPS AT ANY WIDTH, not just on a phone. A seven-button footer in Russian needs ~780px, and the sheet is capped at
-   calc(100vw - 32px) — so on a window narrower than the sheet's own width the buttons had nowhere to go and simply
-   crammed. Wrapping is the honest last resort: every button stays readable, on a second row if it must. */
 .sheet-foot{display:flex;flex-wrap:wrap;gap:10px;row-gap:10px;align-items:center;padding:16px 20px;border-top:1px solid var(--line)}
 /* …and the two groups never touch: the spacer collapsing to 0 is what made a footer that technically fit look cramped. */
 .sheet-foot .grow{flex:1;min-width:16px}
@@ -1203,11 +1045,6 @@ input.bad,.bad{border-color:var(--dangling) !important;box-shadow:0 0 0 3px colo
 .formmsg.err{color:var(--dangling)} .formmsg.ok{color:var(--online)} .formmsg.work{color:var(--dim)} .formmsg.warn{color:var(--amber)}
 
 /* ───── toasts ───── */
-/* ⚠️ THE TOP LAYER, BY DEFINITION. A toast is what the panel says happened — a refused choice, a failed
-   save — and it is worthless behind the thing that caused it. At z-index 70 it sat UNDER every popover
-   (80) and every dropdown popup (90), so the refusal you triggered by clicking a row in an open list was
-   posted behind that list. Above the QR zoom (9999) too: if a save fails while an enlarged code is open,
-   that is exactly the moment the message matters. Nothing in this file may out-rank it. */
 .toasts{position:fixed;right:20px;bottom:20px;z-index:10000;display:flex;flex-direction:column;gap:10px;max-width:360px}
 .toast{background:var(--raise);border:1px solid var(--line-solid);border-left-width:3px;border-radius:10px;padding:12px 14px;
   font-size:13px;color:var(--ink);box-shadow:var(--shadow);display:flex;gap:10px;align-items:flex-start;animation:slidein .25s var(--ease)}
@@ -1225,9 +1062,6 @@ input.bad,.bad{border-color:var(--dangling) !important;box-shadow:0 0 0 3px colo
 
 /* ───── responsive: collapse tables to cards ───── */
 @media(max-width:680px){
-  /* A PHONE: the bar's parts do not fit one 56px line (they ran to 1 257px at 390px, so every screen scrolled sideways), so it
-     wraps — the brand and the icon buttons, then the tabs, then the version and the status pills — and scrolls away with the
-     page rather than keep those rows over the content. Nothing is hidden. */
   .appbar{flex-wrap:wrap;height:auto;gap:8px 6px;padding:8px 14px;position:static}.brand{margin-right:auto}
   .appbar-right{display:contents}.appbar-right>.iconbtn,.appbar-right>.acct-wrap{order:1}
   .tabs{order:2;flex:1 0 100%;flex-wrap:wrap}.tabs a{padding:7px 9px}.tabs a.active::after{left:9px;right:9px}
@@ -1251,9 +1085,6 @@ input.bad,.bad{border-color:var(--dangling) !important;box-shadow:0 0 0 3px colo
    cpu/throughput, gear/trash. Turn-proxies span the middle columns on a third row. */
 /* 7-column grid. Left cluster: gutter · name/peers · interfaces/turn (hug peers). Flex gap. Right cluster:
    mesh (hugs cpu) · cpu/throughput (right-aligned metric) · gear/trash. */
-/* FIXED column widths so every card's data lines up at the same x (cross-card alignment): the name/peers
-   column is fixed (name spans past it into the gap), so interfaces/turn always start at the same x; the right
-   cluster (mesh · cpu/throughput · icons) is fixed and right-anchored, so it's identical across cards. */
 .ncard{display:grid;grid-template-columns:16px 124px minmax(0,auto) minmax(14px,1fr) 148px 316px 28px;align-items:center;column-gap:14px;row-gap:15px;cursor:pointer;
   background:var(--surface);border:1px solid var(--line);border-radius:var(--r);overflow:hidden;transition:background .15s;padding:16px}
 .ncard.removing{opacity:.82;border-style:dashed}
@@ -1303,15 +1134,7 @@ input.bad,.bad{border-color:var(--dangling) !important;box-shadow:0 0 0 3px colo
 .nstat.procuninstall{color:var(--dangling)} .nstat.procuninstall::before{display:none}  /* uninstalling: RED */
 .nstat.enroll{color:var(--amber)} .nstat.enroll::before{display:none}   /* awaiting enroll: ORANGE clock (node hasn't checked in yet) */
 .nstat.uninst{color:var(--unknown)} .nstat.uninst::before{display:none}   /* uninstalled: GREY (kept for re-install; recover with the same token) */
-/* migrated: the OLD box is still alive and still serving its peers, locked out of the panel by a rotated
-   token and nothing else. YELLOW because it is a half-finished state, not a fault — and on the node's own
-   page the tag is a BUTTON (the rollback / "it's gone" door), because a badge nobody can act on stops
-   being read. The button resets only the UA chrome; its colour still comes from .nstat.superseded. */
 .nstat.superseded{color:var(--partial)} .nstat.superseded::before{display:none}
-/* T-10: the same badge one operation over. PENDING borrows .superseded — both mean "there is a live
-   thing out there this panel no longer fully owns". DONE is neutral rather than green: the node moving
-   away is a completed fact, not a health state, and colouring it like an OK would read as an all-clear
-   about a node this panel has stopped controlling. */
 .nstat.xferdone{color:var(--unknown)} .nstat.xferdone::before{display:none}
 button.nstat.asbtn{background:none;border:0;padding:0;cursor:pointer;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase}
 button.nstat.asbtn:hover{text-decoration:underline}
@@ -1319,9 +1142,6 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .nstat.procaborted{color:var(--unknown)} .nstat.procaborted::before{display:none}   /* aborted: grey, dismissable via × */
 .nstat.procfail{color:var(--dangling)} .nstat.procfail::before{display:none}   /* failed: red, error popup + dismissable × */
 .nstat .xbtn{margin-left:1px;padding:1px}
-/* data row: four fixed-start columns so peers/interfaces/turn/throughput line up across
-   cards regardless of content. Peers fits 555/999, interfaces ~two 8-char tags, turn takes
-   the rest, throughput (no label) sits at the right with down/up each a fixed width. */
 /* Peers on the left; to its right two rows — interfaces (+throughput, right) then turn-proxies (+controls,
    right). Tags wrap to new lines when there are too many; the right-hand item stays pinned top-right. */
 .nmeta{display:grid;grid-template-columns:118px 1fr;gap:10px 18px;align-items:start}
@@ -1353,9 +1173,6 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .btn-warn .ic svg{width:13px;height:13px}
 .btn-warn:hover{background:color-mix(in srgb,#C0821A 20%,transparent)}
 .btn-warn:disabled{opacity:.5;cursor:not-allowed}
-/* ⚠️ MEASURED: in a footer these compact tinted buttons (28px, 12px text) sat beside ordinary ones (35px, 13px) and read as
-   misaligned — Block and Delete a size smaller than QR and Edit on the same row. A footer is one row of equals, so there
-   they take the ordinary size; everywhere else (list rows, cards) they stay compact. */
 .sheet-foot :is(.btn-danger,.btn-warn,.btn-exp),.editfoot :is(.btn-danger,.btn-warn,.btn-exp){padding:8px 13px;font-size:13px;border-radius:var(--r-sm);gap:7px}
 .sheet-foot .btn-warn .ic svg,.editfoot .btn-warn .ic svg{width:16px;height:16px}   /* the key's own size, as on its neighbours */
 :root[data-theme="dark"] .btn-warn{color:#EBB43C;border-color:color-mix(in srgb,#EBB43C 34%,transparent)}
@@ -1371,10 +1188,6 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .cmdrow{display:flex;gap:8px;align-items:stretch}
 .cmdrow .tokenbox{flex:1}
 .tokenbox{font-family:var(--mono);font-size:12.5px;color:var(--ink);background:var(--bg);border:1px solid var(--line-solid);border-radius:var(--r-sm);padding:11px 13px;word-break:break-all;user-select:all;line-height:1.55}
-/* A config BLOCK rather than a one-liner (the NixOS enrolment snippet): it keeps its own line breaks,
-   and a line too long for the sheet scrolls INSIDE the box. `min-width:0` is the load-bearing half —
-   a flex item will not shrink below its max-content width without it, so one long line pushes the
-   whole modal wider instead. Measured on the enrolment sheet: 638 → 748px, and back to 638 with this. */
 .tokenbox.block{white-space:pre;word-break:normal;min-width:0;overflow-x:auto}
 .copyaction{flex:none;background:var(--surface-2);border:1px solid var(--line-solid);border-radius:var(--r-sm);color:var(--dim);cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12px;padding:0 13px;white-space:nowrap;transition:all .15s var(--ease)}
 .copyaction:hover{color:var(--ink);border-color:var(--brand)}
@@ -1457,9 +1270,6 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .tg-wdtt{background:rgba(129,181,18,.16);color:#81B512}   /* WDTT type tag; applyThemeColors injects the tunable colour */
 .tg-csqtt{background:rgba(249,115,22,.16);color:#F97316}   /* csqtt type tag; applyThemeColors injects the tunable colour */
 .tg-turn{color:var(--tfc,#B49BF7);background:color-mix(in srgb,var(--tfc,#A78BF5) 17%,transparent)}
-/* A protocol tag that is also the publish switch for that kind of config (peer view / edit / targets).
-   It has to keep reading as a tag first — a dotted underline on hover is the only affordance, and OFF is
-   the loud state: struck through, greyed, with an eye-off glyph, because that's the state you can't infer. */
 .pubtg{border:0;cursor:pointer;font:inherit;font-family:var(--mono);font-size:9px;font-weight:500;gap:3px}
 .pubtg:hover{box-shadow:inset 0 -1px 0 currentColor}
 .pubtg:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
@@ -1471,10 +1281,6 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .pubtg.lone:hover{box-shadow:none}
 /* not currently connected: the tag keeps its protocol colour (grey said "unknown kind", which it isn't) and
    just reads quieter. Full strength on hover, so it is still legible while you are aiming at it. */
-/* Offline: a fade, not a disappearance — .5 read as broken rather than idle. Applies to a plain tag too, so the
-   interface badge and the turn badge beside it fade together. NOT stacked on .off: a source the operator has
-   switched off the subscription page already says so with its own grey + strikethrough, and dimming that as well
-   makes two different states look like one. */
 .pubtg.dim,.tg.dim{opacity:.72}
 .pubtg.dim.off{opacity:1}
 .pubtg.dim:hover{opacity:1}
@@ -1485,9 +1291,6 @@ button.nstat.asbtn:hover{text-decoration:underline}
    WireGuard's handshake for throughput, so it never reads as a neutral capability chip. */
 .tg-raw{background:color-mix(in srgb,#FACC15 15%,transparent);color:#FACC15}   /* RAW = a qWDTT capability → the qWDTT fork colour; applyForkColors re-injects the operator's pick */
 .rawport{color:#FACC15;font-weight:500}   /* the RAW port riding along in a Listen row — same hue as .tg-raw */
-/* The RAW note under a peer's config — a FOOTNOTE, below the QR row, never inside it. It sat in
-   .deploy-body (a flex row) with white-space:nowrap, which made it an unshrinkable sibling and collapsed
-   the QR column to 0px: the note appeared to have replaced the config. It wraps, and it stays out of that row. */
 /* the general turn-proxy accent (matches the turn-section panel icon .panel-ic.t-turn) */
 .tf-gen{--tfc:#7C5CFF}
 /* collapsed "turn ×N" badge (>3 proxies forward to one iface): general colour + a highlighted, ringed area.
@@ -1543,17 +1346,10 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .egb-direct{color:#5B8CFF}                /* direct — blue */
 .egb-cascade{color:var(--pending)}        /* cascade — Node-connections icon colour (purple) */
 .egb-smart{color:var(--smart)}            /* smart routing — rose/pink */
-/* exit DEVICE — deliberately the same blue as `direct`, because that is what it is: this node putting the
-   traffic on the internet, just by another road. The two families the eye needs to separate are "this node
-   exits" (blue) from "another node exits" (cyan/purple), and the icon + the exit's own name carry the rest.
-   Its own class so decision 14's per-exit colour has somewhere to land without inventing a hue now. */
 .egb-exit{color:#5B8CFF}
 .egb-reach-everyone{color:var(--warn)}    /* device access: everyone on the node may open connections here — the open one */
 .egb-reach-user,.egb-reach-none{color:var(--dim)}
 .egb-reach-bad{color:var(--dangling)}     /* a level the node is not enforcing, whatever it is set to */
-/* It follows the routing-rules disclosure (or the egress picker), neither of which carries a bottom margin, so it sat
-   flush against the block above while every other section had air. Margins collapse in .sheet-body's block flow, so
-   this matches .field's 15px rhythm without doubling it after an ordinary field. */
 .reachfield{margin-top:15px}
 .reachfield .dpsw{margin:2px 0 8px}
 .reach-notice .iconbtn{margin-left:auto;flex:none}
@@ -1656,9 +1452,6 @@ button.nstat.asbtn:hover{text-decoration:underline}
 .fvp-nm{font-size:13px}
 .fvp-ver{font-size:12px;color:var(--muted)}
 .fvp-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-/* ⚠️ SAME TIE AS `.selwrap` ABOVE: `.dropdown{min-width:0}` is declared later, so a bare `.fvp-sel` loses
-   and this control silently shrank from 260px to 150px when it stopped being a <select>. Qualified to
-   (0,2,0), and it sits AFTER `.dropdown.selwrap` so it still wins the pair the caller passes together. */
 .dropdown.fvp-sel{min-width:260px;max-width:100%}
 /* hover bubble: the nodes running this fork (+ live updating/updated during an Update) */
 .tf-verpop{position:absolute;top:calc(100% + 6px);left:0;z-index:40;min-width:max-content;display:none;flex-direction:column;gap:4px;
@@ -1769,11 +1562,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .osapp-menu{margin-top:10px;background:var(--surface);border:1px solid var(--line-solid);border-radius:10px;padding:6px;display:flex;flex-direction:column;gap:1px}
 .osapp-menu-hd{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);font-weight:600;padding:4px 8px 6px}
 /* styled OS dropdown (glyph + name), used in the turn-config modal — mirrors the Clients-sheet OS visuals */
-/* space-between, NOT margin-left:auto on the app control. Identical while both fit on one line — Device left,
-   App right — but margin-left:auto keeps pushing right after the row WRAPS, so the app control sat alone and
-   right-aligned on a second line, staggered under the device. With space-between a wrapped line holds one item
-   and starts it at the left, so the pair simply stacks. Language-proof: the Russian labels are longer than the
-   English and wrap sooner, which is exactly when this mattered. */
 .turncfg-devrow{display:flex;align-items:center;justify-content:space-between;gap:14px 20px;flex-wrap:nowrap;margin:0 0 12px}
 .turncfg-devrow > .turncfg-os,.turncfg-devrow > .turncfg-app{min-width:0}
 .turncfg-app .appdd{min-width:0;max-width:100%}
@@ -1886,11 +1674,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .tsw:hover .tsw-bub,.tsw:focus-within .tsw-bub{display:inline-flex}
 .tsw:focus-within .tsw-bub{top:50%;left:auto;right:calc(100% + 5px);transform:translateY(-50%)}
 .tsw-bub::before{content:"";position:absolute;left:0;right:0;top:-9px;height:9px}
-/* Each preview sits on the REAL backdrop of the theme it previews, so you judge the colour against the
-   background it will actually be read on — hardcoded --bg/--ink per theme, NOT the variables, because the
-   light preview must stay light while you are in dark mode and vice versa.
-   ⚠ These class names are BUILT ("tsw-" + mode), so they appear nowhere as literals and read as unused to a
-   grep-based dead-CSS audit. Deleting them makes both bubbles transparent. Do not "clean up". */
 .tsw-dark{background:#0A0E15;color:#E7EEF6}
 .tsw-light{background:#EDF1F7;color:#101822}
 .tsw-cap{font-family:var(--mono);font-size:8px;text-transform:uppercase;letter-spacing:.14em;opacity:.5}
@@ -1932,10 +1715,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .turncfg-ta{width:100%;box-sizing:border-box;font-family:var(--mono);font-size:11.5px;line-height:1.5;color:var(--dim);
   background:var(--surface-2);border:1px solid var(--line-solid);border-radius:8px;padding:9px 11px;
   white-space:pre-wrap;word-break:break-all;overflow:hidden;resize:none;min-height:52px;
-  /* block, not the inline-block a textarea defaults to: as an inline box it sat on the text baseline and left
-     ~6.5px of descender space under it inside the wrapper. The copy button is positioned against the WRAPPER,
-     so that phantom strip made "7px from the bottom" land 0.5px under the textarea while the right stayed 7 —
-     the button looked stuck to the bottom border on one axis and inset on the other. */
   display:block}
 .turnhead{display:flex;align-items:center;gap:10px}
 .turnhead .grow{flex:1}
@@ -2022,9 +1801,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .setfoot .grow{flex:1}   /* expand the spacer so Back/Save sit right (the saved-flash stays left) */
 .setfoot .btn{padding:9px 26px;min-width:104px;justify-content:center}   /* Back + Save: wide + equal */
 .setfoot .savedflash{margin-left:2px}
-/* The destination control on a rule row and on the catch-all. Both were native <select class="selwrap">
-   sized by `.tf-trail .selwrap`; they are the shared `Dropdown` now, so the slot has to name that instead —
-   same width, same place, so the two kinds of row still line up with each other down the list. */
 .rrdest{display:block;min-width:0}
 .rrdest .ddbtn{font-size:12.5px;padding:7px 10px}
 .rrcatch{min-width:0}   /* the routing catch-all ("everything else") — matches the per-rule route-to control exactly */
@@ -2050,16 +1826,9 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .rs-ports{margin-bottom:0;align-items:flex-start}
 .rs-ports .field{margin-bottom:6px}
 @media (max-width:640px){.rs-ports{flex-direction:column;align-items:stretch;gap:0}}
-/* A row's chips, settings button and destination are ONE line that moves as a unit: beside the entry count while it fits,
-   under it (still one line, right-aligned) when it does not — the foot wraps, never the trail. Split, the chips sat on a
-   line of their own above a lone dropdown. The destination gives up to ~100px first, so a row with three chips still fits. */
 .tf-trail .whochip{flex:none;white-space:nowrap}
 .tf-trail:has(.whochip) .rrdest{flex:0 1 272px;min-width:170px}
 @media (max-width:640px){.tf-trail:has(.whochip){flex-wrap:wrap;justify-content:flex-end;row-gap:6px}}   /* a phone has no room for one line: there the chips wrap above the destination */
-/* Phase 3 smart-routing rule editor. Row + catch-all footer share ONE grid template (grip · dropdown · arrow ·
-   dropdown · xbtn), so the "everything else" dropdown + arrow line up exactly under the per-rule ones. The side
-   columns are `auto` (icon-width) and identical in both, so the two 1fr dropdown columns come out equal. A flex
-   row can't do this reliably — a <span> and a <select> don't split a flex track equally. */
 .rrlist{display:flex;flex-direction:column;gap:6px;margin-top:2px}
 /* App routing exceptions (csqtt 2.5): the rule rows' frame and grip, one line each — whom it names, what they get, edit, ×.
    The names give way first (ellipsis; the tooltip names three and how many more); the rule stays readable. On a phone the rule drops under them. */
@@ -2077,39 +1846,15 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .arx-add{align-self:flex-start}
 @media (max-width:640px){.arx-row{grid-template-columns:16px minmax(0,1fr) auto auto}
   .arx-rule{grid-column:2/-1;grid-row:2;white-space:normal}}
-/* TWO COLUMNS: the grip, then the field across everything else. The destination select used to be a third
-   and fourth column, which capped the target box at half the dialog however wide the dialog got — and the
-   box is the part that holds an unbounded number of badges. It now rides in the field's own foot, right
-   aligned and level with the entry count (`.tf-trail`), so the box gets the full width and the two controls
-   still read as one line. */
 .rrrow{--rr-rail:16px;--rr-gap:8px;display:grid;grid-template-columns:var(--rr-rail) minmax(0,1fr);align-items:start;gap:var(--rr-gap);padding:5px 8px;border:1px solid var(--line);border-radius:8px;background:color-mix(in srgb,var(--ink) 2%,transparent)}
 .rrrow .drag-grip{margin-top:7px}   /* grid is top-aligned now, so the grip lines up with the box, not the row */
 /* The destination, tucked to the right of the foot. `margin-left:auto` rather than a spacer so a long
    sentence in the foot pushes it to its own line instead of squeezing the select to nothing. */
-/* EXPLICIT WIDTHS, not intrinsic ones. The base rule is `input,select{width:100%}`, so a select left to size
-   itself here takes the whole trail and shoves the arrow and the × outside the row — and because the trail's
-   own max-content is then computed FROM that select, the two chase each other to a width that fits neither.
-   A fixed dropdown width also makes the rule rows and the catch-all agree by construction rather than by two
-   intrinsic sizes happening to land on the same number, which they did not: 234 against 238. */
 .tf-trail{margin-left:auto;display:flex;align-items:center;gap:8px;flex:0 0 auto;max-width:100%}
-/* 190 → 224 → 272. Each bump has had the same cause and a longer winner: at 190 it was "Напрямую (эта
-   нода)"; at 224 it is an exit, whose label is a name AND a device — "ВАРП выход — wgx-736a24bf" — and
-   those clipped to "wgx-736a24…", which is the half that tells two exits apart. Both the rule rows and the
-   catch-all read from this one rule, so they keep matching widths down the list. */
 .tf-trail .selwrap,.tf-trail .rrdest{width:272px;min-width:0;flex:0 0 272px}
 /* The trailing button is a × on a rule and a gear on the catch-all; they must occupy the SAME box or the two
    dropdowns sit a few pixels apart all the way down the list, which reads as a wobble rather than a column. */
 .tf-trail .xbtn{width:20px;height:20px;padding:0;margin-left:0;flex:none}
-/* IN THE RAIL, DIRECTLY UNDER THE TEXT-VIEW TOGGLE — not in the foot's flow. It used to sit beside the
-   destination dropdown, one careless click from it; then at the foot's left edge, where it crowded the
-   entry count. The rail is the row's column of controls-on-the-field, and this is one: taken out of flow
-   so it lines up under `</>` and the count keeps the line's left edge. Red at rest, because a destructive
-   control that only reveals itself on hover is one the operator finds by accident. */
-/* TWO ALIGNMENTS AT ONCE, which is why it is absolute INSIDE the pair rather than in the foot: vertical
-   comes from `.tf-lstart`, whose box is the entry count's own line, so 50% is that line's middle whatever
-   the destination select does to the foot's height; horizontal comes from the same rail expression the
-   text-view toggle uses, so the two controls share a column. Out of flow, so the count keeps the box's
-   left edge instead of being pushed right by a button sitting outside the box. */
 .tf-lstart{position:relative;display:flex;align-items:center;gap:6px;min-width:0;flex:0 1 auto}
 .tf-lead{position:absolute;left:calc(-1 * (var(--rr-rail,16px) + var(--rr-gap,8px) + 2px));top:50%;
   transform:translateY(-50%);display:flex;align-items:center;justify-content:center;
@@ -2287,11 +2032,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .disc-sum b{font-weight:700}
 .disc-sum.on b{color:var(--online)}      /* active filters — green */
 .disc-sum.route b{color:var(--smart)}    /* routing rule count — rose */
-/* A named divider BETWEEN groups inside one disclosure — the protocol settings and the NAT source card
-   sit in the same "Advanced settings" body and two unlabelled runs of fields read as one long list. Not a
-   nested accordion on purpose: only one protocol block ever applies, so collapsing it would add a click to
-   reach settings that are always relevant. First one in a body has no rule above it — the disclosure's own
-   border already is one. */
 .field.secdiv{margin:4px 0 10px}
 .field.secdiv>label{margin:0;padding-top:11px;border-top:1px solid var(--line-bright);color:var(--fg)}
 .disc-body>.field.secdiv:first-child>label{padding-top:0;border-top:none}
@@ -2332,14 +2072,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .bk-pickitem:hover{background:color-mix(in srgb,var(--brand) 12%,transparent)}
 .bk-pickitem:hover .bk-pilabel{color:var(--brand)}
 .bk-pickempty{color:var(--faint);font-size:12px;padding:10px 8px}
-/* THE BUTTONS ARE A COLUMN NOW, not an overlay. `.rd-headside` used to be `position:absolute` in the card's
-   top-right, which takes no space — so every full-width block under it (`.rd-head`, `.rd-lines`) had to
-   reserve a gutter by hand and hope the number was big enough. It was not: `.rd-head` guessed 200px while
-   the column measures 248, and the +/− lines cleared the buttons by 25px purely on string length. Measured
-   on the live card, one longer benefit line ran straight underneath.
-   As a real grid column spanning the head and the lines, nothing CAN overlap it, no block needs a gutter,
-   and the left text still reclaims the full width from the spec strip down — which is what the absolute
-   positioning was reaching for in the first place. */
 .rd-head{display:flex;align-items:flex-start;gap:12px;margin-bottom:7px;grid-column:1}
 .rd-headmain{display:flex;flex-direction:column;gap:5px;flex:1;min-width:0}   /* title, then summary right below it (top-aligned — no longer stretched to the buttons) */
 .rd-titlerow{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
@@ -2354,10 +2086,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .rmc-bene{color:var(--dim)}.rmc-bene b{color:#3EA76B}
 .rmc-cost{color:var(--faint)}.rmc-cost b{color:#C0821A}
 :root[data-theme="dark"] .rmc-bene b{color:#57C98A}:root[data-theme="dark"] .rmc-cost b{color:#EBB43C}
-/* The capability strip: three facts, label column aligned, no rules or box around it. The card already
-   carries a +/− list and a tag pill; a bordered panel here would be a third device saying the same thing at
-   the same volume. Sits between the trade-offs and the prose because it is the last thing read before the
-   paragraph, and BELOW the absolutely-positioned mode buttons so it cannot slide under them. */
 .rd-spec{grid-column:1 / -1;display:grid;grid-template-columns:auto minmax(0,1fr);gap:2px 12px;margin-top:10px;align-items:baseline}
 .rds-k{font-family:var(--mono);font-size:11px;color:var(--faint);white-space:nowrap}
 .rds-v{font-size:12px;color:var(--dim);line-height:1.5}
@@ -2366,10 +2094,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
    short field. The field itself keeps the width an address list needs. */
 .rmode-banner .rd-upstream{grid-column:1 / -1;margin:14px 0 0}
 .rmode-banner .rd-upstream input{max-width:470px}
-/* ROW 1 ONLY. It used to span the lines as well, which cost them half the card — measured 456px against a
-   Russian benefit line needing 663px, so every mode wrapped in Russian while English fit by luck. With the
-   lists line gone the button row is SHORTER than the title+summary beside it, so spanning one row wastes
-   no space at all and hands `.rd-lines` the full 714px, where the widest line in either language fits. */
 .rd-headside{grid-column:2;grid-row:1;display:flex;flex-direction:column;align-items:flex-end;gap:13px;min-width:0}
 .rd-headside .rmode-tabs{align-self:flex-end}
 /* status bar ABOVE the mode card (outside it): "<node> currently runs on <mode>" + status under it, reset/info right */
@@ -2411,10 +2135,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
   border:none;background:none;color:#D65B5B;cursor:pointer;padding:0;transition:color .12s,background .12s}
 .rmode-reset-ic .ic svg{width:14px;height:14px}
 .rmode-reset-ic:hover{color:#E86B6B;background:color-mix(in srgb,#D65B5B 15%,transparent)}
-/* ⚠️ .deppop AND .rmode-reset-pop ARE THE SAME SPECIFICITY, and .deppop is declared later — so its
-   padding:5px won and this prose sat hard against the bubble's edge, in --dim, while every other prose
-   popover in the panel (.prot-who-pop, .hostupd-bub) pads to 11-14px on --raise. Qualified with .deppop to
-   outrank it by specificity rather than by hoping about source order. */
 .deppop.rmode-reset-pop{max-width:300px;padding:11px 14px;background:var(--raise);
   border-color:var(--line-solid);box-shadow:0 16px 40px rgba(0,0,0,.45);
   white-space:normal;font-size:12px;line-height:1.55;color:var(--ink-2);letter-spacing:0;text-transform:none}
@@ -2449,17 +2169,10 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .ddopt{display:block;width:100%;text-align:left;padding:8px 10px;border:0;border-radius:6px;background:none;color:var(--ink);font:inherit;font-size:13px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ddopt:hover:not(:disabled){background:var(--dd-hover);color:var(--ink)}
 .ddopt.sel{background:var(--dd-sel);color:var(--sel-ink);font-weight:600}
-/* A row with its own control is selected AS A ROW. The tint has to reach past the label button and under
-   the switch, or a selected row reads as a half-painted one. The inner button then stops painting its own,
-   and the hover follows the same rule. */
 .ddrow.sel{background:var(--dd-sel);border-radius:6px}
 .ddrow.sel>.ddopt.sel{background:none}
 .ddrow:hover:not(.sel){background:var(--dd-hover);border-radius:6px}
 .ddrow:hover:not(.sel)>.ddopt:hover{background:none}
-/* ── THE TWO LEVELS OF THE LIST ────────────────────────────────────────────────────────────────────────
-   A row under a heading is indented under it; a row that answers the question on its own — "Auto", the
-   node's default, a mode — is TOP LEVEL and bold, because it is a peer of the headings rather than one
-   more item beneath them. Structure the reader can see without reading. */
 .ddpop>.ddopt,.ddpop>.ddrow>.ddopt{font-weight:600}
 .ddpop [role=group] .ddopt{padding-left:22px}
 .ddopt.off{color:var(--faint);cursor:not-allowed}
@@ -2467,14 +2180,7 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
    switched off still has to be selectable, because an interface pointed at it keeps that selection. */
 .ddopt.dim{opacity:.45}
 .ddrow:has(.ddopt.dim) .ddx{opacity:.75}
-/* THE ARROW-KEY CURSOR. Focus moves for real between rows, so the focused one has to be as obvious as the
-   hovered one or arrowing through a long list is navigating blind. `:focus-visible`, not `:focus`, so
-   selecting with the mouse (which hands focus back to the trigger) never paints a ring. */
 .ddopt:focus-visible{background:var(--dd-hover);outline:2px solid color-mix(in srgb,var(--brand) 70%,transparent);outline-offset:-2px}
-/* ⚠️ ON A ROW WITH ITS OWN CONTROLS THE RING BELONGS TO THE ROW. Drawn on the inner button it stopped dead
-   before the pencil and the switch, so the selected row wore a squarish box around two thirds of itself —
-   which reads as a rendering fault, not as focus. Moved out to the row; the indicator is KEPT, because
-   arrowing through a list with nothing showing where you are is the thing it exists to prevent. */
 .ddrow>.ddopt:focus-visible{outline:none;background:none}
 .ddrow:has(>.ddopt:focus-visible){outline:2px solid color-mix(in srgb,var(--brand) 70%,transparent);outline-offset:-2px;border-radius:6px}
 .ddpop:focus{outline:none}
@@ -2497,9 +2203,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .ddrow:hover .ddrm,.ddrow.sel .ddrm,.ddrm:focus-visible{opacity:1}
 .ddrm:hover{background:color-mix(in srgb,var(--dangling) 16%,transparent)}
 .ddrm svg{width:12px;height:12px}
-/* ── ASKING, IN THE ROW ─────────────────────────────────────────────────────────────────────────────────
-   Takes the whole control slot: a "delete?" beside a live switch reads as two questions, and the switch is
-   the one thing that must not stay clickable while a delete is pending. */
 .ddconf{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .ddconf-q{font-size:11.5px;color:var(--dangling)}
 .ddconf-y,.ddconf-n{padding:2px 9px;border-radius:6px;font-size:11.5px;font-weight:600;cursor:pointer;border:1px solid transparent}
@@ -2512,19 +2215,7 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .ddrow:has(.ddconf):hover{background:none}
 .ddopt.arming{opacity:.75}
 /* Title + device + the two buttons, wrapping to their own line for the hint. */
-/* Three fields on ONE line, and the actions on the right where the thing pressed last belongs. It used to
-   live in a single ~370px column, which is why each field wrapped onto a line of its own and the buttons
-   needed a row to themselves; spanning the whole band, they all fit. */
 .exname{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:8px;flex:1 1 100%;min-width:0}
-/* ⚠️ WIDE ENOUGH FOR THEIR OWN PLACEHOLDERS. This form lives in one column of a two-column row, so a basis
-   that let both inputs share that column left each about 180px — and "Название — необязательно" was cut to
-   "Название — необязател", which is a placeholder that cannot do its job. The basis is now larger than half
-   the column, so they wrap to one per line and each gets the full width instead. */
-/* ⚠️ EACH FIELD IS A LABELLED COLUMN NOW. Three boxes in a row with the field name written inside them as
-   placeholder text told you what they were only until you typed — after that the form was three anonymous
-   boxes and you had to remember which was which. The name moves out to a label that stays; the placeholder
-   keeps only the EXAMPLE, which is the half that is still worth reading when the box is empty.
-   Smaller than a `.field>label`: these sit inside a control, not above a section. */
 .exname-f{display:flex;flex-direction:column;min-width:0}
 .exname-f>input{width:100%;min-width:0}
 .exname-lbl{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);
@@ -2546,33 +2237,10 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 /* Manage — the fuller answer to the same question the "Custom interface…" row asks, so it rides in that row
    rather than adding a second one. Always visible: it is a way OUT of the list, not a per-row control. */
 .ddmanage{padding:3px 9px;font-size:11px;white-space:nowrap}
-/* ── THE WAYS-OUT GRID ─────────────────────────────────────────────────────────────────────────────────
-   Seven columns, so every row answers the same questions in the same places.
-
-   ⚠️ NO COLUMN GAP — the separators are per-cell `border-bottom`, and a `gap` puts unpainted alleys through
-   every one of them, so the rules came out as seven dashes instead of a line. The breathing room is cell
-   PADDING instead, which the border runs underneath. */
-/* ⚠️ THE TRACKS MUST FIT. With minimums that added up to more than the sheet, the grid overflowed and
-   TYPE ran underneath USED BY — two columns printing on top of each other. Type and Used-by are sized to
-   their content (a pill, a short count) with a floor, and only Title/Device flex. */
-/* ⚠️ NO `align-items:center` ON THE GRID. Centre the ITEMS and each cell shrinks to its own content, so
-   the seven `border-bottom`s in a row land at seven different heights — which is exactly the stepped,
-   broken divider under the switches and the trash. The tracks STRETCH (the default) so every cell in a row
-   is the same height and the rule is one line; the content is centred inside each cell instead. */
-/* ⚠️ FIXED PIXEL TRACKS ARE A MEASUREMENT OF ONE LANGUAGE. These were sized against English and Russian
-   promptly overflowed them — «Не используется» wrapped to two lines in an 88px column and the KILL-SWITCH
-   header was cut mid-word. The three label columns size to their CONTENT with a floor, so each language
-   gets the width its own words need; only Title and Device flex. */
 .exgrid{display:grid;font-size:12.5px;margin:0 -10px}
-/* Two shapes, one set of cell rules. The track count has to be in the SELECTOR as well as the template —
-   `:nth-child` counts siblings, and a grid's cells are all siblings, so "first in the row" is 7n+1 in one
-   and 8n+1 in the other. Getting that wrong is what put the trash icons 8px apart. */
 .exgrid.g7{grid-template-columns:minmax(120px,1.4fr) minmax(115px,1.3fr) minmax(88px,max-content)
   minmax(84px,max-content) minmax(76px,max-content) minmax(62px,max-content) 62px}
 
-/* Nine now: "Latency" sits beside the exit IP, because the two answer the same question — what is on the
-   far end of this tunnel, and is it worth routing through. Kept narrow (max-content over a 64px floor): the
-   value is "128 ms" or an em dash and never grows. */
 .exgrid.g8{grid-template-columns:minmax(110px,1.3fr) minmax(130px,1.2fr) minmax(70px,max-content)
   minmax(110px,max-content) minmax(64px,max-content) minmax(76px,max-content) minmax(62px,max-content) max-content}   /* one actions cell: every icon button one gap apart */
 /* the manage grid: the same seven plus "Leaves as", the source the traffic actually carries */
@@ -2581,33 +2249,13 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 /* A device the node has never reported, left on Auto — the one cell here that fails silently. Marked on the
    WRAPPER, not on an input: the control is a dropdown now, and what is risky is the CHOICE, not a typo. */
 .exg-inw.risky .ddbtn{border-color:color-mix(in srgb,var(--fault) 60%,transparent)}
-/* ⚠️ THE WRAPPER MUST BE POSITIONED. Without `position:relative` the marker anchors to whatever ancestor
-   happens to be positioned — which here was the modal itself, so five warning triangles stacked up on the
-   backdrop OUTSIDE the sheet, pointing at nothing. It also has to be a flex box that fills the track, or
-   the input inside it shrinks to its default size and the marker sits past its right edge. */
-/* ⚠️ `position:relative` is what the warning marker anchors to — without it the marker anchors to the modal
-   and stacks up on the backdrop, outside the sheet, pointing at nothing. The cell is ONE control tall now
-   (the picker is a combobox), so the row height no longer changes when custom is chosen. */
 .exg-inw{position:relative;display:flex;flex-direction:column;align-items:stretch;width:100%;min-width:0}
-/* OUTSIDE the control, not on top of it. Sat inside the dropdown it landed between the label and the caret,
-   where it read as part of the value and clipped the text it was warning about. Pinned to the DROPDOWN's
-   row rather than the cell's centre, because the cell grows downward when the custom field opens and a
-   centred marker would drift away from the control it is about. */
 .exg-warn{position:absolute;top:10px;right:0;display:flex;color:var(--fault);pointer-events:auto;cursor:help}
 .exg-warn svg{width:13px;height:13px}
 /* the gutter the marker sits in — taken out of the CONTROL's width, not out of the next column's */
 .exg-inw.risky{padding-right:19px}
 
-/* ⚠️ THE ROW IS AN ELEMENT NOW, and that is what makes both of these possible. A CSS grid's cells are all
-   siblings, so there is nothing to hover and nothing that means "first in the row" — which is why the trash
-   icons once sat 8px apart under `:last-child`, and why only the hovered CELL used to light up.
-   `display:contents` gives each row a real element for events and scoping while its cells stay grid items,
-   so `:first-child`/`:last-child` finally mean what they say and the whole row highlights together. */
 .exg-r{display:contents}
-/* ⚠️ THE HIGHLIGHT NEEDS TO EXTEND PAST THE TEXT, or the row lights up with its first letter and its last
-   icon flush against the edge of the tint. The outer cells keep real padding and the grid is pulled out by
-   the same amount, so the columns still line up with everything else in the pane while the hover bleeds
-   into the margin — the text is inside the highlight rather than defining it. */
 .exg-r>*:first-child{padding-left:10px}
 .exg-r>*:last-child{padding-right:10px}
 /* A whole row opens the editor, so the cells that are not controls say so. */
@@ -2621,11 +2269,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 /* …which the router has to import again: amber, with a dot, on THAT row — each exit has its own router config */
 .exg-qr.chg{position:relative;color:var(--amber)}
 .exg-qr.chg::after{content:"";position:absolute;top:3px;right:3px;width:6px;height:6px;border-radius:50%;background:var(--amber)}
-/* ── THE EXIT EDITOR'S HEADER ───────────────────────────────────────────────────────────────────────────
-   Three weights, in one line, with air between them: the NAME is the loud thing, the kind and the device
-   are metadata beside it, and what depends on it sits far right where a count belongs. Everything after the
-   title lives in one flex box so the spacing is a rhythm rather than four separate margins — jammed up
-   against the h3 they read as one run-on label. */
 .exed-hx{flex:1;min-width:0;display:flex;align-items:center;gap:11px;margin:0 14px 0 16px}
 .sheet-head .exed-hx .exg-t{flex:none}
 .exed-dev{font-size:12.5px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
@@ -2636,10 +2279,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
    part of what sizes the track (max-content above), so the track grows to fit the word instead. */
 .exg-h{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--dim);
   padding:0 8px 6px;border-bottom:1px solid var(--line-solid);white-space:nowrap}
-/* ⚠️ `:first-child` / `:last-child` DO NOT MEAN "first/last in the row". Every cell of a CSS grid is a
-   sibling, so those matched the first and last cell of the WHOLE grid — one title lost its left padding and
-   one action cell lost its right, which is why the trash icons sat 8px apart down the column. Count by the
-   track instead: with seven columns, 7n+1 is the first of each row and 7n the last. */
 /* Rows are a LIST, not a form: 6px of padding on a 28px control gives a 40px row, which keeps six of them
    on screen at once — the whole point of a grid over a stack of cards. */
 .exg-c{padding:6px 8px;border-bottom:1px solid var(--line);min-width:0;display:flex;align-items:center;gap:7px}
@@ -2669,10 +2308,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .ddwarn svg{width:13px;height:13px}
 .ddwarn.warn{color:var(--fault)}
 .ddwarn.bad{color:var(--dangling)}
-/* IN PROGRESS, NOT A FAULT. A WARP account still registering wore the amber warning triangle, so creating
-   an exit looked like breaking one. Muted rather than coloured — nothing is wrong, something is happening —
-   and turning slowly enough to read as "working", not "loading". The global prefers-reduced-motion rule
-   already flattens this to a still icon. */
 .ddwarn.busy{color:var(--dim);cursor:default}
 .ddwarn.busy svg{animation:ddspin 1.8s linear infinite}
 @keyframes ddspin{to{transform:rotate(360deg)}}
@@ -2689,9 +2324,6 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
              0 0 10px color-mix(in srgb,var(--online) 45%,transparent)}
 .exg-t.found{background:color-mix(in srgb,var(--ready) 15%,transparent);color:var(--ready)}
 .exg-t.custom{background:color-mix(in srgb,var(--pending) 15%,transparent);color:var(--pending)}
-/* A pasted profile, coloured by the tunnel it actually is — the SAME pair `.iftype.wg` / `.iftype.awg` use
-   for interfaces, so the vocabulary is learned once. Before this both wore the WARP green and the one
-   difference that decides whether the tunnel works was invisible. */
 .exg-t.exwg{background:color-mix(in srgb,var(--online) 15%,transparent);color:var(--online)}
 .exg-t.exawg{background:color-mix(in srgb,var(--brand) 16%,transparent);color:var(--brand)}
 .exg-t.exawg3{background:color-mix(in srgb,var(--awg3) 15%,transparent);color:var(--awg3)}   /* an AmneziaWG 3.1 profile exit — the 3.1 interface colour */
@@ -2737,18 +2369,12 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .lg-sub{font-size:11px}
 /* list grid — flex rows (no header), every cell vertically centred, clean separators */
 .lgrid{display:flex;flex-direction:column}
-/* The pin column is gone with the pin — this grid is a usage view now, not a control panel. What was the
-   40px switch is reclaimed by the name, and the fleet-assign popover's 86px becomes the interface chips,
-   which need room for real interface names rather than a count. */
 .lgrow{display:grid;grid-template-columns:minmax(0,1fr) 120px minmax(0,150px) 78px 52px;align-items:center;gap:12px;
   padding:9px 4px;border-top:1px solid var(--line)}   /* pull · category(fills, truncates last) · size · fleet · caps · actions — fixed right cols keep rows vertically aligned */
 .lgrow:first-child{border-top:none}
 .lgrow:hover{background:color-mix(in srgb,var(--ink) 2.5%,transparent)}
 .lgrow.lg-lock{opacity:.5}
 .lgrow.clk{cursor:pointer}   /* the whole row opens the editor; its buttons opt out in JS */
-/* STILL USED — by the BLOCKING grid, which keeps its per-node switch. The routing grid dropped its pin
-   column, and deleting this rule with it would have silently unaligned the other tab's switches: one class,
-   two grids. */
 .lg-pull{justify-self:start;display:flex;align-items:center}
 .lg-cat{display:flex;flex-direction:column;justify-content:center;gap:0;min-width:0}   /* title + tag on top, id tight under */
 .lg-catmain{display:flex;align-items:center;gap:8px;min-width:0;line-height:1.25}
@@ -2758,9 +2384,6 @@ button.lg-title:hover{color:var(--brand)}
 .lg-id{font-family:var(--mono);font-size:10.5px;line-height:1;color:var(--faint);align-self:flex-start;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hover{color:var(--brand)}
 .lg-caps{display:flex;justify-content:flex-end}
-/* The interfaces asking for a list, each a way straight into the rule that asks. Chips rather than plain
-   text because they are the one clickable thing in the row, and they inherit the badge language the rule
-   field already uses rather than inventing a third. */
 .lg-used{display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end}
 .lg-ifchip{font-family:var(--mono);font-size:10.5px;color:var(--dim);background:var(--surface-2);
   border:1px solid var(--line-solid);border-radius:5px;padding:2px 6px;cursor:pointer;white-space:nowrap;
@@ -2806,9 +2429,6 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
 .catpick-tick{display:inline-flex;justify-content:center;width:14px;color:var(--brand);font-size:12px;flex-shrink:0}
 .catpick-add .btn-mini.on{border-color:var(--brand);color:var(--brand)}
 .ccchip-x{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;padding:0;border:0;border-radius:50%;background:none;color:var(--faint);cursor:pointer}
-/* Uses --dangling like every other destructive control (.btn-danger, .iconbtn.danger). It previously
-   referenced an undefined token, which made both declarations invalid-at-computed-value-time — so the
-   delete "x" had NO hover state at all. Never reference a custom property that isn't defined in :root. */
 .ccchip-x:hover:not(:disabled){background:color-mix(in srgb,var(--dangling) 18%,transparent);color:var(--dangling)}
 /* Disabled × — a rule holds this list, so unpinning it would be a no-op (§1.4). It has to LOOK unavailable:
    the button kept its pointer cursor and full colour, which is a control that lies about being clickable. */
@@ -2930,9 +2550,6 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
 .ipk-field .grow{flex:1}
 .ipk-val{font-family:var(--mono);font-size:12px;color:var(--ink-2);word-break:break-all;min-width:0;text-align:right}
 .subnet-row{margin-bottom:14px}   /* breathing room before the Endpoint / Listen-port row */
-/* Wraps, never clips: the tail of this line is the INSTRUCTION ("delete & recreate to change"), so an
-   ellipsis eats the one piece of information the row exists to give. It fit on one line in English and
-   didn't in Russian. baseline keeps the label level with the first line when the hint runs to two. */
 .subnet-row{align-items:baseline}
 .subnet-row .ipk-val{text-align:left;word-break:normal;white-space:normal;overflow:visible}
 .seclabel{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--line)}
@@ -2947,12 +2564,6 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
 .exdd-gear:hover{border-color:color-mix(in srgb,var(--brand) 45%,var(--line-solid));color:var(--ink)}
 .exdd-gear svg{width:15px;height:15px}
 
-/* THE COMBOBOX — a text field wearing the dropdown's trigger as its frame. The input is absolutely placed
-   over the label region, so what is left exposed is the caret: click the text to type, click the caret to
-   reopen the list and go back to Auto.
-   ⚠️ `--dd-cover` IS THE ENTIRE TARGET. Everything left of it is covered by the input and types; this strip
-   is the only way back to the list, so it is sized as a control rather than as padding around a glyph — the
-   caret is ~8px and sat in a 30px gutter that read, and behaved, like a decoration. */
 .ipk-combo{position:relative;display:block;--dd-cover:42px}
 .ipk-combo .ddlbl{visibility:hidden}          /* the input renders in its place */
 .ipk-combo .ddbtn{cursor:default;padding-right:17px}   /* centres the caret in the strip it owns */
@@ -2965,10 +2576,6 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
   padding:0 0 0 11px;border:0;background:transparent;border-radius:var(--r-sm) 0 0 var(--r-sm);
   font-family:var(--mono);font-size:13px;color:var(--ink);outline:none;min-width:0}
 .ipk-combo>.ipk-over:focus{box-shadow:none}
-/* EXTERNAL EXITS list (Settings -> Network, per node). Rows are separated by a hairline rather than boxed:
-   the card they sit in is already a surface, and a card-in-card per row would out-shout the ingress/egress
-   forms above them for something that is usually one or two entries. `.row2` gets a wrap only HERE, so a
-   narrow viewport stacks name and device instead of squashing both. */
 .exrow{padding:14px 0;border-top:1px solid var(--line)}
 .exrow:first-of-type{border-top:0;padding-top:2px}
 /* The row's header strip: what kind of exit this is, and what is relying on it. Quiet — it is orientation,
@@ -2986,10 +2593,6 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
 .egopt-mode{font-weight:700}   /* the smart-routing entry is a MODE — same weight as the optgroup labels it sits beside */
 .egrow{flex-wrap:wrap;position:relative}
 .egrow>.field{min-width:210px}
-/* Only the CREATE form takes the row's place, and creating is reached by CHOOSING "Custom interface…" from
-   the list — which closes the list on its way out, as any choice does. So there is no popup anchored to
-   this trigger while the fields are gone, and they can simply not be rendered. (An earlier version kept
-   them laid out with `visibility:hidden` to protect an anchor that, in this case, is never there.) */
 .egrow.editing>.field{display:none}
 .egrow.editing>.exname{margin-top:0}
 .exdial{gap:8px}
@@ -2998,9 +2601,6 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
 .exadd{display:flex;flex-wrap:wrap;gap:8px}   /* the ways to get an exit, equal weight — none is the "real" one */
 .exadd>.btn{padding-left:8px;padding-right:8px}   /* the four, in Russian, needed 749px of the pane's 746 and the last fell to a second row (operator, 2026-10-29: one row) */
 /* a dial-in exit's router config: the file beside its QR, stacked on a phone (LISTEN-EXIT §2.4a) */
-/* The router's config, shown whole: no scroll either way. The box is a size container and the text's font is the box's
-   width over its longest line (--rconf-cols, set by the sheet; JetBrains Mono is 0.6 em a character), clamped 9–13 px —
-   a line still too long at 9 px wraps rather than scrolls. The QR and its Download / Copy are one column beside it. */
 .rconf{display:grid;grid-template-columns:minmax(0,1fr) 220px;gap:16px;align-items:start}
 .rconf-fit{container-type:inline-size;min-width:0}
 .rconf-text{margin:0;padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--code-bg,rgba(127,127,127,.09));
@@ -3041,10 +2641,6 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
 .mh-ar{font-family:var(--mono);line-height:1;font-size:12.5px}   /* identical to the throughput arrows: same MONO glyph, size + weight */
 .mh-ar.mh-down.s-up{color:var(--online)}
 .mh-ar.mh-up.s-up{color:var(--ready)}
-/* GRID, not flex: the leg columns have to line up down the bubble, and a per-row flex sizes each row on its
-   own contents — which is what made 2ms / 18ms / 1ms sit at three different x positions. Every row shares one
-   fixed template, so the columns align without the container needing to be the grid (which would cost the
-   per-row hover box). Same frame as the other bubbles' rows: 5px 8px, 6px radius, baseline alignment. */
 .mh-row{display:grid;grid-template-columns:1fr 5ch max-content;gap:12px;align-items:baseline;padding:5px 8px;border-radius:6px;white-space:nowrap}
 .mh-bubble.has-loss .mh-row{grid-template-columns:1fr 7ch 5ch max-content}   /* loss column only when a leg has loss */
 .mh-row:hover{background:var(--surface)}
@@ -3065,20 +2661,12 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
 .mh-rar .mh-ar.s-up{text-shadow:0 0 8px currentColor}   /* static glow only for up status — green (down) / blue (up); yellow + red get no glow */
 .deppop.mh-bubble{width:max-content;min-width:120px}   /* dynamic width — sized to the longest node name */
 
-/* ───── interface drops bubble ─────
-   Same vocabulary as the mesh bubble above (mono uppercase micro-labels, tabular numerals, 5px/8px rows,
-   6px radius, hover surface) so a percentage looks the same wherever the panel shows one. The dotted
-   underline on the trigger is the only affordance: the figure sits inside a link to the interface page,
-   and without it there is nothing to say the number itself holds more. */
 .dp-num{font-family:var(--mono);font-variant-numeric:tabular-nums;border-bottom:1px dotted color-mix(in srgb,currentColor 45%,transparent)}
 .drops-pop{display:inline-block;cursor:default}
 .deppop.dp-bubble{width:max-content;min-width:232px;max-width:376px}
 .dp-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:10px 8px 7px;margin-bottom:4px;border-bottom:1px solid var(--line)}
 .dp-pct{font-family:var(--mono);font-size:16px;line-height:1;font-variant-numeric:tabular-nums}
 .dp-sub{font-size:11px;color:var(--dim)}
-/* header carries the Reset action on its right — same mini-button grammar the panels use.
-   ⚠️ `.onlpop .onpop-h{display:block}` is 0,2,0; a bare `.dp-h` never won, so the button sat inline
-   against the title. Match the depth. */
 .onlpop .onpop-h.dp-h{display:flex;align-items:center;justify-content:space-between;gap:10px}
 .dp-reset{flex:none;font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;
   line-height:1;padding:3px 7px;border-radius:6px;cursor:pointer;color:var(--dim);
@@ -3116,11 +2704,6 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
 
 /* ───── fleet: merged node card (main block + health block) ───── */
 .fleet2{display:flex;flex-direction:column;gap:10px}
-/* Info left, health + CPU history right. The badges no longer live in the stats row (see .fnode-ifs), so the
-   left column needs less width than it did — the graphs get some of it. Not all: at 0.78 the info side read
-   as cramped, the badges crowding the node name. 0.86 sits between the original 0.9 and that, so the graphs
-   still gain. The floor on the left is its stats row staying on ONE line with the longest label set
-   (Russian, 3-digit online count); verified at this ratio. */
 .fnode{display:grid;grid-template-columns:minmax(0,0.86fr) minmax(0,1.2fr);border:1px solid var(--line);border-radius:var(--r);
   background:var(--surface);overflow:hidden;text-decoration:none;color:inherit;transition:border-color .15s,background .15s}
 .fnode:hover{border-color:var(--line-solid);background:var(--raise)}
@@ -3132,11 +2715,6 @@ button.lg-id{border:0;background:none;padding:0;cursor:pointer}button.lg-id:hove
 .fnode-top .tport{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);background:var(--surface-2);padding:2px 6px;border-radius:5px}
 .fnode-top .rowarrow{color:var(--faint)}
 .fnode-stats{display:flex;gap:22px;flex-wrap:wrap;align-items:center}
-/* Interface badges ride the NAME row, right-aligned — not the stats row. In the stats row they were a flex
-   sibling of three translated labels, so their position depended on the width of the words: in Russian, with
-   a 3-digit online count ("100 пользователей"), the row overflowed and flex-wrap dropped the badges onto a
-   line of their own. A layout that only holds in one language isn't a layout. The name row has slack in every
-   language, and type badges belong next to the node's identity anyway. */
 .fnode-ifs{display:flex;gap:6px;align-items:center;flex:none;margin-left:auto}
 .fnode-ifs .iftype{font-size:10px;padding:2.5px 8px;font-weight:600}   /* same .iftype badge as the node interfaces, just a touch bigger */
 .fnode-stats .fl{display:block;font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);margin-bottom:3px}
@@ -3191,11 +2769,6 @@ a.tg:hover{filter:brightness(1.25)}
 
 /* ───── throughput area chart ───── */
 .tp-wrap{display:flex;flex-direction:column;gap:8px}
-/* A value and its unit are ONE reading: "124 K/s" must never break, or the number stacks over the unit and
-   momentarily reads as two figures. Flex items default to min-width:auto, whose min-content here is just the
-   longest token ("124"), so each stat could shrink and wrap internally — nowrap + no-shrink pins them whole.
-   When the row genuinely runs out of width (longer non-English labels beside the range control), the ROW wraps
-   and the control drops to its own line, which costs one line instead of mangling every number. */
 .tp-legend{display:flex;flex-wrap:wrap;align-items:center;gap:14px;row-gap:6px;font-family:var(--mono);font-size:11px;color:var(--ink-2)}
 .tp-legend .tp-k,.tp-legend .tp-peak,.tp-legend .tp-scale{white-space:nowrap;flex:0 0 auto}
 .tp-legend .tp-k{display:inline-flex;align-items:center;gap:6px}
@@ -3243,21 +2816,9 @@ a.tg:hover{filter:brightness(1.25)}
 .urow-body{border-radius:0 0 calc(var(--r) - 1px) calc(var(--r) - 1px)}
 .urow.open{border-color:color-mix(in srgb,var(--brand) 42%,var(--line-solid));box-shadow:0 0 0 1px color-mix(in srgb,var(--brand) 18%,transparent)}
 .urow.open>.urow-head{background:color-mix(in srgb,var(--brand) 7%,transparent)}
-/* wrap: five buttons in one row leave ~0 slack even in English (477px of buttons in a 472px row), so any
-   language with longer words overflows the sheet. Wrapping engages only when they don't fit — English keeps
-   its single line, Russian takes a second one instead of being cut off. */
 .editfoot{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:20px}
 .editfoot .grow{flex:1}
-/* one-line rows (status · name+tag+note · peers/online · last-online · rate · total · controls). The per-row
-   labels are gone — the sortable header line carries the titles. Deterministic tracks so every row + the header
-   line up. A touch taller than a peer row, but a single line. */
-/* The right cluster (Online / Rate / Total / actions) is one fixed 524px track holding a GAP-FREE sub-grid whose
-   inner widths (86/168/158/112) + 14px cell padding exactly mirror the expanded peer table — so those three
-   columns land pixel-aligned above the peer grid's, regardless of the (gapped) left columns. */
 .urow-head,.uhead{display:grid;grid-template-columns:20px 74px minmax(150px,1fr) auto;align-items:center;gap:12px;padding:0 14px}
-/* the right cluster mirrors the embedded peer table's right columns EXACTLY (peers↔address 168, nodes↔node 120,
-   then online 86 / rate 168 / total 158 / acts 112) as a gap-free sub-grid, anchored to the row's right edge — so
-   Peers/Nodes/Online/Rate/Total all land pixel-aligned above the peer grid. Live drops the acts track. */
 .u-right{display:grid;grid-template-columns:168px 120px 86px 168px 158px 144px;align-items:center;min-width:0}
 .u-right.live{grid-template-columns:168px 120px 86px 168px 158px}
 .u-right>*{padding:0 14px;box-sizing:border-box;min-width:0}
@@ -3274,11 +2835,6 @@ a.tg:hover{filter:brightness(1.25)}
    but a touch smaller — NOT the pill Badge used inside the grids */
 .ustat{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;line-height:normal;white-space:nowrap;color:var(--unknown)}
 .ustat::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
-/* The status COLOUR vocabulary. Twelve of these rules were deleted wholesale in a86b6ce (the 1.6.0-beta
-   release commit) — nothing replaced them, so every status except blocked/expired/expiring fell through to
-   .ustat's grey default and the roster lost its colour coding: an ONLINE user read the same grey as a lost
-   one. Restored from a86b6ce^, with the comments re-attached to the rules they describe (the surviving
-   s-expiring had inherited "blue — restoring after unblock", which belongs to s-restoring). */
 .ustat.s-online{color:var(--online)} .ustat.s-online::before{box-shadow:0 0 8px currentColor;animation:blink 2.6s infinite}
 .ustat.s-ready{color:var(--ready)}
 .ustat.s-partial{color:#F19AA4}
@@ -3296,12 +2852,6 @@ a.tg:hover{filter:brightness(1.25)}
 .u-name>a{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto} .u-name>a:hover{color:var(--brand)}
 .u-name>.un{color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:0 1 auto}   /* plain (non-link) username */
 .u-note{font-size:11.5px;font-weight:400;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:0 1 auto}
-/* ⚠️ WHO GIVES WAY, AND IN WHAT ORDER — the note, then the tag, then the name. Left to plain flex-shrink, the row shrinks
-   every item IN PROPORTION TO ITS CONTENT, so the long note took the NAME down with it: measured on the Users screen at
-   1420px (1.8.7 qualification §C), the name column is 244px beside the count chips, and "n-anna" rendered as "n…" at
-   16px while its tag "qual-n" wrapped onto three lines. The note is context, the tag is a label, the name is the row.
-   ⚠️ A basis of 0, not a large shrink factor: shrink is still PROPORTIONAL, so a factor of 1000 left the name 0.03px short
-   of its text (43.27 vs 43.30) and Chrome ellipsized it anyway. From 0 the note only GROWS into what is left over. */
 .u-name>.u-note{flex:1 1 0}
 .u-name>.tagchip{display:block;flex:0 50 auto;min-width:3.5em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* peers / online counts on one line — online GREEN only when actually online (>0) */
@@ -3397,10 +2947,6 @@ a.tg:hover{filter:brightness(1.25)}
 /* Restore on the interface-detail (read-only) screen keeps the full 'Restore interface' btn-mini styling */
 .btn-mini.restore{color:var(--online);border-color:color-mix(in srgb,var(--online) 34%,var(--line-solid))}
 .btn-mini.restore:hover{color:var(--online);border-color:var(--online);background:color-mix(in srgb,var(--online) 10%,transparent)}
-/* "N updates" in the Turn-proxies panel head. Same --ready blue as the header's .turnpill, because it is the
-   same fact scoped to one node — an operator who has learned that colour in the header should not have to
-   learn it again here. Follows .restore's shape so the two attention buttons in a panel head read as a pair.
-   Beats .panel-head .btn-mini's brand colour on specificity (two classes), which is the point. */
 .btn-mini.updbtn{color:var(--ready);border-color:color-mix(in srgb,var(--ready) 40%,var(--line-solid))}
 .btn-mini.updbtn:hover{color:var(--ready);border-color:var(--ready);background:color-mix(in srgb,var(--ready) 10%,transparent)}
 /* Confirm-modal list of what's about to be restored/corrected */
@@ -3441,9 +2987,6 @@ a.tg:hover{filter:brightness(1.25)}
 .qrrow .deploy .qr,.qrrow .deploy .qr-none,.qrrow .deploy .qr-fail{flex:1;min-width:0}
 .qrrow .deploy .qr-none,.qrrow .deploy .qr-fail{width:auto;height:auto;aspect-ratio:1/1}
 .qrrow .deploy .qr .qrimg{width:100%}
-/* The VK-fallback note is a FOOTNOTE of the card, not a column in .deploy-body — see the note beside .tg-raw,
-   which is the same trap: prose inside that flex row is an unshrinkable sibling and the QR (min-width:0)
-   collapses to 0px beside it, so the card looks as though the note replaced the config. */
 .deploy > .vk-note{margin:0 15px 12px;color:#e0a545}
 .qrrow .deploy .acts{justify-content:center}
 /* equal-height carousel cards: stretch each to the tallest, pin the action row to the bottom so short cards fill */
@@ -3461,22 +3004,11 @@ a.tg:hover{filter:brightness(1.25)}
 .app-plain{color:var(--dangling);font-size:8.5px;font-weight:800;letter-spacing:.05em;border:1px solid color-mix(in srgb,var(--dangling) 42%,transparent);border-radius:4px;padding:0 4px;margin-left:4px;line-height:1.5}
 /* copy icon on config/link textareas — same affordance as the CLI command box */
 .turncfg-tawrap{position:relative}
-/* Mirrors the subscription page's .cfgcopy exactly (sub.css): a corner OVERLAY, not a button beside the text —
-   borderless, brand-coloured, and filled with the SAME background as the box so it masks whatever it covers.
-   3px on both axes — tighter into the corner than the sub page's 5px, still clear of where the box's 8px radius
-   starts to curve away from the button's own 6px one. */
 .turncfg-tawrap .cmd-copy{right:3px;bottom:3px;border:none;color:var(--brand);background:var(--surface-2)}
 .turncfg-tawrap .cmd-copy:active{transform:scale(.9)}
 /* ...and the box itself is the affordance, as it is there: clicking anywhere in it copies, so it says so. */
 .turncfg-tawrap .turncfg-ta{cursor:pointer;transition:border-color .15s,box-shadow .15s}
 .turncfg-tawrap .turncfg-ta:hover{border-color:var(--brand);box-shadow:inset 0 0 0 1px var(--brand)}
-/* No position override and no reserved padding: the button keeps .cmd-copy's own bottom-right corner and sits
-   OVER the text, which is how every other copyable block in the product behaves (the subscription page, the
-   wg/awg config views). Reserving a 40px gutter for it made this one box the odd one out and cost a column of
-   text on a 292px card. */
-/* A config shown as text on a peer card gets the SAME box the Alternatives sheet uses — a readonly textarea
-   with the copy button in its corner — so "select it" and "copy it" work identically wherever a link appears.
-   Capped here because a card is 292px wide and shares its height with its neighbours. */
 .qrrow .deploy .turncfg-tawrap{width:100%}
 .qrrow .deploy .turncfg-ta{max-height:190px;font-size:11px}
 .qrnav{display:flex;align-items:center;justify-content:center;gap:16px}
@@ -3491,15 +3023,7 @@ a.tg:hover{filter:brightness(1.25)}
 /* subscription lifecycle colours — the whole sentence takes one colour: green active / orange about-to-expire /
    red blocked|expired. Used by the subscription sentence (.substat) and the peer modal's clause. */
 .s-active{color:var(--online)} .s-blocked,.s-expired{color:var(--dangling)} .s-expiring{color:var(--fault)}
-/* the subscription sentence ("Subscription is active", "… is about to expire on …", "… expired on …"). header =
-   the modal title row: Alice left · sentence centred (flex:1 fills the gap) · peer count right. center = its own
-   centred line at the top of the edit-user card. */
 .substat{font-size:12px;font-weight:600;white-space:nowrap}
-/* …and in the modal title row it belongs on the RIGHT, beside the close button — the peer count moved next
-   to the name, so nothing else claims that end. The rule went missing when the count moved: `.substat-hr`
-   was still being emitted, matched nothing, and the sentence fell back to sitting flush against the title.
-   The auto margin has to be on the SENTENCE, not shared with the button: two auto margins split the free
-   space between them, which parks the sentence mid-row instead of at the end. */
 .sheet-head .substat-hr{margin-left:auto}
 .sheet-head .substat-hr ~ .x,.sheet-head .substat-hr ~ .sheet-back{margin-left:14px}
 /* access-expiry date input (edit-user / edit-peer) */
@@ -3538,9 +3062,6 @@ a.tg:hover{filter:brightness(1.25)}
 .fbtn{width:100px;flex:none;justify-content:center;text-align:center;white-space:nowrap;padding-left:8px;padding-right:8px}   /* the 4 link-row buttons all one width; the input shrinks to fit */
 .sublink-field{margin-bottom:14px}
 .sublink-field .sublink{margin:0}
-/* user-modal peer card: the whole card opens the peer modal (except the QR + action buttons).
-   `.hot` is set by JS only while the pointer is over a clickable region, so hovering the QR or a button
-   never lights the card up. */
 .upc-wrap{cursor:pointer;border-radius:var(--r);transition:box-shadow .12s}
 .upc-wrap.upc-static{cursor:default}
 .upc-wrap.hot .deploy{border-color:color-mix(in srgb,var(--brand) 55%,var(--line-solid))}
@@ -3572,9 +3093,6 @@ a.tg:hover{filter:brightness(1.25)}
    Nix lines scroll inside the block — the settings card must not scroll sideways. */
 .nixblock{white-space:pre;overflow-x:auto;padding:10px 12px;border-radius:8px;border:1px solid var(--line);
   background:var(--code-bg,rgba(127,127,127,.09));margin:0 0 8px;font-size:.85em;line-height:1.5}
-/* NETWORKS behind a peer (docs/NETWORKS-PLAN.md §4.5–4.6). Dense like the deployment rows above it; the exposure
-   line is the one loud thing in the block, in the theme's pending tone like every other "you should know this" line.
-   A snippet gets the full width with its Copy under it — beside it, the iptables line was clipped mid-command. */
 .netfield .netrow{display:flex;gap:8px;align-items:center}
 .netfield .netrow input{flex:1;min-width:0}
 .netref{display:grid;gap:4px;margin-top:8px;font-size:12.5px;color:var(--dangling)}
@@ -3677,16 +3195,7 @@ a.tg:hover{filter:brightness(1.25)}
 /* The groups grid: each group is a users-list row (.urow) that opens onto its members as user rows. The group's own icon
    carries the Groups colour so a group row never reads as a person. */
 .gcard>.urow-head,.uhead.ghead{grid-template-columns:20px minmax(110px,1fr) auto}   /* no status column: a group has no status of its own */
-/* members · peers · nodes · networks, then the users list's rate / total / actions. The actions track is the users list's 144px
-   plus the members list's inset (the body's 14px padding and the row's border), so a group's rate and total sit exactly above
-   its members'. ⚠️ The tracks must fit beside the name's minimum at the screen's width, or they spill past the row's edge. */
 .gcard>.urow-head>.u-right,.uhead.ghead>.u-right{grid-template-columns:173px 140px 120px 86px 168px 158px 159px}
-/* ⚠️ THE ROWS' FIXED TRACKS NEED ~1190px beside the name's minimum (a user row, a group row) — and a member row inside an open
-   group 30px more (the body's padding) — so between the phone layout (900px) and a wide screen they spilled past the row's
-   edge (measured at 1100px: 93px and 127px). Two steps drop the least-needed columns instead, from the rows, their header
-   lines AND the peer grid inside a user, so everything stays aligned: Rate first, then Nodes (and a group's Peers, the
-   narrower Peers track and the name's smaller minimum). Sized with a classic scrollbar (15px) and the view's 22px sides:
-   the full rows need a viewport over 1290px, the first step over 1100px, the second over 900px. */
 @media (min-width:901px) and (max-width:1290px){
   .u-thru,.uhead .uh-rate,.urow-body .peergrid th.h-rate,.urow-body .peergrid td.c-rate{display:none}
   .u-right{grid-template-columns:168px 120px 86px 158px 144px}
@@ -3709,10 +3218,6 @@ a.tg:hover{filter:brightness(1.25)}
 .gcard-body .urows{gap:6px}
 .gcard-body .ug-empty{display:flex;align-items:center;gap:10px;padding:6px 2px}
 /* the badges take the room and wrap among themselves; the way into a group is pinned beside them, on the first line */
-/* It follows the Tag/Note `.fieldrow`, whose inner fields have their bottom margin zeroed (.fieldrow > .field{margin:0})
-   and which carries none itself — so Groups sat flush against them while every other section had air. Margins collapse,
-   so this is 15px whatever precedes it. ⚠️ The general case is still there: anything after a .fieldrow has the same
-   problem, which is why one settings form patches it inline. */
 .ugroups-field{margin-top:15px}
 .ugroups{display:flex;align-items:flex-start;gap:10px}
 .ugroups-list{flex:1 1 auto;min-width:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-height:28px}
@@ -3730,9 +3235,6 @@ a.tg:hover{filter:brightness(1.25)}
   font:inherit;font-size:12.5px;font-weight:600;color:inherit;cursor:pointer}
 /* .tfb-x carries the look (faint, red wash on hover); this only seats it inside the pill. */
 .ugroup-x{margin:0 -3px 0 1px}
-/* the way into a group sits at the END of the badges' own line: a themed +, no caret — it adds, it does not pick a value.
-   ⚠️ `.field .dropdown{width:100%}` (it replaced the native selects, which filled their column) catches this one too: left to it
-   the control took the whole row, the badges' box was squeezed to nothing, and every pill collapsed to an empty circle. */
 .ugroups .dropdown{width:auto}
 .ugroup{flex:none}
 .ugroup-combo,.ugroup-add-btn{flex:none}
@@ -3794,9 +3296,6 @@ a.tg:hover{filter:brightness(1.25)}
 .gmem-pop .gmem-dev{cursor:default;border-bottom:1px dotted var(--line-bright)}
 /* a caveat under a bubble's list is not one more row of it */
 .netbub-row.sub.foot{padding-left:0;margin-top:7px;padding-top:6px;border-top:1px solid var(--line)}
-/* who a person reaches: one line per person, their devices as chips — online lit, the rest quiet. A device's title is the
-   operator's own words and can be a sentence ("office router in the basement behind the old rack"), so a chip is capped and
-   ellipsised: it names the device, it is not the place to read it. */
 .rb-user{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin:5px 0;max-width:360px}
 .rb-user>b{color:var(--ink)}
 .rb-devs{display:flex;flex-wrap:wrap;gap:4px;min-width:0}
@@ -3804,9 +3303,6 @@ a.tg:hover{filter:brightness(1.25)}
   font-size:11.5px;line-height:1.75;padding:0 8px;border-radius:99px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
 .rb-dev.on{color:var(--online);border-color:color-mix(in srgb,var(--online) 45%,var(--line))}
 .rb-dev.more{border-style:dashed}
-/* The reach bubble, in the networks bubble's shape: a person heading with their device tally pushed right, then one line
-   per device — dot, name, address, node. The filter rides the header because it governs the whole list; it exists only
-   when something IS online, since with nothing live there is nothing to filter down to. */
 .rb-head{display:flex;align-items:center;gap:10px;margin-bottom:2px}
 .rb-head .netroute-h{margin-bottom:0}
 .rb-head .btn-mini{padding:2px 9px;font-size:11px;border-radius:12px}   /* as compact as the Online / All switch the other bubble carries here */
@@ -3833,9 +3329,6 @@ a.tg:hover{filter:brightness(1.25)}
 .nb-net-top>b{font-family:var(--mono);color:var(--ink)}
 .nb-net-sub{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .nb-node{font-weight:600;font-size:12px}
-/* The networks bubble, grouped by HOW the user gets each one: the relationship is the heading, so every row below it
-   is the same shape — dot, prefix, the device carrying it, the node. One dot, reachability first: orange means this
-   user's own routing leaves the network out, so they cannot reach it whatever the carrying device is doing. */
 .nb-group{margin:6px 0}
 .nb-group+.nb-group{margin-top:9px;padding-top:7px;border-top:1px solid var(--line)}
 /* Subordinate to the bubble's own "NETWORKS" head (.netroute-h, 10.5px) — it was 11px and read as the louder of the two. */
@@ -3847,16 +3340,9 @@ a.tg:hover{filter:brightness(1.25)}
 .nb-dot2.idle{background:var(--dim)}
 .nb-dot2.unk{background:var(--dim);opacity:.5}
 .nb-dot2.no{background:var(--fault)}   /* ⚠️ --warn is not a token in this sheet; --fault is the amber one, and it themes */
-/* The networks bubble sizes to its CONTENT: each row reads as one line — dot, prefix, via device, on node — where the
-   340px cap used to drop "on <node>" onto a line of its own. Widened only here, not for every .netroute-bub (the people
-   bubble and the Groups chips share that class). It cannot run away: .rb-dev still ellipsises a long device title at
-   200px, so the width is bounded by the row's fixed parts, and a phone wraps rather than overflows. */
 .deppop.netroute-bub.netbub-wide{max-width:min(620px,calc(100vw - 16px))}
 .netbub-wide .nb-row{flex-wrap:nowrap;white-space:nowrap;max-width:none}
 @media (max-width:640px){.netbub-wide .nb-row{flex-wrap:wrap;white-space:normal}
-  /* ⚠️ and the phone cap has to be restated at this specificity: .netroute-bub.netbub-wide is 0-3-0 and is declared
-     after the 0-2-0 rule in the breakpoint above, and a media query adds no specificity — so the wide max-width won
-     on a phone as well, quietly undoing the narrowing it was written to respect. */
   .deppop.netroute-bub.netbub-wide{max-width:min(300px,calc(100vw - 16px))}}
 /* nb-dot, not .dot — the panel's global .dot is a 9 px circle and squashed every row into one */
 .netbub-row.nb-dot{position:relative;padding-left:14px}
@@ -3917,9 +3403,6 @@ a.tg:hover{filter:brightness(1.25)}
 .lanmsg{margin:0 0 8px;font-size:13px;color:var(--ink-2)}   /* the card's full width (operator, 2026-09-17) */
 .lanstat{display:flex;gap:6px;align-items:center;font-size:12.5px;color:var(--dim)}
 .lanstat.ok{color:var(--online)}
-/* …and the same disclosure fleet-wide, in Settings → Network: one row per node that sits on a private network, so
-   "which of my nodes have one" is a glance instead of opening every node in turn. The address pill is .lanaddr,
-   reused. `closed` reads as the GOOD state here, the same way the node's own panel tones it. */
 .lanfleet{display:flex;flex-direction:column;gap:2px;margin:0 0 12px}
 .lanfleet-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:7px 0;border-bottom:1px solid var(--line)}
 .lanfleet-row:last-child{border-bottom:0}
@@ -3932,9 +3415,6 @@ a.tg:hover{filter:brightness(1.25)}
 /* a device its owner keeps to themselves — the reason an audience reads "owner only" rather than "nobody shared it" */
 .tg.tg-priv{border-color:color-mix(in srgb,var(--pending) 45%,var(--line));color:var(--pending)}
 .tg.tg-router{border-color:color-mix(in srgb,var(--brand) 45%,var(--line));color:var(--sel-ink)}   /* S11b: never flagged as a whole */
-/* The switch rides the section's own header, right-aligned: it governs the whole subject, so it belongs beside the
-   subject's name and not under the list as one more row. `.seclabel` is upper-case and tracked out — the control's
-   own label opts out of both, or it reads as another heading. */
 .lanfleet-head{display:flex;align-items:center;gap:12px}
 .lanfleet-head > span:first-child{flex:1;min-width:0}
 .lanfleet-sw{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim);text-transform:none;letter-spacing:0;cursor:pointer;white-space:nowrap}
@@ -3943,12 +3423,6 @@ a.tg:hover{filter:brightness(1.25)}
   font-weight:700;padding:5px 13px;border-radius:20px;cursor:pointer}
 .seg:hover{color:var(--brand);border-color:color-mix(in srgb,var(--brand) 55%,var(--line-solid))}
 .seg.on{background:color-mix(in srgb,var(--brand) 16%,transparent);border-color:var(--brand);color:var(--brand)}
-/* ── Datapath switch ───────────────────────────────────────────────────────────────────────────────────
-   ONE control with two halves, not two buttons that happen to be adjacent: a single track, equal-width
-   sides, and the chosen one filled. Equal widths are fixed rather than content-sized, so the switch does
-   not jump when the labels change length between languages ("Transit"/"Relay" vs «Транзит»/«Релей»).
-   Forward wears the theme's own colour; Relay wears violet, so an operator can see at a glance which of
-   their links are doing something unusual. */
 .dpsw{display:inline-flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:22px;
   background:var(--surface-2)}
 .dpsw button{appearance:none;border:0;background:transparent;color:var(--dim);font:inherit;font-size:12.5px;
@@ -3962,14 +3436,7 @@ a.tg:hover{filter:brightness(1.25)}
 /* a percentage typed by hand — the spinners are noise at this size and nudge the value by accident */
 .dp-cpu input::-webkit-outer-spin-button,.dp-cpu input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
 .dp-cpu input{-moz-appearance:textfield;appearance:textfield}
-/* The section's own name sits ON the control row, in the same register as the cap's label, so the whole
-   datapath choice reads as one line rather than a heading with things under it. The rule that used to come
-   from .seclabel moves onto the section wrapper, so the separation from the dial fields above is kept. */
 .dp-sec{border-top:1px solid var(--line);margin:18px 0 0;padding-top:13px}
-/* ⚠️ SCOPED TO .dp-sec ON PURPOSE. `.dp-row` / `.dp-l` were already the drops/loss BUBBLE's row classes,
-   defined further up as a two-column grid whose value column is pinned right. Redefining them unscoped here
-   — later in the file, same specificity — silently won everywhere and collapsed every bubble row to a
-   left-packed flex line, so labels and numbers ran together with no right edge to read down. */
 .dp-sec .dp-row{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 9px}
 .dp-sec .dp-l{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
 .dp-cpu{display:flex;align-items:center;gap:9px;margin-left:6px}
@@ -4139,12 +3606,6 @@ body.loggedout .tabs,body.loggedout .appbar-right,body.loggedout .appver{display
 /* Rate/Total are numeric — right-align header + values so the header text ends right above where the values end */
 .peergrid th.h-rate,.peergrid th.h-total,.peergrid td.c-rate,.peergrid td.c-total{text-align:right}
 .peergrid td.rowacts{text-align:right;white-space:nowrap}
-/* the user-EXPANDED peer grid uses a FIXED column layout so its Online/Rate/Total/actions columns sit at
-   stable, content-independent x-positions — the user-row header is aligned to exactly these widths so the
-   two line up vertically regardless of the data. (The standalone Peers screen stays auto-width.) */
-/* All peer grids use FIXED column layout. Standalone grids (interface detail / Peers module / live Peers) get
-   balanced % widths (Title roomy, the rest even). Embedded (user-expanded) grids override with px widths that
-   mirror the user-row .u-right so Peers/Nodes/Online/Rate/Total align vertically above them. */
 .peergrid{width:100%;table-layout:fixed}
 .peergrid th.h-status{width:112px}   /* ⚠️ px, not 9%: the cell holds ONE nowrap status pill and nothing else here, and the
    widest pill is 83px ("Restricted", "Неверный") + 28px of padding. At 9% the content box was 70px at a 1420px window and
@@ -4174,11 +3635,6 @@ body.loggedout .tabs,body.loggedout .appbar-right,body.loggedout .appver{display
 /* embedded (loc) grid: the interface badge sits beside the STATUS so you see which iface is online. */
 .peergrid td.c-status{white-space:nowrap}
 .peergrid td.c-status>*{vertical-align:middle}
-/* ⚠️ THE INTERFACE BADGE LIVES IN THE STATUS CELL, so its right edge is the boundary with the title — with
-   no padding there the two run together and read as one string ("AWG11003Router Папа"). And because the
-   cell is nowrap and unbounded, a long interface name pushes the title further on that row alone, so the
-   column never lines up down the grid. Give the cell a right gutter, and cap the badge so one long name
-   cannot set the column width for everybody. */
 .peergrid.loc td.c-status{padding-right:15px}
 .peergrid.loc td.c-status>.tg{margin-left:8px;max-width:104px;overflow:hidden;text-overflow:ellipsis;display:inline-block}
 .peergrid.loc td.c-status>.badge{max-width:132px;overflow:hidden;text-overflow:ellipsis}
@@ -4187,20 +3643,12 @@ body.loggedout .tabs,body.loggedout .appbar-right,body.loggedout .appver{display
 .peergrid.loc.live td.c-status>.turnwrap{gap:9px}
 /* in LIVE embedded the status has just a dot + iface (no wide pill) → narrower, so Title sits closer to it. */
 .urow-body .peergrid.loc.live th.h-status,.urow-body .peergrid.loc.live td.c-status{width:112px;text-align:left;padding-left:14px}
-/* a long title / user name must not widen the table past its wrap: the fixed layout ellipsis-truncates cells
-   instead of widening, so the wrap never needs to scroll — and we keep it overflow:visible so hover bubbles
-   (status "why", nodes breakdown, "connected via") are NEVER clipped by the wrap, wherever the row sits.
-   The wrap gave the rounded frame via its clip; with overflow:visible the table rounds its own corner cells
-   (peergrid cells use only bottom-borders, so border-collapse:separate renders identically). */
 .tablewrap:has(>table.peergrid){overflow:visible}
 table.peergrid{border-collapse:separate;border-spacing:0}
 .peergrid thead th:first-child{border-top-left-radius:calc(var(--r) - 1px)}
 .peergrid thead th:last-child{border-top-right-radius:calc(var(--r) - 1px)}
 .peergrid tbody tr:last-child td:first-child{border-bottom-left-radius:calc(var(--r) - 1px)}
 .peergrid tbody tr:last-child td:last-child{border-bottom-right-radius:calc(var(--r) - 1px)}
-/* A cell that doesn't fit CUTS with an ellipsis; it never wraps. nowrap on the CELL is the part that matters:
-   the title cell holds a lifecycle icon next to the text, and without it the icon wrapped onto its own line
-   above the title (the text truncated fine — the icon was what broke the row's alignment). */
 .peergrid td.c-name{white-space:nowrap}
 /* Truncate against the CELL, not a guess. A flat 180px was wider than the title column itself (13% of the
    grid ≈ 142px at 1500px), so a long title ran past its cell and printed over the IF badge next to it. */
@@ -4210,9 +3658,6 @@ table.peergrid{border-collapse:separate;border-spacing:0}
 /* fleet-wide column: server name (left) + interface tag (right) on one line */
 .peergrid .srvcell{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
 .peergrid .srv-name{font-family:var(--mono);font-size:12px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-/* The badge in this cell — an interface name, or a GROUPED row's "4 interfaces" count — never shrinks;
-   only the node name beside it may ellipsize, and only when the column genuinely runs out. Without this
-   the wider count badge squeezed the name to "msk-m…" in a column that had room for both. */
 .peergrid .srvcell > .tg,.peergrid .srvcell .tgt-frontpop{flex:none}
 /* The grouped IF badge's bubble: one deployment per line. It reuses .deppop's row styling, so it needs
    no layout of its own — only the room .tgt-frontbub would otherwise constrain. */
@@ -4227,9 +3672,6 @@ table.peergrid{border-collapse:separate;border-spacing:0}
 .pager{display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:14px;padding:6px 2px;font-size:12.5px}
 .pager-size{display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--dim)}
 .pager-size .selwrap{width:auto;min-width:62px;padding:6px 26px 6px 10px}
-/* …and the padding has to reach the BUTTON — on a <select> it sat on the control itself. The 26px right
-   inset was room for the native caret drawn as a background image; the Dropdown draws its own, so this is
-   symmetric again. */
 .pager-size .dropdown.selwrap{padding:0}
 .pager-size .dropdown.selwrap .ddbtn{padding:6px 10px;font-size:12.5px}
 .pager-info{font-family:var(--mono);color:var(--faint)}
@@ -4245,10 +3687,6 @@ table.peergrid{border-collapse:separate;border-spacing:0}
 /* header update-widget hover bubbles (update-to / fix-issues) — rich content in place of the plain title tooltip */
 .hostupd-bub{z-index:90;min-width:440px;max-width:680px;padding:14px 17px 12px;white-space:normal;line-height:1.5;text-transform:none;letter-spacing:0;font-family:var(--sans);
   display:flex;flex-direction:column;max-height:70vh}   /* a release with a long list of notes would otherwise run off the bottom of the screen */
-/* Only the NOTES scroll: the header carries the ‹ Prev / Next › nav and the version being read, and the
-   footer carries the click-to-update line — scrolling either of those away would hide the way out of a
-   long entry. The list bleeds 6px into the bubble's own padding so its scrollbar sits in that gutter and
-   the notes stay aligned with the header above them. */
 .hostupd-bub > .hub-h,.hostupd-bub > .hub-foot{flex:0 0 auto}
 .hostupd-bub > .hub-list{overflow-y:auto;min-height:0;padding-right:6px;margin-right:-6px;scrollbar-color:var(--faint) transparent}
 .hostupd-bub > .hub-list::-webkit-scrollbar-thumb{background:var(--faint)}   /* Safari < 18.2, which has no scrollbar-color (elsewhere the two agree, so only the colour is restated) */
@@ -4256,13 +3694,6 @@ table.peergrid{border-collapse:separate;border-spacing:0}
 .hub-title{justify-self:start;min-width:0}
 .hub-h > .hub-nav-group{justify-self:center}
 .hub-h > .hub-date{justify-self:end}
-/* ⚠️ THE BUBBLE'S OWN ACTION EXISTS FOR TOUCH. Once this bubble opens it covers the badge that opened
-   it, and a phone has no mouseout — so without a control in here the only exit is a tap elsewhere,
-   which used to close the update modal underneath instead. Top-right, beside the date, so it reads as
-   the header's action rather than a row in the notes. min-height keeps it tappable in a dense bubble. */
-/* ⚠️ grid-column:3 EXPLICITLY. .hub-h is `1fr auto 1fr`, and this bubble has neither nav buttons nor
-   a date — so as the second child the button was auto-placed into the MIDDLE column and sat against
-   the title. Naming the column pins it to the right edge whatever else the header does or doesn't hold. */
 .hub-h > .hub-end{grid-column:3;justify-self:end;display:inline-flex;align-items:center;gap:9px}
 .hub-act{appearance:none;border:1px solid var(--brand);background:color-mix(in srgb,var(--brand) 14%,transparent);
   color:var(--brand);cursor:pointer;border-radius:6px;padding:3px 12px;min-height:26px;font-size:11px;font-weight:700;
@@ -4339,9 +3770,6 @@ table.peergrid{border-collapse:separate;border-spacing:0}
 .pv-dep-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr);gap:8px 18px;font-family:var(--mono);font-size:12px;color:var(--ink-2)}
 .pv-dep-grid>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pv-dep-grid .k{color:var(--faint);font-size:9px;text-transform:uppercase;letter-spacing:.06em;margin-right:6px}
-/* A RAW peer carries TWO addresses and the cell is nowrap+ellipsis, so the second one was truncated to "…" —
-   the chip rendered and could not be read. Only this cell, only when a raw address exists: the card grows one
-   line for a RAW deployment and every other kind keeps the tight two-row grid. */
 .pv-dep-grid > span.pv-addr-raw{white-space:normal;overflow:visible;text-overflow:clip;line-height:1.7}
 
 /* ───── Two-factor (TOTP) card — Settings → Authentication ───── */
@@ -4355,13 +3783,6 @@ table.peergrid{border-collapse:separate;border-spacing:0}
 .twofa-codes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
 .twofa-codes code{font-family:var(--mono);font-size:14px;letter-spacing:.08em;text-align:center;background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:9px 6px;color:var(--ink)}
 
-/* Address-migration ribbon — shown on the OLD panel address after a rebind confirms elsewhere: this tab keeps
-   working through the node-migration grace, then stops. Fixed to the top of the viewport so the countdown is
-   impossible to miss; deep red, high z-index above the header. */
-
-/* "You're on a previous panel address" — persistent, informational (amber, not the migrate ribbon's alarm-red),
-   shown on any tab loaded at a non-current panel address so an old address reads as expected, not a fault. The
-   sticky .appbar is pushed down by the measured ribbon height so it's never hidden. */
 .addr-old-ribbon{position:fixed;top:0;left:0;right:0;z-index:31;display:flex;align-items:center;justify-content:center;
   gap:12px;flex-wrap:wrap;padding:9px 16px;background:#c62b42;color:#fff;font-size:13px;font-weight:600;
   box-shadow:0 2px 10px rgba(0,0,0,.28);border-bottom:1px solid rgba(0,0,0,.25)}
@@ -4380,9 +3801,6 @@ body.has-oldaddr .appbar{margin-top:var(--oldaddr-h,40px);top:var(--oldaddr-h,40
 .ignrow-node{font-size:11px;color:var(--dim)}
 .ignrow-f{font-family:var(--mono);font-size:11px;color:var(--faint)}
 
-/* Targets grid: what sits IN FRONT of the interface (WDTT server / turn-proxy). Takes the fork's own colour via
-   --tgc so it reads as "that fork", matching the tags used on the node screen. Kept to the same 9px tag scale as
-   the wg/awg chip beside it — it is context, not a second status. */
 .tgt-front{color:var(--tgc,var(--turn,#A974F2));background:color-mix(in srgb,var(--tgc,#A974F2) 16%,transparent);
   max-width:12ch;overflow:hidden;text-overflow:ellipsis;display:inline-block}
 .tgt-front-many{cursor:default}   /* keeps .tg's uppercase: reads TURN ×3, like every other protocol chip */
@@ -4393,18 +3811,8 @@ body.has-oldaddr .appbar{margin-top:var(--oldaddr-h,40px);top:var(--oldaddr-h,40
 .tgt-frontlist .tgt-front{max-width:18ch}
 .tgt-frontlbl{display:block;width:100%;font-size:10px;color:var(--dim);margin-bottom:2px}
 
-/* JetBrains Mono ships PROGRAMMING LIGATURES, and every mono surface in this panel shows something the reader
-   must be able to transcribe exactly — a DoH URL, a public key, a config line, a CLI command. A glyph that
-   draws two characters as one is therefore a correctness bug, not a style: `//` renders merged with a gap to
-   its left and reads as a space plus a single slash, which is how "https://1.1.1.1" was reported as
-   "https: /1.1.1.1" — the value was right the whole time, only the rendering lied. (`->`, `!=`, `::` and `www`
-   ligate too.) Turn them off wherever literal text is shown or typed; prose keeps its ordinary fi/fl. */
 input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: none; font-feature-settings: "liga" 0, "clig" 0, "calt" 0; }
 
-/* ── Shared VK call-link pool (Settings → Turn proxies) + per-user link origin ────────────────────
-   A pool link is the panel's to rewrite; a personal one is the operator's. The two behave differently
-   on a pool edit, so they never look alike: pool rows carry the shared "users" mark and the accent,
-   personal rows stay neutral. Dead rows stay legible — the operator still has to read and fix them. */
 .vkpool{display:flex;flex-direction:column;gap:8px;margin:10px 0 4px}
 .vkpool-row{display:flex;align-items:center;gap:8px}
 .vkpool-row .vkbox{border-color:color-mix(in srgb,var(--brand) 42%,var(--line))}
@@ -4427,9 +3835,6 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 .vkpool-empty{padding:12px;border:1px dashed var(--line);border-radius:8px;color:var(--faint);font-size:12px}
 .vkpool-foot{display:flex;align-items:center;gap:8px;margin-top:10px}
 .vkpool-foot .grow{flex:1}
-/* The two kinds of link are told apart by the FIELD itself now that the ПУЛ/ЛИЧНАЯ badges are gone: a pool
-   link carries the brand border and the shared-people icon, a personal one the blue border and the chain.
-   Without the blue the personal rows read as unstyled — as if they were missing something the others had. */
 .vkbox.frompool{border-color:color-mix(in srgb,var(--brand) 42%,var(--line))}
 .vkbox.frompool > .ic{color:var(--brand)}
 .vklinks-row .vkbox:not(.frompool){border-color:color-mix(in srgb,var(--ready) 55%,var(--line))}
@@ -4448,9 +3853,6 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
    construction rather than by a hand-tuned pixel value that drifts the moment a column changes. */
 .vkpool-head{display:flex;align-items:center;gap:8px;margin:0 0 7px;padding:0;min-height:18px}
 .vkpool-head .grow{flex:1}
-/* Big enough to read and dark enough to see: at 10px in --faint the mark was there in the DOM and absent on
-   the screen, which is the same as not shipping it. --dim for the resting state, brand when it is the one
-   sorting. Tabular width so swapping ↕ for ↓ does not nudge the column. */
 .vkpool-head .vkh{background:none;border:0;padding:0 2px;cursor:pointer;color:var(--dim);
   font-size:12px;line-height:1;letter-spacing:0;text-align:center;font-variant-numeric:tabular-nums}
 .vkpool-head .vkh:hover{color:var(--ink)}
@@ -4521,26 +3923,10 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 .ctype-copy .ic{opacity:.65;flex:none}
 .ctype-copy:hover .ic{opacity:1}
 
-/* ── The routing rule builder's field ─────────────────────────────────────────────────────────────────────
-   One control where the category dropdown, its "Custom IPs / domains…" entry and the targets textarea used to
-   be. Nothing here invents an identity: the badge is .blkchip's pill at .capb's scale, a list keeps the
-   provider colour it already has everywhere else, and amber is --partial. Two states are new because nothing
-   in the panel expressed them — PREPARING (the panel is still fetching this list) and INERT (kept, and this
-   node's engine cannot run it), and inert deliberately borrows .blkchip.inert's dashed-and-dimmed treatment
-   plus its ⊘, so the operator learns one visual for "present, not in force" across routing and blocking. */
-/* Both follow .rrrow's two columns now. The catch-all keeps the SAME shape as a rule row on purpose — its
-   arrow, dropdown and trailing button have to land under the rule rows' own, or the one line that says where
-   everything else goes stops reading as part of the same list. Flex rather than a grid column for the tail,
-   so it right-aligns against whatever width the lead takes, exactly like `.tf-trail` does in the foot. */
 .rrrow-b{grid-template-columns:16px minmax(0,1fr)}
 .rrfoot{display:flex;align-items:center;gap:8px}
 .rrfoot .rrfoot-lead{flex:1 1 auto}
 .tfield{position:relative;min-width:0;display:flex;flex-direction:column;gap:4px}
-/* TWO ROWS TALL BEFORE ANYTHING IS IN IT. A rule usually names several things, so a box sized for one badge
-   grew the moment the second was added and every row below it jumped — and an empty one read as a
-   single-value field. 68px = two 25px badge rows + the 6px row gap + 10px padding + 2px border.
-   `align-content:flex-start` keeps the first row AT THE TOP: with `align-items:center` alone the lines are
-   stretched and one badge floats in the middle of a box twice its height. */
 .tf-box{display:flex;flex-wrap:wrap;align-items:center;align-content:flex-start;gap:6px;min-height:68px;
   padding:5px 7px;cursor:text;
   border:1px solid var(--line-solid);border-radius:7px;background:var(--bg);transition:border-color .12s}
@@ -4583,9 +3969,6 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 /* Tried, and nothing came back. --partial-r is the panel's "a problem that isn't a stopper" — the rule saves
    and routes as soon as the list lands; this is the retry. */
 .tfb-size.notready{color:var(--partial-r);border:0;background:none;font:inherit;font-size:10.5px;cursor:pointer;text-decoration:underline dotted;padding:0}
-/* NOT FOUND — a different state from "not ready" and it has to look like one. `notready` is amber and
-   dotted-underlined because it is a wait you can retry; this is a rule that matches nothing until the list
-   comes back, so it takes the panel's problem colour and offers no retry (there is nothing to re-ask). */
 .tfb-size.missing{color:var(--dangling);font-weight:600}
 .tfb-fix,.tfb-x{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;padding:0;border:0;
   border-radius:50%;background:none;color:var(--faint);cursor:pointer;flex:none}
@@ -4597,25 +3980,7 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 .tf-more:hover{color:var(--ink);border-color:var(--line-bright)}
 
 .tf-foot{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 10px;padding:0 2px;font-size:11px;line-height:1.5}
-/* THE MESSAGE GETS ITS OWN LINE, and the destination never moves. Sharing the row with the entry count
-   meant a long lint ("did you mean the whole .tester zone?") pushed the destination control sideways and
-   down — the control jumping while you type is worse than the second line it costs. `order` puts it last
-   in layout while it stays second in the DOM, so the count and the destination keep line one to themselves. */
-/* ⚠️ ON THE LINE, NOT UNDER IT. `flex-basis:100%` gave the hint a row of its own below the destination,
-   which cost a line of height to say something the operator reads while typing — beside the control, where
-   the eye already is. It sits between the leading × and the right-aligned destination and SHRINKS (the
-   destination keeps its fixed width), and the foot still wraps when there is genuinely no room. */
 .tf-foot .tf-lint,.tf-foot .tf-say{flex:1 1 auto;min-width:0}
-/* TEXT VIEW. The badge box and the textarea are the same field in two readings, so the textarea borrows the
-   box's own border, radius and focus ring rather than looking like a different control that replaced it.
-   Monospace because every line is an address, a range or an AS number, and a fixed advance is what makes a
-   column of them scannable — the same reason the badges use it.
-   ⚠️ AND `.exprof` — the pasted WireGuard profile on the exit sheet — SHARES IT. That box set only width,
-   font and resize, so it fell through to the browser's own textarea: in DARK theme a near-black rectangle
-   whose hairline border disappears into the sheet behind it, with no radius, no padding and no focus ring,
-   sitting two fields above a routing box that has all four. Reported from the panel. Shared rather than
-   copied — a second set of the same declarations is how two controls that must look alike stop looking
-   alike, and this file already carries that scar elsewhere. */
 .tf-text,.exprof{width:100%;box-sizing:border-box;min-height:96px;resize:vertical;padding:7px 9px;
   border:1px solid var(--line-solid);border-radius:7px;background:var(--bg);color:var(--ink);
   font-family:var(--mono);font-size:12px;line-height:1.7;outline:none;transition:border-color .12s}
@@ -4625,17 +3990,6 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 /* The lists the text cannot carry, kept in sight above it so nothing looks deleted while you edit. */
 .tf-keep{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px}
 .tf-keepnote{font-size:10.5px;color:var(--faint)}
-/* IN THE GRIP COLUMN, under the drag handle. `.rrrow` is `16px | 1fr` with an 8px gap, so −24px from the
-   field's own left edge lands it in that rail, centred on the same 16px the grip uses. Absolute because the
-   state it toggles belongs to the field: putting the button in the row's markup would have meant lifting
-   `asText` out of the component that owns it. One control, two states — same place, same shape, only the
-   pressed style changes, so the way back is exactly where the way in was.
-   `top:30px` clears the grip rather than sitting on it: the grip is 18px tall starting 7px down, so the two
-   were drawn one on top of the other at 9px — both centred in the same rail, which reads as one smudged
-   control instead of two.
-   The offset is DERIVED from the row's own `--rr-rail`/`--rr-gap` rather than restating them: this rule and
-   `.rrrow` sit 1600 lines apart, and a hard-coded −24px is a number that silently stops matching the grid it
-   was measured against. The fallbacks keep it sane if the field is ever rendered outside a row. */
 /* Brand-coloured and a little larger: it is the only way into the text view and it sits alone in the rail,
    where a faint 14px glyph read as decoration. Dropped down to clear the box's first badge row. */
 .tf-vtog{position:absolute;left:calc(-1 * (var(--rr-rail,16px) + var(--rr-gap,8px)));top:38px;
@@ -4647,10 +4001,6 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 .tf-vtog:hover{color:var(--brand);opacity:1;background:color-mix(in srgb,var(--brand) 10%,transparent)}
 .tf-vtog.on{color:var(--brand);opacity:1;background:color-mix(in srgb,var(--brand) 12%,transparent)}
 .tf-vtog:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
-/* THE FOOT VARIANT — the custom-list sheet, which has no row and therefore no grip column to sit in. Static
-   rather than absolute (the rail offset put it outside the sheet entirely), labelled, and pushed right by the
-   foot's own flex. Brand-coloured at rest, not faint: in a rule row it is one control among several and stays
-   quiet; here it is the only way to reach the text view, so it has to read as something you can press. */
 .tf-vtog.inline{position:static;width:auto;height:auto;gap:5px;padding:1px 6px;opacity:1;
   color:var(--brand);font:inherit;font-size:11px;line-height:1.5}
 .tf-vtog.inline:hover{background:color-mix(in srgb,var(--brand) 12%,transparent)}
@@ -4658,10 +4008,6 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 .tf-say{color:var(--faint);min-width:0}
 .tf-say b{color:var(--ink-2);font-weight:600}
 .tf-lint{color:var(--partial);min-width:0}
-/* `err`, NOT `bad`. `.bad` is the panel-wide INVALID-INPUT style — `box-shadow:0 0 0 3px` plus a
-   `border-color:!important` — meant for a control the operator has to fix. On a text span it drew a red
-   ring around the sentence, which read as "this message is itself broken". Same class name, different
-   thing; renamed rather than cancelled, so the collision cannot come back through a third user. */
 .tf-lint.err{color:var(--partial-r)}
 .tf-live{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 
@@ -4701,9 +4047,6 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 .logdebug-dd{flex:0 1 200px;min-width:0}
 .logdebug-left{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 
-/* Settings → Logs, the disk budget table (js/screen-settings.js LogBudgetTable): a row per server — name, its MB, used (with a
-   thin meter against the budget), how far back it reaches once full, and the state the server itself reported. On a phone a
-   row wraps into two lines: the name and its state, then the numbers. */
 .lb-table{border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2);margin-top:12px;overflow:hidden}
 .lb-row{display:grid;grid-template-columns:minmax(0,1fr) 112px 150px 96px 118px;align-items:center;gap:12px;min-height:44px;padding:0 12px;font-size:13px;color:var(--ink)}
 .lb-row+.lb-row{border-top:1px solid var(--line)}
@@ -4734,10 +4077,6 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 .lb-holdsl{display:none}
 @media (max-width:640px){.lb-holdsl{display:inline}}
 
-/* Settings → Logs, the live viewer (js/journal.js): the facets (servers × sources, each opening its picker in place), the
-   servers' states as counted chips, a bar (levels with counts, search, Pause, Wrap, Clear, Download), then ONE dense mono
-   stream — time · server chip · source · level · message — with the level as a thin coloured tick down the left edge, the
-   one mark that lets errors be found by eye in a fast-moving list. Full screen: the card is lifted over the whole window. */
 .lv{margin-top:14px;display:flex;flex-direction:column;gap:10px}
 .lv-head{display:flex;align-items:center;gap:10px}
 .lv-tz{font-family:var(--mono);font-size:11px}

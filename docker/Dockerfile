@@ -1,37 +1,9 @@
 # check=skip=SecretsUsedInArgOrEnv
-# ⚠️ That line is a BuildKit parser directive: it only counts as the file's FIRST line, so keep it there. It skips
-# exactly one build check, for a false positive. The check flags any ENV/ARG whose NAME contains AUTH or KEY, and
-# the two it hits below — SWG_PANEL_AUTH and SWG_PANEL_TLS_KEY — hold FILE PATHS, not secrets. The other ways out
-# are worse: renaming them breaks the name every installer, the nix module and the server read, and moving the
-# defaults into entrypoint.sh would give anything that starts this image WITHOUT the entrypoint a blank
-# SWG_PANEL_AUTH, which the panel reads as "no login". Never put an actual secret in ENV/ARG in this file —
-# nothing will warn about it now.
-#
-# swg-panel — control-plane (broker + UI) image.
-# Self-contained: serves its own TLS + login + the /wgstats board. Nodes reach the
-# panel over OUTBOUND HTTPS (no ssh, no inbound) — add them in the Nodes screen.
-# Python + openssl + acme.sh (bundled, so the container can issue real TLS certs:
-# letsencrypt / cloudflare / cf15 — same options as bare-metal). Nodes run bare-metal
-# (install-node.sh) or as the companion swg-node image (see Dockerfile.node).
-# Base from AWS ECR Public (mirrors Docker Hub official images) to dodge Docker Hub's
-# anonymous pull-rate limit — no account needed. Prebuilt images are also on GHCR (see CI), which takes the base from
-# Google's mirror (BASE_REGISTRY=mirror.gcr.io/library) when ECR cannot serve it.
 ARG BASE_REGISTRY=public.ecr.aws/docker/library
 FROM ${BASE_REGISTRY}/python:3.12-slim
 
-# acme.sh is pinned + installed from its release tarball (not the piped get.acme.sh installer,
-# which exits 0 even when its own download fails — silently shipping an image with no acme.sh;
-# it also serves master, currently 3.1.5, which is NOT a tagged release).
-# Download is retried, then `acme.sh --version` VERIFIES it landed so a bad fetch fails the build.
-# ⚠️ FLOOR, not just a pin: 3.1.4 is the first release that refuses to write the CA's HTTP body to
-# <domain>.cer when that body is not a certificate. On 3.1.3 and older a 404 from the CA is stored
-# AS the cert, with no fullchain.cer beside it — the container then treats a failed issuance as a
-# success and serves no usable TLS. Do not lower this below 3.1.4.
+# С версии 3.1.4 acme.sh проверяет тип содержимого ответа CA перед сохранением сертификата.
 ARG ACME_VERSION=3.1.4
-# tzdata: Settings → Display → "Days are counted in" loads its zone from /usr/share/zoneinfo (tz_file), and Debian 13
-# dropped tzdata from the minimal set — the python base installs it today, but only as its own choice. Named here, a
-# base-image change cannot leave a Docker panel refusing every zone but UTC. Noninteractive: tzdata's postinst asks for
-# a region when it is newly installed, which would stall a build waiting on input.
 RUN apt-get update \
  && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends openssl ca-certificates curl socat tar tzdata \
  && rm -rf /var/lib/apt/lists/* \
@@ -49,9 +21,6 @@ RUN apt-get update \
 
 WORKDIR /opt/swg-panel
 COPY src/swg-panel-server src/app.css src/app.js src/index.html src/reconcile.js src/turn-artifacts.js VERSION ./
-# swg-sub — the public subscription surface + its buildless front-end. Rides in this image (pure
-# stdlib, no extra deps) but runs as a SEPARATE, read-only container (see docker-compose.yml).
-# turn-artifacts.js is shared by the admin app + the subscription page (already copied above).
 COPY src/swg-sub src/sub.html src/sub.js src/sub.css ./
 COPY src/swg-passwd /usr/local/bin/swg-passwd
 COPY src/vendor/ ./vendor/
@@ -59,12 +28,7 @@ COPY src/vendor/ ./vendor/
 COPY src/m/ ./m/
 # js/ = the SPA's ES modules (docs/APP-JS-SPLIT-PLAN.md) — copied as a DIRECTORY, like vendor/, so adding a module never touches this loop
 COPY src/js/ ./js/
-# Verify the SPA the image will serve. There is no source tree to compare against in here — the build
-# context is gone by the time this runs — so instead check the property that actually matters: every
-# relative import in every module resolves to a file that exists. That is self-describing (the code IS the
-# list), it can never go stale, and it catches the failure this exists for: a module lost to .dockerignore
-# or a truncated context. A mismatch FAILS THE BUILD, because an image is built once and run everywhere,
-# so an incomplete one would ship a blank panel to every container.
+# Проверяем наличие локальных модулей SPA в собранном образе.
 RUN python3 - ./js ./app.js <<'PYJS'
 import os, re, sys
 jsdir, entry = sys.argv[1], sys.argv[2]

@@ -1,17 +1,3 @@
-/* routing.js — smart-routing and content-blocking policy: categories, catalogs and their pickers.
- *
- * LAYER 4 (see docs/APP-JS-SPLIT-PLAN.md). Imports util / store / model / ui / charts-free.
- *
- * NOT a screen, which is what the reference graph showed and the July map got wrong: Settings and the
- * interface sheets both render this, so it is a component library they share. Keep it that way — the
- * moment it imports a screen, Settings and iface can no longer both use it.
- *
- * Two policy tiers run in parallel and deliberately mirror each other's shape: ROUTING (send this
- * category out that exit) and BLOCKING (drop it). Each has one capability rule — routeTierOk and
- * blockTierOk — that every mode-gate in the UI defers to, so what a node can actually enforce is decided
- * in one place rather than per control.
- */
-
 import { T, Trich, Tsplit, plural, pluralWord, srvText } from "./i18n.js";
 import { classify, classifyAll, patternTier, TIER2_MIN } from "./classify.js";
 import { idnHost, idnDiffers } from "./idn.js";
@@ -34,17 +20,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// Phase 3 smart-routing categories (keep in sync with SMART_CATEGORIES in swg-panel-server). A category is a
-// destination set the node routes into the chosen exit's mesh link. Domain-tier ones (Google/YouTube/Yandex/
-// VK/Meta/Twitter/Netflix) match by domain via the node's dnsmasq — so YouTube splits from the rest of Google;
-// the rest (Telegram/Cloudflare/RU-net/All) match by provider IP ranges (geoip). "Russia" is TWO distinct lists:
-// ru_net = the whole Russian IP space (geoip, every mode); ru_blocked = sites blocked INSIDE Russia (circumvention
-// domains, Force-DNS only) — different meanings, so they're separate categories you route independently.
-// Curated "Recommended presets" — MUST stay in sync with CURATED_PRESETS in swg-panel-server (id + label + order).
-// Built on FIRST READ, never at import: modules load before loadLang() resolves, so a T() evaluated
-// here freezes in English whatever the catalog says (see --frozen). A memoised FUNCTION rather than a
-// lazy array/object facade — Dropdown calls flatMap() on its options, and a facade only ever has the
-// methods someone remembered to forward.
 let _smart_categories = null;
 export const SMART_CATEGORIES = () => (_smart_categories || (_smart_categories = [
   // The brand rows carry the marker: a product name is the same string in every language, and listing
@@ -70,10 +45,6 @@ export function hsl2hex(h, s, l) {
   const f = n => { const c = l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1)); return Math.round(255 * c).toString(16).padStart(2, "0"); };
   return "#" + f(0) + f(8) + f(4);
 }
-// Colour for a ranked bar by its ROW INDEX: a golden-angle hue rotation (~137.5° per step) so consecutive rows
-// are always far apart on the wheel — adjacent bars can never look similar, at ANY list length (so the count is
-// free to be configurable). Talkers and destinations use a different start hue + saturation so the two lists read
-// as distinct colour families.
 export const dashRankColor = (i, kind) => kind === "talker" ? hsl2hex((205 + i * 137.508) % 360, 68, 62) : hsl2hex((32 + i * 137.508) % 360, 58, 55);
 // If a resolved label has NO capital letters (a bare list name like "timeweb"), capitalise its first letter —
 // but leave intentional casing alone ("iCloud", "YouTube" stay as-is).
@@ -100,35 +71,6 @@ export const isCuratedCat = c => typeof c === "string" && !c.includes(":") && c 
 // The provider a category belongs to: "<prov>" for a namespaced catalog id, "curated" for a built-in, else "".
 export const providerOf = c => isProviderCat(c) ? String(c).split(":")[0] : (isCuratedCat(c) ? "curated" : "");
 
-/* Where a provider's lists are actually used, walked over the panel's own view of the fleet (§6.4).
- *
- * Turning a provider off is not a display setting: the sync manifest omits every category namespaced to a
- * disabled provider, and the node then DELETES that set — so each of these rules stops routing on the next
- * sync, in silence. The count exists so the row can say how far that reaches before the switch moves.
- *
- * "Used by" counts a rule that NAMES one of the provider's lists, whether or not that rule is switched on
- * today. Counting only the live ones would read more exact and then say nothing at all about a fleet whose
- * rules are all parked — which is the one case where the operator has no other way to find out that
- * re-enabling a rule later will do nothing.
- *
- * Three places hold interface rules and all three matter: wg/awg interfaces in `describe`, and the
- * self-contained kinds, whose rules live on the node record (`wdtt_cfg` / `csqtt_cfg`) because the node
- * reports no `describe` entry for them. Blocking is deliberately out: its feeds are a separate registry
- * with a separate toggle, and mixing the two counts would name a number neither switch controls. */
-/* One line for everything a save could not KEEP (§5.4).
- *
- * Three things used to make the panel store less than it was given, and all three were silent: a token no
- * grammar can read, a rule naming a list that is no longer in any catalog, and — before this — a save refused
- * outright because ONE entry was bad, which is how an interface becomes unsavable by the very edit that would
- * fix it. The panel is lenient now and says what it left out; this renders that.
- *
- * The wording lives here rather than on the panel because only the browser can finish the sentence: it holds
- * the provider registry that turns `mc:netflix` into "no longer published by MetaCubeX", so the server ships a
- * discriminator and the operator gets a name.
- *
- * Reaching this at all with an `unreadable` is a disagreement between the two classifiers — `egressSaveBlock`
- * refuses to build a badge the panel would then throw away — which is what the shared vector table exists to
- * catch. Loud on purpose for exactly that reason. */
 export function reportDropped(r) {
   const rep = ((r && r.data) || {}).dropped || {};
   const list = rep.entries || [];
@@ -136,9 +78,6 @@ export function reportDropped(r) {
   if (!list.length) return;
   const parts = list.slice(0, 6).map(d => {
     const e = String((d && d.entry) || "");
-    // A whole LIST dropped is not a token dropped: every entry in it was unreadable, so the row the
-    // operator just saved is gone rather than shortened. Same report, its own sentence — "couldn't be
-    // read" beside a list TITLE would send them looking for a bad character in the name.
     if ((d || {}).reason === "list_empty") return T("the list {v1} had nothing readable in it — not saved", { v1: e });
     if ((d || {}).reason === "id_reserved") return T("the list id {v1} already means something to a rule — the list was saved under a new id", { v1: e });
     if ((d || {}).reason !== "unknown_list") return T("{v1} couldn't be read", { v1: e });
@@ -150,25 +89,6 @@ export function reportDropped(r) {
   toast(T("Saved — {v1} not kept: {v2}", { v1: plural(total, "entry"), v2: parts.join("; ") }), "warn", 9000);
 }
 
-/* What the fleet's routing rules NAME, read once (§1.4, §6.4).
- *
- * A rule is what makes a list resident: the sync manifest is built from the rules, and the node pulls what it
- * names. `catalog_cats` is the other half — a PIN, "keep this list here even when no rule uses it" — and it is
- * the only half Settings used to show. That was fine while `catalog_cats` also gated the picker, because then
- * nothing could be routed without first appearing there. The field ended that: a list can now be routed on a
- * node that has never had it in `catalog_cats`, so a screen that renders only the pins describes a subset of
- * what the node is actually holding, and says nothing about the common case.
- *
- * READ FROM `rule_cats`, WHICH THE PANEL BUILDS FROM THE NODE RECORD. This used to walk `Store.describe`, and
- * that was wrong in a way nothing on screen would have shown: describe is built from the node's SNAPSHOT, so
- * a node that is down, restarting, or reporting a subset of its interfaces drops those interfaces — and their
- * rules — out of every count built on it. The blast radius of disabling a provider would have read low, and
- * the routing-lists grid would have quietly lost rows, on exactly the nodes an operator is most likely to be
- * worrying about. Rules are panel state; they do not stop existing because a node went quiet.
- *
- * Custom lists are left out: they have their own section and their own per-node control, which is a gate
- * (`disabled_nodes`) rather than a pin, and folding the two into one grid would put two different mechanisms
- * behind one identical-looking switch. */
 const isListCat = c => !!c && (isProviderCat(c) || isCuratedCat(c));
 
 /** {nodeId: Set(category)} for the whole fleet, in one walk. */
@@ -193,18 +113,8 @@ export function providerUsage(pid) {
     }
   return out;
 }
-// Provider list ids are cryptic (bare ISO country codes "ad"/"ae", "category-ads-all", "tld-cn"). Make them human:
-// 2-letter codes → the country name via the browser's built-in Intl.DisplayNames (no hardcoded country table);
-// known prefixes get expanded; everything else is title-cased. `fallback` = the panel's plain label.
 const _REGION_NAMES = (() => { try { return new Intl.DisplayNames(["en"], { type: "region" }); } catch { return null; } })();
 const _titleize = s => String(s).replace(/[-_]+/g, " ").trim().replace(/\b([a-z])/g, (_, c) => c.toUpperCase());
-// Curated friendly names for popular service ids — the providers ship NO titles/descriptions (their lists are
-// just id-named files), so this is our own polish for the common ones. Everything else falls back to Intl country
-// names / prefix expansion / title-case. Keyed by the provider's raw id (after the "<prov>:").
-// Built on FIRST READ, never at import: modules load before loadLang() resolves, so a T() evaluated
-// here freezes in English whatever the catalog says (see --frozen). A memoised FUNCTION rather than a
-// lazy array/object facade — Dropdown calls flatMap() on its options, and a facade only ever has the
-// methods someone remembered to forward.
 let _cat_friendly = null;
 export const CAT_FRIENDLY = () => (_cat_friendly || (_cat_friendly = {
   meta: "Meta / Facebook", facebook: "Meta / Facebook", openai: "ChatGPT / OpenAI", twitter: "Twitter / X",   // i18n-keys: brand names
@@ -228,12 +138,6 @@ export function prettyCatLabel(id, fallback) {
   return fallback || _titleize(rid) || rid;
 }
 export const catRawId = id => String(id || "").includes(":") ? String(id).split(":")[1] : String(id || "");   // the provider's raw id ("telegram")
-// Providers ship NO descriptions (their lists are bare id-named files). These are OUR curated one-liners for the
-// popular categories; everything else shows a live sample of its records instead ("e.g. netflix.com, fast.com").
-// Built on FIRST READ, never at import: modules load before loadLang() resolves, so a T() evaluated
-// here freezes in English whatever the catalog says (see --frozen). A memoised FUNCTION rather than a
-// lazy array/object facade — Dropdown calls flatMap() on its options, and a facade only ever has the
-// methods someone remembered to forward.
 let _cat_desc = null;
 export const CAT_DESC = () => (_cat_desc || (_cat_desc = {
   google: T("Google search, accounts & core services"), youtube: T("YouTube video + its CDN"),
@@ -246,9 +150,6 @@ export const CAT_DESC = () => (_cat_desc || (_cat_desc = {
   claude: T("Claude & the Anthropic API"), grok: T("Grok (xAI) — grok.com & x.ai"),
   gemini: T("Google Gemini AI — kept separate from the rest of Google"), copilot: T("Microsoft & GitHub Copilot"),
   signal: T("Signal private messenger"),
-  // Re-filter's lists, keyed by the FULL id. Their raw ids ("community", "ipsum") are generic enough that another
-  // provider could publish one, and it would silently inherit a description of a different list. Wording follows
-  // Re-filter's own README; `ooni_domains` is not described there, so it gets nothing here rather than a guess.
   "rf:domains_all": T("Domains blocked in Russia — the RKN registry, filtered"),
   "rf:ipsum": T("IP addresses blocked in Russia, merged into ranges"),
   "rf:community": T("Community list: sites RKN does not block that refuse visitors from Russia"),
@@ -278,24 +179,13 @@ export function catListUrl(id, caps) {
 }
 // Record count for a provider-catalog cat (Host+IP tiers), shipped by the panel in Store.catSizes {cat:{ip,host}}.
 export const fmtCount = n => n == null ? "…" : n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, "") + "k" : String(n);
-// "142 hosts · 38 nets" style summary from per-tier counts (Host first). Empty string when nothing is known.
-// plural(), not an "s" glued on: Russian picks between three forms, and this line is now on every badge in
-// every rule rather than tucked inside a Settings row nobody opens.
 export function sizeSummary(host, ip, pat) {
   const p = [];
   if (host) p.push(plural(host, "host").replace(String(host), fmtCount(host)));
   if (ip) p.push(plural(ip, "net").replace(String(ip), fmtCount(ip)));
-  // PATTERNS COUNT TOO, and only a custom list has any — a provider list resolves to hosts and nets on the
-  // panel, so those callers pass nothing and read exactly as before. Left out, this line said "1 host · 2
-  // nets" for a list that also held six patterns, and said NOTHING AT ALL for a list that was only patterns:
-  // an entry the operator had just typed, reported as an empty list. `pattern`, not `text pattern` — that
-  // noun means the three kinds §12.1's cap counts, and this counts all six.
   if (pat) p.push(plural(pat, "pattern").replace(String(pat), fmtCount(pat)));
   return p.join(" · ");
 }
-// A small record-count pill that, on hover, shows the list's counts (Host domains · IP nets) + the first few
-// entries. Provider cats lazy-fetch /api/list-info (session-cached); custom lists read their own targets. With
-// `eager`, the count loads on mount so it shows inline (used in the catalog search where sizes aren't preshipped).
 const _LIST_INFO_CACHE = {};   // cat -> resolved list-info (count + sample), so CatalogRow paging never re-fetches
 // Plain "N hosts · M nets" text for a list. Counts come from the panel's shipped cat_sizes (routed cats) or the
 // custom list's own targets — no fetch, no hover bubble (the full sample lives inline in the catalog browse row).
@@ -309,27 +199,13 @@ export function ListInfo({ cat, list }) {
   return html`<span class="listsize">${summary}</span>`;
 }
 
-// A rich catalog-browse row (the "Add from catalog" list): title + the raw id (name) dimmed under it, the
-// provider tag, a description (curated, else a live sample of records), "N hosts · M nets", and Host/IP tags.
-// Eager-loads /api/list-info (session-cached) for the counts + samples. Providers ship no descriptions, so the
-// second line falls back to "e.g. <first few records>" — self-explanatory from the list's own contents.
 export function CatalogRow({ it, added, onPick }) {
   const [fetched, setFetched] = useState(() => _LIST_INFO_CACHE[it.id] || null);
-  // A LIST THE OPERATOR WROTE IS NOT A CATALOG LIST. Its targets are in panel settings, right here, and
-  // /api/list-info answers `400 bad cat` for one by design — so this asked the panel about every "Your
-  // lists" row on every dropdown open, got a 400 for each, and left the row reading `—` where the same
-  // list's own BADGE reads "2 nets". The mapper already hands the record over as `it.list`; the tiers are
-  // built from it in the shape the endpoint returns, so nothing below this line has to know the difference.
-  // Only a non-empty tier is included, exactly as the server does, or a domain-less list shadows its own
-  // IP samples with an empty (and truthy) array.
   const own = it.list, ownB = own ? listBuckets(own) : null;
   const ownDoms = ownB ? ownB.host : [], ownIps = ownB ? ownB.ip : [];
   const info = own ? { tiers: { ...(ownDoms.length ? { host: { n: ownDoms.length, sample: ownDoms.slice(0, 4) } } : {}),
                                ...(ownIps.length ? { ip: { n: ownIps.length, sample: ownIps.slice(0, 4) } } : {}) } }
                    : fetched;
-  // DEBOUNCED, because a keystroke replaces this whole page: fifty rows unmount and fifty more mount, and
-  // without the delay each keystroke fired fifty requests for rows nobody looked at. The ask itself polls
-  // while the panel says it is still fetching (askListInfo) — it never holds a request thread open.
   useEffect(() => {
     if (own) return;                                  // nothing to fetch, and the endpoint would refuse it
     if (info && !(info.tiers && Object.keys(info.tiers).some(k => info.tiers[k] && info.tiers[k].pending))) return;
@@ -380,34 +256,11 @@ export function providerColor(prov) {
 // Provider source tag — colour-coded by provider. Curated built-ins and catalog cats both get a coloured chip;
 // only genuinely source-less chips (a raw "Custom" label) stay plain. `plain` forces the neutral chip.
 export function ProvTag({ id, label, plain }) {
-  // A CUSTOM LIST HAS A SOURCE TOO. `providerOf` answers "" for one — its id carries no `provider:` prefix and
-  // it is not a curated built-in — so the badge fell through to the neutral chip while the SAME list wore
-  // `providerColor("custom")` in the settings grid, which reads as two different kinds of thing. The colour
-  // exists (`#8A94A6`); only this path was not asking for it. `plain` still forces neutral, for a label with
-  // genuinely no source behind it.
   const prov = providerOf(id) || (customListOf(id) ? "custom" : "");
   if (plain || !prov) return html`<span class="catpick-src legacy">${label}</span>`;
   return html`<span class="catpick-src" style=${"--pc:" + providerColor(prov)}>${label || provLabelOf(id)}</span>`;
 }
-// Routing-mode metadata: icon + labels + the full explanation (shown in the mode banner).
-// NOTE: all three modes are kernel-based — there is NO "Kernel" mode. The IP-only mode is "Default". (Stored value
-// stays "kernel"|"forcedns"|"sni" — the node reads it — but never DISPLAY the word "Kernel".) See MODES for the text.
-// Each entry is framed as an OPTIONAL host-matching layer ON TOP of the always-on IP base: `adds` = what the layer
-// does, `bene` = its upside (+), `cost` = its trade-off (−), `exp` = the full description under the selected card.
-/* Built on first use, not at module load: every string here goes through T(), and T() only answers after
-   loadLang(). Cached for the process — setLang() reloads the page. (Same rule as ui.js's label tables.)
-   MODE_META stays the exported NAME so call sites read unchanged; it is a Proxy over the built table. */
 function buildModeMeta() {
-  /* ⚠️ THE ARBITRATION IS WRITTEN ONCE, HERE, AND EVERY SENTENCE ABOUT IT IS DERIVED FROM IT.
-     It used to be stated twice: this table's `overlaps` per mode, and a HARDCODED "the most specific rule
-     wins" on the rule list and its four collapsed summaries. They disagreed — the label claimed
-     specificity on all four engines, while this table correctly said IP-only and Kernel-SNI answer by rule
-     ORDER. On those two the screen contradicted itself, and the wrong half was the actionable one: an
-     operator told ordering does not matter stops dragging rows, which is the only control that works
-     there. (§10.4y corrected `first match wins` → `most specific wins` GLOBALLY, which fixed two engines
-     and broke the other two — one sentence cannot describe four engines.)
-     A mode now names its arbitration and nothing else; the card sentence, the rule-list label and the
-     collapsed summary all read this table. */
   const WINS = {
     order:    { card: T("First match — the order you set"),       label: T("— the first matching rule wins") },
     specific: { card: T("Most specific name; IP rules in order"), label: T("— the most specific rule wins") },
@@ -420,9 +273,6 @@ function buildModeMeta() {
     cost: T("Can't separate services that share IPs (YouTube vs Google), no Host routing"),
     block: { s: "−", t: T("Blocks by IP / threat-feed only — domain content filters can't apply") },
     exp: T("Matches by destination IP (GeoIP / ASN) — routing never depends on DNS, so your clients' DoH, DoT and plain DNS all keep working untouched. Simplest and most robust; it just can't separate services that share IPs (YouTube vs Google), and a CDN category catches everything behind it."),
-    // NO `blocks:` HERE, and not an oversight. What an engine can block is already the +/− `block` lines
-    // above — "Blocks by IP / threat-feed only", "Enforces domain content filters directly" — and saying it
-    // twice in one card cost a row of height for a second phrasing of the same fact.
     routes: T("IP ranges, networks (AS)"),
     ...arb("order"),
   },
@@ -469,10 +319,6 @@ function noFilterCats(onNav) {
   return html`<${Fragment}>${a}<button type="button" class="linkbtn" onClick=${onNav}>${T("Settings ▸ Routing & Blocking")}</button>${b}<//>`;
 }
 /* "Type <RESET LEARNED> or <RESET ALL> to confirm your action" — two coloured literals. */
-// ⚠️ ONE DEFINITION EACH. The token an operator must type was written out three times — in the prompt, in
-// the placeholder and in the comparison — with only the placeholder translatable. Translate that one and the
-// panel asks for a phrase the gate does not accept; leave it and a Russian operator types a Latin phrase
-// nothing else on the screen uses. Both are avoided by deriving all three from the same call.
 const TOK_LEARN = () => T("token|RESET LEARNED");
 const TOK_ALL = () => T("token|RESET ALL");
 function resetPrompt() {
@@ -485,28 +331,12 @@ function resetPrompt() {
 export const MODE_META = new Proxy({}, { get: (_, k) => (_modeMeta || (_modeMeta = buildModeMeta()))[k] });
 
 
-// The title of a "Routing rules" section: the name, then how a rule wins on this node's engine ("— the first matching rule
-// wins"). One heading for the section — the list inside carries none of its own. ⚠️ Nothing is promised while the node's
-// RECORD has not loaded: "we could not look the engine up" is not "it is IP-only", and defaulting a missing record (rather
-// than a missing field) to the kernel mode once had an unknown node announce "first match wins".
 export function rulesTitle(nodeId) {
   const rec = (Store.nodes || []).find(x => x.id === nodeId);
   const w = rec ? (MODE_META[rec.routing_mode || "kernel"] || {}).winsLabel : "";
   return html`${T("Routing rules")}${w ? html` <span class="disc-wins">${w}</span>` : null}`;
 }
 
-/* The COLLAPSED summary — "3 rules" (how they win is in the title, rulesTitle) — for the sheets that show routing behind a
-   Disclosure. One helper rather than four copies, because four copies is how the promise drifted from the
-   mode card in the first place.
-   ⚠️ Each sentence is a literal directly inside its OWN Trich call. Choosing the key with a ternary and
-   passing it to one call would make both invisible to the catalog audit, which reads the literal that
-   FOLLOWS the call — the exact defect that left two sentences untranslatable in ConfigMigrationCard. */
-/* The collapsed Disclosure line, which is the DEFAULT view — so it is the only thing an operator sees after
-   changing a node's match mode. It once said "5 rules · most specific wins" whatever the engine could
-   actually run, and every badge the new engine cannot match was dimmed one click away, behind a fold.
-   Switching a node to IP-only turns every host-tier target inert at once; the summary now says how many,
-   because a count that silently stays 5 is the `*.ru` class again — accepted, stored, routing nothing.
-   Takes the ROWS, not a count: it needs the badges to ask the gate about them. */
 export function rulesSummary(nodeId, rows, catchAll) {
   const list = rows || [];
   const n = list.length;
@@ -514,27 +344,11 @@ export function rulesSummary(nodeId, rows, catchAll) {
   const a = { v1: n, v2: pluralWord(n, "rule") };
   // The count only: how rules win is in the section's own title (rulesTitle), which says it for the mode in force.
   const head = Trich("*{v1}* {v2}", a);
-  // NOTHING TO SAY WITHOUT A MODE. An unloaded node record means the gate would refuse everything, so this
-  // counts nothing rather than announcing that every rule is broken — the same fail-safe `listGate` and
-  // `useHostOnNode` take. A locked legacy row is re-emitted verbatim and is not ours to judge.
   const rec = (Store.nodes || []).find(x => x.id === nodeId);
   const mode = rec ? (rec.routing_mode || "kernel") : "";
   let off = 0;
   if (mode) for (const r of list) if (!r.locked)
     for (const bg of (r.badges || [])) if (!rowGate(r, mode, nodeId, bg).ok) off++;
-  // ⚠️ AND A DESTINATION THAT IS GONE, which is a different fact from a target this engine cannot run and
-  // must not be folded into it: one says "this node's mode can't match that", the other says "the place you
-  // told it to send the traffic is not there any more". Counted HERE because this section is COLLAPSED by
-  // default — an operator who never opens it would otherwise never learn that a rule routes nothing.
-  // Measured on the live fleet: svo-im/awg0's catch-all names a node id that is not in nodes.json, the
-  // control rendered blank inside the section, and the summary said only "1 rule".
-  // ⚠️ AND IT FAILS SAFE, like the count above it. `off` stays 0 when the node record has not loaded ("the
-  // gate would refuse everything, so this counts nothing rather than announcing that every rule is
-  // broken"); this had the opposite reflex — an empty `Store.nodes` makes `known` empty, and every single
-  // `action:"exit"` rule then counts as pointing nowhere. The collapsed summary would read
-  // "3 rules · 3 rules pointing nowhere" on a perfectly healthy interface, on any render that lands before
-  // /api/state has answered. A detection that cannot see must report nothing, not everything.
-  // [[lesson-detection-failure-fail-safe]]
   const _nr = (Store.nodes || []).find(x => x.id === nodeId);
   const known = new Set((Store.nodes || []).map(n => n.id));
   const _xids = new Set(((_nr || {}).exits || []).map(e => String(e.id)));
@@ -544,17 +358,10 @@ export function rulesSummary(nodeId, rows, catchAll) {
   let dead = _nr ? list.filter(_gone).length + (_gone(catchAll) ? 1 : 0) : 0;
   const parts = [];
   if (off) parts.push(T("{v1} can't run here", { v1: plural(off, "target") }));
-  // ⚠️ THE COUNT IS NOT THE SUBJECT OF A VERB THAT INFLECTS. "{v1} points nowhere" renders "3 rules points
-  // nowhere" — the same shape as «1 пир получат» (091ac8e) and the two this release already fixed. Its
-  // sibling above gets away with the identical structure because "can't run" does not inflect; "points"
-  // does, so this uses a participle, which does not.
   if (dead) parts.push(T("{v1} pointing nowhere", { v1: plural(dead, "rule") }));
   return parts.length ? html`${head}<span class="rs-off"> · ${parts.join(" · ")}</span>` : head;
 }
 
-// Match-mode picker — a compact row of four icons (IP · Force-DNS · Kernel-SNI · Hybrid-SNI); the selected one is
-// highlighted in its mode colour and its full detail card renders below (see the routing banner). Icon-only keeps
-// it tight; the tooltip + the detail card carry the names, so no per-option text is needed here.
 export function ModeTabs({ value, onChange }) {
   return html`<div class="rmode-tabs" role="radiogroup">
     ${["kernel", "forcedns", "sni_kernel", "sni"].map(m => { const mm = MODE_META[m], on = m === value;
@@ -562,9 +369,6 @@ export function ModeTabs({ value, onChange }) {
         class=${"rmtab m-" + m + (on ? " on" : "")} onClick=${() => onChange(m)}><${Ic} i=${mm.icon}/></button>`; })}
   </div>`;
 }
-// Full-width detail for the currently-selected mode (icon + name + tag, what it adds, +benefit / −trade-off, full text).
-// Operator recovery: wipe a node's smart-routing state (tables, learned IPs, cached lists), then let it rebuild from
-// scratch + re-pull every enabled/curated list from the panel. Destructive → modal confirm, never a browser popup.
 export function resetRouting(node, name) {
   openModal(html`<${ResetRoutingSheet} node=${node} name=${name || "node"}/>`);
 }
@@ -595,9 +399,6 @@ export function ResetRoutingSheet({ node, name }) {
         onInput=${e => setTyped(e.target.value)}/></label>
   <//>`;
 }
-// Live host-layer health for a node, from its reported smartroute: is the mode's fill engine actually alive (swg-sni
-// for SNI, dnsmasq for Force-DNS), plus the SNI first-hit reset count. Surfaces a SILENT host-layer failure (dead
-// reader ⇒ host categories quietly stop routing). Hidden for IP-only and for nodes too old to report it (no false alarms).
 export function HostHealth({ node, mode, learn, onLearn }) {
   if (mode === "kernel") return null;
   const sr = (Store.stats[node] || {}).smartroute || {};
@@ -609,12 +410,6 @@ export function HostHealth({ node, mode, learn, onLearn }) {
   // Destinations the engine has in its routing sets (geoip + SNI-learned), excluding block-list sets. Kernel-SNI keeps
   // learned IPs in an ipset it doesn't surface, so this reads 0 there — shown only when the node reports set counts.
   const routed = Object.entries(sr.sets || {}).reduce((n, [k, v]) => n + (String(k).includes("blku") ? 0 : (v || 0)), 0);
-  // §10.5 item 4: what the node LOWERED from the pattern channel. Every other reading here is about what did
-  // NOT fit (`xts_cap`, `sni_cap`), so a node building exactly what it was asked said nothing at all — and
-  // Force-DNS, which has no bound to report against, said nothing in every case. `{kind: n}` from the engine
-  // that installed it, summed: the operator wants to know the patterns arrived, not which bucket they are in
-  // (the kinds are in `smart_status` for anyone reading it). Counted by the engine from what it WROTE, so a
-  // lowering that silently built nothing shows 0 here rather than echoing the request back.
   const lowered = Object.values(sr.lowered || {}).reduce((n, v) => n + (v || 0), 0);
   if (routed || lowered || (eng.startsWith("sni") && sr.resets)) {
     const bits = [];
@@ -624,21 +419,8 @@ export function HostHealth({ node, mode, learn, onLearn }) {
     extra = bits.join(" · ");
   }
   if (mode === "sni_kernel" && eng === "sni_user") note = T("kernel SNI scanner unavailable — running userspace SNI parser");   // degraded-open
-  // The kernel scanner is one xt_string rule per ENTRY, walked per packet on a first hit, so it takes each
-  // category's first N and stops (§6.7). Before this the node applied that silently and nobody could see
-  // it: the panel holds the whole list, the node holds the whole list, and only the chain knew. Named here
-  // because this is the one place that already answers "what is this node's host layer actually doing".
-  //
-  // "entries", not "names", since Phase 3: a `contains` operand shares this budget with the list's names —
-  // to xt_string they are the same rule — so a category can be truncated with names to spare. `long` is
-  // the other way an entry fails to become a rule: xt_string refuses a pattern over 128 bytes outright, and
-  // that is worth saying rather than dropping, because it is the one case the operator can actually fix.
   else if (sr.xts_cap && ((sr.xts_cap.capped || []).length || sr.xts_cap.long)) {
     const c = sr.xts_cap, bits = [];
-    // NO BUDGET NUMBER IN THE SENTENCE. It used to say "only to the first 256", which is the cap and was
-    // true right up until the pattern ceiling landed: a category holding 300 typed patterns builds 100 rules
-    // and the sentence claimed 256. The count that is always true — and the only one the operator can act on
-    // — is how many entries did not make it. `cap` stays in the payload for anyone reading smart_status.
     if ((c.capped || []).length)
       bits.push(T("{v1} matched only in part here — {v2} not matched", {
         v1: c.capped.map(x => catLabelOf(x)).join(", "), v2: plural(c.missed || 0, "entry") }));
@@ -647,37 +429,10 @@ export function HostHealth({ node, mode, learn, onLearn }) {
         v1: plural(c.long, "entry"), v2: c.maxlen }));
     note = bits.join(" · ");
   }
-  // The same report for the other engine that bounds something. It was first written as the SAME KEY as
-  // xts_cap's — one fact, one phrasing — and the catalog is what showed that was never true: the Russian for
-  // that key bakes «записей» (entries) into the sentence, so reusing it would have said "only part of the
-  // entries" about a truncation that dropped no entries. Its own key, then, and the difference is the honest
-  // one: kernel-SNI drops chain entries, names and substrings together, while this drops text patterns and
-  // nothing else.
-  //
-  // IT NAMES THE OPERANDS, NOT THE CATEGORIES, and that is the difference between a report and a shrug. The
-  // node also sends `capped` (the category ids that lost something) and it was written to say WHICH rules
-  // stopped matching — but it cannot: a Tier-2 pattern only ever lives in an INLINE CUSTOM rule (a reusable
-  // list carries none), and `catLabelOf` renders every inline custom cat as the single word "Custom". So that
-  // sentence read "Custom matched only in part here" for one rule and "Custom, Custom" for two. The operands
-  // are what the operator typed, `targetLabel` puts the stars back exactly as the badge shows them, and they
-  // can be searched for. The count stays, because the sample is bounded and the count is the real size.
-  //
-  // Naming them matters MORE here than it would per-interface, not less: the node's bound is node-WIDE while
-  // the operator's cap is per interface, so this count can exceed anything the open interface shows and the
-  // operand that stopped matching may belong to a different one. A category id could not have told them
-  // which; the operand can be searched for across the fleet.
   else if (sr.sni_cap && sr.sni_cap.missed) {
     const smp = (sr.sni_cap.sample || []).filter(x => Array.isArray(x) && x.length === 2);
     const more = sr.sni_cap.missed - smp.length;
     const shown = smp.map(([k, v]) => targetLabel(k, v)).join(", ");
-    // AND IT NAMES THE LIMIT, which the sibling above deliberately does not — the difference is UNITS, not
-    // house style, so do not unify them. `xts_cap` counts chain ENTRIES while the operator typed patterns,
-    // and one typed pattern is not one entry, so its number described something the operator could not
-    // count. Here both numbers are the same thing: `_SNI_TIER2_MAX` bounds DISTINCT TIER-2 OPERANDS and
-    // `missed` counts distinct Tier-2 operands, so "200 past a limit of 1000" is arithmetic the operator can
-    // check. Exact, not `fmtCount` — that renders 1000 as "1k", which is the right register for a measured
-    // quantity and the wrong one for a decided limit, where the point is that it IS a specific number.
-    // `cap` is written in the same object literal as `missed`, so it is there whenever this branch runs.
     const cap = sr.sni_cap.cap;
     // An older node sends no sample at all; then the count is the whole of what is known, and saying just
     // that beats padding it out. Same rule as everywhere else here: fewer facts, never invented ones.
@@ -687,15 +442,6 @@ export function HostHealth({ node, mode, learn, onLearn }) {
           v1: plural(sr.sni_cap.missed, "text pattern"), v2: cap,
           v3: more > 0 ? shown + " " + T("…and {v1} more", { v1: more }) : shown });
   }
-  // `no_lower`: kinds the running engine cannot express AT ALL — not truncated, not capped, simply not run.
-  // Kernel-SNI takes only `contains`, Force-DNS only `zone`; anything else reaches the node, builds the
-  // category's set and its mark rule, and then nothing ever fills that set. The rule reads healthy and
-  // routes nothing, which is the ending this tree has shipped twice before under other names.
-  //
-  // APPENDED, not another `else if`. A truncation and an unrunnable kind are different facts and one node
-  // can have both — and of the two, "these match nothing here" is the one the operator has to act on.
-  // The kinds are in `smart_status` for anyone reading it; the sentence carries the count and the way out,
-  // which is the same convention `lowered` follows.
   const noRun = Object.values(sr.no_lower || {}).reduce((n, v) => n + (v || 0), 0);
   if (noRun) {
     const s = T("{v1} this engine can't match at all — switch this node's mode, or route them from a node that can",
@@ -712,10 +458,6 @@ export function HostHealth({ node, mode, learn, onLearn }) {
     ${note ? html`<span class="rmh-note">${note}</span>` : null}
   </div>`;
 }
-// "on N/M nodes ▾" fleet-assignment popover — toggle a list on each node. disabledFor(nid) → a reason string greys it.
-// `noteFor(nid)` is optional and answers a question the switch cannot: this switch is a PIN, so "on 0/3" is a
-// true statement about pins and a badly misleading one about a list three nodes are routing right now (§1.4).
-// The count rides in the trigger so it is legible without opening the popover.
 export function FleetAssign({ nodes, isOn, onToggle, disabledFor, noteFor }) {
   const on = (nodes || []).filter(n => isOn(n.id)).length;
   const noted = noteFor ? (nodes || []).filter(n => noteFor(n.id)).length : 0;
@@ -729,29 +471,12 @@ export function FleetAssign({ nodes, isOn, onToggle, disabledFor, noteFor }) {
         ${note ? html`<span class="fleet-note">${note}</span>` : null}
         <${Switch} on=${isOn(n.id)} disabled=${!!dis} onChange=${v => onToggle(n.id, v)}/></div>`; })}</div>`}/>`;
 }
-// Per-category match capability, shipped by /api/state (Store.smartCaps). ip = matchable by geoip (works in
-// EVERY routing mode); host = matchable by domain via the node's dnsmasq (needs DNS → forcedns). A
-// host-ONLY category (youtube today) is dead weight in kernel mode, so the UI greys/hides it there.
 export const catCap = id => (Store.smartCaps || {})[id] || { ip: false, host: false };
-// ── the ONE rule behind every ROUTING mode-gate (mirrors blockTierOk) ──
-// An IP list routes in every mode; a domain (host) list needs a host layer — any non-IP-only mode, INCLUDING
-// Kernel-SNI (it matches domains in-kernel, unlike blocking which can't hold a big domain set). So routing's rule
-// is looser than blocking's by exactly Kernel-SNI. Every routing usability gate derives from this — one place.
+// the ONE rule behind every ROUTING mode-gate (mirrors blockTierOk)
 export const routeTierOk = (mode, tier) => tier === "ip" || mode !== "kernel";
 export const routeCapsUsable = (mode, caps) => !!(caps && ((caps.ip && routeTierOk(mode, "ip")) || (caps.host && routeTierOk(mode, "host"))));
 export const catUsableInMode = (id, mode) => routeCapsUsable(mode, catCap(id));
 
-// ── the ONE rule behind every TYPED-TARGET mode-gate (the third of the trio, beside routeTierOk above and
-// blockTierOk below) ────────────────────────────────────────────────────────────────────────────────────
-// routeTierOk answers for a LIST, whose tiers the panel already resolved. This answers for what the operator
-// TYPES, where the shape of the string decides which engine can run it. Nine kinds, four engines, one table —
-// see docs/ROUTING-RULE-BUILDER-PLAN.md §4.1, where every cell is argued.
-//   1 = native · "text" = it runs, degraded, and the badge says so · 0 = this engine cannot run it.
-// (Kernel SNI's `site` was "text" — a substring — until 1.8.8 made it the exact name plus `.name`; what it can still over-
-// match, a longer name carrying the site inside it, is said once on the mode card rather than on every site badge.)
-// The two star-in-a-label kinds sit on opposite sides of the Kernel-SNI column on purpose: xt_string asks only
-// "do these bytes appear anywhere", so it answers `contains` natively and can anchor NEITHER end — which is
-// also why a zone and a first/any name are refused there rather than silently becoming a substring.
 export const PATTERN_ENGINE_OK = {
   ip:       { kernel: 1, forcedns: 1, sni_kernel: 1,      sni: 1 },
   asn:      { kernel: 1, forcedns: 1, sni_kernel: 1,      sni: 1 },
@@ -763,28 +488,6 @@ export const PATTERN_ENGINE_OK = {
   starts:   { kernel: 0, forcedns: 0, sni_kernel: 0,      sni: 1 },
   ends:     { kernel: 0, forcedns: 0, sni_kernel: 0,      sni: 1 },
 };
-// Which kinds have a datapath TODAY, anywhere in the fleet. A domain, an IP and an AS number already route in
-// exactly this form, so the field ships them now; the six star-forms are classified, labelled and REFUSED
-// until the engine slice that lowers them lands (plan §8, phases 2-4 — one line each, right here).
-// This exists because `category:"tld"` was validated and stored for four minor versions while nothing on any
-// node ever read it: two rules, both accepted, both silently routing nothing (§5.1). A kind the datapath
-// cannot run must be unreachable in the UI, not merely undocumented.
-// `1` = every engine PATTERN_ENGINE_OK says can run this kind has its lowering BUILT. An OBJECT names the
-// engines that do, and the rest stay refused — which is how a phase ships one arm at a time without the field
-// quietly promising the other. `zone` now runs on BOTH engines the matrix allows it on: dnsmasq matches the
-// label and everything under it, swg-sni matches the name's last label. It stays an object rather than a `1`
-// because the two remaining columns are refusals of DIFFERENT kinds — Kernel-SNI and IP-only cannot run a
-// zone at all, and no future slice will change that — and because the star-forms land here the same way.
-//
-// EVERY KIND NOW SHIPS ON EVERY ENGINE THE MATRIX ALLOWS IT ON, and not one entry collapses to `1`. Phase 4
-// gave Hybrid SNI the Tier-2 scan it was missing, so `contains` is whole; `first`, `any`, `starts` and `ends`
-// run there and only there, because Hybrid SNI is the one engine holding the PARSED hostname as a string.
-// The objects stay objects, and this is the case that shows why: with `contains` complete it is tempting to
-// write `contains: 1`, and that would silently start promising it on Force-DNS and IP-only the day either
-// grows a host layer — the object says "these two engines, because those are the ones with a lowering", and
-// the four refusals it produces are four different sentences, not one. `zone` is the same shape for the same
-// reason. Nothing here is redundant with PATTERN_ENGINE_OK: that table says what an engine COULD express,
-// this one says what somebody wrote the code for.
 export const PATTERN_SHIPPED = { ip: 1, asn: 1, site: 1, zone: { forcedns: 1, sni: 1 },
                                  first: { sni: 1 }, any: { sni: 1 },
                                  contains: { sni_kernel: 1, sni: 1 },
@@ -794,20 +497,7 @@ const _shippedOn = (kind, mode) => { const v = PATTERN_SHIPPED[kind];
 // Preference order for "switch this node to…" — Force-DNS first (cheapest host layer, and the switch the panel
 // already offers), then Hybrid SNI, which is the only engine that runs every kind.
 const _FIX_MODES = ["forcedns", "sni", "sni_kernel"];
-// WHY AN ENGINE REFUSES A KIND is a property of the MATCHER, not of the pattern, so it is said once per
-// engine rather than once per cell. Default routing has no host layer at all; Force-DNS matches whole names,
-// so it can answer a suffix and nothing positional; Kernel-SNI asks only whether some bytes appear anywhere,
-// so it can anchor neither end. Hybrid SNI has no entry because it refuses nothing — its column is all 1s.
-// This replaced `routeTierOk(mode, "host")`, which asks the wrong question: it separates "has a host layer"
-// from "has none", which is accidentally right for the two kinds shipped today and becomes wrong the moment
-// Phase 3 ships `contains` — Force-DNS would then be told it "looks for text anywhere in the name", false
-// twice over. A wrong sentence about a real refusal is worse than a vague one, and it would have shipped
-// silently, so the table is written for the whole matrix now rather than for the cells reachable today.
 const ENGINE_NO = { kernel: "engine", forcedns: "whole", sni_kernel: "anchor" };
-/** Can this node run a target of this kind, and if not, what would fix it?
- *  → {ok:true} · {ok:true, degraded:true} · {ok:false, why:"invalid"|"unbuilt"|"engine", fix?:<mode>}
- *  `mode` "" means the node record has not loaded: gate NOTHING. A badge greyed because we could not look up
- *  the engine is a lie about the configuration, and the server validates either way (§4.2). */
 export function targetGate(mode, kind) {
   if (!kind || kind === "invalid") return { ok: false, why: "invalid" };
   if (!PATTERN_SHIPPED[kind]) return { ok: false, why: "unbuilt" };
@@ -815,10 +505,6 @@ export function targetGate(mode, kind) {
   // The fix we offer must be a mode that works TODAY, not one the capability matrix merely allows: sending an
   // operator to switch a node to an engine whose lowering is not written yet is worse than saying nothing.
   const fix = _FIX_MODES.find(m => row && row[m] && _shippedOn(kind, m)) || "";
-  // WHICH NO IS THIS? Asked in this order because a PARTIALLY shipped kind makes the two answers collide: a
-  // zone is refused on Kernel-SNI because xt_string cannot anchor one — a permanent fact — and telling that
-  // operator "no node can match it yet" is false, since the Force-DNS node next to it matches zones today.
-  // So the engine's own no is decided first, and "unbuilt" is left meaning only what it says.
   if (mode && row && !row[mode]) return { ok: false, why: ENGINE_NO[mode] || "engine", ...(fix ? { fix } : {}) };
   if (!_shippedOn(kind, mode)) return { ok: false, why: "unbuilt", ...(fix ? { fix } : {}) };
   if (!mode || !row) return { ok: true };
@@ -828,17 +514,6 @@ export function targetGate(mode, kind) {
 }
 export const patternOk = (mode, kind) => targetGate(mode, kind).ok;
 
-// How a classified target is SAID BACK. The operator typed a string; the badge shows the reading, and the
-// sentence under the field says what it will match in words that assume nothing about suffixes or keywords.
-// Two separate things on purpose: the badge is the canonical FORM (so `*.google.com` and `google.com` show as
-// one thing), and the sentence is the CONSEQUENCE.
-//
-// A LABEL-ANCHORED VALUE IS READ BACK OUT OF PUNYCODE. The classifier converts, and has to: `xn--p1ai` is
-// what a DNS query and a ClientHello carry, so it is what gets stored and matched. Showing it is another
-// matter — an operator who typed `*.рф` got a badge reading `.xn--p1ai` and could not recognise their own
-// rule. js/idn.js turns it back for DISPLAY only, refusing where the answer would mislead; the stored value
-// is untouched, and every caller that COMPARES badges uses `value`, never this. Tier-2 kinds are absent on
-// purpose: an IDN substring is refused by the grammar (`idn_tier2`), so their operand is always ASCII.
 const idnOf = v => idnHost(String(v == null ? "" : v));
 export function targetLabel(kind, value) {
   switch (kind) {
@@ -853,15 +528,8 @@ export function targetLabel(kind, value) {
     default: return idnOf(value);
   }
 }
-/** The punycode a readable label is standing in for, or "" when it is not standing in for anything. The
- *  badge keeps this in its tooltip: the name is what the operator recognises, the encoded form is what is
- *  actually stored and matched, and hiding the second one would make the rule impossible to verify. */
 export const targetPuny = (kind, value) => idnDiffers(String(value == null ? "" : value))
   ? String(value) : "";
-// The kind's name, in the .capb slot beside the value. Written for someone who has never heard of a suffix
-// match; the engine's own word lives in the tooltip. `first` and `any` deliberately share one label — both are
-// "this name, wherever it sits", and the difference is visible in the badge's own form.
-// Built on FIRST READ, never at import: modules load before loadLang() resolves (see --frozen).
 let _kind_label = null;
 export const KIND_LABEL = () => (_kind_label || (_kind_label = {
   site: T("kind|site"), zone: T("kind|zone"), first: T("kind|name"), any: T("kind|name"),
@@ -871,21 +539,8 @@ export const KIND_LABEL = () => (_kind_label || (_kind_label = {
 // Amber (--partial): a kind whose blast radius is orders larger than it looks. A zone is every name under a
 // whole ending; the three Tier-2 shapes match text, so they catch names nobody meant (notgoogle.com).
 export const KIND_WIDE = { zone: 1, contains: 1, starts: 1, ends: 1 };
-// The OTHER half of §12.1's Tier-2 floor, and the half a refusal cannot do. Three characters is the hard
-// floor (`short_tier2`, in the grammar, where both readers see it); between three and five the operator is
-// allowed to mean it and is told what they are asking for, because `*abc*` is not a mistake the way `*ab*`
-// is — it is a decision, and the only thing missing is the size of it.
 const TIER2_WARN = 5;
 const isTier2 = kind => patternTier(kind) === 2;   // ONE tier table, in the classifier, where the grammar is
-/* §10.5 item 9 — THE NODE'S OWN LIMIT, FROM THE NODE. xt_string refuses an operand longer than
-   `_XTS_MAXLEN` outright, and that number lived only in swg-noded: an over-long pattern was accepted here,
-   stored, shipped, and dropped at the node with a report, so the operator learned about it one sync later.
-   The panel still does not KNOW the limit — item 5 is why, a second copy of an engine's limits drifts and
-   the node's is the one that decides — it is TOLD, in `smart_status`, by the engine that enforces it, and
-   only while that engine is running. A node too old to send it, or on another mode, says nothing and this
-   stays quiet: no number, no sentence, rather than a guess ([[lesson-detection-failure-fail-safe]]).
-   Tier 2 only, and `.length` is right for it: the classifier refuses a non-ASCII Tier-2 operand
-   (`idn_tier2`), so characters and the bytes xt_string counts are the same thing here. */
 const opMaxlen = node => (((Store.stats || {})[node] || {}).smartroute || {}).op_maxlen || 0;
 export const opTooLongNote = (node, kind, value) => {
   if (patternTier(kind) !== 2) return "";
@@ -922,15 +577,8 @@ export function targetSentence(kind, value) {
 export function targetWhy(why, raw) {
   const t = String(raw || "").trim().toLowerCase();
   switch (why) {
-    // The one refusal worth teaching rather than just reporting: a bare label is almost always someone
-    // reaching for a whole zone, and guessing that for them would be a rule of enormous blast radius.
-    // `.ru` is the same reach written the way most people write a zone, so it gets the same sentence — the
-    // leading dots come off for the substitution, or it reads "the whole ..ru zone".
     case "bare_label": case "lead_dot": return T("Did you mean the whole .{v1} zone? Write *.{v1}.", { v1: t.replace(/^\.+/, "") });
     case "bad_ip": return T("That isn't a valid IP address or range.");
-    // Answer about the thing they typed. This used to fall through to the catch-all below, so someone who
-    // typed a NAME was told it was not an address, an IP range or an AS number — three nouns, none of them
-    // the one in the field.
     case "bad_domain": return T("That isn't a valid web address.");
     case "star_mid": return T("A * goes at the start or the end of a name, not in the middle.");
     case "multi_label_operand": return T("Put one name between the stars, not a dotted address.");
@@ -946,31 +594,8 @@ let _ruleSeq = 0;
 export const newRid = () => "rr" + (++_ruleSeq);
 
 
-// The full catalog index, fetched when the panel says it changed and searched CLIENT-side — so search matches the readable title
-// (country names, friendly names) and descriptions, not just the raw provider id. ~3.5k tiny rows.
-//
-// Each row is DECORATED once, here, with the two things the search needs: `disp` (the readable title, a regex
-// plus an Intl.DisplayNames lookup) and `hay` (id · raw id · title · description, lowercased and joined). The
-// filter used to compute both for all ~3.5k rows on every keystroke, which was tolerable in a Settings screen
-// nobody opens and is not in the panel's primary routing control. Now a keystroke is a substring scan over a
-// flat array, and prettyCatLabel runs once per row for the life of the page instead of once per row per key.
 let _CATALOG_INDEX = null;
 let _CATALOG_BY_ID = {};
-// FRESHNESS IS THE PANEL'S CALL, NOT THE CALLER'S (docs/CATALOG-FRESHNESS-PLAN.md D1). Two earlier shapes each fixed
-// one symptom and moved the bug. Consumers that refetched only while their copy was EMPTY kept the first non-empty
-// index for the life of the page: switch a second provider on and its lists never appeared. A signature rebuilt
-// here from the provider switches then missed every change that is not a switch — the daily rebuild, "Check for
-// updates", a provider whose download failed and later succeeded.
-//
-// The key is the panel's `catalog_gen` (it moves whenever the index the panel holds changes) plus the enabled
-// providers, SORTED so another tab saving the same set in a different order changes nothing. What comes back is
-// labelled with the key as it stood when the request STARTED: the key held here is never newer than what the panel
-// then reads, so a change landing mid-request costs one extra fetch and can never leave old rows under a new key.
-//
-// An answer — an EMPTY one included — stands for its key: the panel's index can only change when catalog_gen or the
-// enabled set moves, and either changes the key. (That is why the old 20 s retry timer is gone.) A FAILED request is
-// not an answer, so it is forgotten and the next open asks again. Callers key their effect on catalogKey() and never
-// judge freshness themselves, which is also what keeps this from running once per render.
 let _CATALOG_KEY = null;
 let _CATALOG_REQ = { key: null, p: null };   // the latest request: shared by every caller asking under the same key
 export const catalogKey = () => {
@@ -1009,11 +634,6 @@ export function loadBlockCatalog(force) {
   }).catch(() => null);
 }
 
-// Concise, user-facing tooltips for the built-in traffic/abuse mechanisms shown in the interface's Block-traffic section.
-// ── the ONE rule behind every block-UI mode-gate ──
-// A domain (host) list enforces only where the node fills domain sets from DNS (Force-DNS / Hybrid-SNI); an IP list
-// matches in every mode. IP-only can't match domains at all; Kernel-SNI can't hold a domain blocklist. Every gate
-// below (source availability, category disable, picker badge) derives from this — one place, no drift.
 export const blockTierOk = (mode, tier) => tier === "ip" || (mode !== "kernel" && mode !== "sni_kernel");
 export const blockHostBlind = mode => !blockTierOk(mode, "host");                                  // this node can't enforce ANY domain list
 export const blockProvTier = (providers, p) => ((providers || []).find(x => x.id === p) || {}).tier || "host";
@@ -1038,12 +658,6 @@ export const MECH_HINT = () => (_mech_hint || (_mech_hint = {   // Torrents / P2
   doh:          T("Drop DoH / DoT / DoQ so DNS can't slip past the tunnel's filtering. A client whose only resolver is encrypted stops resolving."),
   webrtc:       T("Block WebRTC / STUN — prevents the client's real IP leaking around the tunnel."),
 }));
-// The panel's own block categories reach the browser as DATA — swg-panel-server's BLOCK_CATEGORIES / MECH_CATEGORIES, each
-// with its English label — so every screen that printed `c.label` showed "Ads & Trackers" on the Russian panel (1.8.8
-// qualification). An operator can rename one (the API takes a label for any category), and the Overview's entries carry
-// the label alone, so the lookup is by the LABEL: while it is still the built-in English text it reads in the panel's
-// language; a renamed or custom one prints as typed. Protocol names (QUIC / HTTP-3, DoH / DoT / DoQ, WebRTC / STUN) are
-// the same in every language and are not listed. Built on first read, like MECH_HINT.
 let _block_cat_label = null;
 export const blockCatLabel = label => (_block_cat_label || (_block_cat_label = {
   "Ads & Trackers":           T("bcat|Ads & Trackers"),
@@ -1059,12 +673,6 @@ export const blockCatLabel = label => (_block_cat_label || (_block_cat_label = {
   "Port-scan / Brute-force":  T("bcat|Port-scan / Brute-force"),
   "Cryptomining":             T("bcat|Cryptomining"),
 }))[label] || label;
-// …and the lists behind them: each provider list's name and description (swg-panel-server BLOCK_PROVIDER_LISTS) arrive
-// in English too. A description is the panel's own prose and reads in the panel's language; a name does when it
-// describes content ("Ads", "Social networks") and stays as published when it is the provider's own edition or brand
-// ("Pro", "Light", "Level 1", "Spamhaus DROP") — those have no line. Names first, then descriptions. Literal T() calls,
-// as everywhere (see evItemLabel): a composed key cannot be verified. The context prefix keeps a list called "Light"
-// away from the theme's «Светлая».
 let _blist = null;
 export const blistText = s => (_blist || (_blist = {
   "Abuse": T("blist|Abuse"),
@@ -1147,11 +755,6 @@ export function defaultBlockFor(node) {
     (c.kind === "mechanism" || (c.enabled_nodes || []).includes(node))).map(c => c.id);
 }
 
-// How many of an interface's filters are ACTIVE here — exactly the chips BlockTraffic lights up: a built-in mechanism, or a
-// category enabled on this node that can enforce in its mode. block[] can hold more — a category since switched off for
-// this node keeps its id so switching it back restores it — and those enforce nothing (the panel skips them too), so
-// counting them in "N active" claimed protection that was not there. Before the catalog loads: the plain length.
-// …and the interface's own torrent route or Direct (`p2p`) is one more, only where it counts: under "Each interface decides".
 export function blockActiveN(node, value, p2p) {
   const bc = Store.blockCatalog; const ids = value || [];
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
@@ -1163,10 +766,6 @@ export function blockActiveN(node, value, p2p) {
       : ((c.enabled_nodes || []).includes(node) && blockCatLive(mode, bc.providers, c))); }).length;
 }
 
-// ── Torrents / P2P — the choice, its route rows and their hints: ONE builder for the node-wide picker (Settings ▸ node ▸
-// Filters & abuse) and each interface's own (`IfaceP2p`), docs/IFACE-P2P-PICK-PLAN.md §5. A value names its target —
-// "dev:<exit id>" (one of this node's exits) or "exit:<node id>" (another node over the mesh) — and the stored record is
-// {action:"dev", exit_id} / {action:"exit", node}, the routing rule's shape.
 export const p2pVal = p => !p || !p.action ? "" : p.action === "dev" ? "dev:" + p.exit_id : p.action === "exit" ? "exit:" + p.node : p.action;
 export const p2pRec = val => val.startsWith("dev:") ? { action: "dev", exit_id: val.slice(4) }
   : val.startsWith("exit:") ? { action: "exit", node: val.slice(5) } : { action: val };
@@ -1181,12 +780,6 @@ export const p2pTarget = (p, exits, node) => {
 const P2P_SHORT = () => ({ block: T("blocked"), direct: T("this server's address only"), iface: T("per interface") });
 export const p2pLabel = (p, exits, node) => !p || !p.action ? "" : (p.action === "dev" || p.action === "exit")
   ? T("via {v1}", { v1: p2pTarget(p, exits, node) }) : (P2P_SHORT()[p.action] || "");
-// The route rows. The exits are the ROUTING PICKERS' OWN LIST (`exitOptionGroups`): a switched-off exit and a WARP account that is
-// not ready are refused with their own reason, health is read from the stored record (a draft carries none), and every exit is
-// named as it is everywhere else. A copy of that list had missed the not-ready case (code review, 2026-10-03). Choosing a row
-// that cannot carry anything says why instead (`refuse`) — only for what is structurally impossible: a node with no mesh link.
-// A node that is not reporting is a passing state judged in this browser, so it is a warning on the chosen target
-// (`p2pTargetHints`), never a refusal.
 export function p2pTargetOpts(node, exits) {
   const linked = new Set((node.mesh_peers || []).filter(m => m && m.iface).map(m => m.peer));
   const viaNode = (Store.nodes || []).filter(n => n.id !== node.id).map(n => ({ value: "exit:" + n.id,
@@ -1196,11 +789,6 @@ export function p2pTargetOpts(node, exits) {
       .map(g => ({ ...g, items: g.items.map(it => ({ ...it, label: T("Route through {v1}", { v1: it.label }) })) })),
     ...(viaNode.length ? [{ group: T("Through another node"), items: viaNode }] : [])];
 }
-// What the chosen target says beside it. A node that drops P2P other nodes send it — Block, or a route of its own (it routes only
-// its own clients' P2P) — and one not reporting: `nodeStatusOf`, recon's verdict where this browser has judged the node, the
-// SERVER'S where it has not, so a node that has never reported ("dangling") warns too. And (Q-B, operator 2026-10-21: a hint,
-// never a refusal) a SOCKS5 exit that carries no UDP: DHT and µTP cannot pass it. Its `udp_ok` is read from the STORED record's
-// live state; null — not proven yet — reads as no UDP, as the node runs it (SOCKS5 D-d). Any other exit kind says nothing.
 export function p2pTargetHints(rec, node, draft = null) {
   const out = [];
   const tgt = rec && rec.action === "exit" ? (Store.nodes || []).find(n => n.id === rec.node) : null;
@@ -1215,11 +803,6 @@ export function p2pTargetHints(rec, node, draft = null) {
   return out;
 }
 
-// An interface's (WDTT's, csqtt's) own Torrents / P2P — what `block[]` can say (Block: "torrents" in it) and what it cannot
-// (`p2p`: Direct, or a route). The rows follow the SERVER'S policy: its own choice counts only under "Each interface decides";
-// under any other the allow/route rows are refused, naming where to change it — a save of one interface never switches the
-// whole node (§5, reversed in review: under Block that would stop judging mesh arrivals and the node's own programs). Block
-// counts everywhere, as it always has.
 export function ifaceP2pModel(nrec, block, p2p) {
   const pol = nrec.p2p_eff || "block";
   const iface = pol === "iface";
@@ -1252,9 +835,6 @@ function IfaceP2p({ node, block, p2p, onPick }) {
   </div>`;
 }
 
-// The Never-block list under an interface's content filters — where an operator looks when a site is blocked. Names are taken
-// out only by a Force-DNS / Hybrid SNI node whose noded reports `allow`; addresses by the panel, on every node. Entries read by
-// the rules' own grammar (classifyAll), as the Settings box reads them.
 function nbLine(node, mode) {
   const kinds = new Set(classifyAll((Store.panelSettings?.block_allow || []).join("\n")).map(c => c.kind));
   const names = kinds.has("site") && (mode === "forcedns" || mode === "sni") && !!((Store.stats[node] || {}).smartroute || {}).allow;
@@ -1265,10 +845,6 @@ function nbLine(node, mode) {
     : T("Addresses on the Never-block list (Settings → Geo data providers → Blocking) are taken out of these lists here.")}</div>`;
 }
 
-// Per-interface "Block traffic" (screen ③) — the daily policy surface. Content/IP categories the operator enabled on
-// THIS node plus the built-in traffic/abuse mechanisms; a chip toggles the category id in the interface's block[], and
-// the node drops matching traffic on its next sync. Domain (content) categories are inert on an IP-only (kernel) node
-// — shown greyed with a reason, the choice kept for when the mode changes.
 export function BlockTraffic({ node, value, onChange, p2p, onP2p }) {
   useStore(); useEffect(() => { loadBlockCatalog(); }, []);
   const bc = Store.blockCatalog;
@@ -1315,9 +891,6 @@ export function BlockListPicker({ providers, provLists, current, nodeMode, onAdd
   // everywhere. Same shared rule (blockTierOk) as every other block gate. Badge it, still addable.
   const naLabel = (MODE_META[nodeMode] || {}).label || nodeMode;
   const naFor = p => blockSrcOk(nodeMode, providers, { provider: p }) ? null : naLabel;
-  // One test for the rows and for "No lists match": the search finds what a row SHOWS as well as the English it was
-  // published under. (The empty check used to read the name alone, so a match found only in a description listed rows
-  // AND said nothing matched.)
   const shown = (p, it) => !has(p.id, it.id) && (!ql || [it.label, it.desc, blistText(it.label), blistText(it.desc), p.label]
     .join(" ").toLowerCase().includes(ql));
   return html`<${Popover} alignRight flipFit clickOnly cls="bk-addwrap" popCls="bk-pickpop" autoOpen=${autoOpen}
@@ -1360,11 +933,6 @@ export function NewBlockCatSheet({ existingIds, onCreate }) {
   <//>`;
 }
 
-/* Where a WIDE catalog popover goes. Rows carry a title, a description, sizes and caps, so it spans the
-   container rather than the trigger — and the container is the nearest of the sheet body, a Settings card or
-   a Settings pane. Anchoring to .card/.setpane alone walks straight past a modal to a card BEHIND it and
-   lands the popover somewhere unrelated; nearest-ancestor-wins keeps Settings on exactly what it had.
-   The rule field's dropdown opens here. */
 export function placeWide(el) {
   const r = el.getBoundingClientRect();
   const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
@@ -1375,28 +943,6 @@ export function placeWide(el) {
     width: Math.round(br.width - pad * 2), flip, wide: true, maxh: Math.max(300, Math.round(flip ? above : below)) };
 }
 
-/* ── the rule builder's field: one place to say everything a row sends somewhere ────────────────────────
- *
- * Replaces three controls that used to sit in a row — the category dropdown, its "Custom IPs / domains…"
- * entry, and the textarea that appeared underneath when you chose it. They were a mode switch you had to
- * make before you could type, and the dropdown could only ever hold one thing, so "these fifteen services
- * to Germany" was fifteen rows. See docs/ROUTING-RULE-BUILDER-PLAN.md §3.
- *
- * The field SEARCHES AND ACCEPTS AT THE SAME TIME. Typing `google` offers both the curated Google list and
- * "match the name google.com"; neither reading is behind a mode. What is typed is classified by the shared
- * grammar (js/classify.js) and said back as a badge with its kind and a sentence — we infer the kind rather
- * than making the operator name it, which is what every routing engine's own UI does and what assumes the
- * operator knows what a suffix match is.
- *
- * A badge is never silently dropped. One that this node's engine cannot run is kept and marked INERT with
- * the reason and, where one exists, the button that fixes it — the same rule the panel already holds for
- * per-node list assignment and for stored ids it merely cannot validate. A token that means nothing
- * anywhere is a different thing entirely and is refused out loud, before it can become a badge (§5.3).
- */
-
-// Caps for a category from wherever they are known: /api/state's smart_caps (a routed cat), the catalog index
-// (anything searchable), or this session's list-info cache (a row just browsed). {} = not known — and an
-// unknown capability gates NOTHING, for the same reason an unloaded node record does.
 export function catCapsAny(id) {
   const s = (Store.smartCaps || {})[id]; if (s && (s.ip || s.host)) return s;
   const ix = _CATALOG_BY_ID[id]; if (ix && ix.caps && (ix.caps.ip || ix.caps.host)) return ix.caps;
@@ -1420,10 +966,6 @@ export function listGate(mode, id, node) {
 }
 /** The verdict for any badge — the one call every gate in the field and in egressSaveBlock goes through. */
 export const badgeGate = (mode, node, b) => b.t === "list" ? listGate(mode, b.id, node) : targetGate(mode, b.kind);
-/* …and for a badge IN A ROW, which adds P1's interim Kernel-SNI gate (ROUTING-PEERS-MESH-PLAN §6.3). A per-person row never
-   reaches xt_string — its `-s <subnet>` would widen the row to everyone — so on Kernel SNI the row's IP targets route through
-   the nft row and its hostnames route nobody, until the node reports `src: 2`. A hostname badge there is inert with the
-   switch to Hybrid SNI; a list holding both kinds routes its IP half and says so. */
 const _ipKind = k => k === "ip" || k === "asn";
 /** Does this badge match by site name? A list by what it can hold, a typed target by its kind. The ONE test: the per-person
  *  Kernel SNI gate, the Block notices, the port chip and the lints all ask it. */
@@ -1441,18 +983,10 @@ export function rowGate(row, mode, node, b) {
     : { ok: false, why: "person_ksni", fix: "sni" };
 }
 
-/* F105 (the 1.8.8 qualification's #18): on an SNI engine "Everything else → Block" drops each new connection to an address no
-   rule has learned yet — before its site name can be read — so a rule above it that matches by site name never sees one: an
-   allow-list by name blocks everything. The datapath change was judged not worth it (it would let a Block's first packets out),
-   so the rule list says it where the operator builds it. A Block row above it loses nothing; the others are counted. */
 const _byName = r => r.enabled !== false && r.action !== "block" && (r.badges || []).some(_nameBadge);
 export const catchAllPreemptsNames = (mode, rows, catchAll) => (mode === "sni" || mode === "sni_kernel")
   && !!catchAll && catchAll.action === "block"          // only a catch-all that is on reaches here (rulesToRows, setCatch)
   && (rows || []).some(_byName);
-/* …and the same for a Block ROW to every address (0.0.0.0/0, D10) that reaches TCP 443 (B.6): it drops the same first packets,
-   so the rows above it that match by site name never see one — for the people it is for: a Block for chosen people (the
-   only way to block everything for them, D10) preempts a name row for everyone or for the same people. The index of the
-   first such row, or -1. */
 export const allBlockPreemptsNames = (mode, rows) => {
   if (mode !== "sni" && mode !== "sni_kernel") return -1;
   return (rows || []).findIndex((r, k) => r.enabled !== false && r.action === "block" && portsReach(portsOf(r), "tcp", 443)
@@ -1460,10 +994,6 @@ export const allBlockPreemptsNames = (mode, rows) => {
     && rows.slice(0, k).some(up => _byName(up) && (!r.who || rowCovers(up, r))));
 };
 
-/* PORTS ON A RULE (B.4, the engine matrix — kept here only, fact 12): what the node does with a row's ports, every sentence
-   that applies, for the chip — and whether it is a WARNING: part of what the operator named never reaches the rule. A port
-   only inside "every port" (UDP 443 in "every UDP port") is said, not warned: the rule works for all the rest. `blk` is the
-   interface's Block-traffic switches, which drop their ports before any rule. */
 export function portsNote(mode, row, blk = []) {
   const p = portsOf(row);
   if (!p) return null;
@@ -1504,17 +1034,8 @@ function PortChip({ row, mode, blk }) {
     ? html`<${Ic} i="warn"/>` : null}${portsLabel(portsOf(row))}</span>`;
 }
 
-/* Why a badge cannot run here, said in one sentence, plus the label of the mode that would fix it. Never a
-   bare "unsupported": the operator has to be able to act on it, and for three of the five reasons the action
-   is one click away. */
 export function gateReason(g, modeLabel) {
   switch (g.why) {
-    // "unbuilt" HAS TWO MEANINGS AND THEY NEEDED TWO SENTENCES, which only became visible with a kind that is
-    // shipped on ONE engine. `contains` on Hybrid SNI took this branch — the matrix allows it, the lowering is
-    // not written yet — and said "no node can match it" directly beside the badge's own fix button offering
-    // "Switch this node to Kernel SNI", which matches it today. `g.fix` is exactly the discriminator: it is set
-    // only when some mode both allows the kind AND ships it, so if it exists then a node CAN match this and the
-    // absolute sentence is false. Same hazard the check ORDER above was written for, one step further along.
     case "unbuilt": return g.fix
       ? T("No engine on this node routes this kind yet — {v1} does.", { v1: (MODE_META[g.fix] || {}).label || g.fix })
       : T("This panel doesn't route this kind of address yet — it's classified and stored, but no node can match it.");
@@ -1522,38 +1043,16 @@ export function gateReason(g, modeLabel) {
     case "person_ksni": return T("Kernel SNI on this node can't match hostnames for chosen people — only this rule's IP addresses and networks apply here. Switch to Hybrid SNI to match them.");
     case "prov_off": return T("This list's provider is switched off — turn it back on in Settings ▸ Geo data providers.");
     case "engine": return T("{v1} matches by IP only — this needs a host layer.", { v1: modeLabel });
-    // ⚠️ ONE SENTENCE PER ENGINE MUST BE TRUE OF EVERY KIND THAT ENGINE REFUSES — five each, and both of
-    // these were written for one of the five. `anchor` said "can't match a whole ending", the ZONE case,
-    // and was shown on `qualstarts*`, `qualfirst.*` and `*.qualany.*`, none of which is an ending. `whole`
-    // said "can't match part of one", the substring case, and was shown on `qualfirst.*` and
-    // `*.qualany.*`, which are whole labels, not parts.
-    // So state the MATCHER's limit and let every refusal follow from it, rather than listing the cases —
-    // a list is what went wrong here, and a list silently stops covering the row when a kind is added.
-    // xt_string reports only THAT some bytes occur, never where, so no anchor of any sort is expressible;
-    // dnsmasq keys on a suffix, so a name-and-everything-under-it is the only shape there is.
     case "anchor": return T("{v1} only asks whether some text appears somewhere in a name — it never learns WHERE, so it can't anchor to a beginning, an ending or a label.", { v1: modeLabel });
     case "whole": return T("{v1} matches a whole name and everything under it — never a single label on its own, and never part of a name.", { v1: modeLabel });
-    // NOT about the node, so it names no engine and offers no fix: switching engines does not raise it.
-    // §12.1's cap is a cost bound on the one part of the matcher whose cost grows, and the way out is to
-    // stop hand-writing them — which is what the sentence says rather than only stating the number.
     case "cap": return T("{v1} is all one interface can match by text — remove one to add another, or use a list instead.",
                          { v1: plural(TIER2_CAP, "text pattern") });
     default: return T("Not a valid address, IP range or AS number.");
   }
 }
 
-/* Record counts for a list, from whatever the panel already knows — the operator's own list (its targets are
-   right there), a routed cat's shipped cat_sizes, or this session's /api/list-info cache. `null` means nobody
-   has resolved it yet, which is the state the badge calls PREPARING; `{err:true}` means the panel tried and
-   came back empty-handed, which is NOT READY and offers a retry.
-   ONE function, because the badge and the cost meter both need this and a second copy is how they end up
-   disagreeing — which is exactly what happened while building this: the badge resolved and the meter, computed
-   in an earlier render, went on quoting a number that was already wrong. */
 const _LIST_INFO_PENDING = {};   // id -> ts of the ask now in flight
 const _LIST_INFO_WAIT = {};      // id -> Set(onDone) — everyone waiting on that one ask
-// Three different nothings, and they are not interchangeable: PENDING is the panel still fetching (→ null, the
-// badge waits), FAILED is the panel having tried (→ {err}, the badge offers a retry), and zero counts with
-// neither flag is a list that resolved and routes nothing (→ 0, which is a number and gets shown).
 const _sizeOfInfo = d => {
   if (!d || !d.tiers) return { err: true };
   const host = (d.tiers.host || {}).n || 0, ip = (d.tiers.ip || {}).n || 0;
@@ -1570,25 +1069,8 @@ export function listSizeNow(id) {
   const c = _LIST_INFO_CACHE[id];
   return c ? _sizeOfInfo(c) : null;
 }
-/* The panel answers "still fetching" now instead of holding the connection open (§6.1), so asking once is not
-   enough — ask again, on a timer, and give up out loud rather than spinning for ever. Both numbers are the
-   plan's: re-ask every ~1.5 s, stop after ~60 s. */
 const LIST_ASK_MS = 1500, LIST_WAIT_MS = 60000;
-/** Resolve one list, polling while the panel says it is still working. Writes the answer into the shared cache
- *  and calls `onDone` after every attempt, so a badge and the cost meter redraw together.
- *
- *  TWO CALLERS, TWO HORIZONS, and the difference is who is waiting. A BADGE is a list the operator committed
- *  to, so it waits the full minute and, when nothing comes, writes an error — "we waited and nothing came" is
- *  a state it can show and offer a retry on, where an absent entry would just start the cycle again. A BROWSE
- *  ROW is one of fifty things being scrolled past: it asks, re-asks once, and then stops, leaving the pending
- *  answer alone so a badge made from that row can take over the waiting. Fifty rows polling every 1.5 s for a
- *  minute would be the same thundering herd this endpoint was just fixed to avoid, on the client side. */
 function askListInfo(id, onDone, opts) {
-  // EVERY caller is told, not just the one that started it. A badge picked from a browse row asks about the
-  // same id that row is already asking about, so it used to return here and then never hear anything — the
-  // row's short poll gave up, cleared the flag, and the badge sat on "preparing…" for ever with nobody left
-  // waiting. Whoever owns the request notifies all of them, and the last notification is what lets a badge
-  // start its own longer wait where the row left off.
   const waiters = _LIST_INFO_WAIT[id] || (_LIST_INFO_WAIT[id] = new Set());
   waiters.add(onDone);
   if (_LIST_INFO_PENDING[id]) return;
@@ -1608,9 +1090,6 @@ function askListInfo(id, onDone, opts) {
   }).catch(() => stop({ err: true }));
   go(!!retry);
 }
-/* Resolve every list in the row that nobody has resolved yet, and re-render when one lands. Picking a list
-   already had to ask /api/list-info for its size, and that endpoint already kicks the panel's own background
-   resolve, so resolve-on-pick needs no new endpoint and no second call (§6.2). */
 function useListSizes(ids, onLand, tries) {
   const key = ids.join(",");
   useEffect(() => {
@@ -1619,33 +1098,10 @@ function useListSizes(ids, onLand, tries) {
     return () => { live = false; };
   }, [key, tries]);
 }
-// STATUS ONLY — the SIZE is deliberately not drawn here any more. "28 hosts · 911 nets" beside every list
-// badge is the widest thing in a rule row and the least often needed: it helps you CHOOSE a list, which is
-// the dropdown row's job (`catrow-size`), not to recognise one you already picked. Four lists in a rule used
-// to push the row to two lines for a number nobody was reading. It moves to the badge's tooltip in `Badge`,
-// so it is a hover away rather than gone.
-//
-// The other two states STAY, because neither is a size: "preparing…" says the rule is fine and waiting, and
-// "not ready" is the only retry there is for a list the panel has not fetched. Dropping those with the
-// number would have removed the way out of a stuck list to save the same pixels.
 function ListBadgeSize({ cat, onRetry }) {
-  // ⚠️ "NOT FOUND" IS NOT "NOT READY", and the badge used to say the second for both. A list the panel has
-  // simply not fetched yet is a WAIT with a way out; a list it has no record of is a rule that will never
-  // match anything. They looked identical — same word, same amber, same retry — so an id that does not
-  // exist rendered as a plausible provider badge: `v2:no-such-list` even wears v2fly's own green chip.
-  //
-  // Both states are reachable without anyone typing nonsense: a provider switched off in Settings, or a
-  // list withdrawn upstream, turns a rule that used to work into one naming something gone.
-  //
-  // Said only when it can be PROVEN — `knownListId` answers false only with a loaded, non-empty catalog
-  // that does not contain the id; while the catalog is unknown it says nothing, and the wait applies.
   if (!knownListId(cat)) return html`<span class="tfb-size missing"
     title=${T("No list with this id — its provider may be switched off in Settings, or the list was withdrawn upstream. The rule keeps it, and it matches nothing until it comes back.")}>${T("list|not found")}</span>`;
   const sz = listSizeNow(cat);
-  // RESOLVED TO NOTHING IS ALSO A PROBLEM, and moving the size to the tooltip lost the signal that used to
-  // say so: the old branch printed the count or the word "empty", and returning null for both meant a list
-  // that resolves to zero records — which is what a made-up id under a REAL provider does — showed no state
-  // at all. It is the only signal available when the catalog is not loaded and `knownListId` cannot judge.
   if (sz && !sz.err) return sizeSummary(sz.host, sz.ip) ? null : html`<span class="tfb-size missing"
     title=${T("The panel resolved this list and it holds nothing — check the id, or the source may have emptied it.")}>${T("list|empty")}</span>`;
   if (!sz) return html`<span class="tfb-size preparing" title=${T("The panel is fetching this list now — it routes as soon as it lands.")}>${T("preparing…")}</span>`;
@@ -1655,65 +1111,24 @@ function ListBadgeSize({ cat, onRetry }) {
                      askListInfo(cat, onRetry, { retry: true }); onRetry(); }}>${T("not ready")}</button>`;
 }
 
-// ── THE TEXT FORM OF A BADGE ──────────────────────────────────────────────────────────────────────────
-// The grammar itself lives in `js/rulerows.js`, beside `badgeIdentity` and `badgeCovers`, because it is a
-// FORMAT and not a screen: operators keep it in files and paste it between panels, so it must not depend on
-// what this panel happens to have loaded. That module imports no preact, which is what lets
-// `.campaign/textform-audit.mjs` prove the round trip in node — a property no amount of clicking can hold.
-//
-// Policy is injected rather than baked in: which KINDS this node's engine accepts, and which LIST IDS this
-// panel can vouch for, are both live state, and neither belongs in a grammar.
-/* `listEditor` is the CUSTOM-LIST context: a field editing a list, not a rule. A list may not contain another
-   list — cascade_plan expands `custom_lists[cat]` into its domains/cidrs/patterns and never recurses, so a
-   nested id would store cleanly, badge cleanly, and route NOTHING. That is the `*.ru` shape exactly, and the
-   cheapest place to stop it is the grammar, where the refusal already travels back to the field. */
+// THE TEXT FORM OF A BADGE
 const readToken = (tok, mode, listEditor) => rrReadToken(tok, {
   allowKind: k => targetGate(mode, k).ok,
   knownList: listEditor ? () => false : knownListId,
 });
 
-// Is this a list this panel can route? Checked against the three places one can come from — and REFUSED only
-// when we can PROVE it is none of them.
-//
-// ⚠️ THE CATALOG IS LAZY. `_CATALOG_BY_ID` fills when the dropdown first opens, so a strict check refused
-// every provider list until the operator had happened to browse — measured here, where the providers `mc`
-// (metacubex) and `v2` (v2fly) are configured and `list:metacubex:youtube` was rejected as unknown purely
-// because nothing had asked for the index yet. A refusal that depends on where the operator clicked before
-// is not a refusal, it is a race. So an unloaded catalog means "cannot say", and the token is accepted:
-// the SERVER is the real authority and already drops a category none of the catalog, the custom lists and
-// the built-ins have heard of, reporting it as `unknown_list` (swg-panel-server:10927).
-// `all` is no list: it is "Everything else" (SMART_CATEGORIES carries it for the catch-all's label). Refused here, so every
-// path that adds a typed list — the box's Enter, the dropdown's "use what you typed", readToken's callers — refuses it.
 export const knownListId = id => !!id && String(id).toLowerCase() !== "all" && (
   SMART_CATEGORIES().some(([c]) => c === id)                                    // a curated preset
   || (Store.panelSettings?.custom_lists || []).some(l => l && l.id === id)      // one the operator wrote
-  // ⚠️ THE BENEFIT OF THE DOUBT IS ONLY FOR PROVIDER IDS. A BARE id can always be judged: the curated
-  // presets and the custom lists are both held locally, so `list:nope` is provably nothing on any panel,
-  // catalog or no catalog. Extending the doubt to it meant a plain typo was accepted everywhere and then
-  // shown as "not ready" — a WAIT, for a list that is never coming. Only `provider:list` needs the index.
   || (isProviderCat(id) && (!!_CATALOG_BY_ID[id]                                // already indexed…
                             || !_CATALOG_INDEX || !_CATALOG_INDEX.length)));    // …or there is no index to ask
-// ⚠️ AN EMPTY INDEX IS NOT AN ANSWER, and the first version of this guard treated it as one. `[]` is truthy,
-// so a panel whose providers are configured but whose lists have not been fetched — exactly the state this
-// one is in — loaded a successful, EMPTY catalog and then refused every provider list with a straight face.
-// "Found nothing" is not "looked and it is not there"; only a non-empty index can say a list does not exist.
 
-// WHOSE LIST IS THIS — the one answer the chip and the tooltip both use, so they cannot disagree.
-// "Custom" was the fallback for anything without a provider, which made it a claim rather than a label: an
-// id the panel has never heard of has no provider EITHER, so a `list:no-such-thing` typed in the text view
-// came back badged "Custom list" — naming a source it does not have. A custom list is one that is actually
-// in `custom_lists`; everything else with no provider is simply unknown, and the badge already says so a
-// second way ("not found", or "empty" when it resolved to no records).
 const listSourceOf = id => provLabelOf(id) || (customListOf(id) ? T("Custom") : T("Unknown list"));
 
 // The resolved size as a string, or "" — for the badge TOOLTIP, since the badge no longer spends a row on it.
 const listSizeOf = cat => { const sz = listSizeNow(cat);
   return sz && !sz.err ? (sizeSummary(sz.host, sz.ip) || T("empty")) : ""; };
 
-/* One badge. A list keeps its provider colour; its size moved to the tooltip (see ListBadgeSize). A typed
-   target shows the canonical form of what was written plus the kind, in the same .capb slot a list uses for
-   Host/IP. Inert badges keep their content and lose their colour — a capability change must never look
-   like a deletion. */
 function Badge({ b, gate, node, modeLabel, onRemove, onEdit, onFix, onRetry, onReveal, editing }) {
   const inert = !gate.ok;
   const isList = b.t === "list";
@@ -1727,10 +1142,6 @@ function Badge({ b, gate, node, modeLabel, onRemove, onEdit, onFix, onRetry, onR
       + (listSizeOf(b.id) ? " · " + listSizeOf(b.id) : "")
     : targetSentence(b.kind, b.value)
       + (puny ? " · " + T("Stored and matched as {v1}.", { v1: puny }) : "")
-      // A STORED badge can be over the node's limit too — it was typed before this node moved to an engine
-      // that has one, or posted by an API client. The live sentence says it while typing; without this the
-      // same operand goes quiet the moment it becomes a badge, which is the half of §10.5 item 9 that is
-      // about a rule the operator has already finished writing.
       + opTooLongNote(node, b.kind, b.value)
       + (gate.degraded ? " · " + T("On this node it is matched as text anywhere in the name.") : "")
       + (gate.note ? " · " + gate.note : "");
@@ -1755,29 +1166,6 @@ function Badge({ b, gate, node, modeLabel, onRemove, onEdit, onFix, onRetry, onR
 // collapses behind a count that expands in place. Fifteen services in one row is the point of the field.
 const BADGE_CAP = 10;
 
-// `trailing` is a SLOT IN THE FOOT, not another column. The rule row wants the box across the full width of
-// the dialog with the destination control tucked under it on the right, level with the entry count — and the
-// foot belongs to this component (it is built from state nobody outside can see), so the destination comes
-// IN rather than the foot going OUT. The alternative was `display:contents` on `.tfield` to flatten it into
-// the row's grid, which would have zeroed the very box the popover measures itself against.
-/* `listEditor` — this field is editing a LIST's contents, not a rule. One context flag rather than three
-   behaviour flags: a caller cannot combine them wrongly, and
-   everything it switches follows from the one fact. It was briefly called `noLists`, which named one of the
-   four things it does and left the other three — the copy, the toggle's placement, the absent catalog —
-   reading as unrelated.
-   No node, no catalog, no nesting. The custom-list editor is the one consumer
-   with no interface behind it: `mode` is absent so targetGate refuses nothing on engine grounds ("no mode
-   known → gate nothing", as _shippedOn already said), the budget belongs to the rule that NAMES this list
-   rather than to the list, and the catalog is hidden because a list cannot hold one. Everything else — the
-   badges, the text view, click-to-edit, the per-token reasons — is the same control an operator already
-   knows from a rule, which is the whole point of reusing it. */
-/** What a rule's field shows that its row does not hold, or "" — reported through `onLint` into the row's `_draft`, which
- *  every Save path asks (egressSaveBlock, nodeListBlock, the custom-list sheet). The text view's unapplied draft — and,
- *  the same silent loss one step earlier, text typed into the box and never added: a Save posts `row.badges`, so it
- *  dropped that text without a word while the operator looked at it (the routing plan promised this block for the node
- *  list and every interface sheet; measured in the 1.8.8 qualification, it held for the text view only). A badge
- *  opened to read and left as it was is not unapplied — the row still holds it. The strings are fixed, so the parent
- *  hears the transition, not every keystroke (see the effect below). */
 export function unappliedLint({ asText, draft, q, editing, pending }) {
   if (asText) return String(draft || "").trim()
     ? ((pending || {}).text || T("This text hasn't been applied yet — press </> to apply it, or Escape to discard."))
@@ -1788,19 +1176,7 @@ export function unappliedLint({ asText, draft, q, editing, pending }) {
 }
 
 export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode, onLint, trailing, leading, listEditor }) {
-  // ── THE FIELD'S STATE, and the two rules that keep it consistent ────────────────────────────────────
-  // This component is large because it is one control with two readings (badges and text) over one rule.
-  // Two invariants make the combinations safe, and both are enforced by there being exactly ONE writer:
-  //
-  //   1. `asText` and `editing` are never both set. `setEditing({b})` happens only in `edit()`, which is
-  //      reachable only from a badge — and the text view returns before any badge is rendered. `toText`,
-  //      the only place that sets `asText`, clears `editing` on the way in.
-  //   2. A badge being edited STAYS in `badges`. It used to be removed, which put half the rule in `q`
-  //      where `toText` and the sheet's own save could not see it, and both lost it. Nothing may
-  //      reintroduce that: the box is a DRAFT of a badge, never its only copy.
-  //
-  // If a third reading is ever added, replace the booleans with one mode enum rather than adding a flag —
-  // two flags are already the most that can be checked by reading.
+  // THE FIELD'S STATE, and the two rules that keep it consistent
   const [q, setQ] = useState("");
   // A phone: a pick clears the box for the next search but the list stays on what was being browsed, scrolled where the pick
   // was, until something is typed (operator, 2026-10-29: "keep it where I just added an item")
@@ -1813,96 +1189,39 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   const [open, setOpen] = useState(false);
   const onKeyRef = useRef(null);   // the latest `onKey`, for the dropdown's window-level Escape (its effect runs only on `open`)
   const [pos, setPos] = useState(null);
-  // −1 IS "NOTHING HIGHLIGHTED", and it has to exist. `act` indexes `rows`, and 0 was doing double duty as
-  // both "the first row is selected" and "no selection" — so after every commit, and on every keystroke, the
-  // first row of the dropdown lit up. With an empty box that row is the first preset, which is why clicking
-  // any list left `ChatGPT / OpenAI` highlighted as though it were the one just picked.
   const [act, setAct] = useState(-1);
-  // The badge currently pulled into the box, and the slot it came from: `{b, at}`, or null. Escape restores
-  // it — an edit has to be abandonable, and without this the badge was simply gone the moment it was clicked
-  // and the only way back was to retype it. `at` is kept so a cancelled (or merely re-clicked) badge returns
-  // to ITS position instead of the end of the row, which is what the operator arranged.
   const [editing, setEditing] = useState(null);
   const [reveal, setReveal] = useState(null);   // a list id to scroll to once the dropdown has rendered it
-  // TEXT VIEW. Badges are unselectable, so a rule could be built but never READ OUT — no copy for a backup,
-  // no paste from a file someone already keeps, no copying a set of targets to a second interface without
-  // retyping it one badge at a time. `asText` swaps the box for a textarea holding the same targets, ONE PER
-  // LINE: lines are what a file, a diff and a grep are made of, and the paste path already splits on
-  // whitespace, so text written here pastes back into any other rule field unchanged.
   const [asText, setAsText] = useState(false);
   const [draft, setDraft] = useState("");
   const [page, setPage] = useState(0);
   const [cidx, setCidx] = useState(_CATALOG_INDEX);
   const [expand, setExpand] = useState(false);
   const [say, setSay] = useState("");                       // aria-live: what just happened
-  // THE FOOT'S OWN MESSAGE, and a separate state from `say` because the two answer different questions at
-  // the same moment. `say` is "what just happened" and every action sets it; this is "why does the box still
-  // hold text". Remove a badge while refusals wait and the two diverge: aria-live must say "Removed
-  // *seed001*", while the foot must still say why the leftovers bounced — that is the sentence the operator
-  // is in the middle of acting on, and `remove` does not touch the box, so it is still true.
-  //
-  // It carries the `q` it was written for, which makes it SELF-INVALIDATING: typing, editing a badge back
-  // into the box, or another paste all change `q` and the message stops being shown on its own. No call site
-  // has to remember to clear it, which is the kind of discipline that holds until the next path is added.
   const [pending, setPending] = useState({ text: "", forQ: null });
   const [tries, bump] = useState(0);                        // a size landed, went late, or was asked for again
   const ref = useRef(null), popRef = useRef(null), inRef = useRef(null);
   const badges = row.badges || [];
   const modeLabel = (MODE_META[mode] || {}).label || mode;
   useListSizes(badges.filter(b => b.t === "list").map(b => b.id), () => bump(x => x + 1), tries);
-  // The size meter below counts an AS badge's prefixes, so this field is a READER of the ASN cache and has
-  // to be woken when a lookup lands — exactly like the list sizes on the line above. Without it the meter
-  // showed a stale count beside AsnHint's fresh one; see the note on `_asnSubs`.
   useAsnCounts(badges.filter(b => b.t === "target" && b.kind === "asn").map(b => b.value));
 
   const lq = (holdQ != null && !q) ? holdQ : q;   // what the list is searched by: the typed box, or the search a pick left held
   const ql = lq.trim().toLowerCase();
-  // A `list:` TOKEN IS NOT A TARGET, and the classifier is right to refuse it — `list:youtube` is not a
-  // hostname. But then typing one did nothing at all: Enter is gated on `readGate.ok`, so a valid list
-  // pasted as text committed while the same text TYPED sat in the box being called a bad domain. Read here,
-  // once, so the box offers the same thing the paste path and the textarea already do.
   const listTok = /^list:(.+)$/i.exec(q.trim());
-  /* ⚠️ A SECOND READER OF THE SAME QUESTION. `readToken` learned `listEditor` and refused a nested id at the
-     grammar — and this line kept saying yes, because it asks `knownListId` directly. The dropdown duly
-     offered "Telegram · add this list to the rule" inside the CUSTOM-LIST editor, which cannot hold one.
-     Found by clicking, not by reading: both readers were individually correct. */
   const readList = (listTok && !listEditor) ? { id: listTok[1].trim(), ok: knownListId(listTok[1].trim()) } : null;
   // What a typed list that cannot be added says: `all` is pointed at "Everything else", anything else is no such list.
   const noList = () => /^all$/i.test((readList || {}).id || "") ? T("For all traffic, use “Everything else” below the rules")
     : T("No list called {v1} on this panel", { v1: q.trim() });
   const reading = (!listTok && q.trim()) ? classify(q.trim()) : null;     // the "use this" row, when what is typed parses
-  // Tier-2 targets on this INTERFACE (§12.1), counted by the parent because the row that is full is not
-  // necessarily the row being typed in. Passed as the WHOLE total including this row's, not as "everyone
-  // else's": `badges` is `row.badges`, so subtracting this row upstream and adding it back here computed
-  // the same number by a longer route, and two expressions of one figure is how they drift.
   const t2Used = tier2All || 0;
-  // WHAT THE FIELD REFUSES = what the ENGINE refuses, plus the one thing targetGate cannot be asked about:
-  // the budget is a property of the interface, not of the token or of the node's engine, so it cannot live
-  // in a per-kind table. It gets the same shape and the same treatment because to the operator it is the
-  // same no — this cannot go in, and here is why. Said in the dropdown BEFORE the click rather than
-  // announced after it: §4.2 already established one visual for a target this interface will not take, and
-  // a row that reads live and then refuses is the shape of defect a live node caught in Phase 3.
-  //
-  // …EXCEPT for one the row already holds. A row is a set, so re-typing a pattern that is already a badge
-  // adds nothing and costs nothing — telling that operator "remove one to add another" would be a lie about
-  // a target that is right there in front of them. `reading` has no `t`, which badgeIdentity reads as a
-  // target, so it compares against the typed badges exactly as addAll's own dedupe does.
   const readGate = reading && reading.kind !== "invalid"
     ? (g => g.ok && isTier2(reading.kind) && t2Used >= TIER2_CAP && !rowHasBadge(row, reading)
         ? { ok: false, why: "cap" } : g)(targetGate(mode, reading.kind))
     : null;
 
-  // A row is a SET: adding the same thing twice is a no-op, not an error — but it is announced, because a
-  // gesture that silently does nothing reads as a broken control. Returns what was added, and separately
-  // what the §12.1 budget refused — a paste of two hundred substrings must not report itself as a success.
-  //
-  // THE ONE CHOKE POINT. Every way a badge can arrive — a picked row, a typed token, a pasted blob — comes
-  // through here, so the budget is counted once and cannot be enforced on two of the three paths.
   const addAll = (toks, opts) => {
     const next = [...((opts && opts.base) || badges)], added = [], overCap = [];
-    // `t2Used` is the INTERFACE's Tier-2 count and already includes this row. Rebuilding the row from a base
-    // means this row's current Tier-2 badges are on their way out, so the budget has to give them back first
-    // — otherwise re-saving a row unchanged would count its own operands twice and refuse itself.
     const t2Base = (opts && opts.base)
       ? t2Used - badges.filter(b => b.t === "target" && isTier2(b.kind)).length
                 + opts.base.filter(b => b.t === "target" && isTier2(b.kind)).length
@@ -1917,32 +1236,10 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
         t2 += 1;
       }
       next.push(b); added.push(b.t === "list" ? catLabelOf(b.id) : targetLabel(b.kind, b.value)); }
-    // `defer` returns the new list instead of emitting it, so a caller that also has to REMOVE a badge can
-    // do both in one onChange. Two calls would each be computed from the same stale `badges` and the second
-    // would silently undo the first.
     if (added.length && !(opts && opts.defer)) onChange(next);
     return { added, overCap, next };
   };
-  // The bulk paths announce what the dropdown says inline, THROUGH THE SAME FUNCTION — a paste can cross the
-  // budget partway, which the dropdown's one-token reading cannot express, and two copies of one sentence is
-  // how the two stop agreeing. §12.1: "nobody hand-writes a hundred substrings; past that the right answer is
-  // a list, and the message should say so."
   const capSay = () => gateReason({ why: "cap" }, modeLabel);
-  // LISTS ONLY — `commitList` is its one caller and a list can never be a Tier-2 target, so there is no
-  // budget to check on this path. It was briefly given one; the branch could not fire, and a guard that
-  // cannot fire is a guard the next person will trust.
-  /* THE PICK CLEARS THE QUERY — reversed 2026-09-07, and the reason the first version kept it was real but
-     smaller than what it cost. Keeping it let a second list be added from the same search without retyping.
-     What it did in exchange: THE QUERY IS NOT ONLY A FILTER. The same string is read as a pending TARGET,
-     so after picking `tester` out of a search for "test" the field went on offering "use what you typed"
-     and linting «did you mean the whole .test zone?» — about a target the operator never meant to type,
-     while the badge they DID add sat beside it. They then had to clear the box by hand before typing
-     anything else.
-     One input cannot be both "what I am typing" and "a filter that no longer counts"; that is a hidden mode,
-     and the common case (pick one, move on) paid for the rare one (pick several from one search). Picking
-     from a dropdown clearing the input is also what every other chip field does.
-     The dropdown STAYS OPEN and focus stays in the input, so a second list is still one click away — it is
-     the search term that goes, not the list of things to click. */
   const commit = b => {
     const { added } = addAll([b]);
     setEditing(null);
@@ -1959,11 +1256,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     if (!parts.length) return;
     const good = [], bad = [];
     for (const { tok, r } of parts) (r && r.b) ? good.push(r.b) : bad.push({ raw: tok, why: (r || {}).why });
-    // Paste a blob and the tokens that read cleanly land as badges; the ones that don't stay behind as text so
-    // they can be fixed in place. Never a modal, never a silent drop (§3.2).
-    // AN EDIT THAT CHANGED NOTHING IS NOT AN EDIT. Clicking along a row to read each badge commits each one
-    // in turn, and replacing a badge with itself removes and re-appends it — so the row quietly reordered
-    // under the operator, which is the exact thing keeping the badge in place was meant to stop.
     if (editing && !bad.length && good.length === 1 && badgeIdentity(good[0]) === badgeIdentity(editing.b)) {
       setEditing(null); setQ(""); setPage(0); setAct(-1); setPending({ text: "", forQ: null });
       return "";
@@ -2002,9 +1294,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     setSay(T("Removed {v1}", { v1: catLabelOf(id) }));
     if (inRef.current) inRef.current.focus(); };
 
-  // Asked on every open and whenever catalogKey() moves; whether the held index is still good is loadCatalogIndex's
-  // call, never this field's. Gating on what `cidx` held is how a provider switched on stayed invisible until a
-  // reload. Not keyed on `cidx` either: an empty answer would then re-run this on every render.
   const ckey = catalogKey();
   useEffect(() => { if (open) { let live = true; loadCatalogIndex().then(x => live && setCidx(x)); return () => { live = false; }; } }, [open, ckey]);
   useEffect(() => { if (!open) { setMore(1); setHoldQ(null); } }, [open]);   // a closed search starts over (F57)
@@ -2021,13 +1310,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
       // click there closes it, or the list stays open under the window or the dropdown it opened.
       const inTrail = !!(t && t.closest && t.closest(".tf-trail"));
       if (inTrail || !((ref.current && ref.current.contains(t)) || (popRef.current && popRef.current.contains(t)))) setOpen(false); };
-    // Escape in the FIELD reaches `onKey` itself. Anywhere else — a row just clicked, the pager — it is handed to the same
-    // `onKey` from here (so a badge edit is abandoned exactly as it is from the field), on `window` in the capture phase,
-    // before a Sheet's Escape can close the sheet instead.
-    // ⚠️ ONLY AN ESCAPE MEANT FOR THIS FIELD: focus in it, in its list, or on the page itself (a clicked row is not focusable,
-    // so focus falls to the body). A control the operator TABBED to keeps its own Escape — this used to take every Escape
-    // while the list stayed open behind (it closes on a click outside, not on blur), so the next control's Escape was
-    // swallowed. And focus leaving for good closes the list, as a click outside does.
     const mine = t => !!t && ((ref.current && ref.current.contains(t)) || (popRef.current && popRef.current.contains(t)));
     const onEsc = e => { const a = document.activeElement;
       if (e.key !== "Escape" || a === inRef.current || (a && a !== document.body && !mine(a))) return;
@@ -2039,10 +1321,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     return () => { window.removeEventListener("scroll", onMove, true); window.removeEventListener("resize", onMove); document.removeEventListener("mousedown", onDoc, true); window.removeEventListener("keydown", onEsc, true); document.removeEventListener("focusin", onFocus, true); };
   }, [open]);
 
-  // What the dropdown offers, as ONE flat list — because the keyboard walks it as one list and "the top row"
-  // has to mean the same thing to Enter as it does to the eye. An empty query offers only the presets and the
-  // operator's own lists: 3,000 alphabetical country files is not an answer to "what do you want to route",
-  // and rendering a page of them would fire a page of list-info fetches on every focus.
   const per = isMobile() ? 50 * more : 50;
   const _curated = SMART_CATEGORIES().filter(([id]) => id !== "all")
     .map(([id, label]) => ({ id, provider: "curated", provider_label: T("Curated"), caps: catCap(id), disp: label }))
@@ -2056,14 +1334,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
                  disp: l.title || l.id, label: l.title || l.id, list: l }))
     .sort((a, b) => a.disp.toLowerCase().localeCompare(b.disp.toLowerCase()));
   const _hits = (ql.length >= 2 && cidx) ? cidx.filter(it => it.hay.includes(ql)).sort((a, b) => a.disp.localeCompare(b.disp)) : [];
-  // A PROVIDER IS FOUND BY ITS NAME, AFTER THE ORDINARY MATCHES (docs/CATALOG-FRESHNESS-PLAN.md D3). Only when the
-  // query is the START of an enabled provider's name — 3+ characters, case and punctuation ignored, so "re-filter",
-  // "refilter" and "Re:filter" all work — and then only its lists the query did not already match, under their own
-  // heading. The name is never put into `hay`: there, "matrix" returned all 668 blackmatrix7 lists and "fly" all
-  // 1,539 of v2fly's, sorted around the one list that was wanted. Provider ids are not matched at all — two letters
-  // ("rf", "mc") would hit nearly every query.
-  // A star means a PATTERN is being written, not a search (the empty-state note below says the same): `*meta*` must not
-  // append all 1,796 MetaCubeX lists.
   const _qn = ql.replace(/[^a-z0-9]/g, "");
   const _provHit = _qn.length >= 3 && !lq.includes("*") ? (Store.catalogProviders || []).filter(p => !p.builtin && p.enabled
     && String(p.label || "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith(_qn)) : [];
@@ -2077,11 +1347,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   const catPage = _cat.slice(page * per, (page + 1) * per);
   const pages = Math.max(1, Math.ceil(_cat.length / per));
   const has = id => badges.some(b => b.t === "list" && b.id === id);
-  // OPEN THE DROPDOWN AT A LIST, not at the top. Presets and the operator's own lists are always listed in
-  // full, so an empty query already shows them; a PROVIDER-CATALOG list is only listed while searching, and
-  // then only 50 to a page — so this searches for it and lands on the page that actually holds it. Without
-  // both halves "open at it" would silently mean "open at the top" for exactly the long lists where finding
-  // it by hand is the hard part.
   const revealList = id => {
     setOpen(true); setEditing(null);
     const local = SMART_CATEGORIES().some(([c]) => c === id)
@@ -2105,29 +1370,8 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     catPage.forEach(it => rows.push({ k: "list", it, grp: it.grpProv ? T("Lists from {v1}", { v1: it.grpProv }) : T("Provider catalog") }));
   }
   const activeRow = rows[Math.min(act, rows.length - 1)];
-  /* ONE RESULT IS NOT A CHOICE. Narrow the search to a single row and there is nothing left to choose
-     between, so it is highlighted for you and Enter takes it — no reach for the mouse. The catalog picker
-     already works this way ("ONLY when exactly one result"), so this is the same rule in the other picker
-     rather than a new one to learn.
-     ⚠️ Everything else goes back to -1, and -1 has to keep meaning "nothing highlighted": collapsing it
-     into 0 = "the first row" is what lit a phantom highlight on the first preset after every commit. The
-     effect is keyed on the SEARCH, not on `act`, so arrow keys still move freely between keystrokes.
-     ⚠️ AND ON `open`. Escape closes the dropdown without clearing `q`, and `rows` is computed whether or
-     not the popover is showing — so without this the highlight survived the dismissal and Enter committed
-     a list the operator could no longer see, instead of the text they had typed. A highlight nobody can
-     see must not decide what a key does. */
   useEffect(() => { setAct(open && rows.length === 1 ? 0 : -1); }, [rows.length, q, open]);
 
-  // The scroll has to wait for the portal AND for the row itself: setting the query and the page re-renders
-  // the list, and the popover is a Portal that lands a tick or two later. Retried and BOUNDED — a `reveal`
-  // that never resolves (a list the catalog no longer carries) clears itself rather than leaving the field
-  // pinned to an id it can never find.
-  //
-  // ⚠️ setTimeout AND NOT requestAnimationFrame, which is what this was written with first. Chrome throttles
-  // rAF to nothing while its WINDOW IS NOT FOCUSED — `document.visibilityState` still reads "visible", so
-  // nothing about the page says the callback has stopped arriving; measured here, zero rAF callbacks in
-  // 600 ms with the window merely behind another one. A panel left open beside a terminal is exactly that
-  // case, so the retry would have quietly done nothing for the operator and been blamed on the selector.
   useEffect(() => {
     if (!reveal || !open) return;
     let timer = 0, tries = 0, passes = 0;
@@ -2142,51 +1386,18 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
         const tf = [...root.querySelectorAll(".tfrow")];
         setAct(tf.indexOf(el) + (root.querySelector(".tfuse") ? 1 : 0));       // the "use what you typed" row is rows[0]
       }
-      // RE-CENTRED, not centred once. Every row asks the panel for its own size and sample line and grows
-      // when the answer lands, so rows ABOVE the target push it down after the first correction — scrolling
-      // a single time leaves it wherever the late layout put it, which for a row far down the list is off
-      // screen entirely. Six passes over ~400ms outlast the fetches without pinning the list against the
-      // operator's own scrolling for any noticeable time.
       if (++passes < 6) timer = setTimeout(centre, 70); else setReveal(null);
     };
     timer = setTimeout(centre, 0);
     return () => clearTimeout(timer);
   }, [reveal, open, page, q]);
 
-  // ── the two directions of the text view ─────────────────────────────────────────────────────────
-  // A LIST HAS NO TEXT FORM, and pretending otherwise would lose it: a `list` badge is an id like `youtube`,
-  // which re-read as text classifies as a bare label and is refused. So the textarea holds the TYPED targets
-  // only, the list badges stay visible above it, and the round trip is total for everything it does show.
-  // EVERY badge, lists included — `badgeText` gives a list its identity string (`list:youtube`), so the
-  // textarea holds the whole rule and not the part that happened to be typeable. For targets it is `raw`,
-  // not the canonical form: a `site` is stored punycoded, and handing back `xn--d1acpjx3f.xn--p1ai` for a
-  // name typed in Cyrillic is not the operator's rule.
+  // the two directions of the text view
   const toText = () => { loadCatalogIndex();   // so `list:` ids can be checked for real by the time they return
-    // ⚠️ THE BOX IS PART OF THE RULE TOO. Building the draft from `badges` alone dropped whatever was typed
-    // and not yet committed — and worse, a badge CLICKED TO EDIT has already left `badges` and lives only as
-    // text in the box, so switching to text view destroyed it outright. Measured: edit `keep.com`, press
-    // `</>`, and it is gone from the draft, from the row, and from Escape's reach. Same shape as the
-    // all-or-nothing bug in fromText — one half of the truth read as the whole of it.
-    //
-    // `q` is NOT cleared here: leaving it means Escape returns to exactly the box that was left behind, and
-    // fromText clears it on the way in, so a committed draft cannot duplicate it.
-    // The edited badge is in the row AND its text is in the box, so it is written ONCE — as whatever the box
-    // currently holds, which is the version the operator is working on.
     const typed = q.trim();
     setDraft([...badges.map(b => (editing && b === editing.b) ? typed : badgeText(b)).filter(Boolean),
               ...(!editing && typed ? [typed] : [])].join("\n"));
     setAsText(true); setOpen(false); setEditing(null); setPending({ text: "", forQ: null }); };
-  /* ⚠️ THE TEXT VIEW IS A DRAFT, AND THE PARENT HAS TO KNOW. `draft` is local state; the row only learns of
-     it when `fromText` commits (the `</>` toggle) — so a sheet whose own Save reads `row.badges` while the
-     operator is still in text view saves what was there BEFORE, closes, and reports success. Typed, gone,
-     no message. Measured in the custom-list sheet; the interface sheet's Save has the same shape.
-     `onLint` (declared since this component was written and never called until now) is that channel: a
-     non-empty string means "what you can see is not what would be saved", and the parent blocks on it. */
-  /* ⚠️ ONLY WHEN THE VALUE CHANGES. `draft` is a dependency, so this effect runs on every keystroke in the
-     text view — and the message it reports is the same string every time. Without the guard each keystroke
-     called onLint → setRow → a fresh rows array → a state update on the sheet → a re-render of every rule
-     on the interface, to say something the parent already knew. The parent's only interest is the
-     transition between "there is unapplied text" and "there is not". */
   const lintSent = useRef("");
   useEffect(() => {
     if (!onLint) return;
@@ -2197,30 +1408,15 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   }, [asText, draft, q, editing, pending.text]);
 
   const fromText = () => {
-    // THE LINE IS THE UNIT HERE, not the token. `classifyAll` splits on whitespace, which is right for a
-    // pasted blob and wrong for a textarea whose whole promise is one target per line: `not a domain!!` came
-    // back as three separate refusals — `not`, `a`, `domain!!` — and the operator's own line was gone from
-    // the box they were meant to fix it in. So each line is read whole, and only a line that reads cleanly
-    // ALL THE WAY THROUGH is split, which keeps a space-separated paste working. Anything else is refused as
-    // the line it was written as.
     const good = [], bad = [];
     for (const line of draft.split(/\n/).map(x => x.trim()).filter(Boolean)) {
       const parts = line.split(/[\s,]+/).filter(Boolean).map(t => readToken(t, mode, listEditor));
       if (parts.length && parts.every(r => r && r.b)) good.push(...parts.map(r => r.b));
       else bad.push({ raw: line, why: (parts.find(r => r && r.bad) || {}).why });
     }
-    // Rebuilt from the LISTS, not added to what is there: the text is the whole truth about typed targets,
-    // so a line deleted in the textarea has to disappear from the row. Lists lead because they are not in
-    // the text and have nowhere else to be.
     const { added, overCap, next } = addAll(good, { base: [], defer: true });
     const rest = [...bad.map(x => x.raw), ...overCap].join("\n");
     if (rest) {
-      // ALL OR NOTHING, and this is the whole reason the text view is safe to use. Committing the good
-      // lines and leaving only the REFUSED ones in the box breaks the one invariant it rests on — that the
-      // textarea is the complete truth about this rule's typed targets. Caught doing exactly that: 140
-      // patterns against §12.1's cap of 100 committed the first 100 and left 40 lines behind, so the box no
-      // longer described the rule, and the next trip through it deleted the 100 it could no longer see.
-      // Nothing is applied while anything is unusable; the draft stays whole and says which line is wrong.
       const msg = bad.length
         ? (bad[0].why === "catch_all" && !listEditor ? T("For all traffic, use “Everything else” below the rules")
           : bad[0].why === "unknown_list" || bad[0].why === "catch_all" ? (listEditor ? T("A list can't contain another list — add its addresses here instead") : T("No list called {v1} on this panel", { v1: bad[0].raw }))
@@ -2255,13 +1451,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
       if (readGate && readGate.ok) commitTyped();
       return;
     }
-    // `,`, SPACE and Tab all commit what is typed. Space was deliberately excluded here — "pasting prose
-    // would become noisy and nothing is unreachable without it (§12.3)" — and that was REVERSED on request
-    // after using it: every other chip field on the web commits on space, and the reason it was left out
-    // does not survive contact with this one. Pasting is not affected either way: `onPaste` intercepts any
-    // clipboard text containing whitespace and splits it itself, so a paste never arrives here a key at a
-    // time. And no target this field accepts can contain a space — a hostname, an IP/CIDR and an AS number
-    // are all space-free — so swallowing the key costs nothing that could otherwise be typed.
     if (e.key === "," || e.key === " " || (e.key === "Tab" && q.trim() && readGate && readGate.ok)) {
       if (e.key === " " && !q.trim()) return;                 // a lone space in an empty box is not a commit
       e.preventDefault(); commitTyped(); return; }
@@ -2286,15 +1475,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     setPending({ text: rest ? msg : "", forQ: rest });      // only while something actually stayed behind
   };
 
-  // SEVERAL TOKENS IN THE BOX — which is exactly when `reading`, a ONE-token classification of the whole
-  // string, stops being a reading and becomes a MISREADING. Three refused substrings read back as
-  // `*a* *b* *c*` classify as `star_mid`, and the operator was told their stars were in the wrong place when
-  // every one of them was fine and the budget was the only reason any of them bounced.
-  //
-  // So the foot shows `pending` here and NOTHING otherwise: a one-token verdict on a many-token string is
-  // false however sure it sounds, and silence is the honest fallback. Below one token it is the opposite —
-  // a single leftover gets its own lint, which names the actual problem and beats any summary.
-  // Same `[\s,]` split the paste path decides on, so the two cannot disagree about what "several" means.
   const leftovers = /[\s,]/.test((q || "").trim());
 
   // The cost meter (§3.4). An estimate, and labelled as one: list sizes are what the panel resolved, a typed
@@ -2316,23 +1496,9 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
 
   const shown = expand ? badges : badges.slice(0, BADGE_CAP);
   const hidden = badges.length - shown.length;
-  // THE FIX BUTTON, IN ONE PLACE — because it is rendered from two rows and BOTH were unusable with a mouse,
-  // in two different ways, and a second copy is how one of them gets repaired and the other does not.
-  //
-  // ⚠️ IT MUST CLOSE THE DROPDOWN. `onSwitchMode` opens a confirm on the global overlay (z-index 50) and this
-  // popover is a Portal at z-index 90, deliberately above the sheet so the field can escape it. Nothing closed
-  // the popover, so the confirm opened UNDERNEATH it and `elementFromPoint` over its "Switch mode" button
-  // returned this row: the dialog was visible, looked live, and swallowed every click. Measured on a live
-  // panel, not reasoned about. Closing here is the local fix — raising the overlay instead would put every
-  // confirm above every in-sheet popover, which is the stacking this z-order exists to produce.
   const fixBtn = g => g.fix && onSwitchMode
     ? html` <button type="button" class="linkbtn" onClick=${e => { e.stopPropagation(); setOpen(false); onSwitchMode(g.fix); }}>${T("Switch this node to {v1}", { v1: (MODE_META[g.fix] || {}).label || g.fix })}</button>`
     : null;
-  // A TICKED ROW TOGGLES OFF. The row draws a ✓ when the list is already in this rule, which reads as a
-  // checkbox — and clicking it called `commitList`, which finds the badge already there and answers "Already
-  // in this rule." So the tick could be turned on and never off from the place that turns it on, and the
-  // only way back was the badge's own ×. Removal ignores the gate on purpose: a list this node can no longer
-  // run still has a badge, and taking something out is always safe.
   const listRow = it => { const g = listGate(mode, it.id, node), added = has(it.id), i = rows.findIndex(r => r.it === it);
     // `i >= 0` because BOTH sides can be −1: findIndex misses return −1, and −1 is also "nothing highlighted".
     // Left as a bare `i === act` those two agree, and every row the lookup failed on draws itself as selected.
@@ -2342,13 +1508,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     </div>`; };
   let lastGrp = null;
 
-  /* WHERE THE TOGGLE LIVES DEPENDS ON WHETHER THERE IS A RAIL. In a rule row it sits in the grip column,
-     beside the drag handle, because it is a control ON the field rather than a fact ABOUT it. The
-     custom-list sheet has no row and therefore no grip — so that same absolute offset put it outside the
-     modal's content entirely, floating in the margin. There it goes in the foot, labelled and right-aligned,
-     which is also the only place a label fits. Brand-coloured rather than faint: in the rail it is one of
-     several controls and stays quiet; on its own it is the only way to reach the text view, so it has to
-     read as a control at all. */
   const vtog = (on) => listEditor
     ? html`<button type="button" class=${"tf-vtog inline" + (on ? " on" : "")} aria-pressed=${on ? "true" : "false"}
         title=${on ? T("Back to badges — reads every line and turns it into a target. Escape discards instead.")
@@ -2385,9 +1544,6 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     <span class="tf-live" aria-live="polite">${say}</span>
   </div>`;
 
-  // A PHONE SEARCHES IN A MODE OF ITS OWN: while the list is open the field's input is pinned to the top of what is visible and
-  // the catalog fills the rest down to the keyboard (m/m.css .m-tfsearch). A list anchored to a field in a scrolling sheet floated
-  // over the sheet's head and its buttons, and a scroll broke it (operator, 2026-10-29).
   return html`<div class=${"tfield" + (open && isMobile() ? " m-tfsearch" : "")} ref=${ref}>
     ${/* Badges cannot be selected, so without this a rule can be built and never read back out. */""}
     ${listEditor ? null : vtog(false)}
@@ -2514,23 +1670,12 @@ ${/* A DISABLED <button> DOES NOT DELIVER CLICKS TO ITS CHILDREN, so the "Switch
   </div>`;
 }
 
-// One smart-routing rule ROW: many things → one destination (exit node / direct / block). Reuses the
-// drag-reorder hook. Order builds the node's chain, so it settles ties between rules naming the SAME target
-// and it is the whole story on Kernel-SNI — but it does not decide an overlap between two DIFFERENT targets:
-// swg-sni and dnsmasq both answer that by specificity (measured, plan §10.4x), which is what the label over
-// the list now says and what the `takenBy` lint below points at where the two disagree.
 export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, onChange, scope, blk }) {
-  // `scope="node"` — THE NODE'S OWN DEFAULT LIST (D2, ROUTING-PEERS-MESH-PLAN §7.3): the same rows for the same grammar, but
-  // its rules narrow themselves to an AUDIENCE rather than to people (D9), it has no "node default" to fall back to (it IS
-  // the default), and its "Everything else" left silent means this node's own way out.
   const nodeScope = scope === "node";
   const others = (Store.nodes || []).filter(n => n.id !== node);
   const _nrec = (Store.nodes || []).find(n => n.id === node);
   // what "the node default" resolves to here, if the node has one — see `catchVal`
   const _dflt = nodeScope ? null : ((_nrec || {}).exits || []).find(x => String(x.id) === String((_nrec || {}).default_exit || "")) || null;
-  // D11 — when the node's default is a LIST, an interface's silence falls through to it: this interface's rules first, then
-  // the node's (All or own clients) and its "Everything else". So silence is a real choice with a name even when the list's
-  // catch-all is not an exit — "Node default (N rules)", as a single default exit reads "Node default (WARP)" (§7.1).
   const _nlist = !nodeScope && Array.isArray((_nrec || {}).default_routing) ? _nrec.default_routing : null;
   const _nfall = _nlist ? _nlist.filter(r => r && r.enabled !== false && r.category !== "all" && r.aud !== "cascaded") : [];
   // …and where the rest finally goes: the list's own "Everything else", read as the node's editor reads it (rulesToRows),
@@ -2541,18 +1686,8 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
   // we could not look up the engine is a lie about the configuration (§4.2).
   const _mode = _nrec ? (_nrec.routing_mode || "kernel") : "";
   const dispRows = rows || [];
-  // ⚠️ THREE VALUES, ALWAYS, and each caller spreads all three. `exitIps` is the interface's {node: address}
-  // map (§4.2): it belongs to the interface rather than to any row, so it travels beside the rows instead of
-  // inside them — which is what makes an address impossible to duplicate, to disagree with itself, or to be
-  // carried along when a rule is re-pointed at another node.
   const ips = exitIps || {};
-  // The address each far node's rules leave by, AS THE PLAN APPLIES IT: where this interface's silence falls through to
-  // the node's list, the list's address for a node governs this interface's own rules to it too (one SNAT per interface
-  // and node), unless the interface pinned its own. Shown, never saved — the interface's own map is what it stores.
   const shownIps = !nodeScope && _nlist && !catchAll ? { ...((_nrec || {}).default_routing_exit_ips || {}), ...ips } : ips;
-  // `dip` — the interface's own source address (`egress_ip`), when the window that called this changed it: what a Direct
-  // rule leaves this node as. One address for the interface, like `ips` is one per far node — handed back in the same call,
-  // so a caller's single setState takes rows, map and address together.
   const emit = (rs, ca, xs, dip) => onChange(rs, ca === undefined ? catchAll : ca, xs === undefined ? ips : xs, dip === undefined ? directIp : dip);
 
   const rs = useReorder(dispRows.map(r => r._gid), ids => emit(ids.map(id => dispRows.find(r => r._gid === id)).filter(Boolean)), "y", { container: ".rrlist", card: ".rrrow" });
@@ -2565,37 +1700,15 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
   const destVal = r => r.action === "exit" ? "exit|" + (r.node || "")
     : r.action === "dev" ? "dev|" + (r.exit_id || "") : r.action;
   const onDest = (gid, v) => setRow(gid, destPatch(v));
-  // ⚠️ ONE FUNCTION, BOTH CONTROLS. The row's destination and the catch-all's used to build their patch
-  // separately from the same `split("|")`, and they had already drifted — the catch-all listed its options
-  // in a different order and could not name an exit at all. A destination is one grammar; it gets one
-  // reader, and a kind added here reaches both places or neither.
   const destPatch = v => { const [a, x] = v.split("|");
     return a === "exit" ? { action: "exit", node: x, exit_id: "" }
       : a === "dev" ? { action: "dev", exit_id: x, node: "" }
       : { action: a, node: "", exit_id: "" }; };
-  // THE SAME LIST THE INTERFACE'S OWN EGRESS PICKER USES, from the same builder, minus the smart-cascade
-  // entry — a rule IS the smart cascade, so offering it inside one would be a rule that routes to itself.
-  // The two are the same decision asked at two scopes ("where does this leave by"), so they read the same
-  // way round and use the same words; an operator who has learned one has learned the other.
-  // ⚠️ NO ROW CONTROLS, BUT THE CANDIDATE DEVICES ARE HERE. Switching an exit off or deleting it is
-  // node-wide and a rule row is the wrong place to do it, so this takes none of those controls — only the
-  // grouping, the names and the health. It DOES offer the devices the node reports: a list that omitted
-  // them made the same device appear in one picker and not the next, and the record a reference needs is
-  // minted server-side on the save (`_mint_device_exit`), not by whichever screen happens to be open.
-  /* Is the value this control is holding something the list above can name? Answered from the SAME two
-     sources the list is built from, so it cannot disagree with it. `dev|` is included for completeness —
-     `prune_exit_refs` rewrites references to a deleted EXIT, so that half should never dangle, and a guard
-     that only covers the half you remembered is how the other one gets found in production. */
   const goneDest = v => {
     const [a, x] = String(v || "").split("|");
     if (a === "exit" && x && !others.some(n => n.id === x))
       return { value: v, label: T("A node that is no longer here"),
                why: T("This rule forwards to a node that is not in this panel any more, so it routes nothing and traffic takes the next matching rule instead. Choose another destination, or delete the rule.") };
-    // ⚠️ `exits`, NOT `_nrec.exits`. `_nrec` is a `.find()` and can be undefined — every other line in this
-    // function says `(_nrec || {})` for that reason — so this threw `Cannot read properties of undefined`
-    // and took the WHOLE RoutingRules render down whenever the control held a `dev|…` value and the node
-    // record was not in the store: a node deleted while its sheet is open, or any render that lands before
-    // /api/state has populated Store.nodes. A blank dropdown is a bug; a blank screen is worse than the bug.
     if (a === "dev" && x && !(exits.some(e => String(e.id) === x)))
       return { value: v, label: T("An exit that is no longer here"),
                why: T("This rule leaves by an exit that is not on this node any more, so it routes nothing and traffic takes the next matching rule instead. Choose another destination, or delete the rule.") };
@@ -2612,22 +1725,8 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
     // LAST, and outside every group. Block is not a place traffic goes, it is traffic not going — so it
     // sits apart from the lists of destinations rather than reading as one more of them.
     { value: "block", label: T("Block") },
-    // ⚠️ …AND THE DESTINATION THAT IS GONE, if this control is holding one. A rule can name a node that has
-    // since been removed from the panel; that node is not in `others`, so no option carried its value and
-    // the control rendered COMPLETELY BLANK — indistinguishable from "nothing chosen yet", while a real
-    // choice sat in the store and `cascade_plan` dropped it (`if not P or P not in nodes: continue`).
-    // Measured on the live fleet: svo-im/awg0's catch-all is `all -> exit via 0138f33f65c3`, a node id that
-    // is not in nodes.json, and the row read `Everything else  →  [    ]` while every packet left by the
-    // node's default instead. This is the rule `exitOptionGroups` already states for the picker one scope
-    // up — "a stored selection that has since broken must stay visible and nameable" — reached from the
-    // other side, and it is the same reason: a blank is not a report.
     ...(_gone ? [{ value: _gone.value, label: _gone.label, className: "bad", refuse: _gone.why }] : []),
   ]; };
-  // THE RULE'S SETTINGS BUTTON (ROUTING-PEERS-MESH-PLAN §7.1) — always before the destination, never an entry at the end of
-  // its list: a destination is picked and it is for everyone, as the address the far side defaults to; the button narrows
-  // that. Lit when the rule already says more than its destination, so a list shows at a glance which rules do.
-  // The catch-all has it too, and its window is NARROWER: "Everything else" is for everyone on the interface (D10), so the
-  // window shows that fixed and offers only the address. The same window either way — a second one would drift from this one.
   const tuneBtn = (on, open) => html`<button type="button" class=${"iconbtn rrgear" + (on ? " on" : "")} title=${T("Rule settings")}
     aria-label=${T("Rule settings")} onClick=${open}><${Ic} i="sliders"/></button>`;
   // A Direct rule's address, where the caller can set it (an interface — the node's default list has its own control).
@@ -2644,9 +1743,6 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
   const openCatch = () => pushModal(html`<${RuleSettingsSheet} node=${node} iface=${iface} everyone exitIps=${ips} nodeScope=${nodeScope}
     directIp=${dipOn ? directIp || "" : undefined} row=${catchAll || { action: "direct" }} dests=${destOpts(true, catchVal)} dest=${catchVal} mode=${_mode}
     onApply=${(v, _who, xs, _aud, dip) => setCatch(v, xs, dip)}/>`);
-  // A rule this node's engine can't run is a dead end unless the operator can leave it — so every gate that
-  // names a mode also offers the switch. Generalised from the old Force-DNS-only affordance: the field's
-  // capability table names whichever engine would run the badge, and this reprovisions the node into it.
   const switchMode = target => { const mm = MODE_META[target] || {};
     openConfirm({ title: T("Switch {v1} to {v2}?", { v1: _nrec ? _nrec.name : T("this node"), v2: mm.label || target }), warn: true,
       confirmLabel: T("Switch mode"),
@@ -2658,12 +1754,6 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
         toast(T("Switched to {v1} — save to apply your rules.", { v1: mm.label || target }), "ok");
       } });
   };
-  // ⚠️ "NOTHING SAID" IS ITS OWN ANSWER, and it used to be spelled the same as "direct". No stored rule
-  // meant the control DISPLAYED "Direct (this node)" — a value nobody had chosen — and the panel routed the
-  // remainder out the node's own address even on a node whose stated default was an exit. Now silence is
-  // `__dflt__`, which names what it resolves to, and someone who genuinely wants direct says so and gets a
-  // stored rule. Only offered where there is a default to name: with none, silence and direct really are
-  // the same thing and a second entry saying so would be a choice without a difference.
   const catchVal = !catchAll ? (_dflt || _nlist ? "__dflt__" : "direct")
     : catchAll.action === "exit" ? "exit|" + (catchAll.node || "")
     : catchAll.action === "dev" ? "dev|" + (catchAll.exit_id || "") : catchAll.action;
@@ -2677,24 +1767,13 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
       || p.action === "block" || p.action === "direct"
       ? { enabled: true, category: "all", ...p } : null, xs, dip); };
   const onCatch = v => setCatch(v);
-  // The SAME badge in a later row can never fire, and that holds under specificity too — it is one operand,
-  // so both rules resolve to one key and the chain takes the earlier. (This is the one place row order really
-  // is the answer, which is why this check survived the label change unaltered.) Per badge, not per row: one
-  // row of fifteen services shadowing one entry of the next is what the old per-rule check couldn't see.
   const lints = rowLints(dispRows, destVal, { mode: _mode, isName: _nameBadge });   // per row: dupes, takenBy, takenFew — see rulerows.js
-  // T32 — D11 SPANS TWO LISTS, AND SO DOES "MOST SPECIFIC WINS". On Hybrid SNI and Force-DNS a node rule for `shop.example.com`
-  // takes those hosts from this interface's `example.com` rule although this interface's rules come first, and nothing on this
-  // screen would show it. Only where the silence actually falls through (no "Everything else" of its own), only on those two
-  // engines, and only against the node's rules for All or its own clients — the ones this interface's traffic can meet.
   const nodeRows = _nlist && !catchAll ? rulesToRows(_nfall).rows : [];
   // Each interface row against the node rows only, one pass each — every node row here reaches this interface's traffic
   // (All or own clients), so its audience decides nothing and is not consulted.
   const nodeTaken = dispRows.map(r => (_mode === "sni" || _mode === "forcedns") && nodeRows.length
     ? [...new Map(nodeRows.filter(nr => destVal(nr) !== destVal(r)).flatMap(nr => (nr.badges || [])
         .filter(nb => (r.badges || []).some(b => badgeCovers(b, nb)))).map(nb => [badgeIdentity(nb), nb])).values()] : []);
-  // §12.1's budget is the INTERFACE's, so it is counted here — the one place that holds every row — and each
-  // field is told what the OTHER rows have already spent. A field counting only itself would let ten rows of
-  // a hundred through, which is the scan this cap exists to prevent.
   const tier2All = tier2Count(dispRows, customListOf);   // rulerows knows the grammar; the Store lookup is ours
   // NO HEADING OF ITS OWN: every caller shows the list under a "Routing rules" fold whose title says how rules win here
   // (rulesTitle) — a second heading inside it said the same thing again.
@@ -2705,14 +1784,6 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
       // …and "for the people it names" only where specificity decides (Hybrid SNI, Force-DNS): on Kernel SNI a per-person
       // hostname is not built at all (the interim gate), and IP-only has no hostnames.
       const takenFew = _mode === "sni" || _mode === "forcedns" ? lints[ri].takenFew : [];
-      // ROW ORDER AND SPECIFICITY DISAGREE HERE — the one case the operator cannot see and cannot fix by
-      // dragging. The engines answer an overlap by SPECIFICITY (swg-sni's kind ladder then longest operand;
-      // dnsmasq's longest matching key on Force-DNS, measured — plan §10.4x), so a broad rule placed ABOVE
-      // a narrower one still loses that narrower one's hosts. Below-only on purpose: a narrower rule placed
-      // above is the arrangement that reads correctly anyway, and warning there would fire on every list of
-      // a zone plus its exceptions. Different destination only — two rules sending the same hosts to the
-      // same place is not something anyone needs told. (Computed in rowLints, which also knows a rule below
-      // that is for chosen people takes those hosts for its people alone — `takenFew`.)
       const self = row.action === "exit" && row.node === node;
       const inert = badges.filter(b => !rowGate(row, _mode, node, b).ok);
       const asns = badges.filter(b => b.t === "target" && b.kind === "asn").map(b => b.raw).join(", ");
@@ -2734,13 +1805,6 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
             <${Dropdown} disabled=${!!row.locked} value=${destVal(row)}
               onChange=${v => onDest(row._gid, v)} options=${destOpts(false, destVal(row))}/>
           </span>`;
-          /* ASKED FIRST — but only when there is something to lose. A row still being built (no targets
-             yet) goes with one click, because confirming the removal of an empty thing teaches the operator
-             to click through the dialog without reading it, which is how the confirm that MATTERS stops
-             working. The body says the removal is local until Save, which is true and is the fact that
-             decides whether to worry.
-             LEADING, not trailing: it is the row's destructive control, and it sits at the far left of the
-             foot rather than beside the destination, where it was one careless click from the dropdown. */
           const removeBtn = html`<button class="xbtn" title=${T("Remove rule")} onClick=${() => {
             const n = (row.badges || []).length;
             const drop = () => emit(dispRows.filter(x => x._gid !== row._gid));
@@ -2809,11 +1873,6 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
       : Trich("No rules yet. Add a rule to send some destinations out a device on this node or block them, or set *Everything else* to say where the rest goes.")}</div>`}
   </div>`;
 }
-
-// ── PER-PERSON RULES: the row's chip and the Rule settings window (ROUTING-PEERS-MESH-PLAN §7.1–7.2) ──────────────────────────
-// A rule may apply to chosen people, groups and single devices instead of everyone on the interface. What a selection covers
-// here is never derived in the browser: the panel answers with the resolver the node's sync uses (`/api/routing/who`), so a
-// keyless device on a build that can't prove its source reads red here exactly when the node leaves it out.
 
 /** {selection → report} for the rows of one interface. Asked once per change of the set of selections, debounced. */
 function useWhoReport(node, iface, whos) {
@@ -2887,14 +1946,6 @@ function WhoChip({ who, rep, node }) {
     <//>`;
 }
 
-/* THE EXIT IP (D6, §7.1–7.2) — which of the far node's addresses this rule's traffic leaves that node by.
-   It is a refinement of the DESTINATION, so it rides beside it as one more quiet chip rather than as a
-   second control on the row, and the window behind the gear is where it is chosen. */
-
-/** The row's second chip: the address the far node leaves as. Quiet, and it states the scope it really has —
- *  the address is per (interface, node), so it shows on EVERY row that forwards there, which is exactly the
- *  set of rules it governs. Amber when that node is no longer reporting the address: the rule then routes to
- *  a source the far node cannot receive replies on, which looks like nothing at all from here. */
 function AsChip({ ip, node, direct }) {
   const rec = (Store.nodes || []).find(n => n.id === node) || {};
   const gone = !!((rec.ips || []).length && !(rec.ips || []).includes(ip));
@@ -2910,9 +1961,6 @@ export const peersOn = (node, iface) => Store.recon.peers.filter(p => (p.targets
 export const whoCount = w => (w.groups || []).length + (w.users || []).length + (w.peers || []).length;
 const whoSorted = (sel, k, key) => sel[key].slice().sort((a, b) => whoEntryName({ k, id: a }).localeCompare(whoEntryName({ k, id: b }))).map(id => ({ k, id }));
 
-/* "FOR WHOM" — people, groups and single devices as a list: search-to-add (`UserPicker`), a filter above a page, the shared
-   pager, a × per row. Rule settings and a csqtt server's App routing exceptions choose people with it; `cell` says what a
-   row's devices are to its caller (the rule's coverage there, the devices on the server here). */
 export function WhoPicker({ sel, setSel, here, cell, onTyped, empty }) {
   const [q, setQ] = useState(""), [page, setPage] = useState(1);
   const list = [...whoSorted(sel, "g", "groups"), ...whoSorted(sel, "u", "users"), ...whoSorted(sel, "p", "peers")];
@@ -2947,9 +1995,6 @@ export function WhoPicker({ sel, setSel, here, cell, onTyped, empty }) {
   <//>`;
 }
 
-/* RULE SETTINGS — where a rule leaves by, and for whom. Built from what exists: `ShareListSheet`'s layout (search-to-add with
-   `UserPicker`, a filter above 15 rows, the shared pager, per-row ×, the count in the foot), the Networks window's audience
-   switch, and its colour-coded device counts. Nothing here is written until the interface is saved. */
 function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyone, exitIps, directIp, onApply, nodeScope }) {
   useStore();
   const [dest, setDest] = useState(dest0);
@@ -2963,31 +2008,13 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
   const [plist, setPlist] = useState(String((portsOf(row) || {}).list || "").split(",").join(", "));
   const pc = proto === "both" && !plist.trim() ? null : portsClean(proto, plist);
   const pBad = !!(withPorts && pc && pc.bad);
-  // A DRAFT OF THE INTERFACE'S WHOLE ADDRESS MAP, not one address. The field below edits the entry for
-  // whichever node "Leaves by" currently names, so picking another node up there shows THAT node's address
-  // without anything having to reset anything: the old node's entry is simply not the one being read.
   const [ips, setIps] = useState(() => ({ ...(exitIps || {}) }));
   const dirtyRef = useRef(false), closeRef = useRef(null), cleanRef = useRef(null), base = useRef(null);
-  // WHICH NODE THIS FORWARDS TO, if it forwards at all — the address list, the sentence and the warning all
-  // hang off it, and it is read from the control rather than from the row so that choosing another node
-  // above re-answers all three at once.
-  // ⚠️ THE SAME LIST THE INTERFACE-WIDE PIN OFFERS (`EgressPicker`'s forward branch), from the same record
-  // and through the same control. This is one question asked at two scopes — "which of that node's addresses
-  // does this leave by" — and a second, cleverer list here (its NICs only, say) would mean the two controls
-  // disagreeing about a node's addresses one screen apart. `NodeIpPick` already drops the private ones and
-  // keeps a typed value, so a node that reports nothing yet still offers Auto and a box to type into.
   const asNode = (/^exit\|(.+)$/.exec(dest) || ["", ""])[1];
   const asRec = asNode ? (Store.nodes || []).find(n => n.id === asNode) : null;
   const asIps = (asRec || {}).ips || [];
   const ip = (asRec && ips[asNode]) || "";
   const setIp = v => setIps(m => { const nx = { ...m }; if (v) nx[asNode] = v; else delete nx[asNode]; return nx; });
-  // ⚠️ AN ADDRESS THE FAR NODE IS NOT REPORTING IS A SILENT TOTAL OUTAGE, and nothing else on any screen says
-  // so: that node installs `--to-source <it>` whatever we send, iptables accepts a source the box does not
-  // own, and every packet for this rule leaves with an address it cannot receive replies on. Said ONLY when
-  // that node is reporting addresses at all — a node that has told us nothing is unknown, not wrong, which
-  // is the same rule `nicNote` and the device-refusal set already follow. (The test is `addrStale`, below — one for both fields.)
-  // DIRECT — the address this node's own traffic leaves as: the INTERFACE's source address (`egress_ip`), the node's own
-  // list, and the same stale test. Offered only where the caller can store it (`directIp` given: an interface's list).
   const [dip, setDip] = useState(directIp || "");
   const dRec = dest === "direct" && directIp !== undefined ? (Store.nodes || []).find(n => n.id === node) : null;
   const dIps = (dRec || {}).ips || [];
@@ -3024,10 +2051,6 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
           operator picks a listed option — so one instance reused across a change of "Leaves by" carried the PREVIOUS
           node's Custom mode over. A key makes it a different control for a different node, which is what it is. */""}
     ${(() => {
-      // THE SENTENCE NAMES WHAT IT IS ABOUT, in the colours the rest of the panel gives them: the interface in its type's
-      // colour (WG, AWG 2.0, AWG 3.1, WDTT, csqtt — Settings → Interfaces), the node and the address it leaves as in that
-      // node's colour, all three bold. It read "this interface … this address", with the address one field away and on
-      // Auto not even chosen yet — so Auto says whose default it is.
       const b = (txt, color) => html`<b style=${color ? "color:" + color : ""}>${txt}</b>`;
       const k = kindOf(node, iface);
       const ifB = b(iface, ifaceColor(k === "awg" && awgGen(node, iface) === "3.1" ? "awg3" : k));
@@ -3088,34 +2111,13 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
   <//>`;
 }
 
-/* ⚠️ DON'T WRITE A TARGET VALIDATOR HERE. A private one lived at this spot — `validTarget`, `isIpTarget`,
-   `domainTargets` and three regexes — and it drifted from the classifier it was mirroring (it called
-   `x.com.` invalid; the classifier strips the trailing dot on purpose). `.campaign/classify-audit.mjs`
-   gates three readers of that grammar and could never see a fourth one living here. Ask js/classify.js. */
 // Live feedback for AS<n> tokens in a rule/list: shows "AS62041 → 5 prefixes" (or "not found") so the operator knows
 // the ASN resolved. Counts are cached module-wide (keyed by AS number) so switching rows never re-fetches.
 const _asnCache = {};
-/* ⚠️ TWO COMPONENTS READ THIS CACHE, and only one of them was ever told the answer had arrived.
-   `AsnHint` forced its own re-render; the rule's SIZE METER (in TargetField, a sibling above it) counts an
-   AS badge's prefixes into "N networks" and read whatever happened to be in here at the time. Measured on a
-   live panel: the meter said «10 записей · 7 имён · 1 сеть» with «AS13335 → 877 префиксов» rendered two
-   lines below it, and only corrected on an unrelated re-render, when it jumped to 878 — so the operator's
-   two readings of the same rule disagreed until they touched something else.
-   One fetch, one subscriber list: every reader learns at the same moment, and a second reader added later
-   gets it for free instead of re-finding this. */
 const _asnSubs = new Set();
-/** THE cache key for an AS, from any shape any reader holds. `classify` normalises `AS:013335` to the value
- *  `as13335` (it runs the digits through Number), so a reader keying off the classified BADGE and a reader
- *  keying off the RAW text disagreed on a leading zero: the hint fetched and cached `013335` while the size
- *  meter looked up `13335`, found nothing and said "1 network" beside the hint's real count. Exactly the
- *  contradiction this subscriber list was added to end, one input further along. One normalisation, every
- *  reader — and it mirrors classify.js's own ASN rule rather than re-deriving it loosely. */
 const asnKey = v => { const m = /^(?:as:?)?(\d{1,10})$/i.exec(String(v == null ? "" : v).trim());
                       return m ? String(Number(m[1])) : ""; };
 function useAsnCounts(raw) {
-  // Normalised HERE, not by the caller: the two existing readers hold different shapes (raw text vs a
-  // classified badge) and a third will hold a third. A hook that trusts its callers to pre-key it is the
-  // same convention that let `as013335` open two cache entries for one AS.
   const nums = [...new Set((raw || []).map(asnKey).filter(Boolean))];
   const [, force] = useState(0);
   useEffect(() => {
@@ -3150,40 +2152,15 @@ export function AsnHint({ targets }) {
 export function EgressPicker({ node, value, onChange, noRules }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const ipIfaces = nrec.ip_ifaces || [];
-  // ⚠️ EGRESS = A PHYSICAL NIC, AND ONLY THE KERNEL KNOWS WHICH THOSE ARE. This filtered `ip_ifaces` BY NAME
-  // — dropping the self-contained servers (WDTT + csqtt raw-TUN) and mesh links, which are the inbound
-  // datapath and never a way out — and everything else was called a NIC. So a TUN some proxy on the box
-  // left behind was offered as "Direct — tun0", which is wrong in the way that matters: "Direct" promises
-  // a multi-access link whose exit IP the operator picks, and a tunnel is neither. `ether_ifaces` is the
-  // node's ARPHRD_ETHER list, the same one `exit_device_refusal` has always used to refuse a NIC as an exit
-  // DEVICE — the two halves of one classification, finally reading from one source.
   const others = (Store.nodes || []).filter(n => n.id !== node);
   const exits = nrec.exits || [];
   // The node's default exit, if it has a usable one — what "Auto" actually resolves to on this node.
   const _dflt = (nrec.exits || []).find(x => String(x.id) === String(nrec.default_exit || "")) || null;
-  // ⚠️ `auto` AND `direct` COLLAPSE TO ONE ROW, because underneath they are one stored mode: `egressBody`
-  // writes `egress_mode:"direct"` for both, and the only difference is whether a NIC/IP refinement is set.
-  // They were two rows for as long as the NIC pin lived in this list; with the pin demoted to its own
-  // control below, a second row would be a choice without a difference.
   const ifSel = value.mode === "smart" ? "smart" : value.mode === "forward" ? "forward|" + (value.node || "")
     : value.mode === "exit" ? "exit|" + (value.exitId || "") : "auto";
-  // Is the value this control is holding something the list below can name? Answered from the SAME source
-  // the list is built from, so the two cannot disagree. [[two-readers-one-grammar]]
-  // ⚠️ `others` EXCLUDES THIS NODE, and the question here is "does this id resolve to a node", not "is it a
-  // node we would offer". A record forwarding to the node's own id is refused on write today, so it can
-  // only arrive by hand — but reading it as "a node that is no longer here" would be actively wrong about a
-  // node that is right here, and send the operator looking for something that was never removed.
   const _unnamed = value.mode === "forward" && !!value.node && !others.some(n => n.id === value.node);
   const _goneFwd = _unnamed && !(Store.nodes || []).some(n => n.id === value.node);
-  // ⚠️ TWO REASONS THE LIST CANNOT NAME THIS VALUE, AND BOTH NEED A ROW. Splitting them fixed the
-  // sentence and broke the control: a forward pointing at THIS node is not in `others` either, so with
-  // only the `_goneFwd` row it rendered blank — the exact "control shows nothing" failure that let a
-  // ghost reference sit unnoticed for a day. And `prune_node_refs` cannot heal this one: the id IS live,
-  // so the sweep leaves it alone and only the operator can resolve it.
   const _selfFwd = _unnamed && !_goneFwd;
-  // The chosen exit, if it is still there. An interface KEEPS its selection when the exit is turned off, its
-  // device goes bad, or the exit is deleted (decision 3) — so all three are reachable here, and each is a
-  // different sentence. What they are NOT is a reason to refuse the save or to silently reset the field.
   const exSel = value.mode === "exit" ? exits.find(x => String(x.id) === String(value.exitId || "")) : null;
   const exNote = value.mode !== "exit" ? "" : !exSel
     ? T("That exit no longer exists — traffic goes out directly. Choose another, or add it back under Settings → Network.")
@@ -3192,16 +2169,6 @@ export function EgressPicker({ node, value, onChange, noRules }) {
     : exSel.why_not
     ? T("This exit's device can't be used right now — traffic goes out directly. Settings → Network says why.")
     : "";
-  // WHICH SOURCE THE CHOSEN EXIT LEAVES AS. Said here because the choice is made here and the field lives
-  // on the EXIT, one screen away — and because "which card" without "which address on it" is only half the
-  // question an operator with a multi-address uplink is asking.
-  //
-  // ⚠️ IT IS NOT EDITABLE FROM HERE, deliberately. `egress_ip` belongs to the exit, and several interfaces
-  // may share one exit: an innocent-looking field on this sheet would silently change where OTHER
-  // interfaces leave from. So this reports and points, and the editing stays where the whole record is.
-  //
-  // Adopted only — an imported exit's device is one the panel minted and its address is not the operator's
-  // to override, so there would be nothing to point at.
   const exSrc = (value.mode === "exit" && exSel && !exNote && (exSel.producer || "adopted") !== "imported")
     ? (String(exSel.egress_ip || "").trim()
         ? T("Leaves as {v1}. That source belongs to the exit, so every interface using it shares one — change it under Settings → Network.", { v1: exSel.egress_ip })
@@ -3210,20 +2177,8 @@ export function EgressPicker({ node, value, onChange, noRules }) {
   let ipOpts = [];
   if (value.mode === "direct") ipOpts = ipIfaces.filter(p => !value.nic || p.iface === value.nic).map(p => p.ip);
   else if (value.mode === "forward") { const tn = others.find(n => n.id === value.node); ipOpts = (tn && tn.ips) || []; }
-  // Spread `value` so the rules keep their place across a mode switch: someone who flips to Auto to look at
-  // something and flips back must not find their routing gone.
-  // ⚠️ TAKES THE VALUE, NOT AN EVENT. This was `e => e.target.value` for a native <select>; `Dropdown` hands
-  // the value straight over, so the old signature read `undefined` off a string and every row in the list
-  // silently did nothing when clicked.
   const onIf = v => {
-    // ⚠️ AUTO KEEPS THE PIN AND THE SOURCE IP. It used to clear them, which was right while choosing "Auto"
-    // was how you cleared a NIC — the NIC was in this list. Now a pinned interface DISPLAYS as Auto, so
-    // clicking the row it is already on would silently wipe a setting edited in another control. The pin's
-    // own "None" is how it is cleared; the other modes still clear it, because a pin means nothing there.
     if (v === "auto") return onChange({ ...value, mode: "auto", node: "", exitId: "" });
-    // SMART KEEPS THIS NODE's SOURCE IP: a smart save carries `egress_ip` (what its Direct rules leave as, Rule settings).
-    // From Auto/Direct the draft's address is this node's and stays; from Forward it is the FAR node's (and Exit cleared
-    // it), so the stored own address comes back instead — never another box's address as this one's source.
     if (v === "smart") return onChange({ ...value, mode: v, nic: "", node: "",
       ip: value.mode === "auto" || value.mode === "direct" || value.mode === "smart" ? (value.ip || "") : (value.ownIp || "") });
     const [mode, x] = v.split("|");
@@ -3250,33 +2205,9 @@ export function EgressPicker({ node, value, onChange, noRules }) {
       <${Dropdown} value=${ifSel} onChange=${onIf} options=${[
         { value: "auto", label: _dflt ? T("Auto ({v1})", { v1: _dflt.label || _dflt.device || _dflt.id })
                                       : T("Auto (MASQUERADE)") },
-        // A MODE, not a destination — so it sits with Auto, second, outside every group, as in Settings → Network's default
-        // exit (operator, 09-26): both are ways of deciding, and the exits and nodes below are what they decide between.
-        // ⚠️ NOT GATED ON OTHER NODES. It was offered only when the panel had a second node, so a single master with a
-        // WARP account or a custom exit could not send some destinations out by it — while every rule kind that needs no
-        // second node (leave by an exit on this node, direct, block) validates, plans and runs on it.
         { value: "smart", label: T("Routing (smart cascade)"), className: "egopt-mode" },
-        // ⚠️ THE NAT PIN IS NOT IN THIS LIST ANY MORE — see the control below. It was named for what it
-        // changes (decision B1) and that was still not enough: this list answers "where does traffic GO",
-        // and the pin answers nothing of the kind. It routes nothing. Read here it was taken for a milder
-        // way of leaving by a card, which is the one thing it cannot do — twice, by the operator who
-        // commissioned it. A row that has to be explained every time it is read is in the wrong place, so
-        // it moved to a control of its own that says so.
-        // ⚠️ `devices: true` HERE TOO. These lists used to differ: the node's own egress picker offered the
-        // devices the node reports and this one did not, so an operator could send the WHOLE node out
-        // `wg-lab0` but not a single interface — the same device, present in one list and absent from the
-        // next. It was opt-in because choosing one MINTS a record and only that screen could write the
-        // node's exit list; the mint now happens server-side on the save that references it
-        // (`_mint_device_exit`), so every picker can offer them and a cancelled sheet leaves nothing.
         ...exitOptionGroups(nrec, { prefix: "exit|", devices: true }),
         ...(others.length ? [{ group: T("Forward to node (cascade)"), items: others.map(n => ({ value: "forward|" + n.id, label: T("Forward to {node}", { node: n.name }) })) }] : []),
-        // ⚠️ A FORWARD WHOSE TARGET NODE IS GONE MUST BE NAMED, NOT BLANK. The options above are built from
-        // the nodes that DO exist, so a stored `forward|<removed id>` matched nothing and the control
-        // rendered EMPTY — the same silent hole `goneDest` closes for a rule's destination, in the control
-        // next to it. Meanwhile `cascade_plan` drops the forwarding (`if not P or P not in nodes: return`),
-        // so the interface behaves as direct while still claiming to cascade. `prune_node_refs` now repairs
-        // this on the server, but a reference can still be held here between the node's removal and that
-        // sweep — and a control that shows nothing is how it went unnoticed for a day.
         ...(_selfFwd ? [{ value: ifSel, label: T("This node itself"), className: "bad",
                           refuse: T("This interface is set to forward everything to the node it is already on, which cannot work — the traffic would leave by this node's own address anyway. Choose another destination.") }] : []),
         ...(_goneFwd ? [{ value: ifSel, label: T("A node that is no longer here"), className: "bad",
@@ -3311,81 +2242,22 @@ export function EgressPicker({ node, value, onChange, noRules }) {
   <//>`;
 }
 
-/** Does the NAT source pin apply to this egress mode at all?
- *
- *  ⚠️ ONLY `auto` AND `direct`, and this is a CORRECTNESS test, not a tidiness one. `egressBody` sends
- *  `wan_iface` for exactly those two modes — an `exit` saves `{egress_mode, exit_id}` and a `smart` saves
- *  `{egress_mode, routing}`, neither of which carries it. So offering the control in the other modes is
- *  offering something the save throws away, AND the control had to set `mode` to make the value meaningful,
- *  which silently destroyed the mode it was sitting under. Measured: an interface on an exit lost its
- *  `exit_id`, and one on smart routing lost every rule, from a dropdown in a collapsed section. */
 export const natPinApplies = eg => ((eg || {}).mode === "auto" || (eg || {}).mode === "direct");
 
-/** THE NAT SOURCE CARD — `wan_iface`, and nothing else.
- *
- *  ⚠️ WHY IT IS A COMPONENT OF ITS OWN, AND NOT A ROW IN THE EGRESS LIST. It does not route. It installs
- *  one `-o <card>` MASQUERADE and waits for traffic that something ELSE sends to that card. Sat in the
- *  egress list — the control that answers "where does traffic go" — it was read as a milder way of leaving
- *  by that card, which is the one thing it cannot do. Twice, by the operator who chose its name. A row that
- *  has to be explained every time it is read is in the wrong place, so it moved under "Advanced settings",
- *  where the sheet can frame it as advanced and its own sentence can lead with what it does NOT do.
- *
- *  KEPT, not removed: three setups need it and none can be said any other way — routing the operator
- *  manages outside the panel, forcing our NAT where the baseline defers to a foreign rule (`_egress_des`
- *  returns on `wan_ov` BEFORE the `_has_foreign_egress` test), and choosing which card a cascade's
- *  forwarded traffic is NAT'd out of.
- *
- *  Takes the same `value`/`onChange` pair as `EgressPicker` because it edits the SAME draft — `nic` is one
- *  field of one egress record, and giving it a second state to keep in step is how the two would drift. */
 export function NatSourcePick({ node, value, onChange }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const ipIfaces = nrec.ip_ifaces || [];
-  // Falls back to the old name filter only while the node has not reported it: a node that has not spoken
-  // yet must not lose its egress list, and this is the same "found nothing is not asked-and-there-is-
-  // nothing" rule the refusal set follows.
   const nics = (nrec.ether_ifaces && nrec.ether_ifaces.length)
     ? nrec.ether_ifaces.filter(n => !isSelfContainedName(n) && !n.startsWith("swg_"))
     : [...new Set(ipIfaces.map(p => p.iface))].filter(n => !isSelfContainedName(n) && !n.startsWith("swg_"));
-  // ⚠️ A PINNED NIC IS A NAT SELECTOR, NOT A ROUTE — and when it names a card this node's traffic does not
-  // leave by, the ONE rule it produces can never match. `_egress_des` (swg-noded:1629) is a ladder that
-  // RETURNS on `wan_ov`, so the baseline MASQUERADE out the real WAN is never added either: the clients
-  // egress un-NATted, are dropped upstream, and every screen keeps saying the interface is healthy. This is
-  // the `Direct — wdttraw2` defect one layer down — there a device that could not carry traffic was offered,
-  // here a device that can is pinned for a job it is not doing.
-  //
-  // A WARNING, NOT A REFUSAL, and that is deliberate: a second uplink the operator policy-routes to by hand
-  // outside the panel is a real setup, and this control is the only way to NAT for it. So it names the
-  // consequence and the two controls that avoid it, and leaves the choice alone.
-  //
-  // ⚠️ ONLY SAID WHEN THE NODE HAS TOLD US ITS WAY OUT. A blank `wan_iface` is a node that has not reported,
-  // not a mismatch — the same "found nothing is not asked-and-there-is-nothing" rule the `nics` list above
-  // and the refusal set both follow. Recomputed from the live snapshot each render, so a failover that moves the
-  // default route onto the pinned card clears this by itself.
-  // ⚠️ EITHER SPELLING OF THE ONE MODE. `egressBody` stores `auto`+nic and `direct`+nic identically, so a
-  // pin is LIVE under both — and testing only `direct` let a freshly-pinned draft (still `auto` until it is
-  // saved and read back) show no warning at all.
   const nicNote = (value.mode === "direct" || value.mode === "auto") && value.nic
     && nrec.wan_iface && value.nic !== nrec.wan_iface
-    // ⚠️ NAMES THE CONTROL IT SITS IN. It used to say "or Auto", which was the row directly above it while
-    // the pin lived in the mode list; from inside its own section that points at a different control on a
-    // different question. "Off" is the option one click away, in the dropdown this sentence is under.
     ? T("This node's traffic leaves by {v2}, not {v1}, so this rule can never match and clients would leave with no NAT at all. Choose “Off”, or {v2} — unless you route to {v1} yourself.",
         { v1: value.nic, v2: nrec.wan_iface })
     : "";
   // Nothing to pin to, or a mode that does not store a pin — either way a control here is a dead field,
   // and in the second case a destructive one (see `natPinApplies`).
   if (!nics.length || !natPinApplies(value)) return null;
-  // ⚠️ THE HEADING DOES NOT NAME A CARD, and that is deliberate — it is the third attempt at this label and
-  // the first two both failed the same way. "Direct — source from eth2" and then "NAT source card" each led
-  // with the DEVICE, and each was read as "send traffic out that card" (twice, by the operator who
-  // commissioned the naming). Naming the ACT instead removes the misreading structurally rather than
-  // apologising for it in the hint. It also fixes Russian, where a bare `карта` reads as "map" first and
-  // `карточка` is already the word for a UI card — so the old label said something close to "map for the
-  // NAT address". `Off` rather than `Not pinned`: "pinned" is our implementation's metaphor, not the
-  // operator's, and in Russian it had to agree in gender with a noun this heading no longer contains.
-  // ⚠️ IT CARRIES ITS OWN SECTION HEADING. The callers place it inside a shared "Advanced settings" body
-  // next to that protocol's settings, and a heading supplied by four callers is four chances to word it
-  // differently — or, as happened here, to render it TWICE beside the component's own label.
   return html`<${Fragment}>
     <div class="field secdiv"><label>${T("Extra NAT")}</label></div>
     <div class="field">
@@ -3400,10 +2272,6 @@ export function NatSourcePick({ node, value, onChange }) {
   <//>`;
 }
 
-/* The stored rule list becomes the rows the operator edits, here and only here — the pair every save path
-   already funnels through, so no save path learns the row shape (§5, §7.3). Badges that came from STORAGE are
-   marked as such: a stored entry that this node's engine can no longer run is shown inert and kept, while
-   creating one is refused, and the two cases are only distinguishable by where the badge came from. */
 export const egressInit = m => {
   const { rows, catchAll } = rulesToRows(m.routing || []);
   for (const r of rows) for (const b of (r.badges || [])) b.stored = true;
@@ -3413,9 +2281,6 @@ export const egressInit = m => {
     // THIS NODE's own stored source address — `egress_ip` is the FAR node's in forward mode, so it is not one there. What
     // switching back to smart restores, so a look at Forward/Exit and back loses nothing (see `onIf`).
     ownIp: m.egress_mode === "forward" ? "" : (m.egress_ip || ""),
-    // The exit an interface leaves by, by ID. Read here or the editor QUIETLY UNDOES THE SELECTION: with no
-    // `exit` arm this ternary lands on "auto", so opening an exit interface to change its MTU and pressing
-    // Save rewrites it to direct, with the operator having changed nothing they can see.
     exitId: m.exit_id || "", rows, catchAll,
     // The interface's {far node: address} map (§4.2). Read and written whole, beside the rows rather than
     // inside them — see `_apply_exit_ips` on the panel for why that is where it lives.
@@ -3425,39 +2290,13 @@ export const egressInit = m => {
     p2p: m.p2p && m.p2p.action ? { ...m.p2p } : null };
 };
 
-// WHY SAVE IS BLOCKED, or null. One call, consulted by all four Save buttons — and it is deliberately ONE
-// call rather than two, which the name now says: it was `egressError`, and it answers two questions.
-//
-//   1. IS THE CONFIG VALID — an empty row, an invalid badge, a hostname on an IP-only node. `mode` is the
-//      node's routing_mode; in kernel (IP-only) a rule cannot name a hostname, only a host layer matches by
-//      name. The field already refuses to CREATE such a badge, so this is the backstop for the two cases the
-//      field cannot reach: a row with nothing in it, and a stored entry the panel would reject on the way in.
-//   2. IS THERE TEXT THE EDITOR HAS NOT APPLIED — `row._draft`. Not an invalid value at all, a transient
-//      editor state, and the reason it lives here anyway is that this is the ONE thing every Save path
-//      consults. Split into a second function and a caller that forgets to call it saves the row as it was
-//      BEFORE, silently, with the operator looking at the lines they just typed. That bug existed; the fix
-//      was to put the check where nothing can route around it.
-//
-// It walks rows, and the shadowing lint that used to live here is now per badge, in the row.
 export function egressSaveBlock(eg, mode) {
-  // An interface set to "exit" with no exit chosen is the shape this tree keeps having to close: accepted by
-  // the field, stored, badged, and routing nothing. Checked here because this is the one gate every Save
-  // path consults — and note it sits ABOVE the smart-only return, which is exactly the line a fifth mode
-  // gets added below by mistake.
   if (eg && eg.mode === "exit" && !String(eg.exitId || "").trim())
     return T("Choose which exit this interface leaves by.");
   if (!eg || eg.mode !== "smart") return null;
   for (const row of (eg.rows || [])) {
     if (row.locked) continue;                         // a legacy rule is re-emitted verbatim; nothing to validate
-    // TEXT STILL IN THE TEXT VIEW IS NOT IN THE RULE. `draft` is local to the field until `</>` applies it,
-    // so saving here would write what the row held BEFORE — silently, with the operator looking at the lines
-    // they just typed. Checked before the emptiness test on purpose: "add at least one target" is the wrong
-    // sentence to show someone staring at ten of them.
     if (row._draft) return row._draft;
-    // THE SAME SHAPE THE `exit` MODE IS GUARDED FOR SIX LINES UP: a destination that names nothing is
-    // accepted by the field, stored, and routes nothing. NOT a check that the exit still EXISTS — that one
-    // degrades at plan time on purpose, and refusing it here is how an interface becomes unsavable
-    // including the save that would move it off the deleted exit.
     if (row.action === "dev" && !String(row.exit_id || "").trim())
       return T("Choose which exit this rule leaves by.");
     const badges = row.badges || [];
@@ -3468,11 +2307,6 @@ export function egressSaveBlock(eg, mode) {
       return bad.length > 1 ? T("Invalid targets: {list}", { list }) : T("Invalid target: {list}", { list });
     }
     if (mode === "kernel") {
-      // ASYMMETRIC ON PURPOSE: block CREATION, tolerate what is already there. A badge that came from storage
-      // was fine when it was written and stopped being enforceable when the node's engine changed — refusing
-      // the save is how the interface becomes unsavable, including the save that would remove the badge. The
-      // panel now keeps it and drops it at plan time, so Save is honest either way; the badge is inert, with
-      // the reason and the one-click switch on it (§4.2, and §1.7e where the lockout was reproduced).
       const doms = badges.filter(b => b.t === "target" && b.kind === "site" && !b.stored).map(b => targetLabel(b.kind, b.value));
       // One key per count, not a sentence assembled with `+`: the pieces cannot be reordered, and Russian
       // needs the noun in a case the English suffix trick cannot express.
@@ -3489,56 +2323,17 @@ export function egressSaveBlock(eg, mode) {
 
 // The interface's egress/traffic mode as a header badge — shared by wg/awg + WDTT detail: direct | cascade
 // (whole-interface forward to a node) | smart cascade (per-destination routing).
-/** The node's report about one device, by name — and `candAddr`, the bare address out of it. Six places
- *  asked this question and four of them spelled it out inline, two with the same `.find()` written twice on
- *  one line to reach through it. One spelling, so "what address does the node say this device has" cannot
- *  come back differently on two screens. */
 export const candOf = (node, name) =>
   ((node || {}).exit_candidates || []).find(c => c && c.name === String(name || "").trim()) || null;
 export const candAddr = (node, name) => String((candOf(node, name) || {}).address || "").split("/")[0];
 
-/** Every address this node reports ON `name`, or [] — the choices for "which of this card's addresses does
- *  traffic leave as".
- *
- *  ⚠️ ONLY MEANINGFUL FOR A CARD. `_validate_exits` deliberately does NOT check an exit's `egress_ip`
- *  against the node's addresses, and its reasoning is right for the case it was written for: an adopted
- *  TUN belongs to software the panel cannot see, so refusing an address we do not know about would block
- *  the exact setup the field exists for. A NETWORK CARD is the other case — the node reports its addresses
- *  (`ip_ifaces`, `{ip, iface}` pairs), so here the panel CAN offer them, and a free-text box where a list
- *  would do is how an operator types the address of the other card by mistake. Typing stays available for
- *  everything this list cannot know. */
 export const cardAddrs = (node, name) => (((node || {}).ip_ifaces) || [])
   .filter(p => p && String(p.iface) === String(name || "") && p.ip).map(p => p.ip);
 
-/** Is `name` one of this node's network cards? Cards are the only devices a gateway means anything for —
- *  down a point-to-point tunnel the node ignores it (`_devexit_gw`), so a field offered there would be one
- *  the operator can fill and nothing reads. */
 export const isCardName = (node, name) => (((node || {}).ether_ifaces) || []).includes(String(name || ""));
 
-/** The gateway the NODE detected on `name`, or "" — what a blank override falls back to.
- *  ⚠️ `ether_gws` is `null` when the node has never reported gateways (an older build), and `{}` when it
- *  reported and found none. Both read as "" here, which is right for a placeholder; the REFUSAL set is
- *  where that difference matters. */
 export const cardGateway = (node, name) => String((((node || {}).ether_gws) || {})[String(name || "")] || "");
 
-/** IS THIS EXIT READY TO CARRY TRAFFIC, and if not, what do we tell the operator?
- *
- *  ⚠️ ONE ANSWER, FOUR SURFACES. The exit picker, the manage grid, the WARP grid and the node's egress
- *  field each need this, and each of them used to work it out for itself from a slightly different subset
- *  of the same fields — which is how one screen came to show a hollow "waiting" dot for an exit another
- *  showed as fine. The states are not cosmetic: the picker REFUSES a choice on the strength of them.
- *
- *  Takes the NODE, not a pre-resolved candidate: the adopted arm needs the node's report about the device,
- *  and an API that made each caller fetch it was one where forgetting to silently downgraded a healthy exit
- *  to "the node has never mentioned this" — the one state that cannot be told from the real thing by looking.
- *
- *  ⚠️ AND THE TWO ARMS DISAGREE ABOUT "the node has not mentioned this device", on purpose:
- *    IMPORTED  we asked the node to CREATE it. Silence means it has not finished (or has not started), so
- *              the exit cannot carry anything yet and the picker says so.
- *    ADOPTED   the operator typed a name for a device something else runs, explicitly ahead of the node
- *              seeing it ("nothing is checked until the node next syncs"). Silence is the DOCUMENTED
- *              flow, not a fault — refusing it here would break the feature that exists to allow it.
- */
 /** An imported exit's KIND, by name — every test of it compares to a name, never "not profile ⇒ WARP" (docs/SOCKS5-EXIT-PLAN.md
  *  T6): a kind this panel does not know is neither, and a later kind is added by name. Empty is a legacy WARP account. */
 export const exitProv = x => String((x || {}).provider || "warp");
@@ -3565,24 +2360,9 @@ export function exitHealth(x, node) {
   const l = ex.live || {};
   const cand = candOf(node, ex.device);
   const why = String(ex.why_not || "").trim();
-  // The panel's own refusal outranks anything the node says: a device we will never lower cannot be
-  // "waiting", and telling the operator to wait for something that is never coming is the worse lie.
-  // A SOCKS5 exit on a node older than the kind (s9a F17): the panel does not send it there — an older node would register a
-  // WARP account for it — so the row says what to do, as a dial-in exit on an older node does.
   if (why === "kind_unsupported") return { state: "unsupported", tone: "warn", icon: "warn", dot: "unknown",
     why: T("This node needs the 1.8.11 update for SOCKS5 exits.") };
   if (why) return { state: "refused", tone: "bad", dot: "bad", why: T("Refused: {v1}", { v1: why }) };
-  // ⚠️ A NODE OLDER THAN THE FEATURE ITSELF, which no test below can catch because it has nothing to read.
-  // Such a node reports no exits at all, so `l` is empty for ever — and the tests then resolved to PROGRESS:
-  // an imported exit sat on "Waiting for the node to set this up…" with a spinner that could never stop, and
-  // an adopted one on "This node hasn't reported a device by this name" about a device that is present and
-  // up. Measured against `main`'s swg-noded on hel-flux: both, indefinitely, with nothing on the row naming
-  // the cause. The panel derives `exits_unsupported` from the ABSENCE of the `exits` key in the snapshot
-  // (never from a version string), and it is False for a node that has simply not synced yet — so this
-  // cannot swallow the real `creating` a freshly-created exit passes through.
-  //
-  // Placed above the producer split because it is true of BOTH: the node neither builds an imported exit nor
-  // lowers the routing for an adopted one, so a device exit on such a node is just as silently dead.
   if ((node || {}).exits_unsupported)
     return { state: "unsupported", tone: "warn", icon: "warn", dot: "unknown",
              why: T("This node's software is too old for exits. Update the node — nothing else needs changing.") };
@@ -3591,10 +2371,6 @@ export function exitHealth(x, node) {
                         why: T("This node hasn't reported a device by this name.") };
     if (cand.up === false) return { state: "down", tone: "warn", dot: "down",
                                     why: T("The node reports this device is not up.") };
-    // ⚠️ UP AND CARRYING NOTHING, as the node judged it (SOCKS5-EXIT-PLAN §5): a TUN the operator runs — their own
-    // tun2socks or sing-box — stays up when the proxy behind it dies, and the node has already routed around it by this
-    // exit's kill-switch. `live` here is the device's report (state + verdict), not a created exit's row. Absent on a node
-    // too old to judge adopted devices, which reads exactly as before.
     const nt = l.no_traffic;
     const fresh = !nodeStale((node || {}).id);       // a stale node's last `back_in` is not believed (as for an imported exit)
     if (nt && Number.isFinite(nt.back_in) && fresh)
@@ -3603,24 +2379,6 @@ export function exitHealth(x, node) {
       + (String(nt.why || "").trim() ? " " + T("The node reports: {v1}", { v1: String(nt.why).trim() }) : "") };
     return { state: "ok", tone: "", dot: "up", why: T("Up on the node.") };
   }
-  // ⚠️ A REPORT ABOUT THE CONFIG YOU JUST REPLACED IS NOT A REPORT ABOUT THIS ONE, and every test below
-  // reads one: `error`, `up` and `handshake` all describe whatever the node last converged on. Save a new
-  // profile and, until the node's next pass lands, the row went on stating the old verdict with total
-  // confidence — green for a config that no longer exists, or the previous config's failure against the
-  // paste that fixes it. The panel stamps each exit with a digest of the material the node is sent
-  // (`exit_cfg_sig`) and the node echoes back the one it is working to, so "not caught up yet" is a fact
-  // on the wire rather than a guess from a timer.
-  //
-  // Requires the node to have sent a stamp AT ALL: a node older than its panel never will, and treating
-  // its silence as "behind" would spin every exit on it for ever.
-  //
-  // ⚠️ AND IT REQUIRES THE NODE TO BE REPORTING. "Applying your changes on the node…" is a claim that work
-  // is happening; on a node that has gone dark nothing is, and the spinner would turn for ever while hiding
-  // the one reading that still means something — `l.error`, the reason this exit was broken before the
-  // operator tried to fix it. Edit an exit on an offline node and the row promised progress it had no
-  // grounds for, which is the same complaint this whole state was added to answer, pointed the other way.
-  // Stale, the row falls through and states the last thing the node actually said. That is old, but it is
-  // TRUE, and the node's own card on this screen already says it has stopped reporting.
   if (ex.cfg_sig && l.cfg_sig && l.cfg_sig !== ex.cfg_sig && !nodeStale((node || {}).id))
     return { state: "configuring", tone: "busy", icon: "refresh", dot: "unknown",
              why: T("Applying your changes on the node…") };
@@ -3630,147 +2388,50 @@ export function exitHealth(x, node) {
   // A SOCKS exit whose tunnel program is still being fetched: progress, not a fault (review F13)
   if (l.setup && !l.error) return { state: "creating", tone: "busy", icon: "refresh", dot: "unknown", why: T(l.setup) };
   if (l.error) return { state: "failed", tone: "bad", dot: "bad",
-    // An error with no "and then what" reads as stuck — the node reports when it will try again, so say it.
-    // ⚠️ THROUGH T(), like every other sentence the SPA shows. The node's own words arrived verbatim, so a
-    // Russian panel read «Не удалось: the escrowed key did not open…» on the screen this release leads
-    // with. Sentence-as-key is the convention here, so T() translates the ones the catalogue knows and
-    // returns the rest unchanged — nothing regresses, and the fixed ones stop being English.
     why: T(l.error) + (l.retry_in ? " " + T("Retrying in {v1}.", { v1: l.retry_in >= 60
       ? T("{v1} min", { v1: Math.round(l.retry_in / 60) }) : T("{v1} s", { v1: l.retry_in }) }) : "") };
-  // ⚠️ PROGRESS IS NOT A FAULT. A WARP account the node has not finished registering wore the same amber
-  // warning triangle as a failed one, so the first thing an operator saw after creating an exit was a
-  // panel telling them something was wrong with it. `busy` renders the circling-arrows icon the panel
-  // already uses for `rotating` and `restoring` — the same vocabulary for the same kind of state.
   if (!l.device) return { state: "creating", tone: "busy", icon: "refresh", dot: "unknown",
                           why: T("Waiting for the node to set this up…") };
-  // What the node ACTUALLY SAW, when it saw anything. The probe crosses the whole tunnel, so its failure
-  // names the real obstacle — timed out, connection refused, network unreachable — which no sentence the
-  // panel can compose from `up`/`handshake` ever could. Reported separately from `l.error` on purpose: that
-  // one means the exit could not be built, this one means it was built and carried nothing.
-  // …and while the node routes around it, the reason it gave for that (a SOCKS exit's is the proxy's own words — review F14)
   const probe = String(((l.no_traffic || {}).why) || (l.trace || {}).err || "").trim();
   const said = t => probe ? t + " " + T("The node reports: {v1}", { v1: probe }) : t;
   if (!l.up) return { state: "down", tone: "warn", dot: "down",
                       why: said(T("The node reports this device is not up.")) };
-  // ⚠️ A DIAL-IN EXIT WAITS FOR THE ROUTER, and the sentences below are written for a server we dial — "check the
-  // endpoint" names a field this exit does not have. Never a handshake: the router has not connected (its config, its
-  // power, or this node's UDP port). A handshake and no traffic: it connected but forwards nothing — NAT on the router is
-  // missing, the most likely mistake (LISTEN-EXIT §2.4). A handshake older than WireGuard keeps a session (180 s — the router
-  // re-handshakes every 2 min while it is there) is a router that has gone, not one that is connected.
-  // Only a handshake KNOWN to be fresh is "connected" (an unreadable one, null, is not); only a pass whose trace crossed
-  // nothing blames NAT (a router that just came back carries while the judge waits out its hysteresis); and what the
-  // failover did with the traffic is said too, by this exit's kill-switch, as the plain `stalled` row says it.
   const _fell = l.no_traffic ? " " + exitFellSay(ex) : "";
   if (exitIsDialin(ex) && !(l.handshake > 0 && l.handshake <= 180)) return { state: "waiting", tone: "warn", icon: "warn", dot: "down",
     why: T("Waiting for the router to connect. Check the router is on, its config imported, and UDP {v1} open on this node.",
            { v1: (ex.profile || {}).listen_port }) + _fell };
-  // Carrying again, and the node is waiting out EXIT_ALIVE_AFTER_S before it moves traffic back: say that, not "passes no
-  // traffic" — that minute read as the fault still being there (live, 2026-10-22).
-  // Progress, not a fault (`busy`, as `configuring`); no countdown — a figure from the last report cannot age with the poll —
-  // and a stale node's word is not taken for it.
   if (l.no_traffic && Number.isFinite(l.no_traffic.back_in) && !nodeStale((node || {}).id)) return { state: "recovering", tone: "busy", icon: "refresh", dot: "down",
     why: exitRecoveringSay() + _fell };
   // A stale node's last `back_in` is not believed (above), but it did say the tunnel carried again: that is no router with
   // NAT missing — the row takes the plain stalled reading below rather than send the operator to the router (s9d F9)
   if (exitIsDialin(ex) && l.no_traffic && !Number.isFinite(l.no_traffic.back_in) && !(l.trace || {}).ip) return { state: "stalled", tone: "warn", icon: "warn", dot: "down",
     why: said(T("The router is connected but passes no traffic — check NAT on the router.")) + _fell };
-  // ⚠️ UP AND CARRYING NOTHING, as the NODE judged it — not a guess from `handshake` or `trace` here. The node
-  // has already routed around it (`no_traffic` is only reported once it did), so the row states what happened to
-  // the traffic, which depends on this exit's own kill-switch. Absent on a node too old to judge: it falls
-  // through to the tests below exactly as before.
   if (l.no_traffic) return { state: "stalled", tone: "warn", icon: "warn", dot: "down",
     why: said(exitStalledSay(ex)) };
-  // Работающий туннель подтверждает рукопожатие или успешное прохождение проверки через него.
-  // Ноль означает отсутствие рукопожатия. У старых узлов ноль также может быть возрастом свежего рукопожатия.
-  // Отсутствующее поле сохраняет прежнее поведение. Подсказка зависит от вида настроенного выхода.
   if (l.handshake === 0 && !(l.trace || {}).ip) return { state: "nohandshake", tone: "warn", icon: "warn", dot: "down",
     why: said((ex.provider || "warp") === "warp"
       ? T("The tunnel is up, but Cloudflare never answered it. Nothing here is yours to correct — the keys and the endpoint are the panel's own. Networks that block WARP look exactly like this, so try a pasted profile instead, or put this exit on another node.")
       : l.awg
       ? T("The device is up, but this peer has never answered. Check the endpoint, the keys, and that the server really is AmneziaWG with these exact obfuscation values.")
       : T("The device is up, but this peer has never answered. Check the endpoint and the keys — and if the server is AmneziaWG, its profile must be pasted with its obfuscation lines intact.")) };
-  // ⚠️ NO `unproven` STATE HERE, and the reason is worth keeping. The first fix for "green with no IP and no
-  // latency" warned whenever an imported exit had no trace — but the trace is a request to cloudflare.com,
-  // so a node whose egress is firewalled to specific destinations would have a perfectly good tunnel and a
-  // permanent amber warning. The real hole was in the node: `_exit_handshake` asked with the tool for the
-  // RECORD, which returns nothing the moment record and device disagree — exactly the case worth reporting.
-  // It now asks by what the device IS and falls back to the other tool, so `handshake` is answerable for any
-  // device that exists, and the `=== 0` test above catches the reported case without inventing a second one.
   return { state: "ok", tone: "", dot: "up", why: exitIsDialin(ex) && l.endpoint
     ? T("Up on the node. The router connects from {v1}.", { v1: l.endpoint }) : T("Up on the node.") };
 }
 
-/** The one marker for an exit's health. Three screens rendered this by hand and all three hardcoded the
- *  warning triangle, so a state that is not a warning could not look like anything else — which is how a
- *  WARP account still being created came to wear a fault icon. The health verdict names its own icon; this
- *  just draws it. */
 export const exitHealthMark = (h) => {
   if (!h || !h.tone) return null;
   // A `busy` marker is progress, not a fault — there is nothing to open and nothing to read, so it keeps
   // the plain hover caption it always had.
   if (h.tone === "busy" || !h.why)
     return html`<span class=${"ddwarn " + h.tone} title=${h.why}><${Ic} i=${h.icon || "warn"}/></span>`;
-  // ⚠️ CLICKABLE, like every other fault marker in the panel. A native `title` shows on hover, at the
-  // mercy of the browser's delay, is unselectable and unreachable on a touch screen — and the reason an
-  // exit is not working is the one sentence an operator most needs to be able to read, copy and act on.
-  // `CmdErr` and `StatusTag` already answer this the same way, so this is the third caller of one idiom
-  // rather than a third idiom. `stopPropagation` because these markers sit inside rows that are themselves
-  // buttons: in the exits table the row opens the editor, in the dropdown it selects the exit.
   return html`<span class=${"ddwarn ddwarn-clk " + h.tone} title=${T("Show the reason")}
     onClick=${e => { e.preventDefault(); e.stopPropagation();
                      openConfirm({ title: T("This exit isn't working"), log: h.why, confirmLabel: T("Close") }); }}
     ><${Ic} i=${h.icon || "warn"}/></span>`;
 };
 
-/** ── THE NODE'S EXITS, AS DROPDOWN GROUPS ───────────────────────────────────────────────────────────────
- *  ONE list, so every control that asks "where does this leave by" asks it the same way and an operator who
- *  has learned one has learned the others. The groups are the operator's taxonomy, not the schema's:
- *
- *    Exit via WARP                    what the PANEL created and holds the key to — a registered WARP
- *                                     account, and a pasted profile, which is set up in the same place and
- *                                     is therefore an external WARP profile as far as anyone using it is
- *                                     concerned. It is labelled `Custom — <name> — <device>` so the two are
- *                                     still tellable apart at a glance.
- *    Exit via an external interface   a device the panel did NOT create and only points at.
- *
- *  `prefix` because the same option means the same thing at two scopes but is STORED differently: an
- *  interface or a rule keeps `exit|<id>` alongside its other destination kinds, the node's default keeps a
- *  bare id because an exit is the only thing it can be. One list, two spellings, no second copy.
- *
- *  `onToggle` turns each row into a switch as well as a choice. A row that is OFF is dimmed and REFUSES
- *  the choice, saying so — it stays in the list because the switch that unblocks it is in the row, and
- *  because a stored selection that was later switched off still has to be showable.
- *
- *  `onManage` puts a Manage button on that same last row — the row is already the list's "none of these"
- *  answer, so the fuller version of it belongs beside rather than below.
- *
- *  `custom` appends "Custom interface…". Without it the answer to "I want everything out this TUN" was
- *  "go to another screen, add an exit, come back and pick it" — the device is on the box, the operator
- *  knows its name, and the list they are already looking at is where it belongs.
- *
- *  ⚠️ REMOVAL CONFIRMS **IN THE ROW**, not in a modal. A confirm dialog over an open dropdown is the wrong
- *  shape twice over: it covers the list the operator is reading, and dismissing it takes the popup with it —
- *  so deleting three stale entries meant reopening the dropdown three times. Armed, the row swaps its own
- *  controls for the question and answers it in place; the list never moves and the next row is one click
- *  away. `armed` is the id currently asking, `onArm` sets it, `onRemove` is the yes.
- *
- *  `onRemove` puts a red X on the external rows that are RECORDS — the ones the operator added, by typing a
- *  name or by choosing a reported device. A purely discovered row has nothing to remove: the device is on
- *  the box whatever the panel thinks, and an X there would promise something this screen cannot do.
- *
- *  `onRename` puts a pencil on every EXTERNAL-INTERFACE row. Those rows are the only ones whose name is a
- *  bare device (`tun-lab0`), because nothing else in the panel offers a place to title them — a WARP exit
- *  has a Name field on its own screen and an interface has its own card. Without it the only way to give
- *  one a human name was to go and find it in External exits, which is the detour this list exists to end.
- */
 export function exitOptionGroups(node, { prefix = "", onToggle = null, custom = "", onRename = null, onRemove = null, onManage = null, armed = "", onArm = null, stored = null, devices = false } = {}) {
   const exits = ((node || {}).exits || []).filter(x => x && x.id);
-  // ⚠️ TWO SOURCES, AND THEY ARE NOT INTERCHANGEABLE. The rows are built from whatever the caller passed —
-  // usually a DRAFT, so a rename shows before it is saved — but `nFields` deliberately strips `live` and
-  // `why_not` from that draft, because they are panel-owned and including them would make the section go
-  // dirty every time the node reported something new. Health read off the draft therefore sees no `live`
-  // at all and calls every WARP account "still being created", triangle and all, including the ones that
-  // are up. Measured on the rig: seven healthy exits, seven warnings. So health comes from `stored`.
   const health = x => exitHealth((stored || exits).find(o => String(o.id) === String(x.id)) || x, node);
   // The row's own controls, as one slot. A pencil is offered only where `onRename` says a row can be
   // titled; the switch only where there is something to switch.
@@ -3795,13 +2456,6 @@ export function exitOptionGroups(node, { prefix = "", onToggle = null, custom = 
   const mk = (x, label) => {
     const on = x.enabled !== false;
     const live = x.live || {};
-    // ⚠️ AN EXIT THAT CANNOT CARRY TRAFFIC IS NOT A CHOICE. A WARP account still registering, or one whose
-    // registration failed, has no device on the box — choose it and the node has nothing to route to, so the
-    // traffic falls through to direct and leaves from the very address the exit exists to hide. Refused the
-    // same way an OFF row is (dimmed, still listed, says why) rather than hidden, because a stored selection
-    // that has since broken must stay visible and nameable.
-    // ADOPTED rows are deliberately exempt — see `exitHealth`: a device the node has not reported yet is the
-    // documented way to name one ahead of time, not a fault.
     const h = health(x);
     const notReady = (x.producer || "adopted") === "imported" && h.state !== "ok";
     const mark = h.tone
@@ -3809,10 +2463,6 @@ export function exitOptionGroups(node, { prefix = "", onToggle = null, custom = 
       : null;
     return {
       value: prefix + x.id, label,
-      // DIM, NOT DISABLED. `disabled` would take the row out of arrow-key navigation entirely — and the row
-      // has to stay reachable, because the switch that unblocks it lives in the row. It refuses the CHOICE
-      // and says why instead. A stored selection that was later switched off still renders here, which is
-      // the other reason the row cannot simply vanish.
       className: (on && !notReady) ? "" : "dim",
       ...(on
         ? (notReady ? { refuse: h.why } : {})
@@ -3825,28 +2475,13 @@ export function exitOptionGroups(node, { prefix = "", onToggle = null, custom = 
         ? { extra: confirmRow({ id: x.id, label, device: x.device || "" }),
             // While a row is asking, choosing it would answer a different question.
             refuse: T("Answer the question on this row first."), className: (on ? "" : "dim") + " arming" }
-        // ⚠️ THE MARKER IS NOT PART OF THE ROW CONTROLS, even though it sits where they do. A picker that
-        // only CHOOSES passes no `onToggle`/`onRename`/`onRemove` — and when the marker rode along with
-        // them, those pickers dimmed a not-ready exit and refused it while showing nothing that said why.
-        // Dimming without a reason is the shape this whole health model exists to end.
         : { extra: ctl(onRemove && x._ext ? rmBtn({ id: x.id, label, device: x.device || "" }) : null,
-                       // ⚠️ `gw` RIDES ALONG OR THE FORM OPENS EMPTY AND SAVES THAT. The pencil seeds every
-                       // field the form can edit; leaving the typed gateway out meant the operator opened a
-                       // card that HAD one, saw a blank box, and any save wrote the blank back.
                        onRename && x._ext ? penBtn({ kind: "exit", id: x.id, device: x.device || "", title: x.label || "",
                                                      egress_ip: x.egress_ip || "", gw: x.gw || "" }) : null,
-                       // The switch answers "may this be chosen?", and on a broken row that is not the
-                       // question — turning it on would change nothing and reads as the fix. The marker
-                       // takes its place and carries the reason.
                        notReady ? mark
                          : onToggle ? html`<${Switch} on=${on} onChange=${v => onToggle(x.id, v)}/>` : null) }),
     };
   };
-  // ONE NAMER FOR BOTH GROUPS — `exitLabel`. Each used to spell a row its own way: imported rows read as a
-  // bare `wgx-229f0c44` when untitled, adopted ones as a bare `wg-lab0`, and a pasted profile carried a
-  // third shape ("Custom — <title> — <device>"). The same exit therefore read differently depending on
-  // which list you opened it from, and an untitled one never said what it WAS.
-  // …and grouped by what they are: a WireGuard profile the operator pasted is imported too, but it is no WARP account (OE, 1.8.9)
   const imp = exits.filter(x => (x.producer || "adopted") === "imported");
   const warp = imp.filter(x => exitProv(x) === "warp").map(x => mk(x, exitLabel(x, node)));
   const prof = imp.filter(x => exitProv(x) === "profile").map(x => mk(x, exitLabel(x, node)));
@@ -3854,20 +2489,6 @@ export function exitOptionGroups(node, { prefix = "", onToggle = null, custom = 
   const other = imp.filter(x => !EXIT_KINDS.includes(exitProv(x))).map(x => mk(x, exitLabel(x, node)));
   const ext = exits.filter(x => (x.producer || "adopted") !== "imported")
     .map(x => mk({ ...x, _ext: true }, exitLabel(x, node)));
-  // ⚠️ AND EVERY DEVICE THE NODE ALREADY HAS. An exit record is the panel's bookkeeping, not the world:
-  // the box may be running a TUN or a WireGuard client that nobody has told the panel about, and hiding
-  // those behind "Custom interface…" made the operator TYPE the name of a device sitting in front of them
-  // — the thing the node reports precisely so nobody has to. Offered here, chosen like any other row; the
-  // record is minted on selection.
-  //
-  // `offerable` is the PANEL's verdict (exit_device_refusal), already stamped onto each candidate: a NIC,
-  // a mesh link, an interface serving clients and a device one of our own exits already owns are all
-  // reported by the node and all filtered out here, each for a reason the picker can name.
-  // ⚠️ OPT-IN, because choosing one MINTS A RECORD and only some callers can do that. A candidate is a
-  // device the node reports that the panel has no exit for yet; picking it is "create this exit and choose
-  // it", which the node's own egress screen handles in its `onChange`. An interface editor or a rule row
-  // cannot — they write their own field, not the node's exit list — so offering it there would be an option
-  // that does nothing. The screens that manage exits ask for these; the screens that merely choose do not.
   const taken = new Set(exits.map(x => String(x.device || "")).filter(Boolean));
   for (const c of (devices ? ((node || {}).exit_candidates || []) : [])) {
     if (!c || !c.offerable || taken.has(String(c.name))) continue;
@@ -3876,12 +2497,6 @@ export function exitOptionGroups(node, { prefix = "", onToggle = null, custom = 
       // rather than a bare `wg-lab0` that says nothing about what it is or why it is in this group.
       value: prefix + "dev:" + c.name, label: exitLabel({ producer: "adopted", device: c.name }, node),
       title: [c.address || "", c.endpoint ? "→ " + c.endpoint : "", c.up ? "" : T("not up")].filter(Boolean).join(" · "),
-      // ⚠️ THE SWITCH IS ON EVERY ROW OR IT MEANS NOTHING. A discovered device has no record yet, so it had
-      // no switch — and a list where some rows carry one and some do not reads as a rendering fault rather
-      // than as a difference. It shows ON, because a device the node reports and the panel does not refuse
-      // IS available; switching it off is a decision, and a decision needs a record to live in, which is
-      // what `onToggle` mints. Identical to choosing it, minus the choosing.
-      // NO X. There is no record to remove — the device is on the box whether the panel likes it or not.
       extra: ctl(null, penBtn({ kind: "device", device: c.name, title: "", egress_ip: "" }),
                  onToggle ? html`<${Switch} on=${true} onChange=${v => onToggle("dev:" + c.name, v)}/>` : null),
     });
@@ -3926,30 +2541,14 @@ export function exitTypeLabel(ex, node) {
     return exitProv(x) === "profile" ? (exitIsDialin(x) ? T("Dial-in exit") : T("Custom exit"))
       : exitProv(x) === "warp" ? (exitIsPlus(x) ? T("WARP+ exit") : T("WARP exit"))
       : exitProv(x) === "socks5" ? T("SOCKS5 exit") : exitProv(x);
-  // ⚠️ A NETWORK CARD SAYS SO, and this is the whole of decision B1 in one line. `Direct — source from
-  // eth2` (a NAT pin) and an eth2 EXIT (a route) can now both be on screen at once, and they do completely
-  // different things. Naming each by WHAT IT CHANGES is what keeps them apart: this half is the route, so
-  // it names the thing traffic leaves by. Read from the node's own candidate list (`proto`), not guessed
-  // from the name — the same source the refusal set uses, so the two cannot disagree about what a card is.
   const _cand = ((node || {}).exit_candidates || []).find(c => c && String(c.name) === String(x.device || ""));
   return _cand ? (_cand.proto === "nic" ? T("val|Network card") : T("val|Discovered")) : T("val|Custom");
 }
 
-/** ONE name for an exit, everywhere it is listed: `<title, or what kind it is> — <device>`.
- *
- *  Both halves, always. A titled row that hid its device made the operator open the pencil to answer "which
- *  interface is `TW` again?" — and the device is the half that has to match what they see in `ip link`. An
- *  untitled row used to render as the bare device (`wgx-229f0c44`), which says nothing about what it IS;
- *  now it says `WARP exit — wgx-229f0c44`. Every list shares this, so an exit cannot read one way in the
- *  node's default picker and another in an interface's. */
 export function exitLabel(ex, node) {
   const x = ex || {};
   const dev = String(x.device || "").trim();
   const title = String(x.label || "").trim();
-  // ⚠️ A TITLE THAT MERELY REPEATS THE DEVICE IS NOT A TITLE. `_validate_exits` falls the stored label back
-  // to the device name, so plenty of untitled rows carry `label === device` — and rendering both halves gave
-  // `wgx-f4256ea7 — wgx-f4256ea7`, which says the same thing twice and still never says what the exit IS.
-  // Such a row is untitled, and the kind goes in front of the device instead.
   const name = (title && title !== dev) ? title : exitTypeLabel(x, node);
   return dev ? T("{v1} — {v2}", { v1: name, v2: dev }) : name;
 }
@@ -3960,12 +2559,6 @@ export const exitOf = (node, id) => (((Store.nodes || []).find(n => n.id === nod
 
 export function ifTrafficBadge(mode, egNode, node, exitId) {
   if (mode === "forward" && egNode) {
-    // ON DEMAND ONLY: a newly chosen target's link is made when it is chosen, and until both ends have handshaken the
-    // interface's traffic is held (fail closed — the node creates the link before it routes over it). Say so here,
-    // where the operator just made the choice. Only while a link RECORD exists and has not handshaken: no record means
-    // the pool could not place it (the node card says why), and a link that is DOWN is a fault the node card reports,
-    // not a wait. No time is promised — a link that never comes up would make one a lie. In a full mesh every pair is
-    // linked already, so this never shows there.
     const linking = (Store.panelSettings || {}).mesh_effective === "demand" && node && (p => !!p && p.out === "connecting")(
       meshHealth(node).peers.find(x => x.peer === egNode));
     if (linking) return html`<span class="egb egb-fwd" style=${"color:" + Store.nodeColor(egNode)} title=${T("Linking to {v1} — this interface's traffic resumes once the link is up", { v1: Store.nodeName(egNode) })}><${Ic} i="cascade"/>${T("linking →")} ${Store.nodeName(egNode)}</span>`;
@@ -3974,18 +2567,9 @@ export function ifTrafficBadge(mode, egNode, node, exitId) {
   if (mode === "smart") return html`<span class="egb egb-smart" title=${T("Per-destination smart routing")}><${Ic} i="cascade"/>${T("smart cascade")}</span>`;
   if (mode === "forward") return html`<span class="egb egb-cascade"><${Ic} i="cascade"/>${T("tag|cascade")}</span>`;
   if (mode === "exit") {
-    // Decision 5: badge the EXIT'S OWN LABEL. The provider is not the point — the same badge covers a WARP
-    // tunnel, a pasted profile and an adopted wg0 — and a badge reading "WARP" over someone's `wg0` is worse
-    // than no badge. A selection whose exit is gone still says so rather than reading `direct`, which is what
-    // the fall-through below would have rendered: true of the packets, and a lie about the interface.
     const x = exitOf(node, exitId);
     if (!x)
       return html`<span class="egb egb-exit egb-gone" title=${T("The exit this interface was set to is gone — traffic goes out directly, and the interface keeps the selection")}><${Ic} i="device"/>${T("exit — removed")}</span>`;
-    // DECISION 3 — degrade, never rewrite: an exit that is turned off, or whose device stopped being usable,
-    // still routes NOTHING while the interface keeps the selection. The badge has to say so or it is the
-    // most confident thing on the card and the only wrong one. Three signals rather than colour alone —
-    // icon, tint and title — and the exit keeps its NAME (decision 5), because the operator needs to know
-    // WHICH exit is not working, not merely that something is not.
     const degraded = x.enabled === false || !!x.why_not;
     return html`<span class=${"egb egb-exit" + (degraded ? " egb-gone" : "")}
       title=${degraded
@@ -3998,15 +2582,9 @@ export function ifTrafficBadge(mode, egNode, node, exitId) {
   return html`<span class="egb egb-direct" title=${T("Exits directly from this node")}><${Ic} i="globe"/>${T("tag|direct")}</span>`;
 }
 
-// serialise an egress selection into the API body shape (shared by the interface and WDTT save paths)
-// `routing_v: 2` tells the panel this tab knows per-person rules: a save WITHOUT it over a stored one is refused (D7), because an
-// older tab's rowsToRules drops `who` and would re-save the rule without its people. 3: …and ports on a rule (B.2), the same way.
 export const egressBody = eg => ({ ...(eg.mode === "smart"
   // `egress_ip` rides along: the node source-NATs by it in every mode, and it is what a Direct rule leaves as (Rule settings).
   ? { egress_mode: "smart", routing: rowsToRules(eg.rows, eg.catchAll), routing_exit_ips: eg.exitIps || {}, routing_v: 3, egress_ip: eg.ip || "" }
-  // An exit carries an ID and nothing else — not a NIC and not a node. Sending the others alongside would
-  // be harmless today (the server's ladder pops them) and a trap tomorrow, since a stale `wan_iface` riding
-  // along is how a mode ends up meaning two things.
   : eg.mode === "exit" ? { egress_mode: "exit", exit_id: eg.exitId || "" }
   : { egress_mode: eg.mode === "auto" ? "direct" : eg.mode, egress_node: eg.node || "", egress_ip: eg.ip || "", wan_iface: eg.nic || "" }),
   p2p: eg.p2p || null });   // the torrent choice, in every mode (null: none)

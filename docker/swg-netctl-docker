@@ -38,11 +38,6 @@ QUEUE = os.path.join(DIR, "data", "lib", "netctl", "queue")
 STATUS = os.path.join(DIR, "data", "lib", "netctl", "status")
 ENV = os.path.join(DIR, ".env")
 COMPOSE = ["docker", "compose", "-f", os.path.join(DIR, "docker-compose.yml")]
-# HTTP-01 needs the host's :80 published to the panel container. install-docker.sh writes this override at INSTALL
-# time from the chosen TLS mode — but nothing did when the mode was later changed FROM THE PANEL, so a UI switch to
-# letsencrypt recreated the container without :80: acme's standalone listener bound inside the container, where the
-# internet cannot reach it, and HTTP-01 could never succeed however correct the operator's DNS was. On docker,
-# Let's Encrypt was effectively installer-only. The flip verb now keeps this file in step with the target mode.
 OVERRIDE = os.path.join(DIR, "docker-compose.override.yml")
 OVERRIDE_TEXT = ("# Auto-generated — Let's Encrypt HTTP-01 needs host port 80.\n"
                  "# Managed by the installer AND by an Access & TLS change; removed when the mode stops needing :80.\n"
@@ -188,10 +183,6 @@ def _served_cert_real(port, domain="", host="", tries=60):
     if shutil.which("openssl") is None:
         return None
     ch = host.strip() if (host or "").strip() and host.strip() not in ("0.0.0.0", "::", "*") else "127.0.0.1"
-    # NO SHELL. `host` and `port` arrive from a queued request, and interpolating them into an `sh -c` string
-    # made this an injection primitive (a port of `1; <cmd>` would have run). The pipeline is driven in Python
-    # instead: every value is an argv element, so nothing can escape into a command. `input=""` replaces the
-    # old `echo |`, which existed only to hand s_client an immediate EOF so it doesn't wait for stdin.
     for _ in range(tries):                     # tries*3s ≈ 3 min ceiling — covers a slow Cloudflare DNS-01
         out = ""
         with contextlib.suppress(subprocess.TimeoutExpired, OSError):
@@ -278,11 +269,6 @@ def _handle(verb, args):
         svc = SVC.get(who)
         if not svc:
             return False, "unknown service %r" % who
-        # A VALUE THAT IS NOT A PORT MUST NOT REACH .env. `_v_port`'s docstring says everything that reaches a
-        # command line goes through it; it was called at one of the four sites, and none of the three that
-        # WRITE. That matters because of what compose does with the result: `${PANEL_PORT:-443}` treats an
-        # EMPTY value as absent, so a blank persists silently and then publishes the panel on 0.0.0.0:443 at
-        # the next recreate — which may be an unrelated one-click update, days later.
         if not _v_port(port):
             return False, "port %r isn't a valid port number (1-65535) — refusing to persist it" % (port,)
         _set_env({"SUB_PORT" if who == "sub" else "PANEL_PORT": port,
@@ -292,28 +278,18 @@ def _handle(verb, args):
         ok, msg = _compose("up", "-d", "--no-deps", svc)
         return ok, ("%s on %s:%s" % (svc, host, port)) if ok else ("recreate %s failed: %s" % (svc, msg))
     if verb == "reload":
-        # SIGHUP the container's main process to re-read its config with NO restart. Both swg-panel-server and
-        # swg-sub are exec'd as PID 1 (the sub's entrypoint IS /opt/swg-panel/swg-sub), so the signal reaches them;
-        # each handles SIGHUP (re-read serve.json / swap cert) and keeps running. Mirrors `systemctl kill -s HUP`.
         svc = SVC.get(args[0] if args else "")
         if not svc:
             return False, "unknown service %r" % (args[0] if args else "")
         ok, msg = _compose("kill", "-s", "HUP", svc)
         return ok, ("reloaded (SIGHUP) %s" % svc) if ok else ("reload %s failed: %s" % (svc, msg))
     if verb == "set-base":
-        # args: <panel> <base> — persist the panel's reverse-proxy mount base (compose maps SWG_PANEL_BASE ←
-        # PANEL_BASE). The LIVE panel already switched base in-memory at confirm; this just makes it durable for the
-        # next recreate. No recreate here — that would needlessly bounce the panel (a base change is zero-downtime).
         who, base = (args + ["", ""])[:2]
         if who != "panel":
             return False, "set-base only applies to the panel"
         _set_env({"PANEL_BASE": base.strip("/")})
         return True, "persisted panel mount base = %s (takes effect on next recreate)" % (base or "/")
     if verb == "set-cert-env":
-        # Bare-metal flips the panel HTTP↔HTTPS with a systemd cert-env drop-in. In Docker the panel's scheme is
-        # driven by the TLS= var in .env (the entrypoint issues the cert / clears it on boot), so a reverse-proxy↔
-        # direct-TLS flip is a TLS= change + `compose up` recreate — heavier than a live drop-in. Persist the intent
-        # so the next recreate honors it (the TLS *mode* itself is set separately in .env for the 'on' side).
         who = args[0] if args else ""
         state = (args[1].lower() if len(args) > 1 else "")
         if who != "panel":
@@ -323,12 +299,6 @@ def _handle(verb, args):
             return True, "persisted TLS=none (direct-TLS off) — recreate swg-panel to apply"
         return True, "direct-TLS on — set TLS=<mode> in .env, then recreate swg-panel"
     if verb == "set-local-port":
-        # the panel's internal loopback-HTTP port for co-located nodes (direct-TLS). The container can't live-rebind
-        # (the port is read at startup), so persist to .env AND recreate now — like set-listen. Without the recreate
-        # the change wouldn't take effect until the next unrelated recreate, and a plain docker restart / reboot
-        # (restart:unless-stopped) would re-init the OLD port from the container's stale env (co-located nodes then
-        # dial a dead loopback port). --no-deps recreates ONLY the panel (the request's own _netctl_wait is lost, as
-        # for set-listen — best-effort, the recreate still completes).
         who = args[0] if args else ""
         port = (args[1] if len(args) > 1 else "")
         if who != "panel":
@@ -340,11 +310,6 @@ def _handle(verb, args):
         return (ok, "panel internal loopback port = %s (recreated)" % port) if ok \
             else (False, "PANEL_LOCAL_PORT=%s persisted but recreate failed: %s" % (port, msg))
     if verb == "dryrun":
-        # Prove a scheme/port/domain change is safe BEFORE recreating the live container. args: <tls> <domain>
-        # <port> <base>. Two checks, neither touches the running panel:
-        #   (1) the target host port must be free (a recreate can't publish a port another service already holds);
-        #   (2) a THROWAWAY container (`compose run --rm`, DRY_RUN=1, NO ports published → no conflict/state writes)
-        #       runs the entrypoint, which issues+validates the cert into the shared volume, then exits 0/non-0.
         tls, domain, port = (args + ["", "", "", ""])[:3]
         ca = tls in ("cloudflare", "cf15", "letsencrypt", "letsencrypt-ip")
         if port:
@@ -356,15 +321,6 @@ def _handle(verb, args):
             busy = bool((_ss.stdout or b"").strip())
             if busy and str(port) != str(_read_env(["PANEL_PORT"]).get("PANEL_PORT", "")):
                 return False, "port %s is already in use on this host — choose a free port" % port
-        # HTTP-01 CANNOT be dry-run in Docker, and failing the change over that is wrong. `compose run` publishes no
-        # ports (no --service-ports), so the throwaway container's :80 is unreachable from outside — while the LIVE
-        # panel container is the one holding :80. Let's Encrypt therefore fetches the challenge from the live
-        # container, which has never heard of the token, and acme falls back to self-signed. The entrypoint then
-        # blames the most common cause it knows ("behind Cloudflare's proxy"), which is a plausible-but-wrong guess:
-        # an orange-clouded record proxies :80 and forwards ACME challenges perfectly well. Publishing :80 on the
-        # throwaway isn't an option either — the live panel already holds it.
-        # So: verify the PORT (done above, the check that actually catches lock-outs) and skip the issuance test,
-        # saying plainly that the cert is issued on restart. The auto-revert marker is the net if it doesn't.
         if tls in ("letsencrypt", "letsencrypt-ip"):
             return True, ("port %s is free; HTTP-01 can't be verified up front in Docker (the throwaway container "
                           "can't hold :80 — the live panel does), so the certificate is issued during the restart. "
@@ -381,23 +337,12 @@ def _handle(verb, args):
             return True, "dry-run passed — the new address has a valid certificate; safe to switch"
         clean = re.sub(r"\x1b\[[0-9;]*m", "", (r.stdout or r.stderr or ""))   # strip the entrypoint log's ANSI colours
         clean = clean.replace("[entrypoint]", "").strip()
-        # Pick the ACTIONABLE line, don't just take the last three. The entrypoint prints a "↳" hint next to every
-        # known acme failure ("HTTP-01 couldn't reach this box on :80 … use cloudflare/cf15, or grey-cloud"), which
-        # is the only part an operator can act on. Blind last-3 spliced in acme's own chatter ("generated
-        # self-signed certificate (CN=…, 10y)") and pushed the hint out of the 280-char budget.
         lines = [l.strip() for l in clean.splitlines() if l.strip()]
         hint = next((l for l in reversed(lines) if "↳" in l), "")
         verdict = next((l for l in reversed(lines) if l.lower().startswith("dry-run failed")), "")
         picked = [x for x in (hint, verdict) if x] or lines[-2:]
         return False, "dry-run failed — the new address wouldn't get a valid certificate. %s" % _clip(" ".join(picked), 280)
     if verb == "flip":
-        # docker reverse-proxy↔direct-TLS SCHEME FLIP. The container can't live-rebind (fixed port map; in
-        # reverse-proxy mode there's no cert on disk to bind HTTPS with — the entrypoint issues/clears the cert from
-        # TLS= on boot), so a flip is ONE atomic .env write of the whole target scheme+bind, then ONE recreate.
-        # Doing it as one verb (not separate set-cert-env/set-listen) avoids the queue's filename-sort ordering
-        # racing the recreate ahead of the TLS= change. args: <panel> <tls> <host> <port> [localport]
-        # (tls = a direct-TLS mode name, or "none" for reverse-proxy).
-        # args: <panel> <tls> <host> <port> [localport] [target_url]
         who, tls, host, port = (args + ["", "", "", ""])[:4]
         localport = args[4] if len(args) > 4 else ""
         target_url = args[5] if len(args) > 5 else ""
@@ -407,19 +352,9 @@ def _handle(verb, args):
             return False, "port %r isn't a valid port number (1-65535) — refusing to flip onto it" % (port,)
         ca = tls in ("cloudflare", "cf15", "letsencrypt", "letsencrypt-ip")
         target_mode = "" if tls in ("", "none") else tls
-        # The target url carries the DOMAIN and the mount PATH too — a flip can change them alongside the scheme, and
-        # they must reach .env or the entrypoint issues the cert for the OLD domain (wrong-domain cert → proxy 526)
-        # and serves the wrong base. (persist-url/set-base cover these on the reverse-proxy path; the flip bypasses
-        # both, so we do it here.)
         _u = urlparse(target_url if "://" in target_url else "https://" + target_url) if target_url else None
         dom = (_u.hostname or "") if _u else ""
         base = ((_u.path or "").strip("/")) if _u else ""
-        # A TLS-MODE-ONLY change carries no target url, so `dom` is empty and PANEL_DOMAIN was left at whatever an
-        # EARLIER attempt happened to write. The entrypoint then re-issues the certificate for that stale hostname
-        # while the panel keeps advertising the current one — Cloudflare dials the advertised name, gets a cert that
-        # doesn't cover it, and returns 526 with the origin looking perfectly healthy locally. Observed exactly that:
-        # a cert issued for panel2.example.net while the panel advertised panel.example.net. The blessed file IS
-        # the address the panel advertises, so fall back to it: PANEL_DOMAIN must never disagree with it.
         if not dom:
             with contextlib.suppress(Exception):
                 _bu = (json.loads(_bless_snapshot() or "{}") or {}).get("url") or ""
@@ -431,9 +366,6 @@ def _handle(verb, args):
         old_env = _read_env(["TLS", "PANEL_PORT", "PANEL_BIND", "PANEL_LOCAL_PORT", "PANEL_DOMAIN", "PANEL_BASE"])
         old_bless = _bless_snapshot()
         _revert_snapshot_write(old_env, old_bless)   # the panel's reachability timer can undo THIS flip via `revert-flip`
-        # OPTIMISTIC adopt: advance blessed to the target BEFORE the recreate, so a verified flip is a SINGLE recreate
-        # and the panel comes up already advertising the new url (no racy boot-time "did the scheme match" guess — the
-        # authority is HERE, host-side). A CA failure below restores env + blessed together.
         if target_url:
             _bless_write(target_url, target_mode)
         env = {"TLS": tls or "none", "PANEL_PORT": port, "PANEL_BIND": host}
@@ -457,10 +389,6 @@ def _handle(verb, args):
             _http01_restore(_ovr_prev); _set_env(old_env); _bless_restore(old_bless); _compose("up", "-d", "--no-deps", "swg-panel")
             return False, "flip recreate failed (%s) — rolled back to the previous address" % msg
         if ca and _served_cert_real(port, dom, host) is False:
-            # The cert must be a REAL CA cert that COVERS this domain. A self-signed fallback (missing/blocked token,
-            # unreachable :80, rate limit) OR a stale cert for a DIFFERENT domain would be rejected by a validating
-            # proxy (Cloudflare 526) and strand nodes. Roll BOTH the scheme and the blessed address back, so the panel
-            # comes up on the still-working old address and never advertises the broken one.
             _http01_restore(_ovr_prev); _set_env(old_env); _bless_restore(old_bless); _compose("up", "-d", "--no-deps", "swg-panel")
             return False, ("the %s certificate could not be issued for %s (served a self-signed or wrong-domain cert)"
                            " — rolled back to the previous address. Check the TLS credential / DNS, then try again."
@@ -468,10 +396,6 @@ def _handle(verb, args):
         return True, "flipped panel → TLS=%s bind %s:%s (recreated%s)" % (
             tls or "none", host, port, ", cert verified" if ca else "")
     if verb == "revert-flip":
-        # Undo the most recent flip, back to the address it came from — the panel's reachability timer enqueues this when
-        # a recreated-onto address is never confirmed reachable. Restores the .env + blessed snapshot the forward flip
-        # saved (the host-side truth, incl. the right published PANEL_PORT) and recreates. No args: the snapshot IS the
-        # target, so this can't use a wrong reconstructed port (the bug where the panel's internal 8443 leaked in).
         if not os.path.exists(REVERT):
             return True, "no revert snapshot on file — nothing to undo"
         try:
@@ -488,21 +412,12 @@ def _handle(verb, args):
         env = snap.get("env") or {}
         return True, "reverted the panel to the previous address (TLS=%s PANEL_PORT=%s)" % (env.get("TLS", "?"), env.get("PANEL_PORT", "?"))
     if verb == "persist-url":
-        # Keep .env's PANEL_DOMAIN in step with a CONFIRMED address-migration. The flip verbs already keep
-        # PANEL_PORT/BIND/BASE/LOCAL_PORT/TLS current, but nothing else persists the DOMAIN — so without this a
-        # docker→bare-metal convert (or an in-container cert reissue) would resurrect the pre-migration domain.
-        # args: <domain> <base> <port> <serve> <tls> (base/port/tls already carried by their own verbs).
         domain = (args[0] if args else "").strip()
         if not domain:
             return True, "persist-url: no domain (no-op)"
         _set_env({"PANEL_DOMAIN": domain})
         return True, "persisted PANEL_DOMAIN=%s in .env" % domain
     if verb == "issue-cert":
-        # RUNTIME, panel-managed sub-cert issuance. Bare-metal swg-netctl issues via acme directly; docker used to
-        # no-op this ("handled in-container" at boot only), so a sub address set/changed in the UI never got a
-        # matching cert → 525. Now: apply the operator's rule host-side — if the panel's OWN cert already covers the
-        # sub host, copy it (no issuance, no container touch); otherwise issue a SEPARATE cert inside the panel
-        # container (which holds acme + the CF credentials), writing into the shared ./data/sub-tls volume.
         svc = args[0] if args else ""
         domain = (args[1] if len(args) > 1 else "").strip()
         if svc != "sub" or not domain:
@@ -552,11 +467,6 @@ def main():
     if not os.path.isdir(QUEUE):
         return
     os.makedirs(STATUS, exist_ok=True)
-    # Who is allowed to enqueue: the panel, and nobody else. Bare-metal swg-netctl has always enforced this
-    # ("queue requests must be regular files OWNED BY THE PANEL USER"); this variant never did, which left the
-    # verbs below trusting whatever appeared in the directory. Accept only a REGULAR file (lstat — a symlink
-    # must not be followed out of the queue) owned by root or by the queue directory's own owner, which is who
-    # the panel container writes as. Anything else is skipped and removed, not executed.
     try:
         _qst = os.stat(QUEUE)
     except OSError:
@@ -569,9 +479,6 @@ def main():
         try:
             _st = os.lstat(path)
             if not stat.S_ISREG(_st.st_mode) or _st.st_uid not in (0, _qst.st_uid):
-                # Answer, don't just delete: the panel blocks in _netctl_wait until a status appears, so a
-                # silent removal would read as a hang. An owner mismatch is far more likely to be a broken
-                # install than an attack, and the operator needs to be able to see which it was.
                 with contextlib.suppress(OSError):
                     with open(os.path.join(STATUS, name[:-5] + ".json"), "w") as f:
                         json.dump({"status": "error",

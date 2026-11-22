@@ -1,17 +1,3 @@
-/* router.js — hash navigation + the unsaved-edits guard.
- *
- * LAYER 0 (see docs/APP-JS-SPLIT-PLAN.md). A LEAF: imports nothing from js/ except i18n.js, which
- * is itself layer 0 and imports nothing from js/ — the unsaved-changes prompt is user-visible text.
- *
- * The ROUTES table itself stays in app.js on purpose — it maps paths to SCREEN components, so holding it
- * here would make the router import every screen and invert the module graph. matchRoute takes the table
- * as an argument instead; the entry module is the only place that needs to know the full set of screens.
- *
- * Why the guard lives behind functions rather than an exported `let`: an imported binding is read-only,
- * so a screen cannot assign to it across a module boundary. setUnsavedGuard/clearUnsavedGuard keep the
- * previous semantics exactly — register a predicate, and the router asks it before navigating away.
- */
-
 export function go(hash) { location.hash = hash; }
 
 export function matchRoute(routes, hash) {

@@ -1,20 +1,3 @@
-/* views.js — the derived row sets the roster screens read: filters, sorts, pagination and reveal.
- *
- * LAYER 3 (see docs/APP-JS-SPLIT-PLAN.md). Imports util / store / model / router / ui.
- *
- * The measured reason this module exists: Peers, Users and Live were reaching into each other for
- * usersView / peersView / connView / searchMatch / sortPeerRows — 63 and 41 references that looked like
- * screen-to-screen coupling and were really a missing layer. They share this, not each other.
- *
- * The view objects are deliberately MODULE-LEVEL mutable state, not component state: search, server and
- * interface filters, the page and the sort must survive a screen unmounting and remounting, and a live
- * poll re-render must not reset them under the operator.
- *
- * stableOrder is the other subtlety. Rows are frozen in their first-seen order per freeze key, so a peer
- * whose status changes mid-poll does not jump the list under the cursor; new rows append. Sorting
- * re-derives the freeze, pagination happens after.
- */
-
 import { tkey, seen, fmtBytes, isMobile } from "./util.js";
 import { lossColor, lossColorMesh } from "./charts.js";
 import { Store, api, bus, isCustomKey, customKeyWindow, useStore } from "./store.js";
@@ -31,11 +14,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// ── DEVICE ACCESS (docs/DEVICE-ACCESS-PLAN.md §10.6) ────────────────────────────────────────────────────────────────────
-// Who may OPEN a connection to a device on an interface — judged at the destination, never the source. Absent is "Same
-// user and their groups": every interface that predates this was isolated on upgrade (A3). The line under the control is
-// the node's own word (snapshot `dev_reach`), never the panel's guess. Lives here because the interface sheets (iface.js)
-// and the WDTT/csqtt sheets (turn.js) both render it, and iface.js already imports turn.js.
 export const reachOpts = () => [["everyone", T("Everyone on this node")], ["user", T("Same user and their groups")], ["none", T("Nobody")]];
 // Why the node left a listed interface out of its table (snapshot `dev_reach.skipped`, §11.2 F2) — the node's own word, so
 // "not enforced" is never the panel's guess. Shared with the interface card's chip (screen-nodes.js `reachChip`).
@@ -60,9 +38,6 @@ export function ReachField({ node, iface, value, onChange, create, unvouched, un
   const skipped = st && st.skipped ? st.skipped[iface] : null;
   const when = fmtWhen;
   let status = null;
-  // Only a node reporting now is believed: a stale snapshot says nothing about what is in force.
-  // ⚠️ A promoted interface is ENFORCED though it is set to Everyone, so it gets the same status line as any guarded one —
-  // without this it showed none at all: no "packets stopped since", and no way to report a refused or skipped reload.
   const _promoted = value === "everyone" && !create && node && promotedAt(node, iface);
   if (!create && node && (value !== "everyone" || _promoted) && Store.recon.nodeStatus[node] === "live") {
     if (!((snap.net_deps || {}).reach >= 2)) status = html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Not enforced on {node} — it runs an older version. Update it.", { node: nname })}</span></div>`;
@@ -89,37 +64,14 @@ export function ReachField({ node, iface, value, onChange, create, unvouched, un
   </div>`;
 }
 
-// `group` collapses the grid to ONE row per peer (its primary deployment) with the rest behind a +N —
-// the same +N the node/interface filters already produce, but chosen rather than a side effect of
-// filtering. A peer on five interfaces is five rows here by design (this is the DEPLOYMENT view); the
-// toggle is for when you want the peer list instead.
 export const peersView = { node: "", iface: "", q: "", sort: "status", dir: -1, status: null, group: false };
-// Peers-screen status filter options (also the deep-link targets from grouped Needs-attention rows).
-// The value is the internal status KEY (matched against p.status) and it never moves — persisted filters and
-// deep-links point at it. The LABEL comes from statusLabel(), the panel's one status vocabulary, so the
-// dropdown can never drift from the badges it filters (that includes the two display remaps: the access-revoke
-// key `disabled` shows as Blocked, the DPI fault key `blocked` as Restricted).
 export const PEER_STATUS_KEYS = ["", "online", "ready", "unassigned", "disabled", "expired", "expiring", "blocking",
   "restoring", "dangling", "broken", "partial", "blocked", "pending", "unknown"];   // i18n-keys
-// ("faulty" is gone from this list: the flat-rx rule that produced it could only fire on a false positive,
-//  and the churn detector that replaced it raises "blocked"/Restricted. A filter that can never match is
-//  worse than no filter — it reads as "no faulty peers" rather than "this is not measured any more".)
-// The one page-size list, and its Dropdown options. Written out four times across three pagers before —
-// three in the roster screens and one in the shared grid — which is three chances for them to drift apart.
 export const pageSizeOpts = () => [20, 30, 50, 100].map(n => ({ value: n, label: String(n) }));
 export const peerStatusFilters = () => PEER_STATUS_KEYS.map(k => ({ value: k, label: k ? statusLabel(k) : T("All statuses") }));
 // Prominent warning when the panel keeps no client configs at rest — QRs/downloads then only work
 // in the session a peer is created, and existing peers can't be re-shared. Shown on Overview + Peers.
 
-// OPTIONS for an interface dropdown: "All AmneziaWG" / "All WireGuard" shortcuts, then AmneziaWG / WireGuard
-// groups of the individual interfaces (used everywhere we list ifaces; the caller renders "All interfaces").
-//
-// ⚠️ DATA, NOT MARKUP. These three built `<option>`/`<optgroup>` elements while every consumer was a native
-// `<select>`. They are the shared `Dropdown` now, which takes `[{value,label}]` with `{group,items}` for a
-// heading — so the helpers return that and there is ONE shape, rather than a markup twin per data twin.
-// Type groups only matter when BOTH kinds are present — with one kind we list the interfaces flat (a group header
-// or "All <type>" would just duplicate "All interfaces"). "All AmneziaWG" / "All WireGuard" appear only when both
-// kinds exist AND there's more than one of that kind (otherwise they'd equal "All interfaces" or the lone iface).
 export function ifaceOptGroups(names) {
   // Grouped by what each interface IS (scKindByName asks the fleet), not by what it is called — an adopted or
   // operator-named turn instance used to match no pattern and land in the WireGuard group.
@@ -133,10 +85,6 @@ export function ifaceOptGroups(names) {
   return [...groups.filter(([, , arr]) => arr.length > 1).map(([val, label]) => ({ value: val, label: T("All {v1}", { v1: label }) })),
           ...groups.map(([, label, arr]) => ({ group: label, items: arr.map(i => ({ value: i, label: i })) }))];
 }
-// Shared node / interface FILTER <option> lists so the Peers / Users / Live toolbars behave identically:
-//   0 available → a single "No nodes/interfaces" item · exactly 1 → that one (labelled, value=allVal so the list
-//   stays unfiltered and it reads pre-selected) · ≥2 → "All nodes/interfaces" + each. `allVal` is the caller's
-//   "all" sentinel ("" or "*").
 export function nodeFilterOptions(allVal) {
   const ns = Store.nodes || [];
   if (!ns.length) return [{ value: allVal, label: T("No nodes") }];
@@ -177,9 +125,6 @@ export function peerTraffic(pid, owner) {
   return d ? (owner ? d.slot.get(owner + "|" + pid) : d.peer.get(pid)) || null : null;
 }
 export function userTraffic(uid) { const d = trafficData(); return d ? d.user.get(uid) || null : null; }
-// ⚠️ stableOrder freezes a known row's slot, so a sort by ranged total that rendered before the totals landed would keep
-// its all-zero order for good. The freeze key carries the window and whether its totals are in — and nothing that moves
-// every minute, or the rows would reshuffle each time "until now" refreshes.
 const rtotalTag = sort => sort === "rtotal" ? "|" + trafficFreezeTag() : "";
 // The column's name is the window's: "All time", "Today", "Last 7 days", "Last 30 days", or the custom dates (month names through Intl).
 export function trafficRangeLabel(v) {
@@ -194,11 +139,7 @@ export function trafficRangeLabel(v) {
   }
   return v.range === "month" ? T("This month") : T("All time");   // a custom window missing a date is asked as All time
 }
-// ── order freeze ─────────────────────────────────────────────────────────────────────────────────
-// Keep rows where they are WHILE you look at them: editing a record (rename, status flip) must not make its
-// row jump or leave the page. The sorted order is snapshotted per (list, sort, dir); a known row holds its
-// slot even if its sort key changes. The order is recomputed only when you change the sort (a new key) or
-// reload the page (this module var resets). New/removed rows fold into the snapshot so they stay put too.
+// order freeze
 const _orderFreeze = {};   // freezeKey -> [ids] in frozen order
 export function stableOrder(freezeKey, items, idOf, cmp) {
   const frozen = _orderFreeze[freezeKey];
@@ -231,9 +172,6 @@ export function pinRecentlyCreated(sorted, idOf) {
   return pin.concat(rest);
 }
 export function peerSortBy(view, col) { if (view.sort === col) view.dir = -view.dir; else { view.sort = col; view.dir = PEER_DEFDIR[col] || 1; } }
-// Pager scroll: turning to the NEXT page brings the grid's TOP just under the sticky header; PREV brings its BOTTOM
-// into view — so a page turn always lands you at the fresh edge of the list. `e` targets the clicked pager button;
-// the grid is the element right before the .pager. Deferred two frames so the new page has rendered/re-sized.
 export function pageScroll(e, dir) {
   const pager = e.currentTarget && e.currentTarget.closest(".pager");
   const grid = pager && pager.previousElementSibling;
@@ -278,10 +216,6 @@ export function userStats(uid) {
   }
   return { rx, tx, rxb, txb, last };
 }
-// Multi-term search: split the query on whitespace and require EVERY term to appear somewhere in the (single,
-// combined) haystack — AND across terms, so "ada awg1" matches a peer whose USER is Ada and whose INTERFACE is
-// awg1 even though the two terms live in different fields. Empty query matches everything. Callers pass ONE
-// haystack that concatenates all searchable fields, so terms are free to match across them.
 export function searchMatch(hay, q) {
   if (!q) return true;
   hay = String(hay).toLowerCase();
@@ -335,12 +269,6 @@ export function userPageOf(uid) {
   const idx = users.findIndex(u => u.id === uid);
   return idx < 0 ? 1 : Math.floor(idx / (usersView.pageSize || 20)) + 1;
 }
-// USER GROUPS (docs/GROUPS-PLAN.md G11). The devices whose networks are shared with a group — what adding someone grants, and what
-// removing someone or deleting the group takes away — from the roster the poll already holds, never a request.
-// ⚠️ A PRIVATE device grants a group NOTHING, whatever its stored share still says. Marking a device private does not clear
-// the share (and should not — turning the flag off has to give it back), so the grant sits in the roster while share_grants
-// hands the group nobody. Without this test the Groups screen counted it, its bubble named the device and its prefixes, and
-// two DESTRUCTIVE confirms — removing a member, deleting the group — warned about losing networks nobody ever reached.
 export function groupShares(gid) { return Store.sharesByGroup(gid); }
 // A group's figures in a window's totals (`td`, a trafficTotals() reply): its current members' added together — each member's
 // every slot, as their own row counts. null while nothing is counted. ONE fold for the grid's cell and the group window.
@@ -380,10 +308,6 @@ export const GROUP_SORT = {
   rtotal: (g, s) => s.traffic ? s.traffic.rx + s.traffic.tx : 0,
 };
 export const GROUP_DEFDIR = { name: 1, members: -1, peers: -1, nodes: -1, nets: -1, rate: -1, rtotal: -1 };
-// A sort by a figure is frozen like the users list (stableOrder): rate re-reads every 5 s, and rows must not jump under the
-// pointer. Freeze over ALL groups and let the caller filter after — frozen over a filtered list, clearing a search sent every
-// other group to the end. A name sort is not frozen: names do not move on a poll, and a new group belongs where its name puts
-// it. `st(g)` gives a group's stats — asked only by a sort that reads them.
 export function sortGroups(groups, st, sort, dir) {
   const byName = (a, b) => a.name.localeCompare(b.name);
   if (!GROUP_SORT[sort] || sort === "name") return groups.slice().sort((a, b) => byName(a, b) * (dir || 1));
@@ -403,18 +327,12 @@ export function deviceLabel(peer) {
   return where || T("Untitled");
 }
 export const peerOnline = p => !!(p && (p.targets || []).some(t => t && t.online));
-// "Title (address)" — or just the address when the device has no title, because `deviceLabel` already falls back to it and
-// "10.8.0.3 (10.8.0.3)" is what that produced. `node` picks the address it answers on there, since a device may be deployed
-// to several and the row is about one of them.
 export function deviceNameAt(peer, node) {
   const nm = deviceLabel(peer);
   const t = (peer && (peer.targets || []).find(x => x && (!node || x.node === node) && x.ip)) || null;
   const ip = t && t.ip ? String(t.ip).split("/")[0] : "";
   return ip && nm !== ip ? nm + " (" + ip + ")" : nm;
 }
-// SOMEBODY ELSE'S device is named by its OWNER, not by its title: "whose is it" is the actionable fact when the network is
-// theirs and you want it changed — the title belongs to a device you cannot see or edit. Falls back to the device's own name
-// for an unassigned peer, which has no owner to name.
 export function ownerNameAt(peer, node) {
   const u = peer && peer.user_id ? Store.user(peer.user_id) : null;
   if (!u) return deviceNameAt(peer, node);
@@ -423,16 +341,6 @@ export function ownerNameAt(peer, node) {
   return ip ? u.name + " (" + ip + ")" : u.name;
 }
 
-// ── DEVICE ACCESS on a user's line (docs/DEVICE-ACCESS-PLAN.md §10) ──────────────────────────────────────────────────────────
-// The level in force on ONE deployment's interface, as the panel publishes it (absent = "user", A3).
-// Where a private device is NOT protected, and why — [{node, why: "old"}] once per node too old or not reporting now, and
-// [{node, iface, why}] for an interface at Everyone where the node has no address to guard it by. The switch promises "not
-// everyone on the node, whatever the interface allows"; where that is not kept, saying so is the rule this file already
-// states for sharing: claiming isolation a box does not have is the one answer worse than no answer.
-// ⚠️ On an interface at Everyone the node guards a private device BY ITS ADDRESS and passes the rest of the subnet (that is
-// what keeps everyone else's reach), so a device the panel cannot place has nothing guarding it: no user (dev_reach_promotes
-// skips it) or a keyless build that can't prove which address a device has (A7). At "user" the same two are Nobody instead,
-// which keeps the promise.
 export function privateUnenforced(peer) {
   if (!peer || peer.disabled || peer.expired) return [];
   const out = [], seen = new Set();
@@ -446,11 +354,6 @@ export function privateUnenforced(peer) {
   }
   return out;
 }
-// What turning Private OFF opens — in the TWO halves the node enforces separately. The device's own address follows its
-// interface's level; the networks behind it follow its share. ⚠️ The sheet used to read the share alone: measured on msk-main
-// (1.8.7 qualification D5), a private gateway on an Everyone interface, shared with one user, said "opens again to n-erin" —
-// and on save carol's device reached the gateway itself too, as everyone on the node did. With no share on a "user"
-// interface it said "everyone on the node reaches it", which the device's own address was not.
 export function privateOffOpens(peer) {
   const p = { ...(peer || {}), private: false };
   const everyoneAt = [...new Set((p.targets || []).filter(t => t && t.node && targetOpen(t) === "everyone").map(t => t.node))];
@@ -471,30 +374,17 @@ const unvouchedTarget = t => {
   if ((nr.reach_unvouched || []).includes(t.iface)) return true;
   return (nr.reach_unvouched_raw || []).some(ifn => ((nr.wdtt_cfg || {})[ifn] || {}).raw_iface === t.iface);
 };
-// PROMOTED: an interface set to Everyone with a private device on it, so the node has a table for it — it guards the private
-// devices by address and passes everything else. The PANEL decides which (it builds the table) and publishes it per node;
-// this reads that verdict rather than deriving a second one. It changes nobody's reach but the private devices' — it is what
-// lets the interface's status line report a refused or skipped reload there.
 export const promotedAt = (node, iface) =>
   (((Store.nodes || []).find(x => x.id === node) || {}).reach_promoted || []).includes(iface);
 // Which devices caused it — display only. The verdict above is the panel's; this only names the devices that match it.
 export const promotedBy = (node, iface) => (Store.recon.peers || []).filter(p => p.private && !p.disabled && !p.expired
   && Store.user(p.user_id) && (p.targets || []).some(t => t && t.node === node && t.iface === iface));
-// The level IN FORCE on a deployment for everyone but a private device (userReach excludes those per device). A promoted
-// interface stays Everyone: the node passes everything there but the private devices.
-// ⚠️ An unvouched build is Nobody only at "user" (A7) — at Everyone nothing guards it, and reading it as Nobody there told a
-// viewer that devices everybody on the node reaches could not be reached.
 const targetOpen = t => {
   if (!nodeEnforces(t.node)) return "everyone";
   const lv = ifaceLevelOf(t);
   return lv === "user" && unvouchedTarget(t) ? "none" : lv;
 };
 
-// Who every user's devices can open connections to — ONE pass per poll, because a list asks it per row. Judged AT THE
-// DESTINATION and per node (§10.2): a device is reachable when it sits on a node this user also has a device on, and that
-// interface allows it — Everyone to anyone there, Nobody to nobody, "user" to the same person and whoever shares a group with
-// them. Cross-node reach is never claimed: it does not exist (§12). Blocked and expired are off the node, so neither reaches
-// nor is reached.
 let _reachOf = null, _reachIdx = null;
 function reachIndex() {
   if (_reachOf === Store.recon && _reachIdx) return _reachIdx;
@@ -528,11 +418,6 @@ function reachIndex() {
 }
 export const reachOwners = uid => reachIndex().get(uid) || new Set();
 
-// The devices of ONE person that the other members of a group can open connections to — the group sheet's per-member number
-// and its bubble. Same test the reach index applies at the destination: a live device (not blocked, expired, unassigned, of a
-// blocked user), not Private where its node enforces Private, on a deployment at Everyone or at "Same user and their groups".
-// A device at Nobody, or Private, is not reachable by the group whatever the membership — counting every device ("tester · 8
-// devices") promised access the membership does not give (operator, 2026-09-17). Online first, then by name.
 export function reachableByGroup(uid) {
   const u = Store.user(uid);
   if (!u || u.disabled) return [];
@@ -546,11 +431,6 @@ export function reachableByGroup(uid) {
   return out.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0) || deviceLabel(a.peer).localeCompare(deviceLabel(b.peer)));
 }
 
-// The same answer in detail, for the bubble: each person they reach and which of that person's devices, online first. Computed
-// when the bubble opens, not per row.
-// ⚠️ MEMOISED PER POLL, because the chip beside every name now asks for it too — it counts devices, and a device count
-// cannot come from `reachIndex` (which knows who, not how many). Without this the list would walk every reachable owner's
-// peers per row per poll. Only the uids actually asked about are computed: the rows on screen, and whichever bubble is open.
 let _urOf = null, _urCache = new Map();
 export function userReach(uid) {
   if (_urOf !== Store.recon) { _urOf = Store.recon; _urCache = new Map(); }
@@ -558,9 +438,6 @@ export function userReach(uid) {
   if (hit) return hit;
   const mates = new Set(Store.groupsByUser(uid).flatMap(g => g.users));
   const myNodes = new Set();
-  // ⚠️ THE SAME FILTER reachIndex applies (a blocked, expired or unassigned device is off the node and is not presence).
-  // Without it a blocked device of this user's made its node count as somewhere they are, and every destination there was
-  // listed as reachable — a standing wrong answer for as long as that device existed.
   for (const p of Store.peersByUser(uid)) {
     if (p.disabled || p.expired || p.unassigned) continue;
     for (const t of p.targets || []) if (t && t.node) myNodes.add(t.node);
@@ -577,13 +454,6 @@ export function userReach(uid) {
     const devices = [];
     for (const p of Store.peersByUser(other)) {
       if (p.disabled || p.expired) continue;
-      // The deployment that ALLOWS it names the row: its address and its node. A device reachable on two shared nodes is
-      // still one device — it is listed once, at the first deployment that lets this user in.
-      // ⚠️ Every device in this loop belongs to SOMEBODY ELSE (reachOwners never returns the viewer), so a private one is
-      // not reachable — but only WHERE THE NODE ENFORCES IT. Private was applied before targetOpen() was consulted, so on a
-      // node too old to restrict, or one not reporting, the bubble reported a device as reached by nobody while everything
-      // on that subnet still reached it: claiming an isolation the box does not have, which is the one answer this file
-      // says is worse than none. The panel plans the node's table the same way, so the two cannot disagree.
       const t = (p.targets || []).find(x => allows(x, other) && !(p.private && nodeEnforces(x.node)));
       if (!t) continue;
       devices.push({ peer: p, online: !!t.online, node: t.node, ip: t.ip ? String(t.ip).split("/")[0] : "" });
@@ -596,17 +466,7 @@ export function userReach(uid) {
   _urCache.set(uid, out);
   return out;
 }
-// ── ONE RULE FOR EVERYTHING THIS FILE ASKS THE PANEL ─────────────────────────────────────────────────────────────────────────
-// The reach bubble, the networks bubble and the chip's count all ask `/api/users|peers/networks`, which §4.10 forbids running
-// for every user on every poll. They used to cache their answers three different ways — two on a 60 s clock, one on an input
-// signature — so a bubble could show minute-old rows beside a chip that was current. One rule now:
-//
-//   SIGNATURE   what the answer actually depends on — which devices carry which networks, who they are shared with, group
-//               membership, where each device is deployed, whether a node can restrict, and whether node LANs count at all.
-//               A clock was always the wrong question: traffic counters tick constantly and change none of this.
-//   BACKSTOP    ⚠️ and yet not signature alone. The browser cannot see a node PICKING UP a route (`net_carried` lands in a
-//               snapshot, not the roster), so a pure signature would hold a stale answer for as long as nothing else moved.
-//               Five minutes, which is far too long to flicker and far too short to be wrong for a shift.
+// ONE RULE FOR EVERYTHING THIS FILE ASKS THE PANEL
 const ASK_TTL = 300000;
 let SIG = "", SIG_KEY = null;
 export function askSig() {
@@ -614,12 +474,6 @@ export function askSig() {
   const parts = [];
   for (const p of (Store.recon && Store.recon.peers) || []) {
     const tg = (p.targets || []).map(t => t.node + "/" + t.iface).join(",");
-    // ⚠️ `dead` on BOTH branches. node_networks drops a blocked or expired provider outright, so blocking the device that
-    // fronts a network changes every grantee's answer — and the signature has to see it, or the old count stands until the
-    // backstop expires. It was on the non-carrying branch only, which is the branch that matters least.
-    // ⚠️ `private` IS IN HERE, on both branches, for the same reason `dead` is. It is the FIRST thing share_grants reads,
-    // so flipping it changes every grantee's answer — and without it in the signature the networks chip and both bubbles
-    // served the pre-Private answer until the 5-minute backstop expired. Turning it OFF withheld the network just as long.
     const dead = (p.disabled ? 1 : 0) + (p.expired ? 2 : 0) + (p.userDisabled ? 4 : 0) + (p.private ? 8 : 0);
     if ((p.routes || []).length) parts.push("R" + p.id + ":" + (p.routes || []).join("|") + ":" + JSON.stringify(p.share || null) + ":" + tg + ":" + dead);
     else parts.push("P" + p.id + ":" + (p.user_id || "") + ":" + tg + ":" + dead);
@@ -634,11 +488,6 @@ export function askSig() {
 }
 export const askFresh = e => !!(e && e.sig === askSig() && Date.now() - e.at < ASK_TTL);
 
-// ── WHO REACHES THE NETWORKS BEHIND ONE DEVICE (docs/NETWORKS-PLAN.md §18) ───────────────────────────────────────────────────
-// ⚠️ SHARING IS PER DEVICE, NOT PER NETWORK — `share_grants` takes the peer — so one audience covers every network behind it.
-// The names, dates and device counts are roster facts and are read here; whether a NODE can enforce the restriction is not, and
-// is fetched (`peerAudFetch`) rather than guessed: a node too old to restrict carries a restricted network for NOBODY, so a
-// bubble that named its grantees without saying so would be confidently wrong.
 export function peerAudience(peer) {
   const sh = peer && peer.share && typeof peer.share === "object" ? peer.share : null;
   const owner = peer && peer.user_id ? Store.user(peer.user_id) : null;
@@ -695,12 +544,6 @@ export function reachTally(uid) {
   return { total, online, shown: online || total };
 }
 
-// ── NETWORKS on a user's line (docs/NETWORKS-PLAN.md §18) ────────────────────────────────────────────────────────────────────
-// ⚠️ THE PANEL'S ANSWER, NOT A GUESS. Which networks a node actually carries — an overlapping prefix resolved to ONE device, one
-// a node refuses, a restricted one on a node that cannot enforce it, a blocked provider, a keyless device whose build cannot
-// vouch for it, the node's own local network — is decided by `node_networks` / `user_networks` and nothing in the roster says
-// it. A list that derived its own version disagreed with the very sheet it sits next to (seen 2026-09-16: one row here, four
-// there). So the bubble asks `/api/users/networks`, the same call the sheet makes — once, when it is opened, cached a minute.
 const NETS = new Map();
 export function netsCached(uid) { const e = NETS.get(uid); return e && e.rows && askFresh(e) ? e : null; }
 export async function netsFetch(uid) {
@@ -712,9 +555,6 @@ export async function netsFetch(uid) {
   let rows = [];
   try {
     const r = await api.userNetworks({ user_id: uid });
-    // ONE row per (node, network) — the same shape the sheet lists, not one per deployment that reaches it.
-    // `covered` follows the sheet's rule: the user reaches it if ANY of their devices there routes it, and an
-    // unknown (keyless) deployment never outranks a device that does.
     const rank = c => (c === true ? 2 : c == null ? 1 : 0);
     const seen = new Map();
     for (const p of ((r && r.data && r.data.peers) || []).filter(x => !x.blocked)) for (const t of p.targets || []) {
@@ -740,21 +580,13 @@ export async function netsFetch(uid) {
   bus.emit();     // the chip's count was the roster's guess until now — it says the panel's number from here on
 }
 
-// ── the CHIP'S number ────────────────────────────────────────────────────────────────────────────────────────────────────────
-// ⚠️ ONE-WAY. A count here is only ever replaced by another answer from the panel, never reverted to the roster's guess. The
-// chip used to read 1, correct itself to 4 when hovered, and fall back to 1 a minute later: a number that changes when you
-// look at it is worse than no number.
+// the CHIP'S number
 const COUNTS = new Map();
 export const netsCount = uid => { const e = COUNTS.get(uid); return e ? e.n : null; };
 // The rows behind that number, in brief ({node, via, lan, covered}) — what a chip needs to count the ONLINE ones. Null from a
 // panel that answers counts alone.
 export const netsBrief = uid => { const e = COUNTS.get(uid); return e && Array.isArray(e.rows) ? e.rows : null; };
 
-// ⚠️ ONE ANSWER TO "IS THIS NETWORK LIVE", for the chip's number, the bubble's Online list and every dot in it — the reach chip's
-// rule, and the reason its number and its bubble never disagree. Live means reachable NOW: this user's routing covers it (a row
-// it does not route, or cannot tell, is never counted), and what carries it is up where it is carried — the device behind the
-// network online ON THAT NODE (a row's node is where its device sits: the carry plan is per node), or, for a node's own LAN,
-// the node itself.
 let _pbOf = null, _pb = null;             // peers by id, rebuilt once per roster snapshot — every chip on a page asks per row
 const peerById = id => {
   if (_pbOf !== Store.recon) { _pbOf = Store.recon; _pb = new Map(Store.recon.peers.map(p => [p.id, p])); }
@@ -811,9 +643,6 @@ export function userNets(uid) {
     if (!(p.routes || []).length) continue;
     const sh = p.share && typeof p.share === "object" ? p.share : null;
     const own = p.user_id === uid;
-    // ⚠️ Private outranks the stored share here too — this is the count the chip shows BEFORE the panel answers, so
-    // without it a grantee's chip briefly included a private device's networks and then corrected itself downward,
-    // which is the flicker the one-way COUNTS rule exists to prevent. The owner still sees their own.
     if (p.private && !own) continue;
     const named = !!(sh && sh.users && Object.prototype.hasOwnProperty.call(sh.users, uid));
     const via = sh && sh.groups && !own && !named ? Object.keys(sh.groups).find(g => gids.has(g)) : null;
@@ -829,9 +658,6 @@ export function namedFew(names) {
   return T("{names} and {n} more", { names: names.slice(0, 3).join(", "), n: names.length - 3 });
 }
 
-// Land on the Users screen at the PAGE where `userId` sits, expand that user's row and scroll it into view.
-// Optionally glow a just-assigned peer's row (peerId). Shared by "click a username anywhere" and the assign
-// flow (when it started on the Users screen). It opens the USERS list even if the operator last left the screen on Groups.
 export function revealUser(userId, peerId) {
   if (!userId) return;
   usersView.mode = "users"; usersView.q = ""; clearUserFilters(); usersView.expanded[userId] = true;
@@ -879,9 +705,6 @@ export function revealOrphans(node, iface) {
   go("#/node/" + encodeURIComponent(node) + "/" + encodeURIComponent(iface));
   setTimeout(() => requestAnimationFrame(() => { const el = document.getElementById("iface-orphans"); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }), 320);
 }
-// after assigning a peer TO a user: glow the just-assigned peer's row wherever it is. If we're already on the
-// Users screen, ALSO reveal the user (their page + expand + scroll). But when the assignment came from the
-// Peers screen, a peer-view modal, or a node's interface, STAY on that screen (just the glow) — no jump to Users.
 export function revealAssignedPeer(userId, peerId) {
   if (!userId) return;
   if (peerId) Store.recentlyCreated[peerId] = Date.now();   // glow the row on whatever screen shows it
@@ -913,9 +736,6 @@ export function onlineUserRows(nodeId) {
   return Object.values(m).sort(_byHandshake);
 }
 
-// The headline "online" number for the users tag: each assigned user counts ONCE (however many peers they have),
-// each unassigned peer counts individually — so 5 users + 3 loose peers reads as 8, not 6. Works on both the live
-// rows (onlineUserRows) and the ranged rows (presence.userRows), which share the same {unassigned,count} shape.
 export function onlineUserCount(rows) { return (rows || []).reduce((a, r) => a + (r.unassigned ? (r.count || 0) : 1), 0); }
 
 // online PEERS on an interface (or the whole node when iface == null, or the whole fleet when nodeId == null)
@@ -928,11 +748,6 @@ export function onlinePeerRows(nodeId, iface) {
     .sort(_byHandshake);
 }
 
-// peers reaching `iface` THROUGH a turn-proxy: online, and the wg-observed endpoint IP == the proxy's
-// connect IP (so they came via the relay, not directly). connectIp = ipOf(turn.connect).
-// online peers attributed to THIS specific turn-proxy. Reconcile maps a peer's observed endpoint IP to one
-// service (turnIp), so a peer counts for exactly one proxy — several proxies sharing 127.0.0.1 no longer all
-// claim the same connection (was matched by connect IP, which is identical across proxies on one wg port).
 export function turnConnRows(nodeId, iface, service) {
   const onT = (t) => t.node === nodeId && t.iface === iface && t.online && t.viaTurn === service;
   return (Store.recon.peers || []).filter(p => p.targets.some(onT))
@@ -971,9 +786,6 @@ export function OnlPop({ title, rows, peer, orphans, orphHref, trigger, cls, cou
   </${Popover}>`;
 }
 
-// ───── mesh health: per-node, per-direction link status (down = other→this · up = this→other) ─────
-// OUT (this node → peer) = this node's reported handshake on its link iface. IN (peer → this node) = the
-// PEER's reported handshake on its iface back to this node. Both come from snapshots the panel already has.
 export function meshHealth(nodeId) {
   const byId = id => (Store.nodes || []).find(n => n.id === id);
   const mp = (byId(nodeId) || {}).mesh_peers || [];
@@ -983,17 +795,8 @@ export function meshHealth(nodeId) {
     : (hs(nid, iface) == null ? "connecting" : (hs(nid, iface) < 180 ? "up" : "down"));
   const peers = mp.map(({ peer, iface, reprovisioning }) => {
     const pmp = ((byId(peer) || {}).mesh_peers || []).find(x => x.peer === nodeId) || {};
-    // A mesh link is live only when BOTH ends are reporting. If either endpoint is stale/offline, neither direction
-    // can be asserted up: the surviving end's handshake age lags up to 180s behind the peer actually going away —
-    // which showed an offline node ↓1/1 AND its still-online peer ↑1/1 to a node that's already gone. Zero both.
     const linkDown = nodeStale(nodeId) || nodeStale(peer);
-    // Leg quality as measured FROM THIS NODE (the node probes its own links). A handshake says the link is
-    // up; this says whether it carries traffic well — 0.4% loss caps a single cascaded TCP flow at a few
-    // Mbit/s while the same link moves hundreds in the other direction.
     const link = (((Store.describe || {})[nodeId] || {})[iface] || {}).link || null;
-    // …and the PEER's measurement of the same leg. Each node probes its OWN links, so "how is the traffic
-    // coming IN to this node" is a question only the other end can answer. The inbound bubble asks exactly
-    // that, and showing our own outbound figure there would answer a different question with a straight face.
     const plink = (((Store.describe || {})[peer] || {})[pmp.iface] || {}).link || null;
     return { peer, link, plink,
       out: linkDown ? "down" : stat(nodeId, iface, reprovisioning),
@@ -1005,9 +808,6 @@ export function meshHealth(nodeId) {
 
 export const mhArrow = (dir, status) => html`<span class=${"mh-ar mh-" + dir + " s-" + status}>${dir === "down" ? "↓" : "↑"}</span>`;
 
-// mode "in" → node-detail header (inbound only) · mode "both" → nodes-list (down = inbound, up = outbound)
-// A phone: the mesh count opens a sheet drawn like the Online one (operator, 2026-10-29) — a row per linked node, its latency
-// and its arrows; Close, and the node's page. Its rows are the bubble's own (MeshStat `rows`), re-read every poll.
 function MeshSheet({ nodeId, mode }) {
   useStore();
   const h = meshHealth(nodeId);
@@ -1025,19 +825,6 @@ export function MeshStat({ nodeId, mode, rows }) {
   // all-up → the arrow's colour (inbound green · outbound blue) · none up → red · partial → orange
   const num = (ok, dir) => html`<b class=${"mh-num " + (mode === "in" ? "mh-num-hdr " : "") + (ok >= h.total ? dir : ok === 0 ? "mhn-bad" : "mhn-warn")}>${ok}/${h.total}</b>`;
   const ordered = (Store.nodes || []).filter(n => h.peers.some(p => p.peer === n.id));
-  // The loss COLUMN exists only when some leg actually has loss — otherwise a healthy fleet pays for an
-  // empty gutter on every row. Layout stays stable while it is there, so a value appearing does not shift
-  // the columns beside it.
-  // DIRECTION MATTERS, AND IT MATTERS PER QUANTITY.
-  //
-  // RTT is a ROUND trip: measured from either end it crosses the same point-to-point tunnel out and back,
-  // so our own reading is a legitimate answer in an inbound view. LOSS IS NOT — it is per-direction, and
-  // only the far end can measure what arrives here. So the inbound bubble takes latency from whichever end
-  // has it and takes loss ONLY from the peer.
-  //
-  // The fallback used to cover both, which put this node's OUTBOUND loss under an "inbound" heading — the
-  // same figure the link cards already show for the other direction, wearing the opposite label. A number
-  // in the wrong direction is worse than a blank cell: the blank says "not measured", the number lies.
   const legOf = p => (mode === "in" ? (p.plink || p.link) : p.link);
   const legIsPeer = p => mode !== "in" || !!p.plink;
   const lossOf = p => (mode === "in" ? p.plink : p.link);   // directional: never borrowed from the near end
@@ -1045,11 +832,6 @@ export function MeshStat({ nodeId, mode, rows }) {
   const row = n => {   // node name FIRST, then the glowing arrow(s)
     const p = h.peers.find(x => x.peer === n.id);
     const nameCls = p.in === "up" ? "mh-bold" : p.in === "down" ? "mh-dim" : "";
-    // Leg quality in FIXED columns so they line up down the bubble, loss first because it is the alarm and
-    // sits closest to the name that owns it. Loss renders ONLY when it is enough to matter: a "0.0%" on
-    // every healthy row is noise that teaches the eye to skip the column, and then the one row that matters
-    // gets skipped with it. The column itself only exists when some leg has loss (see anyLoss), so a healthy
-    // fleet does not carry an empty gutter.
     const lk = legOf(p), ll = lossOf(p);
     const loss = ll && typeof ll.loss === "number" ? ll.loss : null;
     const warn = loss != null && loss > 0;   // ⚠️ MESH IS THE EXCEPTION: a DC-to-DC leg is not a client link: ANY loss on it is worth seeing, so this one shows from the
@@ -1059,9 +841,6 @@ export function MeshStat({ nodeId, mode, rows }) {
                          { v1: ll.window_lost, v2: ll.window_sent, v3: n.name })
       : T("Leg measured from this node: {v1} of {v2} probe packets lost.",
           { v1: ll.window_lost, v2: ll.window_sent });
-    // A row inside this bubble cannot carry a bubble of its own — the outer one closes the moment the
-    // pointer leaves it for a portalled child — so the extra facts ride the native tooltip here. The mesh
-    // CARDS, which are not inside a popover, get the full LossPop instead.
     const legTitle = [legBase,
       ll && typeof ll.peak_loss === "number" && ll.peak_loss > (ll.loss || 0) ? T("Worst probe {v1}%.", { v1: ll.peak_loss }) : "",
       ll && ll.last_loss_s != null ? T("Last loss {v1} ago.", { v1: seen(ll.last_loss_s) }) : "",
@@ -1085,22 +864,6 @@ export function MeshStat({ nodeId, mode, rows }) {
   </${Popover}>`;
 }
 
-// ───── interface drops: what the kernel counters can actually tell an operator ─────
-// The card shows one percentage. One percentage cannot be acted on: a receive backlog overflowing, a link
-// whose far end had no session, and a send that failed outright are different faults wearing the same
-// number. This bubble splits it the way the kernel already counts it, and adds the two things a rolling
-// mean hides — the worst single sample (bursts are what users feel; a 0.02% mean can be one 5% sample)
-// and whether it is happening NOW or is a scar from hours ago.
-//
-// Everything here is free: the node reads sysfs counters it was already reading. Fields are all optional,
-// because a node on an older build reports only pct/window_* and this must degrade to that quietly.
-//
-// ⚠️ THE HEADLINE COUNTS ONLY THE NODE'S `fault_kinds`. On a client-facing kernel wg/awg interface that is rx_drop alone:
-// the kernel's tx_dropped there is packets held for a client that had no session (asleep, out of coverage, just removed),
-// tx_errors is traffic to an address no client owns, rx_errors is one client sending from outside its range — none of it
-// something a connected client lost, and together they read 40-50% on quiet interfaces. The node says which kinds count
-// (see _FAULT_ALL in swg-noded); the rest are summed into one "Not counted" row, with a line saying what they are.
-// The old labels had rx_drop as "refused" — that is rx_errors.
 const DROP_KINDS = [
   // On a kernel device a counted tx_drop can only be a mesh link (a client interface leaves it out), and there it is
   // no queue at all: packets held for a far end with no session. "queue full" is true of a TUN only.
@@ -1116,10 +879,6 @@ const DROP_KINDS = [
     hint: () => T("Packets came from a source outside the sender's allowed range, or were malformed — usually one misconfigured sender.") },
 ];
 
-// Below this many packets in the window a percentage is arithmetic, not a measurement — 3 drops among 4 packets is 43% —
-// so the count shows instead, and the node card stays quiet. The same number as the node's per-sample floor
-// (IFACE_PEAK_MIN in swg-noded) but NOT the same floor: that one is per 5 s sample, this one is the whole window. Kept in
-// the browser on purpose: `pct` stays a number, so a panel older than this still renders what a newer node sends.
 const DROP_PCT_MIN = 200;
 export const dropsEnough = d => (d.window_pkts || 0) + (d.window_bad || 0) >= DROP_PCT_MIN;
 // Below the floor the COUNT shows even when it is 0: "0%" over a window that moved no packets looks like a clean measurement.
@@ -1129,21 +888,9 @@ export function DropsFigure({ d }) {
     : html`<span class="dp-num" style=${"color:" + lossColor(d.pct)}>${d.pct}%</span>`;
 }
 
-// ───── mesh loss: the same treatment, for the number that comes off the probe ─────
-// ⚠️ THE HEADLINE PERCENTAGE OVERSTATES ITS OWN PRECISION. 20 packets a minute over a 30-probe window is
-// 600 packets, so the smallest non-zero loss the probe can express is 1/600 = 0.167% — and that is exactly
-// the figure an operator sees when ONE packet went missing, once, up to half an hour ago. The bubble's job
-// is to put that packet count in front of them, and to say when it happened, before they go rebuild a leg
-// that is fine. Everything here is measured already; none of it costs another probe.
-//
-// `l` = this end's reading, `pl` = the far end's reading of the same leg. Loss is directional — only the
-// receiving end can see what failed to arrive — so both are shown side by side rather than averaged.
 export function LossPop({ l, pl, peerName, node, iface, trigger, alignRight }) {
   const [reset, setReset] = useState("");
   if (!l && !pl) return trigger;
-  // ⚠️ RESETS THE LEG, NOT THIS END. `Out` is this node's probe, `In` is the far node's probe of us — two
-  // independent measurements — so the panel stamps the nonce on BOTH ends (mesh_leg_ends). Clearing only
-  // the near end would leave half the bubble reading the old outage, which looks like a bug, not a reset.
   const doReset = async e => {
     e.preventDefault(); e.stopPropagation();
     setReset("busy");
@@ -1151,18 +898,6 @@ export function LossPop({ l, pl, peerName, node, iface, trigger, alignRight }) {
     if (r && r.ok) { setReset("ok"); setTimeout(() => setReset(""), 2500); }
     else { setReset(""); toast(srvText(r) || T("Couldn't reset the probe window."), "err"); }
   };
-  // ⚠️ EVERY QUALIFIER MUST FOLLOW THE DIRECTION IT BELONGS TO. The first cut anchored "worst probe",
-  // "last loss" and the RTT spread to whichever end reported first — in practice always the near one — so
-  // a leg losing 2.4% INBOUND, with 412ms of far-end bufferbloat, rendered "last loss: none in this
-  // window", "jitter 0.3ms", no worst-probe row at all. Every figure was true of the clean direction and
-  // read as a verdict on the leg. Same class of bug as the inbound bubble showing outbound loss: a number
-  // under the wrong label is worse than a blank cell, because a blank says "not measured".
-  // ⚠️ THESE ROWS ARE NOT DIRECTIONS, AND CALLING THEM "Out"/"In" CLAIMED MORE THAN THE PROBE MEASURES.
-  // Both are `ping` — a ROUND TRIP. The near node's probe goes near→far and the reply comes far→near; the
-  // far node's probe does the same in the opposite order. Each one therefore crosses BOTH directions, so a
-  // packet lost anywhere shows up in whichever probe was unlucky, and neither number can say which way the
-  // loss happened. Two rows that disagree are two samples of one bidirectional path, not two directions.
-  // Label them by WHO MEASURED, which is exactly what distinguishes them, and say what a row is.
   const nearName = node ? Store.nodeName(node) : T("this node");
   const ends = [];
   if (l && typeof l.loss === "number") ends.push({ dir: nearName, x: l });
@@ -1174,9 +909,6 @@ export function LossPop({ l, pl, peerName, node, iface, trigger, alignRight }) {
   const worst = pick(e => typeof e.x.peak_loss === "number", (a, b) => b.x.peak_loss > a.x.peak_loss ? b : a);
   const last  = pick(e => e.x.last_loss_s != null, (a, b) => b.x.last_loss_s < a.x.last_loss_s ? b : a);
   const reportsLast = ends.some(e => "last_loss_s" in e.x);
-  // Round trip is symmetric, but each end SAMPLES it separately: one-way queueing shows up as a far-end
-  // max the near end never sees. Show both rows only when they actually disagree — otherwise it is one
-  // measurement printed twice.
   const rtts = ends.filter(e => e.x.rtt_ms != null);
   const spread = rtts.map(e => e.x.rtt_max != null ? e.x.rtt_max : e.x.rtt_ms);
   const splitRtt = rtts.length > 1 && Math.max(...spread) > Math.min(...spread) * 1.25;
@@ -1215,11 +947,6 @@ export function LossPop({ l, pl, peerName, node, iface, trigger, alignRight }) {
   </${Popover}>`;
 }
 
-// Counts in these bubbles span six orders of magnitude — "75,773 of 756,880,952" is a line nobody reads,
-// they just see two long numbers. Compact the big ones and leave the small ones ALONE: "1 of 600" is the
-// entire point of the loss bubble (one lost packet, the probe's own resolution floor) and "0.6k of 600"
-// would destroy it. So exactness below 10k, where every digit still carries meaning, and a short form
-// above it, where they no longer do.
 export const fmtCount = n => {
   n = Number(n) || 0;
   if (n < 10000) return fmtNum(n);
@@ -1230,10 +957,7 @@ export const fmtCount = n => {
 // Two decimals is right for 4.44/min and ridiculous for 80561.65/min. Scale the precision to the number.
 export const dropRate = v => (v >= 100 ? fmtCount(Math.round(v)) : v >= 10 ? v.toFixed(1) : String(v));
 
-// ───── turn-proxy socket drops ─────
-// A proxy owns no interface, so this is not the same measurement as DropsPop and must not pretend to be:
-// there is no received-packet count on a UDP socket, so there is NO PERCENTAGE — only the count and the
-// rate, which are facts. Leading with a rate the data cannot support is the mistake `peak` already made.
+// turn-proxy socket drops
 export function ProxyDropsPop({ d, service, trigger, alignRight }) {
   if (!d) return trigger;
   const n = v => typeof v === "number";
@@ -1295,12 +1019,6 @@ export function DropsPop({ d, iface, node, trigger, alignRight }) {
     ${pair("in", T("Receiving"))}
     ${offN ? html`<div class="dp-row"><span class="dp-l">${T("Not counted")}</span><span class="dp-v">${fmtCount(offN)}</span></div>` : null}
     ${(() => {
-      // ⚠️ THE RATE AND THE COUNT ANSWER DIFFERENT QUESTIONS, AND THE RATE CAN LIE. A 5s sample that pushed
-      // 2 packets while dropping 70 is 97.22%, which the panel duly showed an operator as "Worst sample
-      // 97.22%" on an interface whose 5-min window moved 23,416 packets cleanly. The node now withholds a
-      // rate it cannot support (peak = null below IFACE_PEAK_MIN) and always reports the raw count, which
-      // is a fact at any traffic level. So: lead with the rate when it means something, and let the count
-      // carry the row when it doesn't — a burst must never go unreported just because the leg was quiet.
       const wp = has("peak") && d.peak > (d.pct || 0) ? d.peak : null;
       const wb = typeof d.peak_bad === "number" && d.peak_bad > 0 ? d.peak_bad : null;
       if (wp == null && wb == null) return null;
@@ -1322,10 +1040,6 @@ export function DropsPop({ d, iface, node, trigger, alignRight }) {
   </${Popover}>`;
 }
 
-// "N online" tag → users bubble. nodeId null = whole fleet. trigger: optional (count)=>vnode.
-// `presence` (from /api/presence, per node) switches this from "online right now" to "distinct users seen
-// online during the selected range" — the question the range picker is actually asking. Without it the card
-// answered "nobody is connected this instant" while the Day doughnut reported peers online that day.
 export function OnlineUsersTag({ nodeId, cls, trigger, presence, rangeLabel }) {
   const [mode, setMode] = useState("users");             // click the tag to flip the whole tag+bubble users ↔ peers
   const isPeers = mode === "peers";
@@ -1343,9 +1057,6 @@ export function OnlineUsersTag({ nodeId, cls, trigger, presence, rangeLabel }) {
   return html`<${OnlPop} peer=${isPeers} title=${title} rows=${rows} count=${count} cls=${cls} hoverOnly=${true} trigger=${trig}/>`;
 }
 
-// The app bar's live pill on a phone (operator, 2026-10-29: "the update looks so much better than online"): a sheet, as the
-// update badge opens one — who is online, users or devices, the list capped like the bubble's (the rest is on Live), a row
-// opening its user, and Close + Open Live on the bottom line.
 const ONLINE_SHEET_CAP = 20;
 // The rows, as the sheets draw them: a device (title; owner · interface · address; how long ago) or a person (name; devices)
 function onsheetRows(rows, peers) {
@@ -1396,42 +1107,20 @@ export function OnlinePeersTag({ nodeId, iface, total, cls, trigger, orphans, or
     trigger=${trigger || (c => html`<b class=${"oncount" + (c ? " on" : "")}>${c}</b>${(total != null ? " / " + total : "") + " " + T("val|online")}`)}/>`;
 }
 
-// Jump to the Live screen already switched to the peers/users tab the caller means.
-// shared online-breakdown bubble: a Live-linked header, top-10 rows (already handshake-sorted), an
-// optional "n orphan peers" line, and a "view all" link past 10. trigger: (count)=>vnode.
-// Open Live on the tab that matches the bubble that was clicked. `connView.mode` is module state that
-// remembers the last toggle, so without this a Users bubble could land on the Peers table (or vice versa).
-// The appbar bubble is visible ON the Live screen too, where the hash does not change — so nudge the bus.
 export const openLiveTab = mode => e => {
   e.stopPropagation();
   connView.mode = mode; connView.page = 1;
   if (location.hash === "#/connections") bus.emit();     // already there: no hashchange to re-render us
 };
 
-// nodes: null = whole fleet, else a Set of node ids. peers/mesh = which traffic COMPONENTS the figures count
-// (the toolbar badges): peers = client traffic (total−mesh), mesh = node↔node relay traffic. `ov` = per-widget
-// overrides keyed by widget id, each {peers?,mesh?} where a set field pins that pill and null inherits the global.
-// ─────────── Dashboard controls: node selector + time range ───────────
-// Two module-level controls drive every Overview widget. The NODE selector filters the fleet the
-// dashboard aggregates over (default = ALL, stored as null); unselecting nodes re-renders every widget
-// for the remaining set (all-but-one = a single-node view). The RANGE selector chooses the history
-// window for the range-driven visuals (doughnuts + flow map); live derives from the /api/state bundle,
-// the rest read the per-node RRD on demand. Both live in module state + localStorage so a re-render or
-// the 5s poll never clobbers the operator's selection (it's not derived from server data).
 export const DASH_RANGES = [["live", "Live"], ["hour", "Hour"], ["day", "Day"], ["week", "Week"], ["month", "Month"]];   // i18n-keys: canonical (persisted range key + English label)
 /* The range word, translated. Two forms because the dashboard uses both: capitalised on the rail buttons,
    lowercase inside a section subtitle ("distribution · за сутки"). Literal T() calls, as always. */
 export const rangeLabel = k => isCustomKey(k) ? customKeyLabel(k) : ({ live: T("range|Live"), hour: T("range|Hour"), day: T("range|Day"), week: T("range|Week"), month: T("range|Month") }[k] || k);   // i18n-keys
 export const rangeWord = k => isCustomKey(k) ? customKeyLabel(k) : (({ live: T("range|live"), hour: T("range|hour"), day: T("range|day"), week: T("range|week"), month: T("range|month") })[k] || T("range|live"));   // i18n-keys
-// A custom Overview window (P3) travels as a KEY — "custom:YYYYMMDD-YYYYMMDD", the server's own `rangeKey` — never as the
-// bare word "custom": two custom windows are both "custom", so a guard comparing that would render the last window's
-// numbers under the new title. Everything ranged (fetch, stale guard, label, step) reads the key it LOADED.
 export { isCustomKey, customKeyWindow };   // the grammar is store.js's (rangeQ reads it too)
 export const customKeyLabel = k => trafficRangeLabel(customKeyWindow(k));
 export const dashState = { nodes: null, range: "live", from: "", to: "", peers: true, mesh: true, ov: {} };
-// The Overview's range key: a named range, or the custom window's key.
-// A custom window kept from an earlier visit may have aged past what the charts keep (33 days): it is read from the first
-// day they still hold — the rail and every title show the days actually read — instead of a page of refusals.
 export function dashKey() {
   if (dashState.range !== "custom" || !dashState.from || !dashState.to) return dashState.range === "custom" ? "live" : dashState.range;
   const first = chartsFirstDay(), from = dashState.from < first ? first : dashState.from, to = dashState.to < from ? from : dashState.to;
@@ -1452,10 +1141,7 @@ export function dashSave() {
   try { localStorage.setItem("swg-dash", JSON.stringify({ nodes: dashState.nodes ? [...dashState.nodes] : null, range: dashState.range, ...(dashState.range === "custom" ? { from: dashState.from, to: dashState.to } : {}), peers: dashState.peers, mesh: dashState.mesh, ov: dashState.ov })); } catch (_) {}
 }
 
-// ── which nodes the Overview charts include (persisted per browser) ──
-// Effective selected node ids, reconciled against the CURRENT fleet (ids for departed nodes drop out).
-// An empty selection collapses back to the whole fleet — the dashboard is never blank.
-// null OR an empty set both mean "the whole fleet" — the selection can never be empty (nothing to show).
+// which nodes the Overview charts include (persisted per browser)
 export function dashNodes() {
   const fleet = (Store.fleet || []).map(n => n.id);
   if (!dashState.nodes || !dashState.nodes.size) return fleet;
@@ -1476,15 +1162,6 @@ export function dashToggleNode(id) {
   dashSave(); bus.emit();
 }
 
-// ── activity taxonomy + panel-service issues: derived from Store, read by more than one screen ──
-// ─────────── Activity taxonomy ───────────
-// The panel's server-side event log (/api/events) records every operator action. One place decides
-// each record's ITEM category (icon + the history "Item" filter), an ACTION bucket (Added / Changed /
-// Removed, the history "Action" filter), and where a click lands. Shared by the Overview feed and the
-// full Activity-history grid so both stay consistent.
-/* Display labels for EV_ITEMS. Written as eight LITERAL T() calls rather than T("event|" + item),
-   because a composed key cannot be verified statically — the audit would see the key "event|" and
-   report all eight translations as orphaned. Rule: T() always takes a literal. */
 export const evItemLabel = item => ({
   "Peer": T("event|Peer"), "User": T("event|User"), "Node": T("event|Node"),   // i18n-keys
   "Interface": T("event|Interface"), "Turn-proxy": T("event|Turn-proxy"), "Mesh": T("event|Mesh"),   // i18n-keys
@@ -1559,27 +1236,13 @@ export function recentActivity(n) {
   return src.slice(0, n || 15).map(evDecorate);
 }
 
-// ═════════════════════════ panel-host service health ═════════════════════════
-// Reads THIS host's own swg units from Store.panelServices (a server self-probe, cached ~20s server-side →
-// essentially free) and turns them into "needs attention" records. Config-aware severity: a service that's
-// intentionally inert (swg-sub while subscriptions are OFF) is NOT a fault. Only swg-sub down/missing WHILE
-// subscriptions are ON is "critical" (the only thing that raises the on-load modal) — netctl/update matter
-// only when you change settings or press Update, so they stay warnings. That keeps the modal meaningful
-// instead of training people to Silence it. The panel host is one box, so these show regardless of the
-// node filter. Purely additive: an older/docker panel reports {} → serviceIssues() returns [].
-// Built on first use, like SVC_KINDWORD below — a module-level T() answers before loadLang() has run,
-// which is how "Network & TLS helper" stayed English inside an otherwise Russian warning.
+// panel-host service health
 let _svcLabel = null;
 export const SVC_LABEL = new Proxy({}, { get: (_, k) => (_svcLabel || (_svcLabel = { sub: T("Subscription server"), netctl: T("Network & TLS helper"), update: T("One-click self-update"), panel: T("Panel server"), awg: T("AmneziaWG datapath") }))[k] });
 export const SVC_UNIT  = { sub: "swg-sub", netctl: "swg-netctl", update: "swg-update", panel: "swg-panel-server", awg: "" };
 // Built on first use — T() only answers after loadLang() (same rule as ui.js's label tables).
 let _svcKind = null;
 export const SVC_KINDWORD = new Proxy({}, { get: (_, k) => (_svcKind || (_svcKind = { missing: T("not installed"), down: T("not running"), disabled: T("won’t survive a reboot"), unwritable: T("can’t be saved") }))[k] });
-// The subscription server's CERTIFICATE, direct-TLS only. swg-sub keeps serving on its port without one, so
-// the panel reports it healthy while every subscriber gets a TLS handshake failure (Cloudflare 525) — the
-// failure is invisible from here unless we say it. The server sends {} under a reverse proxy: there the proxy
-// terminates TLS and the cert is the admin's to manage, so there is nothing for us to assert. Independent of
-// the systemd unit probe, which is why it lives in its own function — see serviceIssues.
 function subCertIssue(out) {
   const sc = Store.subCert || {};
   if (!sc.needs_issue || !subFeatureOn()) return;
@@ -1590,9 +1253,6 @@ function subCertIssue(out) {
                : T("the subscription server has no certificate for {v1}", { v1: T("{v1} — subscribers get a TLS error", { v1: sc.domain }) }) });
 }
 
-// The panel could not persist its session-signing secret. Like subCertIssue this has its OWN source rather
-// than the systemd probe, so it is just as true in a container — and it sits ABOVE the bare-metal early
-// return for the same reason. Warn, not critical: sessions are lost, nothing else is.
 function sessionKeyIssue(out) {
   const why = Store.sessionEphemeral;
   if (!why) return;
@@ -1603,19 +1263,10 @@ function sessionKeyIssue(out) {
 
 export function serviceIssues() {
   const ps = Store.panelServices || {};
-  // Not while the host is mid-convert / re-install / update: services legitimately stop and restart during
-  // those, so the probe catches a real-but-transient gap and raises a CRITICAL modal for it — observed on a
-  // docker→bare-metal convert, where swg-sub was down for seconds and the alert then outlived the cause by
-  // hours. An operation in flight already has its own status surface; this one only adds noise to it.
   if (inProc(Store.hostProc)) return [];
   // `fix: false` — an issue the updater cannot repair (Secure Boot wants a key enrolled at the console): still shown and still
   // alerted, but never counted on the Fix button, toasted as repairable, or offered "Run update" (ServiceIssueSheet).
   const out = [], add = (id, sev, kind, msg, fix = true) => out.push({ id, sev, kind, msg, fix, label: SVC_LABEL[id], unit: SVC_UNIT[id] });
-  // EVERY check below this point reads Store.panelServices, which is a bare-metal systemd probe — a docker
-  // panel reports {} and none of them can say anything. The CERTIFICATE check is the exception: it has its own
-  // source (Store.subCert, from the panel's own view of the cert file) and is just as true in a container. It
-  // used to sit below the early return, so enabling the server-side check for docker changed nothing visible —
-  // the panel reported needs_issue and the SPA dropped it here, one line before it could be read.
   subCertIssue(out);
   sessionKeyIssue(out);
   if (!Object.keys(ps).length) return out;
@@ -1628,10 +1279,6 @@ export function serviceIssues() {
     else if (down(sub)) add("sub", "critical", "down", T("the subscription server isn’t running — subscribers can’t load their configs"));
     else if (unen(sub)) add("sub", "warn", "disabled", T("the subscription server won’t start again after a reboot"));
   }
-  // The subscription server's CERTIFICATE, direct-TLS only. swg-sub keeps serving on its port without one, so
-  // the panel reports it healthy while every subscriber gets a TLS handshake failure (Cloudflare 525) — the
-  // failure is invisible from here unless we say it. The server sends {} under a reverse proxy: there the proxy
-  // terminates TLS and the cert is the admin's to manage, so there is nothing for us to assert.
   const np = ps.netctl_path, nt = ps.netctl_timer;    // path OR timer covers the helper; collapse to one record
   if (gone(np) || gone(nt))       add("netctl", "warn", "missing", T("Panel URL and address changes can’t be applied until it’s restored"));
   else if (down(np) && down(nt))  add("netctl", "warn", "down", T("Panel URL and address changes can’t be applied right now"));
@@ -1642,9 +1289,6 @@ export function serviceIssues() {
   else if (unen(up)) add("update", "warn", "disabled", T("one-click self-update won’t arm again after a reboot"));
   if (unen(ps.panel)) add("panel", "warn", "disabled", T("the panel won’t start again after a reboot"));   // it's answering → it's up; only reboot-survival matters
   const dp = (Store.datapath || {}).awg;               // local node's AmneziaWG kernel module — a broken DKMS build is what Update rebuilds
-  // …but NOT while an update is running: the module legitimately isn't loaded while it is being rebuilt, and
-  // raising CRITICAL then invites a SECOND update on top of the first — which is exactly what one operator did.
-  // With the userspace fallback on the box the interfaces are UP, just slower — a warning, not a critical "can't come up".
   if (dp && dp.needed && !dp.ok && !dp.updating) {
     if (dp.why === "key") add("awg", dp.fallback ? "warn" : "critical", "secureboot", dp.mok
       ? T("Secure Boot refuses the AmneziaWG kernel module — its signing key is not enrolled ({v1}). Enrol it once: sudo mokutil --import {v2}, reboot, and pick “Enroll MOK” at the console", {
@@ -1660,16 +1304,10 @@ export function serviceIssues() {
   out.sort((a, b) => (b.sev === "critical") - (a.sev === "critical"));
   return out;
 }
-// Per-incident "Silence" — a localStorage set of "<id>:<kind>" keys the operator has hushed. Only the
-// on-load MODAL respects it; the needs-attention ROW always shows. Auto-pruned to currently-live incidents,
-// so a service that recovers then breaks again re-alerts.
 export function svcKey(is) { return is.id + ":" + is.kind; }
 export function svcSilencedSet() { try { return new Set(JSON.parse(localStorage.getItem("swg-svc-silence") || "[]")); } catch (_) { return new Set(); } }
 export function svcSaveSilence(s) { try { localStorage.setItem("swg-svc-silence", JSON.stringify([...s])); } catch (_) {} }
 export function svcSilence(is) { const s = svcSilencedSet(); s.add(svcKey(is)); svcSaveSilence(s); bus.emit(); }
 
-// ═════════════════════════ SCREEN: ACTIVITY HISTORY ═════════════════════════
-// The full operator-action log ("Show history" from the Overview feed): search + Item/Action filters,
-// pagination, per-row delete, and Clear all. Pulls the whole capped log once and filters client-side with
-// the same taxonomy (evDecorate) as the feed, so a row's icon / click target / category stay identical.
+// SCREEN: ACTIVITY HISTORY
 export const activityView = { q: "", item: "", action: "", page: 1 };

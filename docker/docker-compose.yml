@@ -19,30 +19,12 @@ services:
     profiles: ["host", "master", "host-node"]
     ports:
       - "${PANEL_BIND:-0.0.0.0}:${PANEL_PORT:-443}:8443"   # PUBLIC port → container's 8443 (moves on a scheme/port change)
-      # PANEL_BIND=127.0.0.1 (set by install-docker for TLS=none) keeps the panel on loopback so ONLY your
-      # own reverse proxy reaches it. host port 80 (Let's Encrypt HTTP-01) is added by docker-compose.override.yml,
-      # which the installer writes ONLY for TLS=letsencrypt(-ip) — so other TLS methods don't clash with nginx/apache on :80.
-      # STABLE co-located-node endpoint: a dedicated plain-HTTP loopback port (host==container) that a public flip
-      # NEVER moves, so a master's local node dials http://127.0.0.1:<PANEL_LOCAL_PORT> and can't strand. Host-loopback
-      # only. Distinct from the public port. (Harmless spare listener on a host-only panel with no co-located node.)
       - "127.0.0.1:${PANEL_LOCAL_PORT:-8088}:${PANEL_LOCAL_PORT:-8088}"
-      # The OPERATOR CONSOLE's own port, for Settings → Panel URL → "Its own address": the console moves
-      # here and the public port above answers only what a node dials. Host port == container port, like
-      # PANEL_LOCAL_PORT — the number shown in the panel is the number you reach. LOOPBACK by default, so
-      # nothing new is exposed and you reach it over an SSH tunnel:
-      #     ssh -L 8445:127.0.0.1:8445 <this box>   →   http://localhost:8445
-      # Set CONSOLE_BIND=0.0.0.0 (or a host IP) in .env and recreate to publish it, and firewall it.
-      # Published unconditionally and harmless while the console is off: nothing listens behind it until
-      # you turn it on in the panel, and turning it on then needs no recreate.
       - "${CONSOLE_BIND:-127.0.0.1}:${CONSOLE_PORT:-8445}:${CONSOLE_PORT:-8445}"
     environment:
       PANEL_USER: "${PANEL_USER:-admin}"
       PANEL_PASSWORD: "${PANEL_PASSWORD:?set PANEL_PASSWORD in .env}"
       PANEL_DOMAIN: "${PANEL_DOMAIN:-localhost}"
-      # The subscription page's own hostname. When set (and TLS is a real mode) the entrypoint issues swg-sub its
-      # OWN cert for this name into ./data/sub-tls — the direct-TLS sub then serves HTTPS instead of 525'ing behind
-      # a Cloudflare Full zone. Defaults to PANEL_DOMAIN so a sub sharing the panel's domain (a different port) just
-      # works; set it explicitly in .env when the sub is on its own subdomain.
       SUB_DOMAIN: "${SUB_DOMAIN:-${PANEL_DOMAIN:-}}"
       # Where swg-sub is published (the swg-sub service's `ports:` below): the panel records it as the subscription
       # address in Settings when nobody chose one there, so Settings, the links it builds and swg-sub agree.
@@ -55,24 +37,12 @@ services:
       CF_TOKEN: "${CF_TOKEN:-}"           # cloudflare DNS-01: token with Zone:DNS:Edit + Zone:Read
       CF_ORIGIN_TOKEN: "${CF_ORIGIN_TOKEN:-}"  # cf15: token with Zone:SSL and Certificates:Edit
       SWG_PANEL_BASE: "${PANEL_BASE:-}"   # optional subpath mount, e.g. /swg (blank = root)
-      # The HOST's bindable addresses, "ip|iface" space-separated — written by the installer, which runs on the
-      # host. A bridged panel container can only see the compose network's 172.x, so without this the Access &
-      # TLS "Listen IP" picker has nothing real to offer and shows only 0.0.0.0 / 127.0.0.1.
       SWG_HOST_IPS: "${HOST_IPS:-}"
       # The console port this deployment WIRED (the publish above). Tells the panel which port it may use
       # for its own console door — it does not turn the console on; that stays a choice in Settings.
       SWG_PANEL_CONSOLE_PORT: "${CONSOLE_PORT:-8445}"
-      # …and where you REACH it. The container must bind 0.0.0.0 (a publish always targets the container's
-      # 0.0.0.0), so this is the only way the panel can know the address to send you to, and whether that
-      # address is loopback (plain HTTP is then correct) or public (it serves the panel's certificate).
       SWG_PANEL_CONSOLE_HOST: "${CONSOLE_BIND:-127.0.0.1}"
       SWG_PANEL_LOCAL_PORT: "${PANEL_LOCAL_PORT:-8088}"   # the panel binds a dedicated 0.0.0.0:<this> plain-HTTP listener → reached ONLY via the 127.0.0.1:<this> publish above; the STABLE loopback endpoint a co-located node dials
-      # Which VERSION file the panel treats as "latest" for its own update bubble. Blank = the panel's
-      # own default (main), so an install that never sets it behaves exactly as before. It exists because
-      # a bare-metal panel can be pointed at a pre-release branch with a systemd drop-in and a docker one
-      # could not be pointed anywhere at all — the explicit environment block below has no passthrough.
-      # ⚠️ On docker this is only HALF of following a pre-release: it tells the panel a newer build
-      # exists, while SWG_IMAGE_TAG decides which image is actually pulled. Both, or neither.
       SWG_LATEST_URL: "${SWG_LATEST_URL:-}"
       SWG_UPDATE_TRIGGER: "${SWG_UPDATE_TRIGGER:-}"   # set by install-docker when it wires the host one-click updater (swg-update.path watches data/lib/.update-request); blank = manual update only
       SWG_HOST_HOSTNAME: "${SWG_HOST_HOSTNAME:-}"     # the HOST's hostname (install-docker sets it) — lets the panel recognise a master's co-located node, which reports the host hostname via host-networking (the panel container's own hostname is a random id)
@@ -81,16 +51,9 @@ services:
       - ./data/lib:/var/lib/swg-panel     # roster (users.json), node store, stored configs
       - ./data/stats:/var/www/wgstats     # status snapshots (fed by node syncs)
       - ./data/sub-tls:/etc/swg-sub/tls   # the entrypoint issues swg-sub's OWN cert here (direct-TLS + a sub domain) → swg-sub reads it read-only, terminating its own TLS
-      # --- mount a real cert instead of self-signed (e.g. a Cloudflare Origin cert) ---
       # - ./tls/fullchain.pem:/etc/swg-panel/tls/fullchain.pem:ro
       # - ./tls/key.pem:/etc/swg-panel/tls/key.pem:ro
 
-  # The public subscription surface. A SEPARATE container that serves per-user QR/config pages at
-  # https://sub.<domain>/<token>#<unlock-key>. It reuses the panel image (swg-sub is pure stdlib —
-  # no separate build) but runs its own read-only process: the state volumes are mounted `:ro`, it
-  # bypasses the panel entrypoint, and it holds no login/write/node code. So a compromise of this
-  # internet-facing surface yields only ciphertext (the unlock key rides in the URL fragment and
-  # never reaches the server), never the fleet. OFF until you enable it in Settings → Subscriptions.
   swg-sub:
     image: ghcr.io/tesla-prep/swg-panel:${SWG_IMAGE_TAG:-latest}
     # build: .
@@ -117,9 +80,6 @@ services:
       - ./data/lib:/var/lib/swg-panel:ro          # roster + nodes + subs (token map / blobs / serve.json) — READ-ONLY
       - ./data/stats:/var/www/wgstats:ro          # node snapshot mirrors (endpoint / server pubkey / awg params)
       - ./data/sub-tls:/etc/swg-sub/tls:ro        # swg-sub's OWN cert (direct-TLS mode) — its own key, NOT the panel's; the panel issues it here (so a CF Full zone gets a real origin cert, not 525)
-      # Defence-in-depth: mask the secrets this public surface must never read (containers run as root,
-      # so :ro alone wouldn't stop a compromise from opening them). swg-sub reads NONE of these — it takes
-      # its config from subs/serve.json. /dev/null masks a file; tmpfs masks a directory.
       - /dev/null:/etc/swg-panel/auth:ro                      # the panel login hash
       - /dev/null:/var/lib/swg-panel/panel-settings.json:ro   # webhook signing secrets / API token hashes
       - /dev/null:/var/lib/swg-panel/subs/vault.json:ro       # the subscription-key vault (SK → every peer's key)
@@ -141,12 +101,6 @@ services:
     logging: *logging
     profiles: ["node", "master", "host-node"]
     cap_add: ["NET_ADMIN"]
-    # Syscall filtering. `builtin` is Docker's own default profile — the safe default, and what every install
-    # gets unless it opts out. Set SWG_NODE_SECCOMP=unconfined ONLY if you run csqtt servers on this node: csqtt's
-    # dataplane is io_uring and has no fallback, and the default profile denies io_uring_setup, so the server
-    # dies the instant it starts (the panel says so, naming this setting). Prefer this over `privileged: true`,
-    # which some csqtt-in-Docker recipes use — that also hands over every capability and device; this relaxes
-    # syscall filtering only, leaving the capability and device limits below in force.
     security_opt:
       - seccomp=${SWG_NODE_SECCOMP:-builtin}
     devices: ["/dev/net/tun:/dev/net/tun"]
@@ -155,14 +109,7 @@ services:
       - net.ipv4.conf.all.route_localnet=1   # Force-DNS DNATs client :53 to loopback dnsmasq — needs this on (host-net drops this block; installer sets it on the host instead)
     ports:
       - "${NODE_LISTEN_PORT:-51820}:${NODE_LISTEN_PORT:-51820}/udp"   # the bootstrap interface's listen port
-      # NOTE: the installer puts the node on `network_mode: host` for both the `node` and `master`
-      # profiles (so every interface port — incl. panel-created ones — is reachable with no
-      # publishing). These `ports:` only apply if you run the node on bridge networking instead;
-      # then every ADDITIONAL interface's port must be published here too, e.g.:
       # - "51821:51821/udp"
-      # To use host networking manually: drop this `ports:` list + the `sysctls:` above and add
-      # `network_mode: host`. On a MASTER also point the node at the panel over loopback
-      # (PANEL_URL=https://127.0.0.1:<published-port>, TLS_VERIFY=no), since `swg-panel` won't resolve.
     environment:
       PANEL_URL: "${PANEL_URL:?set PANEL_URL (master: https://swg-panel:8443)}"
       NODE_TOKEN: "${NODE_TOKEN:?create the node in the Nodes screen, then set NODE_TOKEN}"
@@ -192,23 +139,8 @@ services:
       SWG_TURN_RECORD: "/var/lib/swg-noded/turn-proxy.json"
     volumes:
       - ./data/node:/var/lib/swg-noded
-      # Persist the interface .confs (server keys) so interfaces created from the panel — and the
-      # bootstrap interface's keypair — survive a container recreate. Without this they'd be
-      # regenerated/lost on every `up`.
       - ./data/node-confs:/etc/amnezia/amneziawg
-      # Host UAPI sockets for userspace wireguard-go. Without this the wg CLI in here cannot see a FOREIGN
-      # userspace interface — a WDTT server's, say — so the adoption scan listed every kernel wg/awg device and
-      # silently omitted the one thing it was added for. /var/run is a symlink to /run in this image, so both
-      # of swg-noded's WG_SOCK_DIRS scan paths resolve to the same mount.
       - /run/wireguard:/run/wireguard
-      # The DNS servers the host's systemd-resolved forwards to — READ-ONLY. A node carrying a network behind a
-      # peer refuses any route that would shadow the DNS server it depends on (the one mistake measured to cut a
-      # node off for good). In here /etc/resolv.conf names only the stub 127.0.0.53, so without this the node
-      # cannot say which server that is and carries no networks at all. The directory, not the file: resolved
-      # replaces the file by rename, which a file bind never sees. On a host without resolved it stays empty and
-      # the node reports its resolver as unknown, exactly as before.
       - /run/systemd/resolve:/run/systemd/resolve:ro
-      # Full AmneziaWG server conf(s) with your own obfuscation params. Every file
-      # mounted under /etc/swg-node/*.conf becomes a managed interface:
       # - ./awg0.conf:/etc/swg-node/awg0.conf:ro
       # - ./wg1.conf:/etc/swg-node/wg1.conf:ro

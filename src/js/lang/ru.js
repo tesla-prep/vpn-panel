@@ -1,32 +1,11 @@
-/* ru.js — Russian catalog. Keys are the English source text (see js/i18n.js).
- *
- * Audited by `node .campaign/i18n-extract.mjs --audit`, which lists keys the code uses but this file
- * lacks (they render English) and keys here the code no longer uses (the English was edited).
- *
- * Register: the panel addresses one operator running their own servers — direct, technical, no
- * marketing voice and no formal «Вы» padding. Imperative for buttons ("Удалить", not "Удаление"),
- * infinitive avoided in labels. Established Russian sysadmin loanwords are used where they are what
- * people actually say: интерфейс, пир, нода, прокси, ключ, хендшейк. Product and protocol names
- * (WireGuard, AmneziaWG, WDTT, turn-proxy) are NOT translated.
- */
-
 export const STR = {
-  // ── what a save could not keep (§5.4) ──
-  // Impersonal «Пропущено», with the count in a parenthesis — the number is interpolated, so it arrives
-  // nominative and cannot be declined, and «не сохранена / не сохранены» would have to agree with it. The
-  // parenthesis rather than a dash because each clause after the colon carries its own dash («X — не удалось
-  // разобрать»), and two dash levels in one line read as one long muddle.
-  // budget-ok: toast, wraps
+  // what a save could not keep (§5.4)
   "Saved — {v1} not kept: {v2}": "Сохранено. Пропущено ({v1}): {v2}",
   "{v1} couldn't be read": "{v1} — не удалось разобрать",
   "{v1} is no longer published by {v2}": "{v1} больше не публикуется источником {v2}",
   "{v1} is no longer a list the panel knows": "{v1} — панель больше не знает такого списка",
   "…and {v1} more": "…и ещё {v1}",
 
-  // ── networks behind a peer (docs/NETWORKS-PLAN.md) ──
-  // {node} is a node's own NAME, so no sentence here makes a verb or pronoun agree with it: «{node}: …» or
-  // «на {node}» throughout. {peers}/{users} arrive already counted; the users slot reads after «у», so the
-  // code passes the genitive noun (gen|user).
   "Networks behind this device": "Сети за этим устройством",
   // NETWORKS P5 — who can reach a network behind a device
   "A date is the last day they can reach these networks; leave it empty for no end.": "Дата — последний день доступа к этим сетям; оставьте пустой, чтобы без срока.",
@@ -111,9 +90,6 @@ export const STR = {
   "{peers} aren't among the people with access": "Нет среди тех, у кого есть доступ: {peers}",
   "{devices} on turn servers that can't reach a restricted network": "За turn-серверами, которые не могут попасть в сеть с ограниченным доступом: {devices}",
   "Access has ended for {users}": "Доступ закончился: {users}",
-  // ── user groups (docs/GROUPS-PLAN.md) ──
-  // {groups}/{members}/{users} arrive already counted and nominative, so they sit after a colon or in a list — never as the subject
-  // a Russian verb would have to agree with (the plural() trap, NETWORKS §16).
   "Access has ended for {groups}": "Доступ закончился: {groups}",
   "Shared with {groups} and {users}": "Доступ: {groups} и {users}",
   "Shared with {groups}": "Доступ: {groups}",
@@ -124,10 +100,6 @@ export const STR = {
   "a group that no longer exists": "удалённая группа",
   "{users} with no device here": "Без устройств здесь: {users}",
   "Groups": "Группы",
-  // ── a user's sheet: the way into a group, and the two counts a list shows beside a name ──
-  // «Добавить в группу…» is the placeholder of a list that ADDS: the chips below it are the groups they are already in, so the
-  // verb carries the whole meaning and no second word is needed. The toast avoids a past-tense verb agreeing with a name of
-  // unknown gender («добавлен/добавлена») — «теперь в группе» states the result instead.
   "Add to a group": "Добавить в группу",
   // The field's own one-line note, in the shape the other labels use («ДОСТУП ИСТЕКАЕТ — вся подписка…»): what a group DOES,
   // short enough to sit under the label instead of a paragraph under the control.
@@ -136,10 +108,6 @@ export const STR = {
   "They lose the networks shared with this group, unless they're shared with them another way: {devices}.": "Он потеряет сети, открытые этой группе, — если они не открыты ему другим способом: {devices}.",
   "Create new group…": "Создать группу…",
   "{name} is now in {group}.": "{name} — теперь в группе «{group}».",
-  // The counts' aria labels: no name in them, because a screen reader has just read the row's own name, and a Russian name
-  // interpolated into a case the sentence needs cannot be declined.
-  // The counts' aria labels name no person: a screen reader has just read the row's own name, and a Russian name interpolated
-  // into the case a sentence needs cannot be declined.
   "Reaches {v1} online now": "Сейчас доступно {v1}",
   "Reaches {v1}, none online": "Доступно {v1}, ни одна не онлайн",
   "Can reach": "Есть доступ к",
@@ -460,9 +428,7 @@ export const STR = {
   "Clients of this node, and of other nodes whose traffic leaves through it, are kept off the private network it sits on. They still reach the internet and this node itself.":
     "Клиенты этой ноды и других нод, чей трафик выходит через неё, не попадают в частную сеть, в которой она стоит. Интернет и сама нода им по-прежнему доступны.",
 
-  // ── geo providers: what turning one off actually costs (§6.4) ──
-  // Reads on the row itself, in the same quiet register as «обновлён 3 ч назад» beside it. Both counts are
-  // prepositional: «в 3 правилах на 2 интерфейсах» — see the prep| forms in PLURALS.
+  // geo providers: what turning one off actually costs (§6.4)
   "used by {v1} on {v2}": "используется в {v1} на {v2}",
   "Rules on your interfaces that route one of this provider's lists":
     "Правила на ваших интерфейсах, которые маршрутизируют один из списков этого источника",
@@ -482,9 +448,6 @@ export const STR = {
   // single fetch can sit for minutes. Saying so is what makes Cancel look like a sane thing to press.
   "GitHub allows 60 requests an hour without an account, and a fetch inside that window can sit for a couple of minutes. Cancelling stops the wait and turns the provider off — the request itself finishes on its own and its result is thrown away.":
     "GitHub без учётной записи отвечает на 60 запросов в час, и запрос, попавший в исчерпанное окно, может висеть пару минут. Отмена прекращает ожидание и выключает источник: сам запрос дойдёт до конца сам по себе, а его результат будет отброшен.",
-  // ── the routing rule builder's field (docs/ROUTING-RULE-BUILDER-PLAN.md §3) ──
-  // The kind label sits in a chip beside the value and has to fit there, so each is one short word. They name
-  // what the operator WROTE, not the matcher underneath — «сайт», not «суффикс».
   "kind|site": "сайт",
   "kind|zone": "зона",
   "kind|name": "имя",
@@ -671,9 +634,6 @@ export const STR = {
   // ── time ──────────────────────────────────────────────────────────────────────────────────────
   // "just now" is a moment, not a duration: "только что" is the natural form.
   "just now": "только что",
-  // 1 char over the character budget, kept deliberately: .when is a flex-positioned monospace slot with
-  // room to its left, and dropping "назад" would make an elapsed time read as a duration. Visually checked.
-  // budget-ok: .when is a flex slot with room to its left, measured
   "{n}m ago": "{n} мин назад",
   "{n}h ago": "{n} ч назад",
   "{n}d ago": "{n} д назад",
@@ -696,9 +656,6 @@ export const STR = {
   // ── ports and interfaces (js/model.js) ─────────────────────────────────────────────────────────
   "Port must be a number.": "Порт — это число.",
   "Port must be between 1 and 65535.": "Порт — от 1 до 65535.",
-  // The holder is spliced into the sentence below, so it is translated in the INSTRUMENTAL case —
-  // "занят чем?". This is why the sentence is one interpolated string and not three concatenated
-  // fragments: Russian needs the case, and a fragment cannot carry one.
   "Port {port} is already used by {holder} on this node.": "Порт {port} на этой ноде уже занят: {holder}.",
   "a turn-proxy": "turn-прокси",
   "a WDTT proxy": "WDTT-прокси",
@@ -745,17 +702,7 @@ export const STR = {
   "event|Update": "Обновление",
   "All items": "Все объекты",
 
-  // ── the status vocabulary (js/ui.js STATUS_WORDS) ──────────────────────────────────────────────
-  // MEASURED, not estimated. The peers grid is `table-layout: fixed` and the status column is 9% — 98px at
-  // a 1214px table — so a badge is hard-capped: the English words run 75-89px and the widest ("Unassigned")
-  // has 9px of headroom. Every word below was rendered in the real badge and kept at or under 89px, which is
-  // why several are not the most literal choice:
-  //   Rotating   "Смена ключа" 104 -> "Ротация" 77      Restricted  "Фильтруется" 103 -> "Фильтр" 73
-  //   Blocking   "Блокируется" 102 -> "Закрытие" 85     Unassigned  "Не назначен" 99  -> "Свободен" 85
-  //   Blocked    "Блокирован"  98  -> "В блоке" 78      Unknown     "Неизвестно"  95  -> "Неясно" 71
-  // The hover reason carries the full explanation, so the badge can afford to be terse.
-  // Two internal keys read differently on screen: `disabled` shows as Blocked (access revoked), `blocked`
-  // as Restricted (the DPI fault).
+  // the status vocabulary (js/ui.js STATUS_WORDS)
   "status|Online": "Онлайн",
   "status|Ready": "Готов",
   "status|Pending": "Ожидает",
@@ -795,9 +742,7 @@ export const STR = {
     "срок доступа подходит к концу — по истечении будет снят со всех серверов",
   "Interface {iface} is down — {why}": "Интерфейс {iface} не поднят — {why}",
 
-  // ── interface op lifecycle (js/ui.js ifopBusy/ifopDone/ifopFail) ───────────────────────────────
-  // Lowercase: these ride inside a tag next to the interface name, mid-phrase. "ignore" is the panel's
-  // word for hiding an interface it doesn't manage, so it translates as скрыть, not игнорировать.
+  // interface op lifecycle (js/ui.js ifopBusy/ifopDone/ifopFail)
   "state|Default": "По умолчанию",
   "A subscription or peer with an expiry date shows an orange *about to expire* warning this many days ahead.":
     "Подписка или пир со сроком действия предупреждает об истечении за столько дней.",
@@ -921,9 +866,6 @@ export const STR = {
     "эта нода не смогла запустить инструменты, которыми поднимается интерфейс: AppArmor отказался их стартовать, поэтому подъём даже не начался. Это не конфликт порта или подсети. Программа под профилем не может переключиться в дочерний профиль, пока вызывающая служба работает с NoNewPrivileges, а установка этой ноды описана декларативно — поэтому исправление принадлежит конфигурации системы, которая описывает эту ноду, а не команде здесь: демон ноды не должен выставлять NoNewPrivileges, а политика AppArmor для инструментов WireGuard должна разрешать /run/wireguard, чтобы userspace-интерфейсы оставались читаемыми. Перезапустите демон ноды, когда это будет внесено, — пересборка сама его не перезапускает, и продолжает работать старый юнит. После этого интерфейс создастся сам на следующей синхронизации.",
   "this node could not execute the tools that bring an interface up: the kernel refused to start them, so the bring-up never began. This is not a port or subnet conflict, and the datapath module is not the problem. Either those binaries carry file capabilities that this node's capability bounding set no longer covers, or an exec-control layer (SELinux, fapolicyd, or an AppArmor policy this node cannot read) is denying them. Run on the node:  getcap $(command -v ip) $(command -v wg) $(command -v awg)  for the first, and  dmesg | grep -i 'denied'  for the second — one of them names it. Once the tools run again, this interface creates itself on the next sync.":
     "эта нода не смогла запустить инструменты, которыми поднимается интерфейс: ядро отказалось их стартовать, поэтому подъём даже не начался. Это не конфликт порта или подсети, и модуль датапаса тут ни при чём. Либо на этих бинарниках стоят файловые capabilities, которых больше нет в capability bounding set этой ноды, либо их запуск запрещает слой контроля запуска (SELinux, fapolicyd или политика AppArmor, которую нода не может прочитать). Выполните на ноде:  getcap $(command -v ip) $(command -v wg) $(command -v awg)  для первого и  dmesg | grep -i 'denied'  для второго — что-то из них назовёт причину. Как только инструменты снова запускаются, интерфейс создастся сам на следующей синхронизации.",
-  // The RTNETLINK refusal, split three ways in 1.8.7: it used to be ONE sentence naming the container
-  // fix and the host fix and no configuration at all, so a declaratively managed node was told to edit
-  // a docker-compose.yml it does not have. Same three arms, same order, as the exec-refused set above.
   "the interface tools ran on this node, but the kernel refused the operation they asked for (\"RTNETLINK answers: Operation not permitted\"). This is not a port or subnet conflict: the tools are being denied the network privilege they need. This node's installation is managed declaratively, so this belongs in the system configuration that declares it rather than in a command here: the capability set and the security policy that configuration gives this node have to let the WireGuard tools change network state. Restart the node daemon once the change is in — a rebuild does not restart it on its own, so the old unit keeps running.":
     "инструменты интерфейса на этой ноде запустились, но ядро отказало в операции, которую они запросили («RTNETLINK answers: Operation not permitted»). Это не конфликт порта или подсети: инструментам отказывают в сетевой привилегии, которая им нужна. Установка этой ноды описана декларативно, поэтому это относится к конфигурации системы, которая её описывает, а не к команде здесь: набор capabilities и политика безопасности, которые эта конфигурация даёт ноде, должны позволять инструментам WireGuard менять состояние сети. Перезапустите демон ноды, когда изменение внесено, — пересборка сама его не перезапускает, и продолжает работать старый юнит.",
   "this node's container ran the interface tools, but the kernel refused the operation they asked for (\"RTNETLINK answers: Operation not permitted\"). This is not a port or subnet conflict: the tools are being denied the network privilege they need. A container gets this when its capability set no longer covers what those binaries ask for — give the node NET_ADMIN (in docker-compose.yml: cap_add: [NET_ADMIN]) and recreate it (docker compose up -d), then this interface creates itself on the next sync.":
@@ -1030,9 +972,6 @@ export const STR = {
   "up to date": "актуален",
   "re-install aborted": "переустановка прервана",
   "convert aborted": "конвертация прервана",
-  // 1 char over budget: the four aborted states each need their own noun to stay distinguishable, and
-  // this tag sits alone on a node card with room beside it.
-  // budget-ok: alone on a node card, measured
   "update aborted": "обновление прервано",
   "uninstall aborted": "удаление прервано",
   "re-install failed": "ошибка переустановки",
@@ -1070,10 +1009,6 @@ export const STR = {
   // key with a {name} marker the renderer splits on, rather than two fragments around a <b>.
   "Confirm by typing {name}": "Подтвердите вводом {name}",
   "Error": "Ошибка",
-  // 4->10 chars, the largest overage in the catalog. Measured rather than guessed: the button grows 77->115px
-  // inside the banner's command row, the command box absorbs it (1073->1035px) without clipping, and the
-  // banner keeps its exact height. "Копир." would fit the budget and read like a truncation bug.
-  // budget-ok: measured — banner keeps its height, command box absorbs the 38px
   "Copy": "Копировать",
   "Command copied": "Команда в буфере",
 
@@ -1097,10 +1032,7 @@ export const STR = {
   "Docker host": "хосте Docker",
   "panel host": "хосте панели",
 
-  // ── peer-grid columns (js/grids.js) ────────────────────────────────────────────────────────────
-  // One key drives both the <th> and the narrow-screen data-label, so they cannot disagree. Held tight:
-  // a column header sets the column's minimum width. `col|` context because several of these words mean
-  // something else elsewhere ("Node" the machine vs the column, "Total" the sum vs the column).
+  // peer-grid columns (js/grids.js)
   "col|Status": "Статус",
   "col|User": "Пользователь",
   "col|Title": "Название",
@@ -1141,18 +1073,10 @@ export const STR = {
   // budget-ok: see "‹ Prev" — same centred group
   "Next ›": "Следующая ›",
 
-  // ── peer + user actions (js/peer-actions.js) ───────────────────────────────────────────────────
-  // Counted nouns go through plural() (see PLURALS below) — Russian picks between three forms by the last
-  // digit, so "3 интерфейса" and "5 интерфейсов" cannot both come from one string with an "s" glued on.
-  // budget-ok: toast, wraps
+  // peer + user actions (js/peer-actions.js)
   "This user has no peers to rotate.": "У этого пользователя нет пиров для смены ключей.",
   "Rotate all keys · {name}": "Смена всех ключей · {name}",
   "Rotate all keys": "Сменить ключи",
-  // The count is INTERPOLATED, so it arrives nominative ("1 пир", "3 пира") and cannot be declined. The first
-  // draft read "у всех {what}" — after «у всех» Russian demands the genitive, so it rendered "у всех 1 пир".
-  // Fixed by restructuring rather than by fighting the grammar: the count now sits after a colon, where the
-  // nominative is correct for every number. Same trick as the port-conflict message. Only visible by looking
-  // at the rendered dialog — no check can see it.
   "Rotate the keys for all {what} of {name}. Every existing config, QR and link stops working — each device must re-import. This can't be undone.":
     "Смена ключей у пользователя {name}. Затронуто: {what}. Все существующие конфиги, QR и ссылки перестанут работать — каждое устройство придётся импортировать заново. Отменить нельзя.",
   // budget-ok: toast, wraps
@@ -1185,9 +1109,6 @@ export const STR = {
   // budget-ok: sheet title, 620px wide
   "Restore interface · {where}": "Восстановление интерфейса · {where}",
   "Restore interface": "Восстановить интерфейс",
-  // The same repair for an interface the node still REPORTS but whose device is gone. "Пересобрать", not
-  // "восстановить": the operator is looking at a card the node is actively reporting, and calling that
-  // "missing" reads as the panel being confused rather than as a diagnosis.
   "Rebuild interface · {where}": "Пересборка интерфейса · {where}",
   // budget-ok: sheet-foot button, foot has a grow spacer
   "Rebuild interface": "Пересобрать интерфейс",
@@ -1286,9 +1207,7 @@ export const STR = {
   // budget-ok: combo popover, sizes to content
   "no users yet": "пользователей пока нет",
 
-  // ── panel settings (js/screen-settings.js) ─────────────────────────────────────────────────────
-  // Account, external API, TLS & access, the encryption vault, routing and blocking, subscriptions.
-  // budget-ok: breadcrumb, own line
+  // panel settings (js/screen-settings.js)
   "Account": "Учётная запись",
   // budget-ok: <h3>, own line
   "Admin login": "Вход администратора",
@@ -1452,10 +1371,7 @@ export const STR = {
   "Public URL": "Публичный URL",
   "https://panel.example.com  or  https://example.com/swgpanel": "https://panel.example.com  или  https://example.com/swgpanel",
   "Subscription address": "Адрес подписок",
-  // ── Operator console door ─────────────────────────────────────────────────────────────────────
-  // "Operator console" = операторская консоль — the panel's own UI as distinct from the node-sync
-  // surface. "Дверь" is kept for the door metaphor the English leans on; it reads naturally here and
-  // there is no established Russian term for a per-listener route policy.
+  // Operator console door
   "If you don't, everything goes back on its own in *{n}s* — you cannot be locked out by not finishing.":
     "Если не подтвердите, через *{n} с* всё вернётся само — не доведя дело до конца, запереть себя снаружи невозможно.",
   "The console is served at {v1} again, and the panel's own address answers everything once more.":
@@ -1630,10 +1546,6 @@ export const STR = {
   "Geo data providers": "Провайдеры гео-данных",
   "Integrations": "Интеграции",
 
-  // ── Settings → Logs (docs/LOGS-PLAN.md §1) ──
-  // «Логи», not «Журналы»: it is the word the operator types into a search and says out loud. The five levels
-  // are plural nouns where English is ("Errors" = what is kept), and their own keys: «Выкл» or «Инфо» elsewhere
-  // in the panel are different words.
   "Logs": "Логи",
   "Logging": "Логирование",
   "Logging — {v1}": "Логирование — {v1}",
@@ -2265,9 +2177,6 @@ export const STR = {
   "*Your encryption key.* Anyone holding this can read every stored config — treat it like a password and store it in a password manager.":
     "*Ваш ключ шифрования.* Любой, у кого он есть, может прочитать все сохранённые конфиги — относитесь к нему как к паролю и храните в менеджере паролей.",
 
-  // ── turn-proxies: cards, setup, ExecStart, client rosters, versions, WDTT (js/turn.js) ─────────
-  // Fork names, ExecStart flags, TURN_MANAGE / SWG_GH_TOKEN and bind errors stay verbatim — they are what
-  // the operator greps for in logs and units.
   "Turn-proxy fork": "Форк turn-прокси",
   "Forwards to": "Ведёт на",
   "Setup new proxy": "Поднять прокси",
@@ -2492,9 +2401,6 @@ export const STR = {
   "*WDTT* owns its own *WireGuard* interface *({iface} · {addr})* and mints each user's key on connect.":
     "*WDTT* владеет собственным интерфейсом *WireGuard* *({iface} · {addr})* и выпускает ключ каждого пользователя при подключении.",
 
-  // ── interfaces: adopt, details, create/edit, key drift, mesh links (js/iface.js) ────────────────
-  // "Adopt" is the panel's word for taking over an interface the node already runs — «принять», kept
-  // consistent with the button. WireGuard / AmneziaWG / WDTT / DTLS stay untranslated.
   "Ignored interfaces": "Скрытые интерфейсы",
   "Interfaces found on your nodes that you told the panel to leave alone. They keep running exactly as they are — nothing here is managed, and nothing is shown on the node's page. *Adopt* one to start managing it.":
     "Интерфейсы, найденные на ваших нодах, которые вы велели панели не трогать. Они продолжают работать как есть — здесь ничем не управляют и на странице ноды ничего не показывают. *Примите* один, чтобы начать им управлять.",
@@ -2582,9 +2488,6 @@ export const STR = {
   "Datapath": "Путь данных",
   "The traffic on this leg comes from *{peer}*, so its datapath is chosen there — open this link from {peer}'s page.":
     "Трафик на этом плече идёт со стороны *{peer}*, поэтому путь данных выбирается там — откройте эту связь со страницы {peer}.",
-  // Reachable when smart rules name this peer but the panel has not planned a leg for them — usually
-  // because no node sync has landed since the panel started. The sentence it replaced claimed only a
-  // whole-interface cascade can be accelerated, which stopped being true when smart legs became relayable.
   "The panel hasn't worked out this link's routes yet, so there is nothing to accelerate here. The choice appears after *{node}*'s next sync.":
     "Панель ещё не рассчитала маршруты этой связи, так что ускорять здесь пока нечего. Выбор появится после следующей синхронизации *{node}*.",
   // Under a whole-interface cascade "accelerated" reads as "this interface"; under a smart one it does not.
@@ -2896,9 +2799,7 @@ export const STR = {
   "Restoring the panel value on the next sync.": "Значение панели вернётся на следующей синхронизации.",
   "Restore panel value": "Вернуть значение панели",
 
-  // ── routing & blocking policy (js/routing.js) ──────────────────────────────────────────────────
-  // Mode names stay recognisable: Force-DNS, SNI and MASQUERADE are the words an operator will search for,
-  // so they are not translated. The prose around them is.
+  // routing & blocking policy (js/routing.js)
   "Host": "Хост",
   "cap|IP": "IP",
   "Matchable by domain — needs Force-DNS or SNI mode": "Совпадает по домену — нужен режим Force-DNS или SNI",
@@ -2959,9 +2860,6 @@ export const STR = {
   "host layer · SNI in userspace": "слой хостов · SNI в userspace",
   "Parses the TLS SNI in a small helper — client DNS stays private":
     "Разбирает SNI из TLS в помощнике — DNS клиента остаётся приватным",
-  // budget-ok: a wrapping bullet in the routing-mode card, and 1 char over. It is also SHORTER than the
-  // string this replaces ("… · умеет regex · …", 78 chars), which shipped and fit — dropping the regex
-  // claim shortened the Russian while the English key shrank more, which is the whole "breach".
   "Precise parsed-SNI matching · unbothered by big lists":
     "Точное совпадение по разобранному SNI · не боится больших списков",
   "Has fewer kernel deps, wins accuracy over Kernel":
@@ -3076,11 +2974,6 @@ export const STR = {
   // routes nothing, and read there it was taken twice for a milder way of leaving by a card.
   "Leave by a device": "Выход через устройство",
   "val|Network card": "Сетевая карта",
-  // ⚠️ THE HEADING DOES NOT NAME A CARD. Third attempt: the first two ("Direct — source from eth2", then
-  // "NAT source card") both led with the device and were both read as "send traffic out that card". In
-  // Russian it was worse than in English — a bare `карта` reads as MAP first, and `карточка` is already
-  // this panel's word for a UI card, so "Карта для адреса NAT" said something close to "map for the NAT
-  // address". Naming the ACT drops the ambiguous noun entirely.
   "Extra NAT": "Дополнительный NAT",
   // the exit's typed gateway — cards only, and blank means "use the one the node detected".
   "Gateway": "Шлюз",
@@ -3204,9 +3097,6 @@ export const STR = {
     "Этот exit выключен — пока его не включат обратно, трафик уходит напрямую. Интерфейс сохраняет выбор.",
   "This exit's device can't be used right now — traffic goes out directly. Settings → Network says why.":
     "Устройство этого exit'а сейчас использовать нельзя — трафик уходит напрямую. Причина указана в Настройках → Сеть.",
-  // which SOURCE the chosen exit leaves as — reported here, edited on the exit record itself.
-  // §7 — a NIC pinned for NAT that the routing does not use. "Авто" is the word `val|Auto` /
-  // `Auto ({v1})` put in the dropdown this sentence points at, so the two agree on screen.
   "exit →": "exit →",
   "exit — removed": "exit — удалён",
   "Not a usable device name — up to 15 characters: letters, digits, dot, dash or underscore.":
@@ -3514,21 +3404,12 @@ export const STR = {
     "ничего не восстановится: нода на следующем проходе зарегистрирует новый аккаунт, и сайты увидят другой адрес.",
   "Keep the new one": "Оставить новый",
   "Keeping the new account.": "Оставляем новый аккаунт.",
-  // The two switches on the exits grid. «Отказ» not «блокировка» — the traffic is refused, not filtered;
-  // «своим адресом» is the whole point of the off state. For Active, «аккаунт и ключи сохраняются» is the
-  // fact that had to be said: this is the switch that once destroyed the account it claimed to pause.
   "On: if this exit stops working, traffic using it is refused. Off: it falls back to this node's own address.":
     "Включено: если выход перестанет работать, трафик через него получит отказ. Выключено — он уйдёт своим адресом этой ноды.",
   "Off pauses this exit — its account and keys are kept, and anything pointing at it stays pointed at it and uses the node's default meanwhile.":
     "Выключение ставит выход на паузу: аккаунт и ключи сохраняются, всё, что на него указывает, продолжает на него указывать и пока идёт через выход ноды по умолчанию.",
-  // A node whose swg-noded predates the exits feature. «Слишком старая» about the software, not the box —
-  // «прошивка» would be wrong for a server — and the second sentence is the whole point: the exit itself is
-  // fine, so nothing here needs re-entering after the update.
   "This node's software is too old for exits. Update the node — nothing else needs changing.":
     "Версия swg-noded на этой ноде слишком старая для exit'ов. Обновите ноду — больше ничего менять не нужно.",
-  // A WARP exit that never handshook. «Не ваша вина» would be too chatty; «здесь нечего исправлять» says the
-  // same thing in the panel's register. «Сети, которые блокируют WARP, выглядят ровно так» keeps the hedge —
-  // the panel cannot prove it is the network, only that it looks like one.
   "The tunnel is up, but Cloudflare never answered it. Nothing here is yours to correct — the keys and the endpoint are the panel's own. Networks that block WARP look exactly like this, so try a pasted profile instead, or put this exit on another node.":
     "Туннель поднят, но Cloudflare ни разу не ответил. Здесь нечего исправлять — ключи и endpoint панель выдала сама. Сети, которые блокируют WARP, выглядят ровно так: попробуйте вставить свой профиль или перенести этот выход на другую ноду.",
   "This exit has stopped carrying traffic, so the kill-switch is holding everything that uses it. It resumes by itself once the exit works again.":
@@ -3795,9 +3676,6 @@ export const STR = {
   "Update started — the panel will restart shortly.": "Обновление запущено — панель скоро перезапустится.",
   "Update started — the panel will restart shortly. The nodes ({v1}) follow on their next sync.": "Обновление запущено — панель скоро перезапустится. Ноды ({v1}) подтянутся при следующей синхронизации.",
   "Couldn't reach the repo to check for updates.": "Не удалось достучаться до репозитория за обновлениями.",
-  // Why the repo could not be reached. The stem is repeated in every one of these rather than glued to a
-  // translated fragment: {v1} and the cause sit in a different order in Russian, and a translator needs the
-  // whole sentence to move them. «Достучаться» matches the generic line above, which operators already know.
   "Couldn't reach {v1} to check for updates — its name could not be resolved.":
     "Не удалось достучаться до {v1} за обновлениями — имя не резолвится.",
   "Couldn't reach {v1} to check for updates — the connection was refused.":
@@ -4098,9 +3976,7 @@ export const STR = {
   "Force remove now": "Удалить принудительно",
   "Run on the node to uninstall + sign off": "Выполните на ноде, чтобы удалить и отписаться",
 
-  // ── peer view, QR carousel, subscriptions, VK links (js/peer-ui.js) ────────────────────────────
-  // "Subscription" here is the panel's shareable per-user QR page, not a paid plan — «подписка» carries that
-  // in Russian too, and the sub page itself already uses the word.
+  // peer view, QR carousel, subscriptions, VK links (js/peer-ui.js)
   "Previous": "Назад",
   "Unlock the Encryption Vault to see configs, QR codes and the subscription link.":
     "Откройте хранилище шифрования, чтобы увидеть конфиги, QR и ссылку на подписку.",
@@ -4183,9 +4059,6 @@ export const STR = {
   "Clear": "Очистить",
   "Reset expiry": "Сбросить срок",
   "Set expiry": "Срок действия",
-  // budget-ok: sheet-foot button, foot has a grow spacer
-  // Five buttons share one flex row in the user-edit footer. With the literal «Удалить пользователя» the row
-  // overflowed by 158px; the card is already the user's, so the noun is redundant. Measured after the change.
   "Delete user": "Удалить",
   // budget-ok: sheet-foot button, foot has a grow spacer
   "Save": "Сохранить",
@@ -4435,9 +4308,6 @@ export const STR = {
   "updating…": "обновление…",
   "checking…": "проверка…",
   "update to": "обновить до",
-  // budget-ok: MEASURED in the header slot — the pill goes 131px -> 191px and the header absorbs it at a
-  // normal width (no overflow). Below ~1000px the header overflows in ENGLISH too (222px at 900px), so the
-  // narrow-width problem is the header's own, not this string's; kept correct rather than trimmed for it.
   "fix {count}": "исправить {count}",
   // budget-ok: hover caption, no box
   "This panel is on the latest version": "На этой панели последняя версия",
@@ -4481,9 +4351,7 @@ export const STR = {
   // budget-ok: toast, wraps
   "Encryption Vault reconnected.": "Хранилище шифрования подключено заново.",
 
-  // ── encryption vault + QR (js/crypto.js) ───────────────────────────────────────────────────────
-  // "Encryption Vault" is a product concept the panel names in its own Settings, so it keeps a consistent
-  // Russian name — «Хранилище шифрования» — everywhere it appears rather than being paraphrased per screen.
+  // encryption vault + QR (js/crypto.js)
   "Subscribed users need nothing": "Подписчикам ничего не нужно",
   " — their subscription page serves the corrected config automatically; only manually-shared QR codes / configs need re-distributing.":
     " — их страница подписки сама отдаёт исправленный конфиг; раздать заново нужно только QR и конфиги, отправленные вручную.",
@@ -5004,23 +4872,8 @@ export const STR = {
   "DNS resolver": "DNS-резолвер",
   "SNI scanner": "Сканер SNI",
   "SNI parser": "Разбор SNI",
-  // §6.7: the kernel scanner stops once a category's budget is full. The subject is «часть», singular, so
-  // this reads correctly whether {v1} is one category or a list of them — and the tail's «не сопоставляется»
-  // is the singular a quantifier phrase takes, right for «1 запись», «144 записи» and «256 записей» alike.
-  // No budget number: see the comment at the call site — it stopped being one number.
   "{v1} matched only in part here — {v2} not matched":
     "{v1} — здесь сопоставляется лишь часть записей, {v2} не сопоставляется",
-  // Hybrid SNI's own truncation (`sni_cap`). SEPARATE keys from the sibling above and not shared ones: that
-  // sentence bakes «записей» into the Russian, and nothing was dropped here but text patterns. «сверх лимита
-  // ноды» — the node's limit, not the interface's, because the node bounds its whole scan at once and this
-  // count can be larger than anything one interface shows.
-  //
-  // The list goes LAST in both languages on purpose. Putting it in the middle forced the tail to agree with
-  // whichever pattern happened to be last («не сопоставляется» vs «не сопоставляются»); after a colon it is
-  // an enumeration and the verb agrees with nothing. {v1} is always a quantifier phrase («200 текстовых
-  // шаблонов»), so «сверх лимита ноды» reads for 1, 2 and 200 alike.
-  // «лимита ноды в {v2}» — «лимит в N» is the idiomatic Russian for "a limit of N", and it takes the bare
-  // numeral, so {v2} needs no noun of its own and no agreement with {v1}'s «шаблонов».
   "{v1} past this node's limit of {v2} — no longer matched: {v3}":
     "{v1} сверх лимита ноды в {v2} — больше не сопоставляются: {v3}",
   // The same fact from a node too old to send the sample: the count is all there is, so it is all that is said.
@@ -5030,10 +4883,6 @@ export const STR = {
   // rests on: a zone is a pattern too and is not counted — only the three kinds matched as text are.
   "{v1} is all one interface can match by text — remove one to add another, or use a list instead.":
     "{v1} — это всё, что один интерфейс может сопоставлять по тексту: удалите один, чтобы добавить другой, или используйте список.",
-  // The other way an entry never becomes a rule: xt_string refuses a pattern over 128 bytes outright.
-  // A VERB, not a short adjective, and for the same reason the sibling key above takes one: a quantifier
-  // phrase governs a singular verb in Russian, so «не помещается» is right for «1 запись», «3 записи» and
-  // «5 записей» alike — while «слишком длинны» agreed with none of them.
   "{v1} too long for this scanner to match — over {v2} characters":
     "{v1} не помещается в этот сканер — больше {v2} символов",
   "kernel SNI scanner unavailable — running userspace SNI parser":
@@ -5594,9 +5443,6 @@ export const STR = {
   "tag|re-provisioning": "пересборка",
   "tag|flagged for removal": "помечен к удалению",
   "tag|restarted": "перезапущен",
-  // MEASURED in the real turn card (286px wide, its drag grip and TURN badge beside it): «падает по кругу» ran 125px
-  // against the English 113px and cut even a fork's default title (WINGS-N → WING…); «падает» is 70px and leaves it
-  // whole. The loop itself is spelled out where there is room — the tag's popup and the node's issue line.
   "tag|crash-looping": "падает",
   "tag|pending": "ожидает",
   "tag|unsaved": "не сохр.",
@@ -5638,10 +5484,6 @@ export const STR = {
   // the address column on a self-contained turn row: its server mints the client IP on connect
   "val|auto IP": "авто IP",
   "tag|unbound": "не привязан",
-  // ── strings that sat bare BESIDE a translated one (see .campaign/i18n-bare.mjs) ──
-  // Every entry here was English in a Russian panel: a ternary's other branch, a label table's odd row,
-  // a status line, a fallback after `||`. The old audit could not see them — it proves each T() HAS a
-  // translation, never that a visible string IS a T().
 
   // the node rail: the name is a SLOT, because "Hide msk-1" and "Скрыть msk-1" are not the same shape
   "Hide {v1}": "Скрыть {v1}",
@@ -5702,9 +5544,6 @@ export const STR = {
   "val|update": "обновление",
   "val|reinstall": "переустановка",
 
-  // the encrypt-configs report. ⚠️ These two were chosen by a ternary INSIDE the Trich call, so no tool
-  // ever saw them as keys — they were missing from this catalog entirely and rendered English forever.
-  // budget-ok: prose in a hint block, wraps
   "*{v1}* couldn't be encrypted (unassigned, or no stored key) — *rekey* or assign it to include: {v2}.":
     "*{v1}* не удалось зашифровать (без владельца или без сохранённого ключа) — *смените ключи* или назначьте владельца, чтобы включить: {v2}.",
   // budget-ok: prose in a hint block, wraps
@@ -6069,10 +5908,7 @@ export const STR = {
   "Changing the mesh subnet / port / prefix of {v1} rebuilds all of its node-to-node links with the new settings.":
     "Смена подсети, порта или префикса сети у {v1} пересоберёт все её связи с другими нодами по новым настройкам.",
   "Node settings · {v1}": "Настройки ноды · {v1}",
-  // ── restore / migrate (node rebuild) ────────────────────────────────────────────────────────────
-  // One verb, two doors. "нода" throughout for the panel's record of the server, "машина" for the
-  // physical box it runs on — the whole feature turns on that distinction (one node, two boxes), and
-  // Russian sysadmin usage keeps them apart the same way.
+  // restore / migrate (node rebuild)
   "Restore or migrate": "Восстановить/перенести",
   "Migrate": "Перенести",
   "tag|old box alive": "старый сервер жив",
@@ -6111,9 +5947,6 @@ export const STR = {
   "same box, a damaged one, or a brand-new one": "той же машине, на повреждённой или совсем новой",
   "{name} was migrated {when}. The old box is still running and still serving the peers it had — it simply stopped syncing with this panel. Nothing on it was changed.":
     "{name} перенесена {when}. Старая машина продолжает работать и обслуживать доставшиеся ей пиры — она просто перестала синхронизироваться с этой панелью. На ней ничего не менялось.",
-  // the outcome of an arming — what comes back, what does not, and what it costs
-  // WDTT/csqtt are declarative — the panel ships their config every sync and their users come from the
-  // roster — so the honest line is a reassurance, not a warning. "сами" carries that better than a passive.
   "The old box keeps running and keeps serving its peers — it just stops syncing here. One click rolls this panel back to it, from the badge on the node, for as long as you keep it.":
     "Старая машина продолжает работать и обслуживать свои пиры — она лишь перестаёт синхронизироваться здесь. Пока она у вас есть, панель возвращается на неё одним кликом — с плашки на ноде.",
   "No rollback point was kept: this node wasn't reporting, so there was nothing running to roll back to. The command below is the way back.":
@@ -6375,9 +6208,7 @@ export const STR = {
   "The subscription URL names a port nothing listens on": "Адрес подписок указывает порт, который никто не слушает",
   "{count} unassigned": "отвязано: {count}",
   "{count} · {where}": "{count} · {where}",
-  // ── the panel's own sentences: validation and lookup failures ──
-  // The exit registry's and the WireGuard profile parser's refusals. They reach the browser as
-  // {"error": …} and render through srvText() → T(), so the English sentence is the key like any other.
+  // the panel's own sentences: validation and lookup failures
   "exits must be a list": "выходы должны быть списком",
   "each exit must be an object": "каждый выход должен быть объектом",
   "exit producer must be adopted|imported": "producer выхода должен быть adopted|imported",
@@ -6704,10 +6535,6 @@ export const STR = {
   "panel nginx server block": "блок server для nginx (панель)",
   "subscription nginx server block": "блок server для nginx (подписки)",
 
-  /* Catalog-authored field text (fork client/server schemas) and the two sheets that render it.
-     These arrive from the panel as DATA, so no extractor ever saw them — they are translated the way
-     server messages are: the English sentence is the key. Fork names, blocklist providers and protocol
-     names are deliberately absent, being proper nouns that render as-is through T()'s fallback. */
   "64 hex chars — must match the FreeTurn client.": "64 hex-символа — должны совпадать с клиентом FreeTurn.",
   "64 hex chars — must match the client app. Changing it breaks every client using the old key.":
     "64 hex-символа — должны совпадать с приложением. Смена ломает всех клиентов со старым ключом.",
@@ -6838,10 +6665,6 @@ export const STR = {
   "{v1} users will be offered {v2}": "Пользователям {v1} предложат {v2}",
 
 
-  /* Client-artifact text from turn-artifacts.js — the label on a config panel and the hint under it.
-     That file is a plain script shared with the subscription page, so it cannot call T(); the panel
-     translates what it renders, the way it does for catalog and server sentences. The label is composed
-     there from a fork and an author, so it arrives as parts and goes through the placeholder key below. */
   "CSQTT (csqtt://connect)": "CSQTT (csqtt://connect)",
   "Open the csqtt:// link in your csqtt app, or paste it in.":
     "Откройте ссылку csqtt:// в своём csqtt-приложении или вставьте её туда.",
@@ -6877,9 +6700,6 @@ export const STR = {
   "{v1} — scans a QR code": "{v1} — сканирует QR-код",
   "{v1} — imports a pasted link": "{v1} — импортирует скопированную ссылку",
 
-  // ── T-10 · Transfer: this node moves to ANOTHER PANEL, and the server itself is not touched ─────
-  // "Передача" (handover), never "миграция" — Migrate already owns that word here and means the opposite
-  // thing (a new box, the same panel). The distinction is the whole feature, so it is carried by the verb.
   "Transfer": "Передать",
   "Transfer · {v1}": "Передача · {v1}",
   "Transfer to {v1}": "Передать на {v1}",
@@ -7743,9 +7563,6 @@ export const STR = {
   "Descending": "По убыванию",
 };
 
-/* Counted nouns. Russian selects between three forms by the last digit, with a correction for the
-   teens (11–14 take the "many" form despite ending in 1–4) — see plural() in js/i18n.js.
-   Order: [1 пир, 2 пира, 5 пиров]. */
 export const PLURALS = {
   // The text view's line counter: «12 строк».
   line: ["строка", "строки", "строк"],
@@ -7802,9 +7619,6 @@ export const PLURALS = {
   byte: ["байт", "байта", "байт"],
   list: ["список", "списка", "списков"],
   rule: ["правило", "правила", "правил"],
-  // Prepositional case — these two sit after «в» / «на» ("в 3 правилах на 2 интерфейсах"), where the
-  // nominative "правила" / "интерфейса" is wrong. English has no entry, so plural() strips the prefix and
-  // still reads "3 rules" / "2 interfaces".
   "prep|rule": ["правиле", "правилах", "правилах"],
   "prep|interface": ["интерфейсе", "интерфейсах", "интерфейсах"],
   IP: ["IP", "IP", "IP"],   // indeclinable acronym: one form covers every count

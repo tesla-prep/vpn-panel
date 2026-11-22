@@ -1,24 +1,6 @@
-/* traffic.js — per-peer traffic totals over local days (docs/TRAFFIC-HISTORY-PLAN.md P2): the one window the Peers and
- * Users grids and the peer and user views share, and the fetches behind it.
- *
- * DATA ONLY — no markup. views.js (the sort keys), grids.js, the sheets and charts.js read it; it imports nothing but the
- * store, so it can never close an import cycle.
- *
- * ⚠️ NEVER PER POLL. The 5 s poll re-renders every screen; each render asks trafficTotals(), which answers from the cache
- * and fetches only when the window changed, or when a window that runs "until now" is over a minute old. A window that
- * ended before the panel's today is immutable and is never fetched twice. Nothing here rides /api/state.
- *
- * ⚠️ ONE FETCH FEEDS EVERY GRID. `by=slot` answers a row per (peer, owner): what a device carried while it was one user's.
- * A peer's total (Peers grid, peer view) is the sum over its owners — the whole device; a user's total (Users grid, user
- * view) is the sum over that user's rows — so the user view's devices add up to the Users grid, a device handed on or
- * deleted included. Folded once per reply into Maps: a sort comparison is a lookup, never a walk (§9.1).
- */
 import { api, bus, Store } from "./store.js";
 import { panelNow } from "./util.js";
 
-// The window, held for the page's life so it survives re-render and navigation — shared by Peers, Users and both views.
-// "all" = everything since history began; "today" / "7d" / "30d" = whole days of the panel's up to its today (the rail's Day,
-// Week, Month); "month" is the calendar month, kept for a caller that still asks for it.
 export const trafficView = { range: "all", from: "", to: "" };
 const DAY_RANGES = ["all", "today", "7d", "30d", "month"];
 // The peer, user and group windows keep a window of their own: a graph over all time can hold years of columns, so they
@@ -30,24 +12,15 @@ export const trafficModalView = { range: "7d", from: "", to: "" };
 export function panelToday(nowMs) {
   const tz = (Store.panelSettings || {}).time_zone_now || {};
   const off = typeof tz.offset === "number" ? tz.offset : -new Date().getTimezoneOffset() * 60;
-  // panelNow(), not Date.now(): the zone was the panel's all along, and so is the instant — a browser a few
-  // minutes out near midnight otherwise asks for a day the panel has not reached (and `blockPollMs` reads a
-  // window running to today as one that has ended).
   return new Date((nowMs == null ? panelNow() : nowMs) + off * 1000).toISOString().slice(0, 10);
 }
 
-// The query (and the cache key) for a window. A custom window with a date missing reads as All time. `window` (the
-// Overview's named ranges, P3): a rolling window of that many seconds up to the PANEL's now — its start is the panel's to
-// decide (the ledger's bucket, or where history begins), never this browser's clock.
 export function trafficQuery(v) {
   v = v || trafficView;
   if (v.window) return "window=" + v.window;
   if (v.range === "custom" && v.from && v.to) return "range=custom&from=" + v.from + "&to=" + v.to;
   return "range=" + (DAY_RANGES.includes(v.range) ? v.range : "all");
 }
-// A custom window from two typed dates, or why not. `to` is capped at the panel's today BEFORE the order is judged — a
-// start after today would otherwise pass, then reach the panel as a start after the end. `min`: the first day the window
-// may start on (the Overview's charts reach back 33 days — chartsFirstDay). Pure — the selftest drives it.
 export function customWindow(from, to, today, min) {
   const re = /^\d{4}-\d{2}-\d{2}$/;
   if (!re.test(from || "") || !re.test(to || "") || from < "1970-01-01") return { ok: false, why: "incomplete" };
@@ -70,10 +43,6 @@ export function trafficImmutable(v, today) {
   return v.range === "custom" && !!v.from && !!v.to && v.to < (today || panelToday());
 }
 
-// Fold `by=slot` rows into the lookups the screens read. Pure — the selftest drives it.
-//   peer: pid → the whole device (every owner)        user: uid → every slot the user held (closed and deleted ones too)
-//   slot: uid|pid → what the device carried while it was that user's    rows: uid → [its rows] (the user view's list)
-//   free: pid → what the device carried while it belonged to nobody (the Overview's unassigned talkers)
 export function foldTotals(rows) {
   const peer = new Map(), user = new Map(), slot = new Map(), byUser = new Map(), free = new Map();
   const add = (m, k, r, extra) => {
@@ -100,11 +69,6 @@ export function foldTotals(rows) {
   return { peer, user, slot, rows: byUser, free };
 }
 
-// The Overview's Top talkers over a window, from the SAME reply as the Users grid — so a person's figure is exactly their
-// Users-grid figure: every slot they held, a device deleted or handed on included, up to the handover; a deleted user is
-// not listed (the grid has no row for them). A device that belongs to nobody now is its own talker, with what it carried
-// while it belonged to nobody. `inScope(pid)` narrows to the selected nodes: a person is in when one of their current
-// devices is there, with their whole figure. Pure — gated.
 export function talkerGroups(d, inScope) {
   const out = [];
   const ok = inScope || (() => true);
@@ -158,9 +122,6 @@ export function trafficTotals(v, nowMs) {
 }
 export const trafficData = v => trafficTotals(v).data;
 
-// The freeze tag a sort by ranged total carries (views.js stableOrder): the window, and whether its totals are in —
-// a first render sorted before they land must not keep that zero order for good, and a once-a-minute refresh must not
-// reshuffle rows under the operator's eyes.
 export function trafficFreezeTag(v) {
   const e = _tot.get(trafficQuery(v));
   return trafficQuery(v) + (e && e.data ? ":in" : ":wait");
@@ -183,9 +144,6 @@ export function trafficSeries(by, id, v, keyExtra) {   // keyExtra: what else th
   return e;
 }
 
-// Columns for the volume chart from a series' points ([start, step, rx, tx] each). A window of fine buckets can hold
-// hundreds; they fold into at most `max` columns of a whole multiple of the points' own step, laid over the whole
-// window, so an empty column is a quiet one and never a stretched neighbour. Pure — the selftest drives it.
 export function volumeColumns(points, since, until, max) {
   max = max || 120;
   const pts = points || [];

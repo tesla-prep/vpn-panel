@@ -1,32 +1,12 @@
 name: docker
 
-# Build the panel + node images and publish MULTI-ARCH manifests to GHCR
-# (ghcr.io/<owner>/swg-panel, ghcr.io/<owner>/swg-node) so users can PULL prebuilt
-# images instead of building locally — no Docker Hub account, no pull-rate limit.
-#
-# Each arch is built on its OWN NATIVE runner (amd64 + the free public-repo arm64) and
-# the two are merged into one manifest list — NO QEMU. The panel is pure Python so it
-# would emulate fine, but the node COMPILES amneziawg-go/-tools, and native (not emulated)
-# is what makes an arm64 node image build reliably — so both use the same native pattern.
-#
-# After the first run, make the two packages public once (repo → Packages → Settings).
+# Нативные сборки amd64 и arm64 объединяются в манифесты GHCR.
 
 on:
   push:
-    # `dev` builds too, so a release can be TESTED from real published images before it reaches main.
-    # It publishes strictly less than main does: `latest` is gated on `enable={{is_default_branch}}`
-    # below, so a dev push produces only `sha-<short>` and can never move the tag users pull.
     branches: [main, dev]
     tags: ['v*']
-    # A push that changes ONLY prose does not change either image, so rebuilding four of them and
-    # republishing :latest at a new digest just makes every container node pull a functionally
-    # identical image and costs a GHCR retention slot. Skip those.
-    #
-    # ⚠️ These patterns are deliberately NOT `**.md`. The Dockerfile COPYies `js/` and `vendor/`
-    # WHOLESALE, so a markdown file placed under either would ship inside the image — and `**.md`
-    # would then skip the build that carries it, leaving the published image stale with nothing to
-    # say so. Every pattern here is anchored where image content cannot live, so the failure mode is
-    # "CI ran when it need not have", never "the image missed a change".
+    # Фильтр исключает документацию вне каталогов, копируемых в образ.
     paths-ignore:
       - '*.md'            # AGENTS, API, CHANGELOG, README, THIRD-PARTY — all top level
       - 'docs/**'
@@ -69,10 +49,7 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ steps.ref.outputs.image }}
-      # Where the official base images come from: ECR Public's Docker Hub mirror (the Dockerfiles' default), or Google's
-      # when ECR cannot serve one of them for this arch. Asked of the image index AND this arch's manifest — for two days
-      # in 2026-10 ECR's golang:1.25-bookworm index named an amd64 manifest it answered 404 for, and every swg-node amd64
-      # build failed. Picked BEFORE the build, so a failing build is one build and its own error.
+      # Выбираем реестр, проверив индекс и манифест нужной архитектуры.
       - id: base
         shell: bash        # bash -eo pipefail: a failing inspect must fail its pipeline, not hand jq an empty input
         env:
@@ -135,11 +112,7 @@ jobs:
       matrix:
         image: [swg-panel, swg-node]
     steps:
-      # THE RELEASE HISTORY. `main` is one squashed commit per release, so every commit on it names a published
-      # release, and those images are what an operator rolls BACK to. The prune below kept "the newest 3 tagged", and
-      # every dev push adds a `sha-` tag, so each release's push deleted the previous release's image: the 1.8.5 and
-      # 1.8.6 images (sha-5c98297, sha-76ffeb9) answer 404, and a Docker server that had updated had no image to go
-      # back to. Full history, so `git log` can list them.
+      # Полная история нужна для защиты образов выпусков от очистки.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -189,19 +162,7 @@ jobs:
             $(printf '${{ steps.ref.outputs.image }}@sha256:%s ' *)
       - name: Inspect
         run: docker buildx imagetools inspect ${{ steps.ref.outputs.image }}:${{ steps.meta.outputs.version }}
-      # Retention: keep only the 3 newest tagged releases of this package (+ their per-arch child
-      # blobs) and prune older. Multi-arch-aware — never deletes a child a kept tag still points to,
-      # so `latest` can't break. Runs every publish → the package self-maintains. Never fails the push.
-      # ⚠️ TWO GUARDS, DELIBERATELY BELT AND BRACES, because this is the one step that can delete the
-      # image real users pull — and it is `continue-on-error`, so if it ever went wrong it would do so
-      # SILENTLY, without failing the push.
-      #   1. main only. Every `dev` push adds a `sha-<short>` tag; with keep-n-tagged: 3 a few dev
-      #      pushes would age `latest` out of the newest three and prune it.
-      #   2. exclude-tags: latest, and every RELEASE (its version tag and its commit's sha tag, from the history
-      #      above) — a release image is a rollback target, never a prune candidate.
-      # Verified against the action's own action.yml (v1) that `exclude-tags` is a real input — an
-      # unknown key here would be accepted and ignored, which is exactly the silent failure being
-      # guarded against.
+      # На main сохраняем latest и теги выпусков для отката.
       - name: Prune old GHCR versions (keep newest 3)
         if: github.ref == 'refs/heads/main'
         uses: dataaxiom/ghcr-cleanup-action@v1

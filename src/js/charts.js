@@ -1,13 +1,3 @@
-/* charts.js — the inline-SVG chart vocabulary.
- *
- * LAYER 2 (see docs/APP-JS-SPLIT-PLAN.md). No charting library: every shape here is hand-built SVG, which
- * is what keeps the SPA buildless and dependency-free.
- *
- * Only the reusable VOCABULARY lives here. The node-specific composites that arrange these — ifaceTags,
- * NodeHealthPanel, IfaceThroughput, NodeThroughput, NodeHealth — stay behind and travel with the nodes
- * screen; they read node records and the iface-op lifecycle, which is not chart business.
- */
-
 // `rate`/`niceScaleCeil` come from ui.js: they follow the operator's unit choice (see rateUnits there).
 
 import { resolvedTheme } from "./theme.js";
@@ -49,11 +39,6 @@ export function Sparkline({ points, color, w, h }) {
     <circle cx=${(w - 1).toFixed(1)} cy=${(h - 1 - Math.min(max, Math.max(0, last)) / max * (h - 2)).toFixed(1)} r="1.6" fill=${color || "var(--online)"}/>
   </svg>`;
 }
-// Gradient area chart for a history series (0–100). Stretches to its container width;
-// the stroke stays crisp via non-scaling-stroke. Used for the CPU-load history.
-// format a chart point's timestamp for the hover tooltip — time of day, + date for week/month ranges
-// Month names come from Intl in the page's language (English reads exactly as before: "June 24"); the formatter is built once
-// per language — a chart's hover asks for one per point.
 const _md = {};
 const monthDay = d => { const k = locale() === "en-GB" ? "en-US" : locale(); try { return (_md[k] || (_md[k] = new Intl.DateTimeFormat(k, { month: "long", day: "numeric" }))).format(d); }
   catch (_) { return d.toISOString().slice(0, 10); } };
@@ -79,10 +64,6 @@ export function ChartHover({ xp, dots, label }) {
     <div class="ch-tip" style=${"left:" + xp + "%;transform:" + anchor}>${label}</div>
   <//>`;
 }
-// CPU colour ramp for the meters + history line: green ≤60%, green→orange 60–85%, orange→red
-// 85–100%. v is utilization (mean across cores, 0–100), so it means the same on every node.
-// A node still on an older swg-noded sends load-per-core instead, which can exceed 100 — that
-// pins to solid red, the right signal for a genuinely overloaded box.
 export const LOAD_G_DARK = [63, 216, 154], LOAD_G_LIGHT = [14, 158, 99], LOAD_O = [242, 163, 60], LOAD_R = [242, 84, 91];
 export function cpuColor(v) {
   const mix = (a, b, t) => "rgb(" + a.map((x, i) => Math.round(x + (b[i] - x) * t)).join(",") + ")";
@@ -92,33 +73,10 @@ export function cpuColor(v) {
   if (v <= 100) return mix(LOAD_O, LOAD_R, (v - 85) / 15);
   return mix(LOAD_R, LOAD_R, 0);
 }
-// Loss / drop colour ramp, in the panel's own status hues — NOT the CPU ramp's green. Green means "fine",
-// and a link losing packets is not fine, so the lowest band is BLUE: "measured, and not a problem".
-//
-// The blue is a FLOOR, not the first stop of the gradient. Interpolating out of blue lands on a grey-beige
-// right where the interesting values sit, and interpolating hue instead walks through green to get there —
-// the exact wrong signal. Above the floor the ramp runs warm only: partial (yellow) → fault (orange) →
-// dangling (red), three adjacent hues that stay saturated the whole way.
-//
-// Bands, chosen to under-warn rather than over-warn: blue to 0.5%, yellow→orange 0.5–2%, orange→red 2–5%,
-// full red past 5%. ⚠️ Known trade-off, recorded deliberately: 0.4% loss is enough to collapse a cascaded
-// upload (measured — 147 Mbit/s to 8 on this fleet) and under these bands it reads BLUE. That is the
-// operator's call and the right default for a panel nobody should learn to ignore; the number and its
-// sample count are always on the row for anyone reading closely. Tune here; no caller picks colours.
 const LOSS_FLOOR = 0.5;
 const LOSS_FLOOR_DARK = [79, 168, 240], LOSS_FLOOR_LIGHT = [43, 124, 211];        // --ready
 const LOSS_STOPS_DARK = [[0.5, [226, 200, 74]], [2, [242, 153, 74]], [5, [242, 107, 130]]];   // partial → fault → dangling
 const LOSS_STOPS_LIGHT = [[0.5, [176, 122, 22]], [2, [217, 119, 42]], [5, [214, 58, 85]]];
-// ⚠️ A MESH LEG IS NOT A CLIENT LINK, AND 0.5% IS THE WRONG FLOOR FOR ONE. Measured on this fleet: ~0.1%
-// one-way loss on the swgt→hel-flux leg collapsed a cascaded upload, rate-independently — and under the
-// client-calibrated scale above that leg painted the same blue as a perfect one, because everything at or
-// below 0.5% is "ready". The leg cards already SHOW loss from the first lost packet for exactly this reason
-// (a DC-to-DC leg has no business losing anything); the colour has to agree with them, or the number says
-// "0.4%" while the colour says "fine" and the colour is what gets read across a room.
-//
-// Stops are the client scale shifted down a decade, which is roughly the damage ratio we measured: 0.1%
-// reads yellow, 0.4% orange, 2%+ red. The floor sits just under a single lost packet in a few thousand, so
-// genuine noise still reads healthy.
 const LOSS_FLOOR_MESH = 0.05;
 const MESH_STOPS_DARK = [[0.05, [226, 200, 74]], [0.5, [242, 153, 74]], [2, [242, 107, 130]]];
 const MESH_STOPS_LIGHT = [[0.05, [176, 122, 22]], [0.5, [217, 119, 42]], [2, [214, 58, 85]]];
@@ -164,10 +122,6 @@ export function MiniArea({ points, h, times, range, cap }) {
   const line = xy.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ");
   const area = xy[0][0].toFixed(1) + "," + h + " " + line + " " + xy[n - 1][0].toFixed(1) + "," + h;
   const id = "ha" + (MiniArea._n = (MiniArea._n || 0) + 1);
-  // vertical stroke gradient: colour each height by its absolute utilization (green→orange→red).
-  // Stops at the band edges that fall inside the visible [lo,hi] window — linear between them
-  // reproduces the ramp exactly (both colour and y are linear in value within a band).
-  // offsets are normalised to the polyline's own bounding box (objectBoundingBox): top = hi → 0, bottom = lo → 1
   const edges = [...new Set([lo, 60, 85, hi].filter(v => v >= lo && v <= hi))].sort((a, b) => b - a);
   const stops = edges.map(v => ({ off: Math.max(0, Math.min(1, (hi - v) / rng)), col: cpuColor(v) }));
   const cur = pts[n - 1];   // area fade is tinted by the latest value
@@ -202,9 +156,6 @@ export function ThroughputChart({ rx, tx, h, head, times, range, cap }) {
   const n = Math.max(R.length, TS.length);
   const curR = R[R.length - 1] || 0, curT = TS[TS.length - 1] || 0;
   const hi = n ? Math.max(0, ...R, ...TS) : 0;
-  // DYNAMIC y-scale from the DISPLAYED peak (this range's series, not a global/hour peak): ceiling = the nearest
-  // 1/5/10/50/100/500×unit above the peak, with ≥15% headroom baked in via peak/0.85 (so a peak sitting within
-  // 15% of a ceiling takes the next one up). Reflects real magnitude without stretching a tiny peak to fill height.
   const scaleMax = niceScaleCeil(Math.max(hi, 1024) / 0.85);
   const scaleLabel = rate(scaleMax);
   const legend = html`<div class="tp-legend"><span class="tp-k"><i class="sw rx"></i>↓ ${rate(curR)}</span><span class="tp-k"><i class="sw tx"></i>↑ ${rate(curT)}</span><span class="tp-peak">${T("peak {v1}", { v1: rate(hi) })}</span><span class="tp-scale" title=${T("Vertical scale — nearest 1/5/10/50/100/500 unit above the peak (≥15% headroom)")}>${scaleLabel}</span><span class="grow"></span>${head || null}</div>`;
@@ -243,15 +194,6 @@ export function ThroughputChart({ rx, tx, h, head, times, range, cap }) {
   </div>`;
 }
 
-// Split a formatted value into its numeric head and unit tail so the unit can be tinted separately
-// (e.g. "261G" → "261" + green "G"). No space is inserted — the parts render flush.
-// Concentric-ring doughnut (hand-rolled SVG, no deps). `rings` = outer→inner; each ring is
-//   { label, fmt, unitColor?, segments:[{ key, name, value, color }] }.
-// Fully controlled by `active` = { key, dir } (or null): `dir` is the ring index to isolate, or null for the
-// whole entity (both arcs). Hovering ONE arc lights only that arc and reports {key, dir:its-ring}; the centre
-// then shows that one value (arrow + unitColor, resting style · % of ring). A null-dir target (the legend
-// name) lights every arc for the key and the centre shows that entity's own per-ring numbers — never totals.
-// `onActive` reports hover back up so the legend isolates in lock-step. Cheap re-renders — no SVG rebuild.
 export function MultiRing({ rings, size, thick, gap, center, active, onActive }) {
   size = size || 168; thick = thick || 15; gap = gap == null ? 1.1 : gap;
   const cx = size / 2, cy = size / 2;
@@ -313,10 +255,6 @@ export function MultiRing({ rings, size, thick, gap, center, active, onActive })
     <div class="mring-center">${readout}</div>
   </div>`;
 }
-// Legend for a doughnut. Rows carry either directional values {down, up} (traffic) or a single {right}
-// (counts). Wired with the shared `active` = {key, dir}: hovering the NAME targets the whole entity (dir
-// null, both arcs); hovering the ↓ or ↑ value targets just that ring (dir 0 / 1) and dims its partner value.
-// The whole thing mirrors the doughnut — hover either side, the same arc/value lights, the rest dim.
 export function RingLegend({ items, cols, active, onActive }) {
   const set = t => onActive && onActive(t);
   return html`<div class=${"mring-leg" + (cols ? " c" + cols : "")}>${(items || []).map(it => {
@@ -335,9 +273,6 @@ export function RingLegend({ items, cols, active, onActive }) {
   })}</div>`;
 }
 
-// Discrete BLOCK history — one bar per time bucket (right-anchored, newest at the right). Height ∝ value,
-// each bar seated in its own track so a low, fixed block count (24–30) reads as clean blocks. Hovering shows
-// the same ChartHover bubble as the throughput/CPU charts: the bucket's time/date (per `range`) + the value.
 export function OnlineBlocks({ blocks, step, endTs, times, range, h, color }) {   // times: each bar's start, when the server laid them (a custom window, on the local clock)
   const [hov, setHov] = useState(null); const wref = useRef(null);
   color = color || "var(--online)"; h = h || 70;
@@ -351,9 +286,6 @@ export function OnlineBlocks({ blocks, step, endTs, times, range, h, color }) { 
       label=${(times && times[hov] != null ? histTime(times[hov], range) + " · " : endTs != null ? histTime(endTs - (n - 1 - hov) * step, range) + " · " : "") + T("{v1} online", { v1: Math.round(blocks[hov]) })}/>` : null}
   </div>`;
 }
-// A simple single-colour filled-area trend (for count series like online-peers, where MiniArea's
-// load-colour ramp would be semantically wrong). Fixed y-scale from 0 to the series peak; right-anchored
-// and fills leftward like the other charts; hover shows the value via `fmt`.
 export function TrendArea({ points, times, color, h, cap, fmt, range, label }) {
   const [hov, setHov] = useState(null); const wref = useRef(null);
   const pts = (points || []).map(v => v || 0); h = h || 46; const w = 100, n = pts.length;
@@ -411,17 +343,6 @@ export const RANGE_WIN = { live: 200 * 15, hour: 3600, day: 86400, week: 7 * 864
 // A custom window's x-axis (P3): as many slots as the buckets of the `axis` a ranged reply carries; 0 without one.
 export const axisCap = a => a && a.step ? Math.max(1, Math.ceil((a.until - a.since) / a.step)) : 0;
 
-/* How many slots this range's x-axis should hold FOR THIS SERIES.
-
-   RANGE_CAP assumes a series folded once per its ring's step. A source that writes less often can never
-   reach that count, and the chart — which right-anchors a partly-filled ring on purpose, so it fills from
-   the right as blocks arrive — would then sit pinned at a fraction of the width for ever. The mesh pair ring
-   is exactly that: it folds at most once a minute into a 15s ring, so live and hour topped out at a quarter
-   width no matter how long the link had been up.
-
-   So derive the capacity from the spacing the series actually has. A ring that is merely still filling is
-   unaffected: its samples are correctly spaced, so C comes out right and the short series keeps
-   right-anchoring — a month graph on a 13-day-old file still reads as 13 days of a 30-day window. */
 export function densityCap(times, range) {
   const fallback = RANGE_CAP[range] || 0, win = RANGE_WIN[range];
   const t = (times || []).filter(x => x != null);
@@ -440,9 +361,6 @@ export const tailSeries = (s, n) => { const o = {}; for (const k of ["t", "cpu",
 // The live/hour/day/week/month picker. Rendered inside the chart by default, or lifted into a panel header
 // (controlled `range`/`setRange`) so Health/Throughput can host it up top.
 export function RangeTabs({ range, setRange }) {
-  // The key stays raw everywhere it carries identity (the active class, the value handed to setRange);
-  // only the LABEL is spelled out, through the same rangeLabel() the Overview's picker uses — so the two
-  // pickers can never drift into two different words for the same range.
   return html`<div class="rangetabs">${HIST_RANGES.map(t => html`<button class=${"rtab" + (range === t ? " on" : "")} onClick=${() => setRange(t)}>${rangeLabel(t)}</button>`)}</div>`;
 }
 export function RangedHistory({ node, kind, live, h, head, liveFine, fetch, traf, range: cRange, setRange: cSetRange }) {
@@ -459,9 +377,6 @@ export function RangedHistory({ node, kind, live, h, head, liveFine, fetch, traf
     p.then(d => { if (ok) setFetched(d || {}); }).catch(() => {});
     return () => { ok = false; };
   }, [node, range]);
-  // LIVE = the raw ~5s in-memory buffer when present; else — e.g. just after a panel restart, before
-  // the buffer refills — fall back to the tail of the 15s ring (`live`, the hour series) so the chart
-  // keeps showing recent history. hour = the full 15s series from /api/state; day/week/month fetched.
   const liveBuf = range === "live" && liveFine && (liveFine.t || []).length > 1;
   const s = custom ? (fetched || {})
     : range === "live" ? (liveBuf ? liveFine : tailSeries(live, 70))

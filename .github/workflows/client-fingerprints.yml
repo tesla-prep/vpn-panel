@@ -1,19 +1,6 @@
 name: client-fingerprints
 
-# Publish the upstream commit fingerprints for every watched CLIENT schema source, so a panel does not
-# have to walk GitHub's API itself.
-#
-# WHY: the drift watch reads 19 upstream paths across 13 repos. Unauthenticated GitHub allows 60 requests
-# an hour PER SOURCE IP, shared with the release/version checks — so a single panel cannot complete one
-# full pass, and every install reports "couldn't check" rather than whether a client's format moved. That
-# is the check that exists because a client changed its link format in June and reached us as a user's
-# screenshot two months later. Conditional requests do not help: a 304 costs a full unit (measured).
-#
-# So do it ONCE, here, with the Actions token, and let every panel fetch one file from raw.githubusercontent
-# — a CDN with no API budget at all. No operator ever needs a token, at any number of installs.
-#
-# Published to the `fingerprints` BRANCH, never to main: main carries one commit per release
-# (docs/RELEASING) and a daily bot commit would bury that.
+# Общая проверка схем клиентов публикует один файл в ветке fingerprints.
 
 on:
   schedule:
@@ -44,8 +31,7 @@ jobs:
           import importlib.machinery, importlib.util, json, os, sys, time
           import urllib.error, urllib.parse, urllib.request
 
-          # The watch list is NOT duplicated here: it is read from the panel itself, so the two can never
-          # disagree about which file defines a client's format.
+          # Список проверяемых файлов берём из панели.
           spec = importlib.util.spec_from_loader(
               "sp", importlib.machinery.SourceFileLoader("sp", "swg-panel-server"))
           sp = importlib.util.module_from_spec(spec)
@@ -84,8 +70,7 @@ jobs:
               if files:
                   out[cid] = files
 
-          # A partial file is worse than a stale one: a panel would read a missing client as "no drift".
-          # Only publish a complete pass; a failure keeps yesterday's file live and shows up here.
+          # При неполной проверке сохраняем предыдущий опубликованный файл.
           if failed:
               print("::error::could not read %d source(s):" % len(failed))
               for f in failed:
@@ -105,13 +90,7 @@ jobs:
           set -e
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # An orphan branch that holds ONLY this file: nothing else should be fetchable from it, and its
-          # history is a readable log of exactly when each client's upstream moved.
-          # ⚠️ `fetch && checkout || orphan` ran the orphan branch for EITHER failure, so a branch that exists
-          # but cannot be checked out was answered by starting its history again. The push is not forced, so git
-          # refused that as a non-fast-forward and nothing was lost — but the job failed one step later, naming
-          # the push rather than the checkout. Split, a failed checkout of a branch we DID fetch now stops here
-          # under `set -e`, and only a genuinely absent branch starts an orphan.
+          # Ветка хранит отпечатки. Ошибка checkout останавливает публикацию.
           if git fetch origin fingerprints:fingerprints 2>/dev/null; then
             git checkout fingerprints
           else

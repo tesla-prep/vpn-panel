@@ -13,16 +13,8 @@ _swg_tty_fg(){ local s f p e i IFS=' '; { read -r s </proc/$$/stat; } 2>/dev/nul
 SWG_TTY=/dev/tty; _swg_tty_fg || SWG_TTY=/dev/null
 swg_tty_ok(){ [ "$SWG_TTY" = /dev/tty ] && { : </dev/tty; } 2>/dev/null; }
 SWG_ARGS=("$@")   # as given — the command the warning below hands back is built from them
-# Survive being launched from a directory that no longer exists — common right after an uninstall
-# removed it (the shell stays "in" the deleted dir, getcwd() fails, and git/curl refuse to run).
-# Step into a guaranteed-present directory before doing anything.
 cd / 2>/dev/null || cd "${TMPDIR:-/tmp}" 2>/dev/null || true
 REPO="${SWG_REPO:-https://github.com/tesla-prep/vpn-panel}"
-# Which ref to install. SWG_REF wins; otherwise INFER IT FROM THE URL WE WERE FETCHED FROM.
-# Without the inference, `SWG_BOOTSTRAP_URL=.../dev/bootstrap.sh | bash` fetched the dev bootstrap and
-# then installed `main` from it — a panel tracking a pre-release branch SILENTLY DOWNGRADED itself on
-# every one-click update, and the version it landed on was the one it had just been told not to use.
-# The URL is the only thing that knows; nothing else on the box records the branch.
 _ref_from_url(){   # https://raw.githubusercontent.com/<owner>/<repo>/<ref>/bootstrap.sh  → <ref>
   printf '%s' "${1:-}" | sed -nE \
     -e 's#^https?://raw\.githubusercontent\.com/[^/]+/[^/]+/([^/]+)/.*#\1#p' \
@@ -31,9 +23,6 @@ _ref_from_url(){   # https://raw.githubusercontent.com/<owner>/<repo>/<ref>/boot
 REF="${SWG_REF:-}"
 [ -z "$REF" ] && REF="$(_ref_from_url "${SWG_BOOTSTRAP_URL:-}")"
 REF="${REF:-main}"
-# ⚠️ EXPORTED, so the scripts this dispatches to know which ref the box is being installed from. Nothing on
-# the box records it otherwise, and the one-click update wrapper they write has to keep pointing at it —
-# without this, a box installed from a branch reverts to `main` the first time anyone presses Update.
 export SWG_REF="$REF"
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then BOLD=$'\033[1m'; RESET=$'\033[0m'; C_BLUE=$'\033[38;5;39m'; C_BL=$'\033[38;5;33m'; C_BROWN=$'\033[38;5;130m'; C_RED=$'\033[31m'; else BOLD=""; RESET=""; C_BLUE=""; C_BL=""; C_BROWN=""; C_RED=""; fi
@@ -41,19 +30,9 @@ b(){ printf '%s%s%s' "$BOLD" "$*" "$RESET"; }
 col(){ local c="$1"; shift; printf '%s%s%s' "$c" "$*" "$RESET"; }
 menu(){ printf '  %s\n      %s\n\n' "$1" "$2"; }
 die(){  echo "${C_RED}✗ $*${RESET}" >&2; exit 1; }            # universal flags: :: blue, ! brown, ✗ red
-# data-entry spacing: a prompt ends with _pnl (one trailing blank + mark); step() skips its leading blank while the
-# mark is up; warn/info clear it. (bootstrap doesn't source lib/common.sh, so these live here.)
-# (2>/dev/null BEFORE >/dev/tty: redirections apply left to right, and the other order printed a raw
-# "/dev/tty: No such device or address" whenever there was no terminal — as it did under a given answer, round 5)
 _SWG_NL=""; _pnl(){ printf '\n' 2>/dev/null >/dev/tty || echo; _SWG_NL=1; }; _nlguard(){ _SWG_NL=""; }
 warn(){ _nlguard; echo "${C_BROWN}!${RESET} $*" >&2; }
 info(){ _nlguard; echo "${C_BL}::${RESET} $*"; }
-# panel_req <METHOD> <url> <verify:yes|no> <fingerprint> [<timeout-s>] — the token in $SWG_TOK (never the argv), a JSON
-# body in $SWG_BODY. The one way a call carrying a node token leaves this box: the panel's certificate is checked on the
-# connection the token then travels on — a pin → it must hash to it, verify=yes → CA verification; either failing sends
-# NOTHING (exit 4). ⚠️ TWIN of lib/common.sh's panel_req (bootstrap is fetched and run before the repo exists, so it
-# cannot source it) — see there; tests/panel_req_selftest.py holds the program text to one copy. It replaced a curl -k
-# that sent a leftover identity's token to whatever answered at its old panel address (1.8.8 qualification, round 6).
 panel_req(){ python3 - "$@" <<'PANELREQ'
 import hashlib, http.client, math, os, re, signal, ssl, sys, urllib.parse
 a = (sys.argv[1:] + [""] * 5)[:5]
@@ -127,25 +106,14 @@ finally:
             pass
 PANELREQ
 }
-# ask_choice <prompt> <default> <var> "<opt…>" [how] — accepts a full option OR its first-letter shortcut;
-# shows the default's letter as [x]; friendly re-prompt on bad input. [how] = how to answer it without a terminal,
-# named in the refusal — only where the generic "pass it as a flag" would name a flag that does not exist.
 ask_choice(){ local p="$1" d="$2" var="$3" opts="$4" how="${5:-}" v o rc sc pr i
   sc="${d:0:1}"
   # a preset answer is said under its menu, not taken in silence (the installers' "given — not asked" line)
   if [ -n "${!var:-}" ]; then for o in $opts; do [ "${!var}" = "$o" ] && { echo "  $p: $(b "$o")  (given — not asked)"; _pnl; return; }; done; fi
   pr="  $p${d:+ [$(col "$C_BLUE" "$sc")]}: "
   while :; do
-    # read -p writes the prompt to stderr (lost if redirected) — print it to the tty ourselves. The redirect
-    # itself FAILS when there is no controlling terminal (`ssh host 'cmd'` without -t, cron, CI), and under
-    # set -e that killed the whole script right here: exit 1, not one word on stdout or stderr. Fall back to
-    # stdout the way _pnl above already does, so the refusal below is what speaks instead.
     printf '%s' "$pr" 2>/dev/null >/dev/tty || printf '%s' "$pr"
     if read -r v 2>/dev/null <"${SWG_TTY:-/dev/tty}"; then rc=0; else rc=1; v=""; fi
-    # REFUSE before the default is applied. This used to sit AFTER `v="${v:-$d}"`, where it could never fire:
-    # $d is always a valid option, so the match loop returned the default and went home. A default that answers
-    # itself is not a fallback but a decision — this is the prompt that picks bare-metal vs docker, master vs
-    # node, and convert-vs-keep-vs-abort on a box that already has an install.
     [ "$rc" -ne 0 ] && die "no interactive input for '$p' — run this from a terminal (ssh -t), or ${how:-pass it as a flag (one of: $opts)}"
     v="${v:-$d}"
     case "$v" in ''|*[!0-9]*) :;; *) i=1; for o in $opts; do [ "$i" = "$v" ] && { v="$o"; break; }; i=$((i+1)); done;; esac   # [N] → the Nth option
@@ -159,11 +127,6 @@ ask_choice(){ local p="$1" d="$2" var="$3" opts="$4" how="${5:-}" v o rc sc pr i
 ask_yn(){ local p="$1" d="$2" var="$3" v pr   # ask_yn <prompt> <y|n default> <var>  → sets var to yes/no
   pr="  $p ($([ "$d" = y ] && echo 'Y/n' || echo 'y/N')): "
   printf '%s' "$pr" 2>/dev/null >/dev/tty || printf '%s' "$pr"
-  # Same contract as ask_choice: no terminal ⇒ refuse, never assume. `|| v="$d"` used to live here and was
-  # DEAD CODE — the printf above died first — so simply making that printf non-fatal would have revived it and
-  # answered Y to whatever came first. On a box with an interrupted convert that is "Resume the conversion
-  # now" [Y/n], which exec's convert.sh: an unattended re-run would have resumed a conversion nobody asked to
-  # resume. There is no flag for these, so the only honest remedy is a terminal.
   read -r v 2>/dev/null <"${SWG_TTY:-/dev/tty}" || die "no interactive input for '$p' — run this from a terminal (e.g. ssh -t), so it is not answered for you"
   v="${v:-$d}"
   case "$v" in [Yy]*) printf -v "$var" yes;; *) printf -v "$var" no;; esac; _pnl; }
@@ -184,9 +147,6 @@ while [ $# -gt 0 ]; do
     -endpoint|--endpoint)        export ENDPOINT_IP="${2:-}"; shift 2 || shift;;
     -method|--method)            METHOD="${2:-}"; shift 2 || shift;;
     -role|--role)                ROLE="${2:-}"; ROLE_EXPLICIT=yes; shift 2 || shift;;
-    # ⚠️ THE FLAG THE REFUSAL NAMES. With no terminal the convert/keep/abort question died with "pass it as a flag (one
-    # of: convert keep abort)", and there was no such flag — the one question an unattended re-install on a box of the
-    # other method cannot get past. A bare word, like the method and role words above.
     convert|keep|abort)          ON_CONFLICT="$1"; shift;;
     -on-conflict|--on-conflict)  ON_CONFLICT="${2:-}"; shift 2 || shift;;
     --)                          shift;;
@@ -212,29 +172,12 @@ if [ "$SWG_TTY" = /dev/null ] && { : </dev/tty; } 2>/dev/null; then
   export SWG_TTY_WARNED=1
 fi
 
-# ── refuse on a declaratively managed host, BEFORE the fetch ──
-# The installers this dispatches to carry the real guard (refuse_on_declarative_host, lib/common.sh)
-# and would refuse anyway — but only after this script has downloaded the repo, walked the operator
-# through the method/role prompts, and on one recovery path created /opt/swg-panel-docker. On NixOS
-# that whole sequence looks like it is working. Refuse at the front door instead.
-#
-# Deliberately a second, SMALLER copy of the detection rather than a shared one: bootstrap.sh is
-# fetched and run on its own, before the repo exists, which is the same reason it redefines
-# warn/info/panel_req above. lib/common.sh is the authority; keep this in step with it by intent.
+# refuse on a declaratively managed host, BEFORE the fetch
 if [ -e /etc/NIXOS ] || grep -qsE '^ID="?nixos"?[[:space:]]*$' /etc/os-release; then
   die "NixOS detected. Run this installer on another Linux host with systemd or Docker."
 fi
 
-# ── an update runs OUTSIDE swg-noded's sandbox ──
-# ⚠️ A 1.8.8 swg-noded starts the panel's update with `systemd-run --scope`: another cgroup, but still swg-noded's mount
-# namespace — ProtectSystem=true leaves /usr read-only (swg-logs, the AmneziaWG source patch, apt's package follow: EROFS,
-# dpkg left half-installed) and PrivateTmp's /tmp goes away when the update restarts swg-noded (mktemp fails) — and the
-# run still said "Update complete" (1.8.9 qualification IN-13). This build's swg-noded starts it as a service, but on the
-# day a box updates FROM 1.8.8 the launcher is the old one, and the first new thing it runs is this script. So an update
-# that finds itself in such a sandbox runs this script again — same arguments, same environment — as a transient service
-# PID 1 starts (the host's namespaces), and exits with its code; its output goes where this run's goes (--pipe), so the
-# old launcher's verdict and output tail stay true. Once (SWG_UPDATE_HOP). A namespace that only routes the journal
-# (swg-update.service's LogNamespace=) is no sandbox: /usr writable, the host's /tmp. No systemd-run: said, and on in place.
+# an update runs OUTSIDE swg-noded's sandbox
 _swg_sandboxed(){ local s p
   s="$(readlink /proc/self/ns/mnt 2>/dev/null)" && p="$(readlink /proc/1/ns/mnt 2>/dev/null)" && [ -n "$p" ] && [ "$s" != "$p" ] || return 1
   [ -w /usr ] || return 0
@@ -266,20 +209,8 @@ fi
 
 # ── fetch the repo ──
 need(){ command -v "$1" >/dev/null 2>&1; }
-# ⚠️ THIS TRAP NEVER FIRED. Every dispatch below used `exec`, which REPLACES this process, and traps
-# do not survive that — so each run abandoned its ~17 MB checkout in /tmp permanently (one box that
-# had been installed and converted a few dozen times was holding 89 of them, 1.5 GB). `run_script`
-# calls the installer as a CHILD and exits with its status: identical contract to whoever invoked
-# us, except the trap now gets to run.
-# ⚠️ A DRY RUN IS THE ONE THING NOT TO SWEEP. install-host.sh renders its preview into `$(pwd)/dryrun`,
-# which is INSIDE this checkout — deleting it would throw away exactly what the user asked to see.
-# Keep the tree in that case, and say where it is rather than leaving them to guess.
 _keep_tmp=0
 _cleanup_tmp(){
-  # ⚠️ ONLY IF THERE IS ACTUALLY A PREVIEW. `_keep_tmp` is set from the FLAG, so a script that refuses
-  # `--dry-run` (convert.sh has no dry run and now says so) still ended the run with "dry-run preview kept
-  # at …" pointing at a directory nothing wrote. Naming a preview that does not exist is worse than saying
-  # nothing: it reads as confirmation that the rehearsal happened.
   if [ "$_keep_tmp" = 1 ] && [ -d "${TMP:-}/swg-panel/dryrun" ]; then
     printf '\n  dry-run preview kept at %s\n  remove it with: rm -rf %s\n' "$TMP/swg-panel/dryrun" "$TMP"
   elif [ -n "${TMP:-}" ]; then
@@ -301,27 +232,15 @@ info "fetching $REPO @ $REF"
 _fetched=""
 _archive_name="${REPO##*/}"
 _archive_name="${_archive_name%.git}"
-# ⚠️ A COMMIT IS HOW A RELEASE IS NAMED. Panel releases carry no tag — each is one squashed commit on main — so going
-# back to one means its commit (SWG_REF=df3bb45 is 1.8.7-beta), and `git clone --branch` takes only a branch or a tag.
-# GitHub serves an archive of any commit, which is the tarball road below by another URL. 7–40 hex digits, never a
-# branch or a tag name this repo uses.
 if printf '%s' "$REF" | grep -cE '^[0-9a-f]{7,40}$' >/dev/null; then
   if need curl && need tar && curl -fsSL "${REPO%.git}/archive/$REF.tar.gz" | tar -xz -C "$TMP"; then
     mv "$TMP"/"$_archive_name"-* "$TMP/swg-panel" && _fetched=tar
   fi
-  # ⚠️ …BUT A COMMIT IS WHAT TO INSTALL, NEVER WHAT TO TRACK. The scripts below bake SWG_REF into the one-click
-  # wrapper and the node's update_ref, and a commit there never moves: the Update button of a box taken back to one
-  # fetched THAT commit's bootstrap, which (1.8.7 and older) cannot fetch a commit — so every later Update failed,
-  # while the header went on offering the newer release. The box keeps tracking the branch its wrapper already names
-  # (main when it names none, or names a commit); SWG_TRACK overrides. Pressing Update then comes forward again.
   _track="${SWG_TRACK:-}"
   if [ -z "$_track" ] && [ -f /usr/local/bin/swg-update ]; then
     _track="$(sed -nE 's#.*raw\.githubusercontent\.com/[^/]+/[^/]+/([^/]+)/bootstrap\.sh.*#\1#p' /usr/local/bin/swg-update | sed -n 1p)"
     printf '%s' "$_track" | grep -cE '^[0-9a-f]{7,40}$' >/dev/null && _track=""
   fi
-  # ⚠️ …AND A NODE-ONLY BOX HAS NO WRAPPER. The panel's one-click wrapper is written only where a panel is; a node
-  # records the branch its self-update follows in its agent config (node.update_ref — install-node.sh / update.sh).
-  # Without reading it, taking a dev-tracking node back to a commit re-pointed it at `main` (1.8.8 qualification, q2).
   if [ -z "$_track" ] && [ -f /etc/swg-agent/config.json ] && need python3; then
     _track="$(python3 -c 'import json,sys;print(str(((json.load(open(sys.argv[1])).get("node") or {}).get("update_ref")) or "").strip())' \
                 /etc/swg-agent/config.json 2>/dev/null || true)"
@@ -404,10 +323,7 @@ fi
 STEP=1
 step(){ [ -n "${_SWG_NL:-}" ] || echo; _SWG_NL=""; echo "$(b "Step $STEP. $1")"; echo; STEP=$((STEP+1)); }
 
-# ── resume an interrupted conversion ─────────────────────────────────────────
-# convert.sh persists the node's identity to /var/lib/swg-recovery before the final switch-over. Conversions
-# are copy-first: the source node keeps running until everything is staged, so a dropped session usually left
-# the node fully up on its CURRENT method. Offer to finish the move (same token); declining just keeps it.
+# resume an interrupted conversion
 if [ -f /var/lib/swg-recovery ]; then
   . /var/lib/swg-recovery 2>/dev/null || true
   # a complete uninstall can leave the marker behind; if NEITHER side of the convert is on the box any more,
@@ -447,10 +363,7 @@ if [ -z "$ROLE" ]; then
   menu "$(col "$C_BLUE" '[3] [n]ode')"                    "An entry server that joins an existing panel."
   ask_choice "Select the server role (number, letter or name)" "master" ROLE "master host node"
 fi
-# ───────────────── cross-method conflict (requested method ≠ what's already installed) ─────────────────
-# For each component the requested role needs, if the OTHER method has it but THIS method doesn't,
-# offer to convert it, keep+re-install it as-is, or abort. (Same-method present ⇒ a normal re-install,
-# handled inside the installer; neither present ⇒ a fresh install — your promotion cases.)
+# cross-method conflict (requested method ≠ what's already installed)
 ROLE_COMPS=""; case "$ROLE" in host) ROLE_COMPS=panel;; node) ROLE_COMPS=node;; master) ROLE_COMPS="panel node";; esac
 OTHER=baremetal; [ "$METHOD" = baremetal ] && OTHER=docker
 CONFLICT=""
@@ -464,9 +377,6 @@ elif has_comp "$OTHER" panel; then OTHER_ROLE=host
 else OTHER_ROLE=node; fi
 if [ -n "$CONFLICT" ]; then
   while :; do
-    # A preset answer is taken ONCE: `convert` whose pre-flight refused (or was declined) comes back round this loop,
-    # and answering it again from the flag would spin for ever — so the second time round it must be a person. Checked
-    # BEFORE the menu: printed again under the refusal, it read as a second question nobody was asked (1.8.8 qualification).
     [ -n "${_conflict_used:-}" ] && [ -n "$ON_CONFLICT" ] && die "the conversion did not go ahead (see above) — nothing was changed. Fix the conflicts, or pass keep / abort instead of $ON_CONFLICT."
     echo
     echo "$(b "! A $(mlabel "$OTHER") $OTHER_ROLE is already installed on this box.")"
@@ -508,15 +418,6 @@ if [ -n "$CONFLICT" ]; then
   done
 fi
 
-# A plain (re-)install clears a stale leftover from an ABORTED conversion — it's just an outdated copy, so no
-# prompt. The live node (still on its original method) is untouched: an ACTIVE other-method install would have
-# offered 'convert' above, so reaching here as a plain install means there's nothing live of the other method.
-# ⚠️ …BUT NEVER WHAT AN UNINSTALL KEPT, AND NOTHING ON A DRY RUN. uninstall.sh's "keep the data" answer leaves
-# $DOCKER_DIR holding data/ + .env (the node token) and says "Kept … for a future reinstall"; the next bare-metal
-# install deleted it right here, without a prompt, as "a cancelled bare→docker convert" (1.8.8 qualification, q1).
-# The two are told apart by docker-compose.yml: a convert's staging copies it in beside the data, and the uninstaller
-# strips it on every keep path (1.8.7's too). No compose file ⇒ not a convert's staging ⇒ kept, and said out loud.
-# ⚠️ TWIN: lib/common.sh's lc_clear_convert_leftover (update.sh's copy of this) — change one, change both.
 _dryrun_flag=no; for _a in ${PASS[@]+"${PASS[@]}"}; do [ "$_a" = --dry-run ] && _dryrun_flag=yes; done
 if [ "${CHOICE:-}" != convert ]; then
   if [ "$METHOD" = baremetal ] && [ -d "$DOCKER_DIR" ] && command -v docker >/dev/null 2>&1 \
@@ -544,13 +445,6 @@ fi
 
 export STEP_BASE="$STEP"          # the installer numbers its steps from here
 
-# ── salvage a leftover node identity (NO recovery marker — e.g. an install/convert interrupted on an
-#    older version). A half-finished node may still hold its token in a docker .env, a moved docker
-#    backup (…​.converted-*), the swg-node container's env, or the bare agent config. Re-using it
-#    re-enrolls this box as the SAME node so it isn't orphaned on the panel (its peers re-sync). ──
-# A NORMAL re-install reuses the token from the LIVE deployment itself — install-docker.sh from its .env,
-# install-node.sh from the agent config — so the installer handles it and we must NOT hijack into recovery.
-# The salvage is only for a node that's actually GONE (live source missing; token only in old backups).
 _have_live_token=no
 if [ "$ROLE" = node ] && [ -z "${NODE_TOKEN:-}" ]; then
   if [ "$METHOD" = docker ]; then
@@ -570,11 +464,6 @@ _salv_created(){ local s="$1" ts
   case "$s" in *.converted-*|*.uninstalled-*) ts="$(printf '%s' "$s" | sed -n 's/.*\.\(converted\|uninstalled\)-\([0-9]\{8\}\)-\([0-9]\{6\}\).*/\2\3/p')"
     [ -n "$ts" ] && { printf '%s.%s.%s %s:%s:%s\n' "${ts:6:2}" "${ts:4:2}" "${ts:0:4}" "${ts:8:2}" "${ts:10:2}" "${ts:12:2}"; return; };; esac
   [ -f "$s" ] && _fmt_epoch "$(stat -c %Y "$s" 2>/dev/null)" || echo "unknown"; }
-# _salv_trust <source> → "<verify yes|no> <fingerprint>": how the identity found there trusted its panel — the agent
-# config's panel.verify / fingerprint, or a Docker .env's TLS_VERIFY / TLS_FINGERPRINT (+ a learned data/node/panel-fp
-# beside it), or the leftover container's own environment. A learned panel-verify=yes with NO learned panel-fp is a
-# transfer to a CA-verified panel: no pin then — never the pin of the panel the node left (as lib/common.sh's
-# docker_node_panel and docker/node-entrypoint.sh read it).
 _salv_trust(){ local s="$1" v="" f="" d
   case "$s" in
     *config.json)
@@ -635,12 +524,6 @@ _salv_block(){ local idx="$1" tok="$2" url="$3" src="$4" method dir ifaces turns
 }
 if [ "$ROLE" = node ] && [ -z "${NODE_TOKEN:-}" ] && { [ "$_have_live_token" = no ] || [ "${SWG_RECOVER_MENU:-}" = 1 ]; }; then
   _salvf="$(mktemp 2>/dev/null || echo "/tmp/swg-salv.$$")"; : > "$_salvf"
-  # collect every candidate identity as "<token>\t<url>\t<source>" — most authoritative first: a leftover
-  # swg-node container, then docker .env (live + moved backups, NEWEST first), then the bare agent config.
-  # ⚠️ A DOCKER IDENTITY IS WHAT THE NODE LEARNED, WHERE IT LEARNED ANYTHING. A transfer (another panel took the node
-  # over) or a re-point writes data/node/panel-url / panel-token beside the .env, and the node ran on those — its .env
-  # (and the container's environment, made from it) still named the panel it LEFT. Recovering from the .env re-enrolled
-  # a transferred node with the old panel's address and key. (_salv_learned, above; the trust: _salv_trust.)
   if command -v docker >/dev/null 2>&1; then
     _env="$(docker inspect swg-node --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null || true)"
     _t="$(printf '%s\n' "$_env" | sed -n 's/^NODE_TOKEN=//p' | sed -n 1p)"; _u="$(printf '%s\n' "$_env" | sed -n 's/^PANEL_URL=//p' | sed -n 1p)"
@@ -694,17 +577,11 @@ EOF2
   if [ -n "$salv_tok" ]; then
     NODE_TOKEN="$salv_tok"; export NODE_TOKEN; [ -n "$salv_url" ] && { PANEL_URL="$salv_url"; export PANEL_URL; }
     case "${salv_src:-}" in *config.json) METHOD=baremetal;; *) METHOD=docker;; esac   # route to the installer matching the RECOVERED identity (docker vs bare), so recovery works regardless of the command used
-    # If the live interface keys are gone (data dir was deleted on uninstall — case 3), restore them from the
-    # chosen recovery copy so the node's peers keep their existing client configs (same server keys). Gated on the
-    # live dir being empty, so a keep-peers (case 2) re-install never clobbers its live keys.
     _rdir="$(dirname "${salv_src:-/dev/null}" 2>/dev/null)"
     if [ "$METHOD" = docker ] && [ -d "$_rdir/data/node-confs" ]; then
       _lc=/opt/swg-panel-docker/data/node-confs
       _npr="$(grep -ch '^\[Peer\]' "$_rdir/data/node-confs/"*.conf 2>/dev/null | awk '{s+=$1} END{print s+0}' || true)"   # peerless/empty confs → grep exits non-zero; awk still prints 0, just neutralise pipefail+set-e
       if ls "$_lc"/*.conf >/dev/null 2>&1; then
-        # the box ALREADY has interface configs with peers AND the chosen recovery snapshot has its own — these are
-        # two INDEPENDENT peer sets (the snapshot's are not a subset of the live ones); let the operator pick which
-        # set this node keeps (default: leave the box's own peers untouched).
         _npl="$(grep -ch '^\[Peer\]' "$_lc/"*.conf 2>/dev/null | awk '{s+=$1} END{print s+0}' || true)"   # peerless confs → grep exits non-zero; awk still prints 0, just neutralise pipefail+set-e
         echo
         info "This box already has $(b "$_npl peer(s)") from a previous install. The recovery snapshot you picked has $(b "$_npr peer(s)")."

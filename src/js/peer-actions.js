@@ -1,17 +1,3 @@
-/* peer-actions.js — the destructive and lifecycle actions on a peer or a user.
- *
- * LAYER 3 (see docs/APP-JS-SPLIT-PLAN.md). Imports util / store / model / ui / crypto / views.
- *
- * Every irreversible thing an operator can do to a peer lives here behind a confirm: rotate keys, delete,
- * unassign, block and unblock, set an expiry, restore a missing deployment, correct an out-of-subnet IP,
- * and the two-phase ghost recreate (recreate the interface, then rekey the peers that were on it once it
- * reports back live). Grouping them is what stops each screen growing its own variant of "are you sure".
- *
- * Screens call these; this module never calls a screen. The one exception is the ghost recreate, which has
- * to raise the Load-interface sheet — that sheet belongs to the interface layer above, so it arrives as an
- * injected opener rather than an import.
- */
-
 import { T, Tsplit, plural, locale, srvText } from "./i18n.js";   // locale: dates in the panel's language, not the browser's
 import { tkey, seen, targetRole } from "./util.js";
 import { Store, api, useStore } from "./store.js";
@@ -34,23 +20,12 @@ const html = htm.bind(h);
 let _openLoadIface = () => {};
 export const setLoadIfaceOpener = fn => { _openLoadIface = fn; };
 
-// Rotate a peer's keypair while KEEPING its PSK (PSK is user-owned — rotated only from the user
-// module). Mints a new keypair in the browser, preserves each target's current config settings
-// (DNS/MTU/AllowedIPs/keepalive) where readable, and re-issues. The old config stops working,
-// so the client must re-import the fresh QR/config. Only meaningful for an assigned peer.
-// Resolves to the panel's answer to the rekey ({ok:false, error} when it never got that far), so a caller can tell a refused rekey
-// from an accepted one whose row error came from something after it (review F76, F77); an accepted one carries `published`, its
-// subscription publish, which resolves to that publish's failure (review F83).
 export async function rotatePeerKeys(peer) {
   const key = "peer:" + peer.id;
   Store.rotating[peer.id] = Date.now();   // grid shows "rotating" until the new key is live
   let keys, psk, configs;
   try {
     keys = await genKeys(); psk = genPSK(); configs = {};   // rotate BOTH the keypair and the PSK
-    // WG/AWG targets ONLY. A wdtt/csqtt deployment is keyless — no client config to rebuild, and asking
-    // Store.ifaceMeta for its interface answers nothing, which trips the `!m` guard below and aborts the whole
-    // rotation. A legal peer is single-kind, so this filter changes nothing for it; it earns its keep only on a
-    // roster written outside the API, where it stops one impossible target taking the rotation down with it.
     for (const t of (peer.targets || []).filter(t => !isSelfContainedTgt(t))) {
       const m = Store.ifaceMeta(t.node, t.iface);
       if (!m) { delete Store.rotating[peer.id]; Store.rowErrors[key] = { msg: T("{v1} hasn't reported {v2} yet", { v1: Store.nodeName(t.node), v2: t.iface }), at: Date.now(), node: t.node, iface: t.iface }; Store.apply(); return { ok: false, error: Store.rowErrors[key].msg }; }
@@ -83,20 +58,11 @@ export function rotateAllUserKeys(user, after) {
   openConfirm({ title: T("Rotate all keys · {name}", { name: user.name }), confirmLabel: T("Rotate all keys"), warn: true, back: after,
     body: html`${rotBefore}<b>${plural(peers.length, "peer")}</b>${rotAfter}`,
     onConfirm: () => {
-      // Optimistic + non-blocking: flip EVERY peer to "Rotating" the instant you confirm, close the dialog at once,
-      // and fire the rotations in parallel (was 19 sequential rekeys → "Working…" hung). Each card re-resolves the
-      // live peer and re-renders its new QR as it flips rotating→ready.
       peers.forEach(p => { Store.rotating[p.id] = Date.now(); });
       Store.apply();
       (async () => {
         const oks = await Promise.all(peers.map(async p => {
           try {
-            // Cumulative, never a branch: a peer may hold wg/awg AND wdtt AND csqtt deployments at once, each with
-            // its own independent credential, so rotating "the peer" means rotating every credential it actually
-            // has. This was already written this way as belt-and-braces for hand-seeded rosters back when the
-            // product made only single-kind peers; mixed peers are now first-class, and the branching form it
-            // replaced would rotate only the FIRST applicable kind while reporting the whole run done — leaving a
-            // peer whose QR never came back (rotatePeerKeys is what rebuilds the config the card renders).
             let did = false;
             if (p.csqtt_password) { await api.csqttPeerRotate({ peer_id: p.id }); did = true; }   // new access password
             if (p.wdtt_password)  { await api.wdttPeerRotate({ peer_id: p.id });  did = true; }   // new WRAP password
@@ -113,9 +79,6 @@ export function rotateAllUserKeys(user, after) {
     } });
 }
 
-// What one device's rotate replaces, and what it is called — the phone's button label and its confirm read this one copy, so they
-// cannot drift apart (review F72); the editor's Rotate takes its three flags from it (its own wording stays its own, F82). `none`: a device with nothing to rotate (no target, no
-// access password) offers no Rotate.
 export function rotateParts(peer) {
   const p = (peer && peer.id && Store.peer(peer.id)) || peer || {};
   const kinds = (p.targets || []).map(t => targetType(t));
@@ -127,15 +90,6 @@ export function rotateParts(peer) {
 }
 export const rotateOneLabel = peer => rotateParts(peer).title;
 export function rotateOnePeerKeys(peer) {
-  // The phone's Rotate on a device's view: the same three cases and wording as the editor's (EditPeerSheet's rotate) — a keyed
-  // device rotates its keypair, a csqtt / WDTT one its access password (a new LINK, not a QR), a mixed one all of them.
-  // Every credential is tried on its own and each answer READ (api.post resolves {ok:false} rather than throwing; the keypair's is
-  // rotatePeerKeys' own answer to the rekey, F76, F77): a refused turn rotate no longer stops the keypair's (review F66), every
-  // refusal is named (F79), and when only some went through the toast names what was already replaced — that user needs the new
-  // one (F68). Only the keypair's own refusal ends "Rotating" early (F85). An accepted rekey whose config never reached the
-  // subscription says so in a toast of its own when the publish ends (F83), held 9 s as it asks for an action (F93) — the outcome never
-  // waits on its vault prompt (F86, F92),
-  // and a missed publish is not a partial rotate (F87).
   const { p, hasCsqtt, hasWdtt, hasKeyed, mixed, none, title } = rotateParts(peer);
   if (none) return toast(T("This peer has nothing to rotate."), "err");   // F67: never "rotated" with no call made
   const body = mixed ? T("This peer holds several credentials — a WireGuard keypair and an access password per turn server. All of them are replaced: every config, QR and link this peer already handed out stops working and must be re-imported.")
@@ -196,25 +150,11 @@ export function confirmUnassign(peer, back) {
 export function confirmDeletePeer(peer, back, closeOwner) {
   openConfirm({ title: T("Delete peer"), confirmLabel: T("Delete"), danger: true, back,
     body: T("This is irreversible — the peer's key is removed from every interface it's deployed on.") + _netsLost(peer),
-    // `back` returns you where you came from, which is right for Cancel and wrong for a delete when the frame
-    // you came from is a VIEW OF THIS PEER — it would return you to an editor for something that no longer
-    // exists. But how far to close is the CALLER's fact, not this function's: deleting from the peer's own
-    // sheet must take that sheet down with the confirm (closeOwner), while deleting from a row in a peer LIST
-    // must leave the list standing — the row simply disappears from it. This used to empty the whole stack for
-    // both, so deleting a peer from a user's peers modal closed the user's peers modal too.
-    // Touching the stack also makes ConfirmSheet.go() skip its own closeModal (it bumps _modalSeq), which is
-    // why the closeOwner path counts the confirm itself; the other path lets the confirm close normally.
     onConfirm: () => { if (closeOwner) closeModals(2);
       return mutate({ key: "peer:" + peer.id, patch: s => { delete s.roster.peers[peer.id]; },
         call: () => api.peerDelete({ peer_id: peer.id }) }); } });
 }
 
-// ── Restore a missing interface (dangling) · Correct an out-of-subnet IP (broken) ─────────────────
-// Both affordances are GATED: reconcile only sets a deployment restorable/correctable once the problem has
-// persisted past the ~2-minute grace (never a hiccup or a peer still being created), and every modal states
-// how long it's been wrong so the operator doesn't act prematurely. Restore is per-INTERFACE — recreating a
-// vanished interface recovers EVERY dangling peer on it at once — so pressing it on any dangling row (or the
-// batch) recreates that node/iface. Correct is per-PEER — each broken peer's own record needs a valid address.
 function _durText(ms) { const m = Math.max(1, Math.floor((ms || 0) / 60000)); return T("more than {count}", { count: plural(m, "minute") }); }
 function _missingIface(node, iface) {
   const nr = (Store.nodes || []).find(n => n.id === node) || {};
@@ -222,13 +162,6 @@ function _missingIface(node, iface) {
   // | null — `dns`/`keepalive` are null when the panel holds no opinion, and [] / 0 when it holds "off".
   return (nr.missing_ifaces || {})[iface] || null;
 }
-// Restore is an INTERFACE action (it recreates the whole interface, recovering EVERY dangling peer on it) —
-// this shared confirm is opened both from a peer row/modal and from the node's interface list, so the copy
-// stays consistent and always frames it as an interface, not a peer. `problemMs` drives the gate line; `mi` is
-// the node's missing-interface record (null => the panel never captured a config, so it can't recreate).
-/* `broken` = the node still REPORTS this interface but its device is gone (down). Same repair — recreate
-   from the saved config with the original key — but not the same sentence: calling it "missing" in front of
-   an operator looking at a card the node is actively reporting is how a correct dialog reads as a bug. */
 function _openRestoreInterface({ node, iface, mi, problemMs, rowKey, back, broken }) {
   if (!broken && ghostIface(node, iface)) return openRecreateRekey(node, iface, back);   // lost + keyless → can't restore, redirect to recreate + rekey
   const where = Store.nodeName(node) + " · " + iface;
@@ -268,9 +201,6 @@ export function confirmRestoreDeployment(peer, t, back) {
 export function confirmRestoreInterface(node, iface, mi, back) {
   _openRestoreInterface({ node, iface, mi, problemMs: (mi && mi.problemMs) || 0, rowKey: "iface:" + node + "|" + iface, back });
 }
-// The same repair for an interface the node still reports but whose device is gone (`broken_ifaces`).
-// One flow, because the vault re-seal and the "does this cost the clients a re-import" question are
-// identical — writing a second one is how the two answers start disagreeing.
 export function confirmRebuildInterface(node, iface, bi, back) {
   _openRestoreInterface({ node, iface, mi: bi, problemMs: (bi && bi.problemMs) || 0, broken: true,
                           rowKey: "iface:" + node + "|" + iface, back });
@@ -281,31 +211,15 @@ export function brokenIface(node, iface) {
   return (b && b.repair === "recreate") ? b : null;   // repair:"" = no saved config, nothing to rebuild from
 }
 
-// ── GHOST interface: lost + KEYLESS — recreate FRESH + rekey every peer ───────────────────────────────
-// A ghost interface is gone from the node AND has no recoverable key/config, so Restore can't help (it would
-// hit /api/iface/recreate, which 400s without a saved config). The only fix is to recreate it fresh — a NEW
-// server key — and rekey every peer on it so their clients re-import. Two sources: a COLD ghost (server-
-// reported `ghost_ifaces`, no saved config at all) or a WARM-but-keyless missing interface (a `missing_ifaces`
-// entry whose key_source is '' — a config exists but no key to restore). Ripeness = the same ~2min grace as
+// GHOST interface: lost + KEYLESS — recreate FRESH + rekey every peer
 function _subnet24(ip) { const m = String(ip || "").match(/^(\d+)\.(\d+)\.(\d+)\.\d+/); return m ? m[1] + "." + m[2] + "." + m[3] + ".0/24" : ""; }
-// Open the recreate-and-rekey flow: the create form, pre-filled with parameters INFERRED from the ghost's
-// peers (protocol from a target's type, subnet widened from a peer IP, endpoint from the node's own IP), all
-// editable, with a warning that clients must re-import. On create it stages the peers for phase-2 auto-rekey.
 export function openRecreateRekey(node, iface, back) {
   const g = ghostIface(node, iface) || {};
   const peers = ghostPeers(node, iface);
   let proto = "wg"; const ips = [];
   peers.forEach(p => (p.targets || []).forEach(t => { if (t.node === node && t.iface === iface) { if (t.type === "awg") proto = "awg"; if (t.ip) ips.push(t.ip); } }));
-  // ⚠️ WHAT WE SAVED BEATS WHAT WE CAN GUESS. Inference is right for a COLD ghost — no record exists, the
-  // peers are all there is. A WARM one still has its `_lastcfg`, and guessing from peers there is how an
-  // AmneziaWG interface with no peers came back as WireGuard on a suggested port: nothing to infer from,
-  // so the default won. Every value below falls back to the guess, so the cold path is untouched.
   if (g.awg_params && Object.keys(g.awg_params).length) proto = "awg";
   const nr = (Store.nodes || []).find(n => n.id === node) || {};
-  // ⚠️ THE SAVED ENDPOINT BEATS THE NODE'S FIRST IP. Falling back to `nr.ips[0]` is right for a COLD ghost
-  // and wrong for a warm one: an interface published as a hostname came back as a bare address, and every
-  // client config reissued after the recreate pointed at the address instead. The node's IP stays as the
-  // fallback, so nothing changes where the panel holds no endpoint of its own.
   const pre = { iface, proto, subnet: g.subnet || _subnet24(ips[0]),
                 endpoint: g.endpoint_host || (nr.ips || [])[0] || "",
                 port: g.listen_port || 0, mtu: g.mtu || 0,
@@ -319,16 +233,9 @@ export function openRecreateRekey(node, iface, back) {
                 // …and the AmneziaWG version it had, so a Settings preset of 3.1 cannot turn a 2.0 interface into a 3.1 one
                 gen: proto === "awg" ? (awgDict3(g.awg_params) ? "3.1" : "2.0") : null };
   const rekeyable = peers.filter(p => p.user_id).map(p => p.id);   // only ASSIGNED peers can be rekeyed (rekey needs a holder)
-  // `warm` — the panel holds this interface's saved config, so the sheet is showing what it WAS rather than
-  // what could be guessed from its peers. The notice says which, because "review the settings below" is only
-  // actionable if the operator knows where they came from.
   _openLoadIface({ node, pre, ghost: { node, iface, peers: rekeyable, total: peers.length, warm: g.cold === false }, back });
 }
 
-// Phase 2 of a ghost recreate: once the recreated interface reports back LIVE (with its brand-new server key),
-// rekey every peer that was on it so their clients get fresh configs. Staged by openRecreateRekey; fired here
-// on each poll. If the operator leaves before the interface returns, nothing is lost — the interface comes
-// back and its peers surface as needing a rekey (stale client config → faulty), so it degrades gracefully.
 export function maybeRekeyGhosts() {
   const staged = Store.ghostRekey || {};
   for (const gk of Object.keys(staged)) {
@@ -337,18 +244,12 @@ export function maybeRekeyGhosts() {
     const m = Store.ifaceMeta(node, iface);
     if (!m || !m.public_key) continue;                                          // fresh interface not live yet → wait
     delete staged[gk];                                                          // clear BEFORE rekeying so we never double-fire
-    // The panel just recreated this interface, so the node's brand-new server key isn't drift to review — adopt it
-    // automatically instead of leaving it flagged MODIFIED (the panel initiated the change). Best-effort; the
-    // manual Adopt/Restore on the interface sheet stays as a fallback.
     if (m.drift && m.drift.public_key) api.ifaceAdopt({ node, iface, key: "public_key" }).catch(() => {});
     const peers = (rec.peers || []).map(id => (Store.recon.peers || []).find(p => p.id === id)).filter(p => p && p.user_id);
     peers.forEach(p => { rotatePeerKeys(p).catch(() => {}); });
     if (peers.length) toast(T("Interface {iface} is back — rekeying {count}; hand out the fresh configs.", { iface, count: plural(peers.length, "peer") }), "ok", 5000);
   }
 }
-// Node-rebuild recovery (P5): after re-installing a wiped box (it re-enrolls empty), one press recreates ALL of
-// its missing interfaces with their original identities — vault keys released with a single unlock, then each
-// peer re-converges. Interfaces without a recoverable key get a fresh one (their clients re-import).
 export function confirmRestoreAllInterfaces(nid, back) {
   const nr = (Store.nodes || []).find(n => n.id === nid) || {};
   const miss = Object.entries(nr.missing_ifaces || {}).filter(([, mi]) => mi && mi.ripe);
@@ -419,11 +320,6 @@ export function confirmCorrectAll(rows, back) {
     onConfirm: async () => { let ok = 0; for (const { p, t } of items) { const r = await mutate({ key: "peer:" + p.id, call: () => api.peerCorrect({ peer_id: p.id, target: { node: t.node, iface: t.iface } }) }); if (r && r.ok) ok++; } toast(T("Fixed {count}.", { count: plural(ok, "address") }), "ok"); } });
 }
 
-// ── Block / unblock access (declarative revoke — reversible, keys unchanged) ──────────────────────
-// Blocking drops the peer (or every peer of a user) from each node's desired set: the node removes it and
-// the live session tears down within a sync. The keys are untouched, so unblocking reconnects the SAME
-// config/QR with no re-issue. A user block also suspends the subscription page (kept — the URL still shows
-// "Subscription disabled" and re-enables instantly). `now_s` stamps the transient "restoring" marker.
 export const now_s = () => Math.floor(Date.now() / 1000);
 const _peerName = p => p.title ? " · " + p.title : p.name ? " · " + p.name : "";
 export function confirmBlockPeer(peer, back) {
@@ -454,13 +350,6 @@ export function confirmUnblockUser(user, back) {
       patch: s => { const u = s.roster.users[user.id]; if (u) { delete u.disabled; u.unblock_at = now_s(); } },
       call: () => api.userUnblock({ user_id: user.id }) }) });
 }
-// Ghost Block/Unblock button — label + action derive from state. Unblock's `m-pblock` keeps it in Block's place on a phone
-// (m.css: the device editor's footer), though it is not a danger button. A peer blocked only because its whole user is
-// blocked can't be individually unblocked, so point the operator at the user instead of a dead per-peer toggle.
-// The record is re-read from the store rather than trusted as passed: a sheet opened BEFORE the block holds
-// the object as it was then, so the button kept saying "Block" on an already-blocked peer and re-ran the block
-// instead of offering the undo — the editor had no way back at all. Resolving here (not at each call site)
-// keeps that true for every caller; a caller whose object isn't in the store falls back to what it passed.
 export function peerBlockBtn(_peer, back) {
   const peer = (_peer && _peer.id && Store.peer(_peer.id)) || _peer;
   if (peer.userDisabled && !peer.selfDisabled)
@@ -476,13 +365,7 @@ export function userBlockBtn(_user, back) {
     : html`<button class="btn btn-danger" onClick=${() => confirmBlockUser(user, back)}><${Ic} i="off"/> ${T("Block")}</button>`;
 }
 
-// ── What a peer publishes to its subscription ─────────────────────────────────────────────────────────────────
-// The protocol tag on a deployment doubles as the publish switch for that KIND of config: click it and every
-// config of that kind drops out of the holder's subscription page (the deployment keeps running — this is about
-// what the holder is offered, not what exists). One kind always has to stay on, or the page would be empty with
-// nothing to explain why. `src` is a SUB_SOURCES member; `label` is what the tag reads.
-// The publish state of one SOURCE on one peer, and the click that flips it. Split out of PubTag because the
-// turn badge is not a plain chip — it carries the proxy count and a hover list — yet must behave identically.
+// What a peer publishes to its subscription
 export function pubState(peer, src) {
   peer = (peer && Store.peer(peer.id)) || peer;          // sheets hold a snapshot from open; read the live one
   const hidden = subHides(peer, src);
@@ -500,10 +383,6 @@ export function pubState(peer, src) {
         key: "subhide:" + peer.id + ":" + src,
         patch: st => { const p2 = st.roster.peers[peer.id]; if (p2) p2.sub_hide = next; },
         call: () => api.peerUpdate({ peer_id: peer.id, sub_hide: next }),
-        // ⚠️ SAY THAT IT SAVED. This switch writes immediately — there is no Save behind it — but it sits
-        // inside sheets that DO have one, and operators were pressing that button afterwards expecting it to
-        // commit the click. A control that has already acted and shows nothing is indistinguishable from one
-        // that did not fire. Failure was always announced by mutate; success has to be too.
         onOk: () => toast(showing
           ? T("{v1} configs are published again — saved.", { v1: String(src).toUpperCase() })
           : T("{v1} configs hidden from the subscription — saved.", { v1: String(src).toUpperCase() }), "ok"),
@@ -521,18 +400,11 @@ export function PubTag({ peer, src, label, kind, dim, gen3 }) {   // gen3: an AW
     title=${st.title} aria-pressed=${!st.hidden} onClick=${e => { e.preventDefault(); e.stopPropagation(); st.flip(); }}>${label}${st.hidden ? html`<${Ic} i="off"/>` : null}</button>`;
 }
 
-// ── Access expiry (a timed revoke): a peer/subscription stops working once its date passes. Enforced live on the
-// node side (dropped from the desired set) and surfaced as a subscription lifecycle badge. The "about to expire"
-// warn window is a panel Display setting (default 3 days). Dates are stored as epoch seconds, like every other
-// timestamp; a <input type=date> maps to the END of the chosen day so it stays valid THROUGH that date. ──
 export const DAY_S = 86400;
 export const expiryWarnDays = () => { const d = +((Store.panelSettings || {}).expiry_warn_days); return (d >= 0 && d <= 365) ? d : 3; };
 export function fmtDate(sec) { if (!sec) return ""; try { return new Date(sec * 1000).toLocaleDateString(locale(), { year: "numeric", month: "short", day: "numeric" }); } catch (_) { return ""; } }
 export function expiryInputVal(sec) { if (!sec) return ""; const d = new Date(sec * 1000); if (isNaN(d.getTime())) return ""; const p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); }
 export function expiryFromInput(str) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || "").trim()); if (!m) return 0; const d = new Date(+m[1], +m[2] - 1, +m[3], 23, 59, 59); const s = Math.floor(d.getTime() / 1000); return s > 0 ? s : 0; }
-// The SUBSCRIPTION's lifecycle sentence for a user (block wins over a lapsed date; the soft "about to expire" warn
-// only shows inside the warn window). `cls` colours the whole line green (active) / orange (about-to-expire) / red
-// (blocked|expired). Block/expiry carry the date they happened / will happen.
 export function subState(user) {
   const now = now_s(), u = user || {}, exp = +(u.expiry || 0);
   if (u.disabled) return { cls: "s-blocked", text: T("Subscription was blocked") + (u.disabledAt ? " " + fmtDate(u.disabledAt) : "") };
@@ -540,9 +412,6 @@ export function subState(user) {
   if (exp && now >= exp - expiryWarnDays() * DAY_S) return { cls: "s-expiring", text: T("Subscription is about to expire on {v1}", { v1: fmtDate(exp) })};
   return { cls: "s-active", text: exp ? T("Subscription is active until {v1}", { v1: fmtDate(exp) }) : T("Subscription is active") };
 }
-// The PEER's OWN lifecycle sentence — its own block flag + its own expiry date, independent of the subscription and
-// of the connectivity status (online/ready/…) shown elsewhere. Returns null for an active peer with no expiry (the
-// common case → nothing to show). Same colour scheme as subState.
 export function peerState(peer) {
   const now = now_s(), p = peer || {}, exp = +(p.ownExpiry || 0);
   if (p.selfDisabled) return { cls: "s-blocked", text: T("Peer was blocked") + (p.disabledAt ? " " + fmtDate(p.disabledAt) : "") };
@@ -554,9 +423,6 @@ export function peerState(peer) {
 // pos: "hd" = centred in a modal title row · "center" = its own centred line (edit-user card) · "bar" = a right-
 // aligned line UNDER the header (peer modal / edit-peer). Absent = a plain inline span.
 const _statCls = pos => pos ? " substat-" + pos : "";   // i18n-keys: a CSS class fragment
-// The USER's own lifecycle sentence — used as the header fallback when there is NO active subscription to report on
-// (a disabled or never-enabled subscription). Mirrors peerState: block / expired / about-to-expire, else null (a
-// user with no expiry and no block has nothing to say, so the line stays empty).
 export function userState(user) {
   const now = now_s(), u = user || {}, exp = +(u.expiry || 0);
   if (u.disabled) return { cls: "s-blocked", text: T("User was blocked") + (u.disabledAt ? " " + fmtDate(u.disabledAt) : "") };
@@ -564,10 +430,6 @@ export function userState(user) {
   if (exp && now >= exp - expiryWarnDays() * DAY_S) return { cls: "s-expiring", text: T("User is about to expire on {v1}", { v1: fmtDate(exp) })};
   return null;
 }
-// The subscription sentence, coloured whole (green active / orange about-to-expire / red blocked|expired). Shown
-// only when subscriptions are on; tracks state off each poll. With an ACTIVE subscription it reports the
-// subscription's lifecycle; with none (disabled or never enabled) it never claims one — it falls back to the user's
-// own expiry (userState) and stays silent when there's nothing noteworthy.
 export function SubStatusLine({ user, pos }) {
   useStore();
   const rec = useSubRec(user.id);   // the subscription record — .enabled tells a live subscription from a disabled/never-enabled one
@@ -605,17 +467,6 @@ export function UserCombo({ onPick, placeholder }) {
   </div>`;
 }
 
-// A type-to-filter user *select* that holds a value (current owner) — used by the create/edit
-// peer forms. Like UserCombo but reflects a selection and can offer "— unassigned —".
-// `groups` + `onGroup` (docs/GROUPS-PLAN.md G11 — the People window): groups offered first, each with its member count, and picked
-// through their own callback, so a group's id never reaches a caller that expects a user's.
-// `devices` + `onDevice` (ROUTING-PEERS-MESH-PLAN §7.2 — Rule settings): single devices offered after the people, `{id, name, sub}`,
-// through their own callback for the same reason groups have one.
-/** The picker's keys as one pure step, so a gate can drive them: → {close, open, act, pick, prevent}. `opts` are the rows in
- *  the order they are drawn ([kind, id]; "— unassigned —" is ["u", ""]), `act` the highlighted one (−1 = none, TargetField's
- *  convention), `n` how many rows MATCH what is typed (the unassigned row is not a match). Without arrow keys a person,
- *  group or device could be picked from the keyboard only when exactly one matched — Rule settings, New peer, a group's
- *  sheet (1.8.8 qualification, F2). Enter never falls through to the window's main button while the list is open. */
 export function ucKeyStep(key, { open, q, act, opts, n }) {
   if (key === "Escape") return { close: true };
   if (key === "ArrowDown") return { open: true, act: Math.min(act + 1, opts.length - 1), prevent: true };
@@ -633,9 +484,6 @@ export function UserPicker({ value, onChange, allowUnassigned, placeholder, excl
   const sel = users.find(u => u.id === value);
   const selText = sel ? sel.name + (sel.tag ? " · " + sel.tag : "") : "";
   const ql = q.toLowerCase();
-  // `exclude`: ids this picker must not offer — people already on the list it adds to (offering them again read as a bug).
-  // Two users can share a name; an untagged pair then shows each one's device count and the day it was added, or the
-  // operator picks one blind. (A short id did this first — "pool-test #31cbfc" read as noise, not as a way to tell them apart.)
   const skip = exclude ? new Set(exclude) : null;
   const pool = skip ? users.filter(u => !skip.has(u.id)) : users;
   const named = {}; users.forEach(u => { named[u.name] = (named[u.name] || 0) + 1; });
@@ -697,22 +545,12 @@ export function confirmReassign(peer, userId, back) {
   const toName = to ? to.name : T("the selected user");
   openConfirm({
     title: T("Reassign peer"), confirmLabel: T("Reassign"), danger: true, back,
-    // ONE sentence per key, with the name as a placeholder. This was three pieces glued together — a key, the
-    // name, then a bare English sentence — so a Russian operator read the irreversible part of an irreversible
-    // action in English. Fragments cannot be translated anyway: the word order moves.
     body: T("Reassigning to {v1} rotates the peer's keys. The current user loses access immediately and permanently — assigning them back later would still be a brand-new credential.", { v1: toName })
           + " " + T("{v1} gets a fresh QR / config that must be re-distributed.", { v1: toName }),
     onConfirm: () => assignPeerToUser(peer, userId),
   });
 }
 
-// A ★ toggle to mark one of a peer's deployments as PRIMARY (ordered first for the user). Persists immediately.
-// Hidden when the peer has a single connection (nothing to choose). Stop propagation so it never bubbles to a card link.
-// Three-state ROLE control, rotating on each click: unmarked → primary → backup → unmarked. The role is a
-// label only — it never changes which deployment leads, and it is not exclusive, so an operator can mark a
-// primary per protocol family (a turn proxy is no fallback for a tunnel) or leave every row unmarked.
-// useState runs BEFORE the "fewer than two deployments" bail-out: a peer that gains a second deployment while
-// this is mounted would otherwise change its hook count between renders.
 export function RoleToggle({ peer, t, compact }) {
   useStore();
   const targets = ((Store.recon.peers.find(p => p.id === peer.id) || {}).targets) || peer.targets || [];
@@ -720,11 +558,6 @@ export function RoleToggle({ peer, t, compact }) {
   const live = targets.find(x => x && x.node === t.node && x.iface === t.iface) || t;
   const role = targetRole(live);
   const next = role === "" ? "primary" : role === "primary" ? "backup" : "";
-  // OPTIMISTIC. The role is the operator's own choice, not a fact the fleet has to agree to, so the mark moves
-  // on the click rather than a round trip later — rotating three states through a 5s poll felt broken. mutate()
-  // applies the patch to the store at once, reverts it and says so if the call fails, and keeps it applied
-  // until the next poll carries the server's own copy. The button stays enabled: each click reads the role the
-  // patch already wrote, so clicking quickly rotates rather than racing.
   const set = (ev) => {
     if (ev) ev.stopPropagation();
     mutate({
@@ -749,12 +582,6 @@ export function RoleToggle({ peer, t, compact }) {
     ${compact ? null : html`<span>${word}</span>`}</button>`;
 }
 
-// inline user assignment <select>
-// Assign an unassigned peer to a user with a FRESH credential: mint a new keypair + PSK in
-// the browser, rebuild the client config for every target, push via rekey. The new owner
-// gets a working config; nobody inherits a key a previous holder could still have.
-// Verify-only (mints a fresh key + rebuilds configs, so we reveal only on confirm). Routed
-// through mutate() for the unified error path; no optimistic patch — heavy/crypto action.
 export async function assignPeerToUser(peer, userId) {
   if (!userId) return;
   const key = "peer:" + peer.id;

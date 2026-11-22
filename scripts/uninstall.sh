@@ -27,10 +27,6 @@ die(){  echo "$(c '0;31')✗ $*$(c 0)" >&2; exit 1; }
 b(){ printf '\033[1m%s\033[0m' "$*"; }
 run(){ if $DRYRUN; then echo "    [dry] $*"; else "$@"; fi; }
 rmrf(){ local p; for p in "$@"; do if [ -e "$p" ] || [ -L "$p" ]; then run rm -rf "$p"; fi; done; }
-# swg-netctl's idle gate (lib/common.sh netctl_gate_reap) goes with the last netctl unit that runs it; its stamp
-# (/run/swg-netctl.due) once no bare unit is left, the only one that reads it (the Docker gate is --queue-only) — a box
-# converted to Docker keeps the stamp its bare netctl wrote until then; each unit's drop-in goes with its .service.d. The arguments name the units the caller has just removed (bare-gone, docker-gone): a dry run
-# leaves them on disk, and must still list the gate.
 rm_netctl_gate_if_last(){
   local a bare=1 dock=1; for a in "$@"; do case $a in bare-gone) bare=0;; docker-gone) dock=0;; esac; done
   { [ $bare = 1 ] && [ -e "$SD/swg-netctl.service" ]; } || rmrf /run/swg-netctl.due
@@ -49,15 +45,7 @@ rmdir_if_empty(){ local d="$1"
   fi
   run rmdir "$d"
 }
-# ── WHAT THIS RUN KEEPS NEVER HOLDS AN ID IT FREES ───────────────────────────────────────────────────────────────────────
-# ⚠️ A DELETED ACCOUNT LEAVES ITS NUMBERS ON EVERYTHING IT OWNED, AND THE NEXT ACCOUNT CREATED TAKES THEM. The recovery
-# archives a convert moved aside kept swgpanel's uid and group swg's gid, the uninstall kept them by default and freed both
-# ids: a `useradd -m -U` account (the group's gid) then read the archived login hash and the LIVE panel's TLS key and could
-# write into the archive; a `useradd -r` account (the panel's uid) read the LIVE session.key — a forged operator session —
-# the settings, the vault and every PSK (1.8.8 qualification, round 10, F90; 1.8.7 too). So, before any userdel or
-# groupdel: every path this run keeps that still carries the account's uid or the group's gid goes to root, and every
-# recovery archive is root's alone (owner root:root, no group write, no setgid, closed to everyone else).
-# TWIN of lib/common.sh's SWG_ARCHIVE_GLOBS / seal_archive / seal_archives (this file does not source it); change both.
+# WHAT THIS RUN KEEPS NEVER HOLDS AN ID IT FREES
 _SEAL_GLOBS='/etc/swg-panel*.converted-* /etc/swg-panel*.uninstalled-* /var/lib/swg-panel*.converted-* /var/lib/swg-panel*.uninstalled-* /opt/swg-panel*.converted-* /opt/swg-panel*.uninstalled-* /opt/swg-panel*.pre-convert-*'
 _seal_archive(){ local p
   for p in "$@"; do
@@ -88,14 +76,6 @@ hand_ids_to_root(){
   fi
   _seal_archives
   return 0; }
-# ufw_forget <record-file> — delete EXACTLY the ufw rules our installer recorded opening (install-host.sh's
-# serve_internal writes one `<port>/tcp` per line, only for a rule it actually ADDED — never for one ufw already had,
-# which is somebody else's). A rule opened by an installer older than that record cannot be told from the operator's
-# own, so it is named, not deleted. No record + no ufw = nothing to do.
-# ⚠️ THE RECORD GOES WITH THE RULES IT NAMED. It stayed behind — in a kept Docker data dir, in a convert's archive — so
-# a later uninstall deleted the same rule again, by then possibly the operator's own identical one (1.8.8
-# qualification, round 10, N10). Each line leaves the record once its rule is deleted; a rule ufw would not delete
-# stays recorded, for the next run to try; an emptied record is removed. A dry run changes nothing.
 ufw_forget(){ local f="$1" r p left=""
   command -v ufw >/dev/null 2>&1 || return 0
   if [ -f "$f" ]; then
@@ -116,25 +96,12 @@ ufw_forget(){ local f="$1" r p left=""
   return 0; }
 # ask_yn <prompt> <default> <outvar>  — preset outvar (env) or --yes skips the prompt
 ask_yn(){ local v p="$1" d="${2:-n}"
-  # A PRESET answer (unattended run) is normalised exactly like a typed one. It used to be returned verbatim, so
-  # the obvious FOO=y — the same letter the prompt offers as "Y/n" — was compared against "yes", didn't match, and
-  # silently meant NO: an unattended uninstall with PANEL_DATA_DEL=y kept the data it was told to delete.
   if [ -n "${!3:-}" ]; then case "${!3}" in [Yy]*) printf -v "$3" yes;; *) printf -v "$3" no;; esac
     echo "$p ${!3}  (given — not asked)"; return; fi   # said, like the installers' prompts (1.8.8 qualification, round 5)
-  # …and so is the DEFAULT taken when there is no terminal. Same defect as the preset path above, one branch
-  # down: this wrote the raw letter, so a default of `y` became "y", every consumer compares against "yes",
-  # and each keep-by-default question silently answered NO. An unattended uninstall therefore DELETED the
-  # interface keys + peers it promises to keep (DOCKER_KEEP_CONFS, KNODE) and left the containers it took an
-  # interface over from switched off (RESTORE_CTRS) — the exact "no server at all" state that prompt exists
-  # to avoid. Normalise it the same way a typed answer is normalised.
   if ! swg_tty_ok; then case "$d" in [Yy]*) printf -v "$3" yes;; *) printf -v "$3" no;; esac
     echo "$p ${!3}  (no terminal — default taken)"; return; fi
   read -rp "$p ($([ "$d" = y ] && echo 'Y/n' || echo 'y/N')): " v <"${SWG_TTY:-/dev/tty}" || true
   v="${v:-$d}"; case "$v" in [Yy]*) printf -v "$3" yes;; *) printf -v "$3" no;; esac; echo; }   # one trailing blank after the prompt
-# ask_comp <label> — the per-component yes/no (honours --yes); returns 0 = uninstall
-# ⚠️ `--yes` MEANS "YES TO EVERY SWG COMPONENT", NOT "yes to somebody else's data". A component marked
-# never-auto is always typed: --yes does not answer it, and with no terminal it is KEPT. That is the whole
-# protection for an interface swg never created — the one thing in this list that is not ours to delete.
 ask_comp(){ local v verb="${3:-Uninstall}" noauto="${4:-}"
   if [ "$noauto" = never-auto ]; then
     if ! swg_tty_ok; then info "Kept — this one is never decided unattended. Re-run from a terminal to choose."; return 1; fi
@@ -150,38 +117,14 @@ DOCKER_DIR="${SWG_DOCKER_DIR:-/opt/swg-panel-docker}"
 TURN_DIR="${TURN_DIR:-/opt/vk-turn-proxy}"
 WDTT_DIR="${WDTT_DIR:-/opt/swg-wdtt}"     # WDTT servers: per-instance config-dir (identity + passwords) + .bin/<fork> shared binaries
 CSQTT_DIR="${CSQTT_DIR:-/opt/swg-csqtt}"  # csqtt servers: per-instance config-dir (password store) + .bin/<arch> shared binary
-# BOTH paths a shared record can live at. swg-noded keeps its three run-model-independent records (turn-proxy /
-# wdtt / csqtt) in the node state dir now — the one directory every run-model shares — and /etc/swg-agent only so
-# a rollback to an older build still finds one. Removing a component while leaving the state-dir copy behind is
-# not tidy-up left undone: the node reads that record on its next start and RE-INSTALLS the instance just removed,
-# with a fresh identity. This file deliberately does not source lib/common.sh, so the pair is spelled out here.
 rec_paths(){ printf '%s %s\n' "${SWG_NODED_STATE:-/var/lib/swg-noded}/$1" "/etc/swg-agent/$1"; }
 SD="${SYSTEMD_DIR:-/etc/systemd/system}"   # overridable for testing
 
-# A declaratively managed host (NixOS and friends) keeps /etc/systemd/system as a read-only symlink
-# into its store. Every `systemctl disable --now` below then fails — and this script deliberately
-# runs `set -uo pipefail` WITHOUT -e, so it would walk past the failure and delete /opt/swg-* and
-# /var/lib/swg-* WHILE THE SERVICES KEPT RUNNING. Measured on a read-only unit dir: disable exits 1
-# with "Access denied", `--now` never reaches the stop, and the unit stays active+enabled. A partial,
-# destructive uninstall is worse than refusing, so refuse.
-#
-# `[ -w ]` is NOT enough: for root it reports the mode bits and ignores a read-only mount. Probe with
-# a real write.
 unit_dir_writable(){ local p="$SD/.swg-uninstall-probe.$$"
   ( : > "$p" ) 2>/dev/null || return 1; rm -f "$p"; return 0; }
-# ⚠️ …AND THAT PROBE ANSWERS "COULD *I* WRITE HERE", WHICH IS A DIFFERENT QUESTION. As a non-root
-# `--dry-run` — which the root check above deliberately allows — it fails on EVERY ordinary systemd host,
-# because /etc/systemd/system is root-owned everywhere. Answering the DECLARATIVE question from it told an
-# ordinary Ubuntu user their host was NixOS, and made the `--dry-run` that same root check offers
-# unreachable for the only people who need it. So below, the probe is trusted only where it means
-# something — as root — and otherwise the host has to say so itself, which this asks without needing any
-# privilege at all:
 unit_dir_immutable(){   # would a unit written here be unable to stick, whoever we are?
   [ -e /etc/NIXOS ] && return 0
   grep -qsE '^ID="?nixos"?[[:space:]]*$' /etc/os-release && return 0
-  # The MOUNT says so. `findmnt --target` answers for the RESOLVED path, which is the point: on a
-  # declarative host $SD is a symlink into an immutable store, and it is the store's mount that is `ro`,
-  # not the symlink. Measured: `rw,relatime,…` on Ubuntu, `ro,nosuid,nodev,relatime` on NixOS.
   local o=""
   command -v findmnt >/dev/null 2>&1 && o="$(findmnt -no OPTIONS --target "$SD" 2>/dev/null)"
   if [ -z "$o" ]; then   # no findmnt, or it could not answer: longest matching mount point in /proc/mounts
@@ -194,18 +137,7 @@ unit_dir_immutable(){   # would a unit written here be unable to stick, whoever 
   case ",$o," in *,ro,*) return 0 ;; esac
   return 1
 }
-# A DRY RUN refuses too, unlike the installers'. There the exemption earns its keep — a dry run shows what the
-# bare-metal install WOULD lay down, which is worth seeing on a box you are migrating off. Nothing equivalent is
-# true of an uninstaller: the plan it printed here described deleting the node's interfaces and purging its
-# packages, and signed off with "re-run without --dry-run to apply" — an instruction that then refuses. A plan
-# for an operation that cannot happen is not a preview, it is a wrong answer, and it reads as "this tool handles
-# NixOS". The refusal below already names the paths to remove by hand, which is the only thing the plan could
-# honestly have offered.
 if [ -d "$SD" ] && ! unit_dir_writable && { [ "$(id -u)" = 0 ] || unit_dir_immutable; }; then
-  # Name NixOS when it IS NixOS. The generic message below is right about the mechanism and useless
-  # about the next action: on a declarative host the operator's move is an edit and a rebuild, and
-  # the two things they will otherwise trip on — which options to turn off, and that a node removed
-  # this way never signs off — are exactly what an uninstaller is expected to tell them.
   if [ -e /etc/NIXOS ] || grep -qsE '^ID="?nixos"?[[:space:]]*$' /etc/os-release; then
     die "NixOS detected — this uninstaller must not run here.
     Every \`systemctl disable --now\` below fails on a read-only unit directory, and this script
@@ -225,19 +157,11 @@ if [ -d "$SD" ] && ! unit_dir_writable && { [ "$(id -u)" = 0 ] || unit_dir_immut
     Remove the swg services from your system configuration and rebuild instead. Running this
     uninstaller here would delete /opt/swg-* and /var/lib/swg-* while every service kept running."
 fi
-# docker data-dir fate — decided up front, applied after teardown. `:-` so an UNATTENDED run's preset survives:
-# a bare ="" clobbered the caller's DOCKER_DATA_DEL=y before ask_yn ever read it, so the data dir it was told to
-# delete was kept — the same silent-preset class as the [Yy] normalisation in ask_yn, one layer further out.
 DOCKER_DATA_DEL="${DOCKER_DATA_DEL:-}"; DOCKER_KEEP_CONFS="${DOCKER_KEEP_CONFS:-}"
 # This box's own panel address as its install recorded it — read NOW, before rm_panel / rm_docker_* remove the files
 # that say so. _url_is_this_box (below) uses it to recognise a node that signs off to the panel on this very box.
 _OWN_PANEL_HOST="$(sed -n 's/^PANEL_DOMAIN=//p' /etc/swg-panel/install.conf "$DOCKER_DIR/.env" 2>/dev/null | sed -n 1p \
                    | tr -d '"' | sed -e 's#^[A-Za-z]*://##' -e 's#[/:].*##')"
-# The name the panel's certificate is renewed for (rm_panel's acme.sh step): its nginx vhost's server_name, else — a panel
-# that serves TLS itself, the default — the address its install.conf records, which is the -d install-host.sh gave
-# acme.sh. ⚠️ nginx ONLY left every self-serving panel's renewal out of rm_panel: a full uninstall kept acme.sh renewing a
-# certificate into the /etc/swg-panel/tls it had just deleted (found writing the gate round 6 asked for; that arm had
-# never run). rm_panel still touches only an entry that installs into OUR certificate paths.
 _panel_domain(){ local d=""
   [ -f /etc/nginx/sites-available/swg-panel.conf ] && \
     d="$(sed -n 's/[[:space:]]*server_name[[:space:]]\+\([^;]*\);.*/\1/p' /etc/nginx/sites-available/swg-panel.conf | sed -n 1p | tr -d ' ')"
@@ -259,34 +183,10 @@ rm_panel(){
   if [ -e $SD/swg-panel-server.service ]; then run systemctl disable --now swg-panel-server; fi
   # swg-sub (the subscription surface) is a companion of the panel — remove it alongside
   if [ -e $SD/swg-sub.service ]; then run systemctl disable --now swg-sub; fi
-  # swg-netctl (the panel's privileged network/TLS helper: .service + .path + .timer) — a companion of the panel.
-  # ⚠️ BOTH FAMILIES, exactly as rm_netctl does. The standalone netctl component is offered ONLY when there is
-  # no bare panel ("rm_panel would otherwise sweep them"), so this sweep is the only thing that reaps them on a
-  # box that has one — and it listed just the bare trio. A box carrying leftover swg-netctl-docker.* from an
-  # earlier conversion therefore kept them through an uninstall, with the .path waiting and the .timer RUNNING,
-  # polling a queue for a panel that no longer existed. Measured on a bare-metal master: 4 swg units survived.
-  # ⚠️ …BUT THE DOCKER FAMILY ONLY WHEN NO DOCKER PANEL IS LEFT. A box can carry both panels (guard_second_panel parks
-  # one beside the other), and there swg-netctl-docker.* is not a leftover — it is the LIVE docker panel's address
-  # helper. Removing the bare panel took it anyway: the docker panel kept running with nothing to carry out its address
-  # changes (1.8.8 qualification, R8). rm_docker_panel removes it with the docker panel; rm_netctl, the same test.
   for _nc in swg-netctl.path swg-netctl.timer swg-netctl.service; do
     run systemctl disable --now "$_nc" 2>/dev/null || true; done   # unguarded — disabling something already gone is harmless
   docker_running swg-panel || for _nc in swg-netctl-docker.path swg-netctl-docker.timer swg-netctl-docker.service; do
     run systemctl disable --now "$_nc" 2>/dev/null || true; done
-  # ⚠️ `.service.d` FOR swg-netctl TOO — the two beside it already reap theirs, and this is the ONE unit
-  # here that actually gets a drop-in written: `update.sh`'s `ensure_acme_home` pins LE_WORKING_DIR into
-  # `swg-netctl.service.d/acme-home.conf`, because acme.sh otherwise follows $HOME and the helper has none.
-  # Left behind, the drop-in outlives the unit AND the install — measured on a scratch box: uninstall, then
-  # a fresh install from nothing, and `systemctl show -p Environment swg-netctl` still carried the OLD
-  # install's LE_WORKING_DIR, from a file written nine minutes before the unit above it. A drop-in
-  # OVERRIDES the unit, so the day a new install canonicalises a different store the stale pin wins — and
-  # worse, `ensure_acme_home` skips its heal when it finds any LE_WORKING_DIR in that directory, so the
-  # residue suppresses the very correction that would fix it. ([[acme-store-split-and-arms]])
-  # ⚠️ …BUT AN OPERATOR'S OWN DROP-IN FOR THE PANEL IS PART OF "KEEP THE DATA". swg-panel-server.service.d holds one file
-  # of ours (zz-swg-update.conf, the Update button's trigger — update.sh writes it); anything else there the operator
-  # wrote — SWG_LATEST_URL, the pre-release channel .env.example documents, is the usual one — and went with the unit on
-  # every uninstall, so a panel that "comes back as itself" came back on the release channel (1.8.8 qualification, round
-  # 6; the Docker path keeps it in its kept .env). Kept, a re-install's unit picks it up again. Deleting the data takes it.
   local _pdd="$SD/swg-panel-server.service.d" _mine=""
   [ "$PANEL_DATA_DEL" = yes ] || _mine="$(ls -A "$_pdd" 2>/dev/null | grep -vxE 'zz-swg-update.conf|swg-ns.conf|swg-journal.conf' | tr '\n' ' ' || true)"
   rmrf $SD/swg-panel-server.service $SD/swg-sub.service $SD/swg-sub.service.d \
@@ -299,11 +199,6 @@ rm_panel(){
        rm_netctl_gate_if_last bare-gone docker-gone; fi
   rm_log_ns swg-panel swg-panel-server.service swg-sub.service swg-netctl.service swg-update.service
   rm_updater_if_last bare-gone   # the one-click updater: shared with a docker install, so it goes only with the last of them
-  # ⚠️ A DANGLING ENABLEMENT SYMLINK OUTLIVES ITS UNIT FILE, and `systemctl disable` CANNOT clear it: it
-  # reads [Install] from the FRAGMENT to learn which symlinks to drop, so once the fragment is gone the link
-  # in multi-user.target.wants/ is orphaned and systemd reports that name for ever as "not-found inactive
-  # dead" — a swg unit no uninstall can remove. Observed on a bare-metal master, left by an earlier partial
-  # removal. Delete ours by name, and only where the target is genuinely gone.
   for _l in "$SD"/*.wants/swg-*.service "$SD"/*.wants/swg-*.path "$SD"/*.wants/swg-*.timer; do
     { [ -L "$_l" ] && [ ! -e "$_l" ]; } && rmrf "$_l"
   done
@@ -311,17 +206,6 @@ rm_panel(){
   rmrf /etc/nginx/sites-enabled/swg-panel.conf /etc/nginx/sites-available/swg-panel.conf \
        /etc/nginx/conf.d/swg-panel.conf /etc/nginx/.htpasswd-swg
   command -v nginx >/dev/null 2>&1 && { run nginx -t && run systemctl reload nginx || warn "reload nginx manually if it's running"; }
-  # ⚠️ TWO FAULTS LIVED IN THIS BLOCK, one aimed outward and one inward.
-  # (1) NEIGHBOUR SAFETY. `--remove` ran unconditionally on whatever domain we were installed under, so
-  #     uninstalling US stopped the renewal of a certificate something else on this box may still serve
-  #     under the same name (an nginx vhost, another panel). Only ever touch an entry that actually
-  #     installs into OUR cert paths — the same test prune_stale_acme_installs uses.
-  # (2) `--remove` DROPS THE RENEWAL CONF AND KEEPS THE KEY ("You can remove them by yourself"), and that
-  #     stranded key makes the domain un-reissuable: a later re-install stops at "Domain key exists, do you
-  #     want to overwrite it? ... add '--force'" instead of reaching the CA, and it cannot heal itself,
-  #     because Le_Keylength is written only on a successful key creation and the conf is now gone. So an
-  #     uninstall+reinstall — the exact thing an operator does when something looks wrong — left a box that
-  #     could never issue a certificate again. Drop the directory, don't just deregister it.
   if [ -n "$DOMAIN" ] && [ "$DOMAIN" != "_" ]; then
     local _acme="" _a _h _conf _dom _rp _dir
     for _a in /root/.acme.sh/acme.sh "${HOME:-/root}/.acme.sh/acme.sh" "$(command -v acme.sh 2>/dev/null || true)"; do
@@ -359,25 +243,12 @@ rm_panel(){
   rmrf /opt/swg-panel /opt/swg-sub /var/www/wgstats /var/www/acme /usr/local/bin/swg-passwd
   if [ "$PANEL_DATA_DEL" = yes ]; then rmrf /var/lib/swg-panel /etc/swg-panel /etc/swg-sub   # /etc/swg-sub = swg-sub's OWN tls dir
   else
-    # ⚠️ KEEPING THE DATA KEEPS THE PANEL, not only its roster. /etc/swg-panel went with every uninstall — the login,
-    # the TLS certificate and key, install.conf — so the re-install minted a new certificate and every node pinned to
-    # the old one stopped syncing ("tls fingerprint mismatch") until its own installer was re-run; an Enter-through
-    # re-install also moved the panel to the default-route address, minted a new login name and renamed its node
-    # (1.8.8 qualification, round 4). The Docker path always kept them (data/etc). Kept here too: the re-install then
-    # finds its own login, certificate, address and node name and comes back as the same panel. Secrets that are not
-    # its identity still go: stored client configs, the panel's ssh dir, the Cloudflare tokens in install.conf (the
-    # Docker path strips the same from .env), and the ufw record whose rules were removed just above.
     rmrf /var/lib/swg-panel/.ssh /var/lib/swg-panel/configs /etc/swg-panel/ufw-added
     [ -f /etc/swg-panel/install.conf ] && run sed -i -E 's/^(CF_TOKEN|CF_ORIGIN_TOKEN)=.*/\1=/' /etc/swg-panel/install.conf
     _kept=""; [ -d /var/lib/swg-panel ] && _kept="/var/lib/swg-panel (users, peers, nodes)"
     [ -d /etc/swg-panel ] && _kept="${_kept:+$_kept and }/etc/swg-panel (its login, certificate and address)"
     [ -n "$_kept" ] && ok "Kept $_kept — a re-install comes back as this same panel, and its nodes keep syncing"
   fi
-  # Hand any KEPT state back to root BEFORE the users go. State deliberately outlives an uninstall, and a
-  # deleted user leaves its files holding a numeric uid that belongs to nobody — which `useradd -r` then
-  # reissues to whichever service account is created first on the next install. That is how a panel ended up
-  # unable to read its own 0600 session.key (the sub user had inherited the old panel's uid), signing cookies
-  # with a throwaway secret and logging every operator out on each restart. root owns nothing by accident.
   for _sd in /var/lib/swg-panel /var/lib/swg-noded /etc/swg-panel /etc/swg-sub; do   # the key too: its group goes below
     [ -d "$_sd" ] && run chown -R root:root "$_sd" 2>/dev/null || true
   done
@@ -387,28 +258,12 @@ rm_panel(){
   REMOVED_PANEL=true; ok "swg-panel removed"
 }
 
-# Tell the panel this node is going away (the "goodbye" signal) so it removes itself cleanly —
-# using the node's own bearer token + panel URL from its config. Best-effort: if the panel is
-# unreachable, the operator can Force-remove it from the Nodes screen instead.
-# _goodbye_post <panel-url> <token> <verify:yes|no> <fingerprint> — POST the node's bearer token to /api/node/goodbye
-# ⚠️ WITH THE NODE'S OWN TRUST. It went out with verification off whenever verify was — on every PINNED node, i.e. to
-# whatever answered at the panel's address (1.8.8 qualification, round 6). Now panel_req checks the panel on the same
-# connection, with the node's pin (or its CA): a panel that fails it gets nothing, and the line says so.
 _goodbye_post(){
   local url="$1" tok="$2" verify="$3" fp="${4:-}"
   [ -n "$url" ] && [ -n "$tok" ] || return 0
   command -v python3 >/dev/null 2>&1 || return 0
-  # ⚠️ NOT ON A DRY RUN. This POST is not a `run` — it went out for real from `--dry-run`, and the panel acted on it:
-  # measured on a bare master (1.8.8 qualification, q1), the dry run flagged its node "uninstalled" and logged
-  # "Node uninstalled — kept for re-install"; for a node the operator had marked for removal, a received sign-off
-  # COMPLETES that removal, peers and all. A dry run describes the sign-off; it never sends one.
   if $DRYRUN; then echo "    [dry] sign off from the panel ($url)"; return 0; fi
   info "Signing off from the panel…"
-  # ⚠️ THE REASON COMES BACK ON STDOUT, INTO THE ONE LINE BELOW — never printed raw. A refused connection printed
-  # python's own `<urlopen error [Errno 111] Connection refused>` above the friendly warning (1.8.8 qualification),
-  # and a rejected token a bare "HTTP 401" — and then "Couldn't reach the panel" about a panel that had answered.
-  # The panel removes the node when it RECEIVES the request (node_remove runs before the reply), so a connection closed
-  # with no answer (panel_req 2) or a proxy's 5xx still means it landed; 404 = already gone.
   local _why _rc=0
   _why="$(SWG_TOK="$tok" SWG_BODY='{}' panel_req POST "${url%/}/api/node/goodbye" "$verify" "$fp" 10 2>/dev/null)" || _rc=$?
   case "$_rc:$_why" in
@@ -423,10 +278,6 @@ _goodbye_post(){
     *) warn "Couldn't reach the panel${_why:+ ($_why)}; the node will just go offline there (your peers are kept). Remove it from the Nodes screen if you want it gone.";;
   esac
 }
-# panel_req <METHOD> <url> <verify:yes|no> <fingerprint> [<timeout-s>] — the token in $SWG_TOK, a JSON body in $SWG_BODY.
-# ⚠️ TWIN of lib/common.sh's panel_req (this file does not source it) — see there; tests/panel_req_selftest.py holds the
-# program text to one copy. The panel's certificate is checked on the connection the token then travels on: a pin →
-# the certificate must hash to it, verify=yes → CA verification; either failing sends NOTHING (exit 4).
 panel_req(){ python3 - "$@" <<'PANELREQ'
 import hashlib, http.client, math, os, re, signal, ssl, sys, urllib.parse
 a = (sys.argv[1:] + [""] * 5)[:5]
@@ -500,13 +351,6 @@ finally:
             pass
 PANELREQ
 }
-# ⚠️ NOBODY LEFT TO TELL. A node whose panel is THIS box's own (a master's co-located node dials http://127.0.0.1:8088)
-# signs off to a panel this same run may already have removed — the components go panel first — so the bare-metal
-# master's uninstall ended its node removal with "Couldn't reach the panel; the node will just go offline there", about
-# a panel that no longer exists (1.8.8 qualification, q1). The docker path skipped this case already; both now ask the
-# same two things. Skipped ONLY when no panel of either method is left on the box: "uninstall the node, keep the panel"
-# still signs off, so that panel shows it Uninstalled — and a bare node beside a DOCKER panel (or the reverse) still
-# reaches it at the same loopback address, which the docker path's container-only test used to skip.
 _url_is_this_box(){ local h="${1#*://}"; h="${h%%/*}"
   case "$h" in \[*) h="${h#\[}"; h="${h%%\]*}";; *) h="${h%%:*}";; esac   # drop the port (an IPv6 host is bracketed)
   [ -n "$h" ] || return 1
@@ -530,11 +374,6 @@ node_goodbye(){
   _goodbye_nobody "$url" && { _goodbye_skipped; return 0; }
   _goodbye_post "$url" "$tok" "$verify" "$fp"
 }
-# _docker_node_panel — the panel a DOCKER node really talks to, and how it trusts it: the kept .env, overridden by what
-# the node LEARNED (data/node/panel-url / -token / -verify / -fp — a re-point or a Transfer), as docker/node-entrypoint.sh
-# decides them at every start. Sets DNP_URL DNP_TOKEN DNP_VERIFY DNP_FP. ⚠️ TWIN of lib/common.sh's docker_node_panel —
-# the pin rule included: a learned verify=yes with no learned fp is CA verification (a transfer to a CA-verified panel),
-# never the pin of the panel the node left.
 _docker_node_panel(){ local d="$1" k v _lv="" _lf=""
   for k in PANEL_URL NODE_TOKEN TLS_VERIFY TLS_FINGERPRINT; do
     v="$(sed -n "s/^$k=//p" "$d/.env" 2>/dev/null | sed -n 1p | sed 's/[[:space:]]\{1,\}#.*$//' | tr -d '"' || true)"
@@ -552,9 +391,6 @@ docker_node_goodbye(){
   local env="$DOCKER_DIR/.env"; [ -f "$env" ] || return 0
   local url tok verify fp
   _docker_node_panel "$DOCKER_DIR"; url="$DNP_URL"; tok="$DNP_TOKEN"; verify="$DNP_VERIFY"; fp="$DNP_FP"
-  # A panel-only install has NO node: its .env carries the placeholder NODE_TOKEN=set-in-nodes-screen (compose
-  # interpolates every service), and a files cleanup on such a box said "No sign-off to send: this node's panel was
-  # this box's own…" about a node it never had (1.8.8 qualification, q5). Nothing to sign off, nothing to say.
   [ "$tok" = set-in-nodes-screen ] && return 0
   # A co-located master's node signs off to its OWN panel — skipped when no panel is left to hear it (see above).
   _goodbye_nobody "$url" && { _goodbye_skipped; return 0; }
@@ -574,10 +410,6 @@ docker_node_uninstalling(){   # red "uninstalling" tag while a docker node tears
   _proc_post "$DNP_URL" "$DNP_TOKEN" "$DNP_VERIFY" "$DNP_FP" uninstalling
 }
 
-# Containers we took an interface over from — see the restore at the end of the run. config.json is the
-# authoritative record, but on a DOCKER node it lives inside the node container and is gone after a recreate,
-# so swg-noded also mirrors the map into its state dir, which is a bind mount the host can always read. Read
-# both and dedupe: whichever exists wins, and a container named twice is started once.
 adopted_ctrs(){ # adopted_ctrs <config.json> <adopted-containers.json>
   python3 - "$1" "$2" 2>/dev/null <<'PYADOPT' || true
 import json, sys
@@ -609,20 +441,10 @@ capture_adopted(){ local _n
   [ -n "$_n" ] && ADOPTED_CTRS="$(printf '%s\n%s\n' "${ADOPTED_CTRS:-}" "$_n" | awk 'NF && !seen[$0]++')"
   return 0; }
 
-# The node unit's drop-ins go with the unit — but on "keep the data" (rm_panel sets KEEP_OWN_DROPINS=yes: a master whose
-# panel keeps its data comes back as itself) an operator's own drop-ins for swg-noded stay, as the panel's do (c752293).
-# SWG_TURN_MIRROR — the proxy for the turn downloads, which matters where GitHub is blocked — went with every such
-# uninstall (1.8.8 qualification, round 8). Ours goes: 10-swg-reach-sweep.conf (a re-install writes it again).
 _node_dropins_away(){ local d="$SD/swg-noded.service.d" mine=""
   [ "${KEEP_OWN_DROPINS:-no}" = yes ] && mine="$(ls -A "$d" 2>/dev/null | grep -vxE '10-swg-reach-sweep.conf|swg-ns.conf' | tr '\n' ' ' || true)"
   if [ -n "$mine" ]; then rmrf "$d/10-swg-reach-sweep.conf" "$d/swg-ns.conf"; info "  Kept your own drop-in(s) for the node — $d: ${mine% } (a re-install picks them up)"
   else rmrf "$d"; fi; }
-# swg's own journal (docs/LOGS-PLAN.md §2, §18): the namespace drop-ins of the units this component removes (ours, under
-# /etc; swg-noded's, beside the units it writes — /etc, or /run where units cannot persist) and the size file under /run;
-# swg-logs goes with the last of the two. Its journald is NOT stopped and its stored lines stay HERE: a unit still running
-# in the namespace (a turn proxy kept by this run) would lose its log stream, and kept data keeps them — rm_log_journals,
-# at the end of the run, takes them once nothing of swg's is left. TWIN of lib/common.sh's SWG_LOG_NS_DROPIN (this file
-# does not source it).
 rm_log_ns(){   # <namespace> <unit or unit prefix>...
   local ns="$1" u; shift
   for u in "$@"; do
@@ -633,15 +455,6 @@ rm_log_ns(){   # <namespace> <unit or unit prefix>...
   { [ -e "$SD/swg-noded.service" ] || [ -e "$SD/swg-panel-server.service" ]; } || rmrf /usr/local/bin/swg-logs
   return 0
 }
-# …and at the END of the run, once NOTHING of swg's is left on the box (1.8.9 qualification L8-a, L8-c): every swg-ns /
-# swg-log / swg-journal drop-in left anywhere (the Docker removal path never ran rm_log_ns, and a converted box carries the
-# other method's) and swg-noded's swg-restart.conf (its systemd < 254 back-off, D12-1), empty swg drop-in dirs, swg-logs. The
-# namespaces — swg's whole log history, never rotated again once no
-# journald@swg-* runs — go only on a FULL uninstall: their journald is stopped first, its sockets with it (the next line a
-# straggler wrote would start it again, and with it the directory), then the stored lines and their journald@ config.
-# Kept data (the panel's, or Docker's data dir: the box comes back as itself) keeps the journals, and the summary says so.
-# Anything of swg's still here (a kept panel, node, turn proxy, WDTT/csqtt server, relay or container) logs into them:
-# nothing is touched then. The box's MAIN journal never is — only <machine-id>.swg-panel / .swg-node.
 _swg_left(){ local f
   if $DRYRUN; then [ "${#DID_KEEP[@]}" -gt 0 ]; return; fi   # a dry run removed nothing: judged by its answers
   for f in "$SD"/swg-panel-server.service "$SD"/swg-noded.service "$SD"/swg-sub.service "$SD"/swg-netctl*.service \
@@ -649,11 +462,6 @@ _swg_left(){ local f
            /run/systemd/transient/swg-s5x-*.service; do
     [ -e "$f" ] && return 0; done
   docker_running swg-panel || docker_running swg-node; }
-# ⚠️ AN /etc/swg-panel HOLDING ONLY THE RELAY'S DIR, OR NOTHING, IS NO DATA. swg-noded makes /etc/swg-panel/relay on a node
-# that relayed a link, and rm_node (rm_leftovers on a converted box) takes the relay dir, not the parent — on a master
-# swg-noded, running until rm_node stops it, even writes its env back after rm_panel deleted the panel's data. Read as kept,
-# a FULL uninstall kept the swg-node journal (turn-proxy client addresses, SNI names at Debug) for good, "with the data"
-# (1.8.9 qualification R2 INST-3).
 _data_kept(){ [ "${KEEP_OWN_DROPINS:-no}" = yes ] || [ "${DOCKER_DATA_DEL:-}" = no ] || [ "${DOCKER_KEEP_CONFS:-}" = yes ] && return 0
   $DRYRUN && return 1
   [ -d /var/lib/swg-panel ] || [ -n "$(ls -A /etc/swg-panel 2>/dev/null | grep -vx relay)" ] || [ -d "$DOCKER_DIR/data" ]; }
@@ -683,32 +491,18 @@ rm_log_journals(){ local f d ns u mid had=""
   run systemctl daemon-reload 2>/dev/null || true
   return 0
 }
-# …and, once nothing of swg's is left, update.sh's lock (/tmp when /run is not writable) and its in-progress marker (left
-# only by an update that was killed): update.sh runs on every kind of box — the CLI, the panel's Update button, a node
-# updated from the panel — and keeps its lock for the next run.
 rm_update_leftovers(){ _swg_left && return 0; rmrf /run/swg-update.lock /run/swg-update.running /tmp/swg-update.lock; return 0; }
 rm_node(){
   info "Removing swg-node (bare-metal entry server)"
   node_goodbye   # signal the panel before we tear down the config it needs
-  # ⚠️ THE RELAY'S DIVERT COMES DOWN BEFORE ANYTHING ELSE, AND BEFORE THE RELAY ITSELF. A tproxy rule whose
-  # relay has been uninstalled is not a leftover, it is a BLACKHOLE: the kernel takes those packets out of
-  # the forwarding path and nothing is left on the box that would ever remove the rule. nft half first, then
-  # the routing half, exactly as swg-noded's own disarm does it.
   run sh -c 'nft delete table inet swg_relay >/dev/null 2>&1 || true'
   run sh -c 'n=0; while [ $n -lt 4 ] && ip rule del fwmark 0x9c40 lookup 6990 2>/dev/null; do n=$((n+1)); done; true'
   run sh -c 'ip route flush table 6990 >/dev/null 2>&1 || true'
   run sh -c 'for u in $(systemctl list-units --all --plain --no-legend "swg-relay@*.service" 2>/dev/null | awk "{print \$1}"); do systemctl disable --now "$u" >/dev/null 2>&1 || true; done'
-  # ⚠️ THE SLICE IS A UNIT TOO, and it was the one thing this block left behind — `swg-relay.slice` stayed
-  # on disk and ACTIVE after a full uninstall, so a box that had removed swg still had an swg unit loaded.
-  # It is written beside `swg-relay@.service` by the node (`RELAY_SLICE`), so it comes off beside it.
-  # Found by checking what a completed uninstall actually left, 1.8.5 qualification.
   run systemctl stop swg-relay.slice 2>/dev/null || true
   rmrf $SD/"swg-relay@.service" $SD/swg-relay.slice /etc/swg-panel/relay
   rmrf /run/swg-relay-*.sock   # its status sockets: outside the unit's RuntimeDirectory, unlinked only at a relay's next start
   if [ -e $SD/swg-noded.service ]; then run systemctl disable --now swg-noded; fi
-  # The SOCKS5 exits' tunnels (hev-socks5-tunnel, swg-noded's own transient units in swg-exit.slice — SOCKS5-EXIT-PLAN
-  # §6.4): after swg-noded, which would make them again. Their binary and configs go with /var/lib/swg-noded below; the
-  # slice's CPU cap was --runtime and dies with it. (A Docker node's hev is a child of its container.)
   run sh -c 'for u in $(systemctl list-units --all --plain --no-legend "swg-s5x-*.service" 2>/dev/null | awk "{print \$1}"); do systemctl stop "$u" >/dev/null 2>&1; systemctl reset-failed "$u" >/dev/null 2>&1; done; true'
   run systemctl stop swg-exit.slice 2>/dev/null || true
   docker_running swg-node || rm_smartdns_redirect   # its dnsmasq just went with it — see rm_smartdns_redirect
@@ -716,34 +510,14 @@ rm_node(){
   rmrf $SD/swg-noded.service; _node_dropins_away; run systemctl daemon-reload
   rm_log_ns swg-node swg-noded.service swg-relay@.service vk-turn-proxy-.service swg-wdtt-.service swg-csqtt-.service
   run systemctl daemon-reload   # the prefix drop-ins rm_log_ns took off units that may still be loaded
-  # An interface TAKEN OVER from somebody else's container came with a promise: their server keeps serving, just
-  # from here instead. Uninstalling ends that — we delete the interface further down — and the container it came
-  # from is still stopped with restart=no, exactly as the take-over left it. Removing swgPanel then leaves the
-  # operator with NO server at all: ours gone, theirs disabled and never told to come back. Capture the pairs now,
-  # while the record still exists; the restore itself is deferred to the end of the run, past the interface
-  # removal, or their container would come back to a port ours is still holding.
   capture_adopted /etc/swg-agent/config.json /var/lib/swg-noded/adopted-containers.json
-  # The panel's system mesh links go with the node that carried them — they are not peer interfaces and
-  # are never offered as a separate question. Before the agent config is deleted, so `swg_owns` still has
-  # something to read for everything else.
   info "  removing the panel's system mesh links"
   remove_ifaces /etc/amnezia/amneziawg awg-quick mesh
   remove_ifaces /etc/wireguard        wg-quick  mesh
   rmrf /opt/swg-agent /opt/swg-noded /srv/swg-queue /var/log/swg-agent /var/lib/swg-noded /var/lib/swg-recovery /etc/sudoers.d/swg-agent /run/swg-agent.lock
   rmrf /etc/swg-agent   # turn-proxy.json here is just a panel-facing record; a kept turn-proxy keeps running
-  # The AppArmor grant the installer added so the wg CLI could read userspace interface sockets is a
-  # policy change we made to this box, so it goes back when we do. It lives INSIDE a file the
-  # distribution and the operator may also write in, so only the span between our own two markers is
-  # cut — the file only when nothing else is in it — and the profile is reloaded so the removal takes effect.
-  # ⚠️ TWIN: these two markers are lib/common.sh's APPARMOR_LOCAL_BEGIN/_END, spelled out because
-  # this file deliberately does not source it (see the note at the top). Change one, change both.
   for _aal in /etc/apparmor.d/local/*; do
     [ -f "$_aal" ] && grep -qsF '# --- swgPanel: userspace WireGuard datapaths (begin) ---' "$_aal" || continue
-    # ⚠️ UNCONDITIONAL, AND BEFORE THE KEEP QUESTIONS BELOW. The grant is a policy change we made to
-    # this box, so it goes back when we do — but an operator who then KEEPS a WDTT/csqtt server or a
-    # userspace awg interface is left with a running datapath whose socket the wg CLI can no longer
-    # read. Nothing of ours reads it once the node is gone, so the removal stands; it is said out loud
-    # rather than left to be discovered.
     info "  reverting the swgPanel AppArmor grant in $_aal (should you keep a WDTT / csqtt server or a userspace awg interface below, the wg CLI can no longer read its socket)"
     run sed -i '/# --- swgPanel: userspace WireGuard datapaths (begin) ---/,/# --- swgPanel: userspace WireGuard datapaths (end) ---/d' "$_aal"
     _aap="/etc/apparmor.d/$(basename "$_aal")"
@@ -753,10 +527,6 @@ rm_node(){
   done
   hand_ids_to_root swgpush swgagent   # a kept path never keeps a uid this run frees (F90)
   for u in swgpush swgagent; do if id "$u" >/dev/null 2>&1; then run userdel -r "$u"; fi; done
-  # NOT rm_node_netobjects here. This runs FIRST in the component list, while "keep my interfaces / turn-proxies /
-  # WDTT servers" are offered later and default to keep — and those objects are their datapath. A kept WDTT server
-  # runs with -no-nat, so its SNAT is precisely the swg-egress:<iface> rule this would delete: the server survives
-  # the uninstall with no internet for any of its clients. Deferred to the end of the run, past every prompt.
   NEED_NETOBJ_SWEEP=true
   REMOVED_NODE=true; ok "swg-node removed"
 }
@@ -782,9 +552,6 @@ ask_full_data_fate(){   # the LAST swg container is going → decide the WHOLE d
 }
 apply_full_data_fate(){   # run AFTER teardown, using the decision captured by ask_full_data_fate
   if [ "$DOCKER_DATA_DEL" != yes ]; then
-    # KEEP .env so a plain `docker node` re-install recovers NODE_TOKEN / PANEL_URL on its own (peers re-sync
-    # and the re-install lifecycle shows) — without it the box has no key and stays stuck "Uninstalled". Strip
-    # panel secrets so no plain password is left at rest; compose + binaries are re-staged by the installer anyway.
     [ -f "$DOCKER_DIR/.env" ] && run sed -i -E '/^(PANEL_PASSWORD|CF_TOKEN|CF_ORIGIN_TOKEN|ACME_EMAIL)=/d' "$DOCKER_DIR/.env"
     rmrf "$DOCKER_DIR/docker-compose.yml" "$DOCKER_DIR/Dockerfile" "$DOCKER_DIR/Dockerfile.node" \
          "$DOCKER_DIR/.dockerignore" "$DOCKER_DIR/VERSION" "$DOCKER_DIR/docker" "$DOCKER_DIR/vendor" \
@@ -803,11 +570,6 @@ apply_full_data_fate(){   # run AFTER teardown, using the decision captured by a
     ok "Kept $DOCKER_DIR/data$_env for a future reinstall"
     return
   fi
-  # CASES 2 & 3 — wiping the live data dir: first stash a recovery copy (node token + interface keys) under
-  # $DOCKER_DIR.uninstalled-<ts> so a future re-install can recover this node from the leftover-identity list
-  # (its peers re-sync from the panel). Panel / TLS secrets are stripped from the copy.
-  # ⚠️ NOT WHEN THE RUN WAS TOLD TO KEEP NONE. With ARCHIVES_DEL=y preset (an unattended wipe) the copy was made,
-  # announced as "kept for re-install", and deleted a minute later by the archive sweep at the end of this run.
   local _saved=no
   case "${ARCHIVES_DEL:-}" in [Yy]*)
     [ -f "$DOCKER_DIR/.env" ] && info "  no recovery copy saved — ARCHIVES_DEL=y asks for none to be kept (this node cannot be recovered from this box)";;
@@ -834,24 +596,12 @@ apply_full_data_fate(){   # run AFTER teardown, using the decision captured by a
     ok "Removed $DOCKER_DIR$([ "$_saved" = yes ] && printf ' — a recovery copy (token + interface keys) is kept for re-install')"
   fi
 }
-# The compose project's own networks (swg-panel-docker_default + its br-… bridge). `compose down` drops them only when
-# it runs — and a docker panel removed while its node stays, or a stack whose containers went one by one, never gets
-# one, so the network outlived the uninstall (1.8.8 qualification). By the project's label, so nothing else's network
-# is touched; docker refuses while anything is still attached, so a container that stays is never cut off.
 docker_rm_project_networks(){
   command -v docker >/dev/null 2>&1 || return 0
   local _nw
   for _nw in $(docker network ls -q --filter "label=com.docker.compose.project=$(basename "$DOCKER_DIR")" 2>/dev/null); do
     run sh -c "docker network rm '$_nw' >/dev/null 2>&1 || true"
   done; }
-# The ONE-CLICK UPDATER — swg-update, swg-update-check, swg-update.{service,path,timer} and the stamp — is one set of
-# files that a bare-metal panel (install-host.sh's mk_update_unit) and a docker install of any profile
-# (install-docker.sh's wire_host_updater) both write, at the same paths, reading the same trigger list. So it belongs
-# to whichever of them is still here, and goes only with the last: a bare panel, or a swg-panel / swg-node container.
-# Each remover used to take it with ITSELF — on a box carrying both panels, removing the parked bare one left the live
-# docker panel's Update button writing a trigger that nothing read, and removing the docker one did the same to the
-# bare one (1.8.8 qualification, R8). $1 = bare-gone: this run is removing the bare panel right now, so it does not
-# count even while a dry run leaves its files where they are.
 rm_updater_if_last(){
   if { [ "${1:-}" != bare-gone ] && { [ -d /opt/swg-panel ] || [ -f "$SD/swg-panel-server.service" ]; }; } \
      || docker_running swg-panel || docker_running swg-node; then return 0; fi
@@ -870,10 +620,6 @@ docker_cleanup_if_last(){   # shared bits (network/images/data dir) — only onc
     [ -n "$DC" ] && [ -f "$DOCKER_DIR/docker-compose.yml" ] && run sh -c "cd '$DOCKER_DIR' && COMPOSE_PROFILES=host,master,node,host-node $DC down --remove-orphans >/dev/null 2>&1 || true"   # drop the network + any straggler
     docker_rm_project_networks   # …and the network itself when `down` could not (see above)
     local RMI="${REMOVE_DOCKER_IMAGES:-}"; echo; ask_yn "  Remove the pulled swg-panel / swg-node images too?" n RMI
-    # ⚠️ BY REPOSITORY, NOT BY TAG. This named `:latest` explicitly, which was every box until
-    # SWG_IMAGE_TAG started reaching existing installs — a box pinned to `sha-<short>` then kept every
-    # image it had, while the uninstaller reported having removed them. Measured on a pinned box: six
-    # images, 1.5 GB, still present after an uninstall that was told REMOVE_DOCKER_IMAGES=y.
     [ "$RMI" = yes ] && run sh -c 'docker images --format "{{.Repository}}:{{.Tag}}" 2>/dev/null \
         | grep -E "^(ghcr\.io/(sanityprotocol|tesla-prep)/swg-(panel|node)|swg-panel-docker-swg-(panel|node)):" \
         | xargs -r docker rmi >/dev/null 2>&1 || true'
@@ -881,11 +627,6 @@ docker_cleanup_if_last(){   # shared bits (network/images/data dir) — only onc
   apply_full_data_fate
 }
 rm_docker_panel(){ info "Removing Docker panel container (swg-panel)"
-  # ⚠️ INHERIT THE PRESET. `local DELP=""` unconditionally SHADOWED any environment answer, so ask_yn
-  # saw an empty variable, fell through to its default (n) and an unattended run KEPT the panel data it
-  # was told to delete — silently, while printing "Kept the panel data". Exactly the defect ask_yn's own
-  # comment documents for the preset path, one layer up, and `local RMI="${REMOVE_DOCKER_IMAGES:-}"`
-  # three lines below is the same idea done right. Same question as the bare-metal path, same variable.
   local DELP="${PANEL_DATA_DEL:-}"
   if docker_running swg-node; then    # node stays → only the panel's OWN data is in play (decide now)
     ask_yn "  Delete the panel data (login, roster (users+peers), nodes, certs)? The node's interface configs are kept." n DELP
@@ -905,12 +646,6 @@ rm_docker_panel(){ info "Removing Docker panel container (swg-panel)"
                       || info "  Kept the panel data; node interface configs untouched."
   else docker_cleanup_if_last; fi     # applies the data-dir decision captured above
   ok "swg-panel container removed"; }
-# reap_iface_rules <iface> [<subnet>] — the rules a node's interface left in THIS box's tables: every FORWARD rule that
-# names it (the hooks' accept pair and the tagged ACL alike — the interface is being removed, so none of them can match
-# again) and its subnet's MASQUERADE, in whatever number of copies. A Docker node runs with host networking, so its
-# hooks and node-entrypoint's NAT write the HOST's tables, and removing the container ran no PostDown: every uninstall
-# left them, and they piled up across installs (1.8.8 qualification, round 4 — 8 MASQUERADE and 6 FORWARD accepts on
-# one box, for interfaces long gone).
 reap_iface_rules(){ local n="$1" s="${2:-}" l _s
   command -v iptables >/dev/null 2>&1 && [ -n "$n" ] || return 0
   iptables -S FORWARD 2>/dev/null | grep -E -- "-[io] ${n}( |$)" | while IFS= read -r l; do
@@ -926,16 +661,6 @@ reap_iface_rules(){ local n="$1" s="${2:-}" l _s
   iptables -t nat -S POSTROUTING 2>/dev/null | grep -xE -- "-A POSTROUTING -s ${_s} -o [^ ]+ -j MASQUERADE" | while IFS= read -r l; do
     run sh -c "iptables -t nat $(printf '%s' "$l" | sed 's/^-A /-D /') 2>/dev/null" || true; done
 }
-# ⚠️ A DOCKER NODE'S nft TABLES GO WITH THE NODE'S OWN nft. Host networking puts them in the HOST's kernel, and the host's nft
-# may not read what the image's nft wrote: Debian 12's nft 1.0.6 segfaulted on the sets an earlier image declared (nft ≥ 1.1
-# records a plain `type ipv4_addr` key in a form 1.0.6 cannot parse), so the host-side sweep read nothing, deleted nothing
-# and still said ✓ — and the table stayed, a prerouting hook guarding subnets no interface used any more, until a reboot
-# (1.8.8 qualification, R27). The container is STOPPED first — a running swg-noded re-creates a table within one sync — then
-# a throwaway run of its image, on the host's network as the node was, reads and deletes every swg* table in one batch.
-# What it cannot reach, rm_node_netobjects' sweep still tries (and says so when it cannot read the ruleset either).
-# ⚠️ ITS INTERFACES (the names given) GO BETWEEN THE STOP AND THE TABLES — the order lib/common.sh's lc_node_nft_sweep keeps
-# (round 12e, R31-X3): a kernel wg0 outlives `docker stop` and forwards with whatever tables the kernel holds, and deleted only
-# after `docker rm`, the turn-proxies and the panel's goodbye it forwarded with none, its clients still connected.
 _node_nft_sweep(){
   local img tl dels _n _tag
   img="$(docker inspect -f '{{.Config.Image}}' swg-node 2>/dev/null || true)"
@@ -973,9 +698,6 @@ rm_docker_node(){  info "Removing Docker node container (swg-node)"
   if docker_running swg-panel; then   # master/panel stays → only the NODE's own data is in play (decide now)
     ask_yn "  Keep the node's interface configs (peers)? Leaves data/node-confs so a future install can re-onboard them." y KNODE
   else ask_full_data_fate; fi         # node is the last container → the whole data dir
-  # capture the node's interface names FROM THE CONTAINER first — the ./data/node-confs bind mount can be empty,
-  # and a host-networking node creates its wg/awg netdevs in the HOST namespace (they survive `docker rm`), so we
-  # need the names to delete the leftover host interfaces below (else the next install hits "awg0 already exists").
   local _ifn _n _c
   _ifn="$(docker exec swg-node sh -c 'for d in /etc/amnezia/amneziawg /etc/wireguard; do ls "$d"/*.conf 2>/dev/null; done' 2>/dev/null | sed 's#.*/##; s#\.conf$##' | tr '\n' ' ')"
   [ -n "$_ifn" ] || _ifn="$(for _c in "$DOCKER_DIR/data/node-confs/"*.conf; do [ -f "$_c" ] && basename "$_c" .conf; done | tr '\n' ' ')"
@@ -983,9 +705,6 @@ rm_docker_node(){  info "Removing Docker node container (swg-node)"
   local _nets
   _nets="$(docker exec swg-node sh -c 'for f in /etc/amnezia/amneziawg/*.conf /etc/wireguard/*.conf; do [ -f "$f" ] && printf "%s %s\n" "$(basename "$f" .conf)" "$(sed -n "s/^[[:space:]]*[Aa]ddress[[:space:]]*=[[:space:]]*//p" "$f" | sed -n 1p | cut -d, -f1)"; done' 2>/dev/null || true)"
   [ -n "$_nets" ] || _nets="$(for _c in "$DOCKER_DIR/data/node-confs/"*.conf; do [ -f "$_c" ] && printf '%s %s\n' "$(basename "$_c" .conf)" "$(sed -n 's/^[[:space:]]*[Aa]ddress[[:space:]]*=[[:space:]]*//p' "$_c" | sed -n 1p | cut -d, -f1)"; done)"
-  # Same debt the bare-metal node owes (see rm_node): an interface taken over from somebody else's container
-  # left that container stopped with restart=no. Read the mirror off the bind-mounted state dir, and — for a
-  # take-over that predates the mirror — the container's own config.json while it is still up to be asked.
   _acfg="$(mktemp 2>/dev/null || echo /tmp/swg-adopted.$$)"
   docker exec swg-node cat /etc/swg-agent/config.json >"$_acfg" 2>/dev/null || : >"$_acfg"
   capture_adopted "$_acfg" "$DOCKER_DIR/data/node/adopted-containers.json"
@@ -995,11 +714,6 @@ rm_docker_node(){  info "Removing Docker node container (swg-node)"
   run sh -c 'ids=$(docker ps -aq --filter name=swg-turn- 2>/dev/null); [ -n "$ids" ] && docker rm -f $ids >/dev/null 2>&1 || true'   # this node's turn-proxy containers
   [ -f "$SD/swg-noded.service" ] || rm_smartdns_redirect   # its dnsmasq was in the container (host networking: the DNATs are the host's)
   docker_node_goodbye                 # sign off AFTER the container is stopped — else its next 5s sync re-reports and clears the panel's "Uninstalled" tag (leaving it merely "offline")
-  # delete the leftover HOST-namespace wg/awg netdevs the (host-networking) node created
-  # ⚠️ NOT IN A DRY RUN. This loop was the one removal here that no `run` guarded: `--dry-run --yes` on a live Docker node
-  # brought down and deleted every interface it had — awg0, wg0, wg8 and the mesh link (1.8.8 qualification, round 6, q4;
-  # since 44f6915). swg-noded re-created the user interfaces; the mesh link stayed down until the container restarted.
-  # (the sweep above deleted them already when the node's image could be read — this finds them gone)
   for _n in $_ifn; do [ -n "$_n" ] || continue
     command -v ip >/dev/null 2>&1 && ip link show "$_n" >/dev/null 2>&1 || continue
     if $DRYRUN; then echo "    [dry] down + delete the leftover host interface $_n"; continue; fi
@@ -1012,18 +726,12 @@ rm_docker_node(){  info "Removing Docker node container (swg-node)"
     [ "$KNODE" = yes ] && info "  Kept $DOCKER_DIR/data/node-confs (peers re-onboardable); panel data untouched." \
                        || { _rm_node_data; info "  Removed the node's interface configs; panel data untouched."; }
   else docker_cleanup_if_last; fi     # applies the data-dir decision captured above
-  # Same deferred sweep the bare-metal rm_node arms. A docker node given host networking (or one that force-removed
-  # an interface, so wg-quick PostDown never ran) leaves its iptables/nft/ipset objects in the HOST namespace, where
-  # nothing else reclaims them; without this the docker path swept nothing at all.
   NEED_NETOBJ_SWEEP=true
   ok "swg-node container removed"; }
 rm_docker_files(){ info "Removing the Docker deployment files ($DOCKER_DIR)"
   # This component can run without rm_docker_node ever firing, so it owes the same debt: a container we took
   # an interface over from is still stopped with restart=no. Capture before anything is torn down.
   capture_adopted /dev/null "$DOCKER_DIR/data/node/adopted-containers.json"
-  # The dir-based component doesn't go through rm_docker_node/panel, so tear down ANY swg container here too
-  # (incl. compose's "<id>_swg-node" recreate-backups, which is why the node sometimes isn't detected by name).
-  # (both through `run`: a dry run printed "[dry]" for everything else here and took the stack down for real)
   run sh -c "cd '$DOCKER_DIR' 2>/dev/null && { docker compose down --remove-orphans >/dev/null 2>&1 || docker-compose down --remove-orphans >/dev/null 2>&1; } || true"
   docker_rm_project_networks
   for _p in swg-node swg-panel swg-turn-; do run sh -c "docker ps -aq -f 'name=$_p' 2>/dev/null | xargs -r docker rm -f >/dev/null 2>&1 || true"; done
@@ -1045,21 +753,11 @@ remove_ifaces(){ local dir="$1" tool="$2" want="${3:-own}" f n addr port
     if $DRYRUN; then echo "    [dry] down + disable ${tool}@$n + remove $n"
     else run systemctl stop "${tool}@$n" >/dev/null 2>&1 || true   # its unit FIRST: one started at boot stayed "active (exited)", then failed once its package went (1.8.8 deferred #16)
       { command -v "$tool" >/dev/null 2>&1 && "$tool" down "$n"; ip link delete "$n"; } >/dev/null 2>&1 || true
-      # DISABLE the unit instance, not just `down` it. Without this the enable symlink in
-      # multi-user.target.wants survives the conf it points at, and once the wg/awg package is removed too
-      # there is no unit file behind it either — systemd then reports `wg-quick@<n>.service not-found failed`
-      # for ever and tries again on every boot. A full uninstall left 36 of these on a test box. swg-agent
-      # already disables the instance on its own delete/stop paths; this is the same call, in the uninstaller.
       run systemctl disable "${tool}@$n" >/dev/null 2>&1 || true
       rm -f "$f"; fi
     printf '    %s✓ %s%s%s%s\n' "$(c '0;32')" "$n" "$(c 0)" "${addr:+ · $addr}" "${port:+ · :$port}"
   done; }
 
-# Peers (the interface .conf files) and the wg/awg PACKAGE are removed INDEPENDENTLY — so you can wipe the
-# panel + peers but KEEP the wg/awg service installed (or remove the package but keep the configs). Each is
-# its own component in the list, so the peer question is always asked regardless of the package answer.
-# `rmdir_if_empty`, never `rm -rf`, because a FOREIGN .conf may still be sitting in this directory —
-# kept on purpose by the operator, or kept because nothing could establish whose it was.
 rm_awg_peers(){
   info "Removing AmneziaWG interface configs (peers)"
   remove_ifaces /etc/amnezia/amneziawg awg-quick own
@@ -1070,16 +768,8 @@ rm_awg_foreign(){
   remove_ifaces /etc/amnezia/amneziawg awg-quick foreign
   rmdir_if_empty /etc/amnezia/amneziawg
 }
-# The amnezia PPA swg added (Ubuntu), with what adding it left beside it: 22.04's key file (+ its .gpg~) — add-apt-repository
-# --remove keeps it — and add-apt-repository's Launchpad cache (1.8.8 deferred #3 a, b); the source fallback's list too, which
-# no package removal ever reached (LC-24 lc7).
 _awg_ppa_forget(){ ls /etc/apt/sources.list.d/*amnezia* >/dev/null 2>&1 && run add-apt-repository -y --remove ppa:amnezia/ppa
   rmrf /etc/apt/trusted.gpg.d/amnezia-ubuntu-ppa.gpg /etc/apt/trusted.gpg.d/amnezia-ubuntu-ppa.gpg~ /root/.launchpadlib; return 0; }
-# ⚠️ SAY WHAT ACTUALLY HAPPENED. These printed their ✓ unconditionally, so a purge that failed — and
-# apt fails for an ordinary reason, another apt holding /var/lib/dpkg/lock-frontend — still reported
-# "WireGuard package removed" AND listed it under Removed: in the summary. Measured on hel-flux
-# 2026-09-08: both wireguard packages still `ii` after a run that claimed to have removed them. The
-# error text was right there on screen, contradicted two lines later by the verdict.
 rm_awg_pkg(){
   info "Uninstalling the AmneziaWG package (kernel module + tools)"
   down_ifaces /etc/amnezia/amneziawg awg-quick      # if the configs were kept, bring the ifaces down before pulling the module
@@ -1094,12 +784,6 @@ rm_awg_pkg(){
     fi
   else warn "Non-apt system — remove the amneziawg packages with your package manager."; fi
 }
-# ⚠️ AN AmneziaWG BUILT FROM SOURCE (every Debian node — the PPA is Ubuntu-only — and Ubuntu's fallback when the PPA's module
-# does not build) was never offered: `make install`'s tools and a module registered with DKMS from /usr/src belong to no
-# package, so the package question never named them, and DKMS went on rebuilding the module at every kernel upgrade on a box
-# without swg — one it cannot build for leaves apt half-configured (1.8.8 deferred #1, #16). A tree is ours when no package owns
-# it, as lib/common.sh's awg_dkms_drop_unowned decides (this file does not source it); the tools when /usr/bin/awg is no
-# package's. The module stays loaded until the next boot: unloading it safely needs every namespace scanned (deferred #3f).
 awg_src_trees(){ local d; command -v dpkg >/dev/null 2>&1 || return 0
   for d in /usr/src/amneziawg-*; do grep -qs '^PACKAGE_NAME="\?amneziawg"\?[[:space:]]*$' "$d/dkms.conf" && ! dpkg -S "$d" >/dev/null 2>&1 && printf '%s\n' "$d"; done; return 0; }
 awg_src_tools(){ [ -e /usr/bin/awg ] && command -v dpkg >/dev/null 2>&1 && ! dpkg -S /usr/bin/awg >/dev/null 2>&1; }
@@ -1136,11 +820,6 @@ rm_wg_pkg(){
 }
 rm_netctl(){   # a leftover swg-netctl (e.g. after a docker convert) with no bare panel around to sweep it up
   info "Removing swg-netctl (leftover helper)"
-  # BOTH families: the bare-metal swg-netctl.* and the docker helper swg-netctl-docker.*. The docker pair was
-  # invisible to every uninstall — the detection globbed swg-netctl.* , which needs a literal dot and so never
-  # matched swg-netctl-docker.service — leaving an ACTIVE .timer polling a queue for a panel that was gone.
-  # ⚠️ …but only a family whose panel is GONE (asked now, after the panel components ran): a docker panel that is
-  # still here — kept by this run — keeps its own helper, and a bare panel likewise.
   local _gone=""                                                  # what this run removes, for the gate's reap (a dry run keeps it)
   if [ ! -d /opt/swg-panel ] && [ ! -f $SD/swg-panel-server.service ]; then
     for _nc in swg-netctl.path swg-netctl.timer swg-netctl.service; do
@@ -1159,15 +838,9 @@ rm_netctl(){   # a leftover swg-netctl (e.g. after a docker convert) with no bar
   rm_netctl_gate_if_last $_gone
   run systemctl daemon-reload; ok "swg-netctl removed"
 }
-# Host-side remnants of a DOCKER or converted install that no container remover owns: swg-sub's own tls dir and its
-# systemd drop-in (written by the bare-metal install, survived the convert), and the node sysctl drop-in. Removing
-# these also arms the datapath sweep — this is the "re-run this uninstaller" the sweep message promises.
 rm_leftovers(){
   info "Removing leftover swg files (docker/converted install)"
   for _u in swg-sub.service; do [ -e "$SD/$_u" ] && run systemctl disable --now "$_u" 2>/dev/null || true; done
-  # + the rest of what the BARE install laid down and a bare→docker convert leaves behind (teardown_bare_panel moves
-  # the panel's state aside but not these): its stats dir, the login-reset helper, and a ufw rule it opened — whose
-  # record the convert carried into the docker data (or into the moved-aside /etc/swg-panel.converted-*).
   rmrf /etc/swg-sub /opt/swg-sub "$SD/swg-sub.service" "$SD/swg-sub.service.d" /usr/local/bin/swg-sub \
        /var/www/wgstats /usr/local/bin/swg-passwd
   # Left alone while a docker panel runs, which changes nothing: Docker publishes its ports past ufw (its own nat and
@@ -1175,11 +848,6 @@ rm_leftovers(){
   if ! docker_running swg-panel; then
     for _uf in "$DOCKER_DIR/data/etc/ufw-added" /etc/swg-panel.converted-*/ufw-added; do [ -f "$_uf" ] && ufw_forget "$_uf"; done
   fi
-  # ⚠️ AND THE RELAY UNITS, for the box the FIX CANNOT REACH. `rm_node` learned to remove swg-relay.slice,
-  # but `rm_node` only runs when a node component is still detected — so a box uninstalled by an older
-  # build keeps an ACTIVE slice for ever, and re-running the new uninstaller walks straight past it. This
-  # component is the one that runs when nothing owns the remnants, which is exactly that box's situation.
-  # Idempotent and safe beside rm_node: both stop the same units, and stopping a stopped slice is a no-op.
   for _u in swg-relay.slice; do [ -e "$SD/$_u" ] && run systemctl stop "$_u" 2>/dev/null || true; done
   rmrf "$SD/swg-relay@.service" "$SD/swg-relay.slice" /etc/swg-panel/relay
   rmrf /run/swg-relay-*.sock   # the relays' status sockets, as rm_node takes them (outside the unit's RuntimeDirectory)
@@ -1193,14 +861,6 @@ rm_leftovers(){
     if [ "${!_v}" = yes ]; then rmrf "$_sd"; else ok "Kept $_sd"; fi; done
   for _sd in wdtt:"$WDTT_DIR" csqtt:"$CSQTT_DIR"; do ls $SD/swg-${_sd%%:*}-*.service >/dev/null 2>&1 || ls -d "${_sd#*:}"/*/ >/dev/null 2>&1 \
     || { rmrf "${_sd#*:}/.bin"; $DRYRUN || rmdir "${_sd#*:}" 2>/dev/null || true; }; done
-  # Service identities the pre-convert BARE install created. rm_panel/rm_node own these, and neither runs on a
-  # docker-only box, so they outlived the uninstall — leaving swgpanel + group swg on a box with no swg on it.
-  # Same -r split as the owners use (swgpush/swgagent carry a home dir; swgpanel/swgsub do not).
-  # ⚠️ ASKED AT RUN TIME, NOT AT DETECTION. This component is listed after the docker ones, so by now they have been
-  # removed or kept. A docker install still HERE keeps them (it is not ours to orphan); one removed with its data KEPT
-  # no longer blocks them — that box kept every bare-era identity and file for good (1.8.8 qualification) — and its
-  # kept data is handed to root first, as rm_panel does, so a uid freed here cannot be reissued to a new service user
-  # that then owns it.
   if docker_running swg-panel || docker_running swg-node; then
     info "  keeping the service users — a docker install is still on this box"
   else
@@ -1213,14 +873,6 @@ rm_leftovers(){
   NEED_NETOBJ_SWEEP=true
   ok "leftover swg files removed"
 }
-# A KEPT PANEL THAT WAS PARKED FOR THE ONE THIS RUN REMOVED IS STARTED AGAIN. It was stopped for one reason only — two
-# panels would answer at one address — and with the other gone that reason is gone too. Left stopped, the box had no
-# panel at all while the summary said "Kept: Bare-metal swg-panel" (1.8.8 qualification, R8: nothing answered on its
-# ports). Started rather than explained, because keeping a component means keeping it working (the take-over restore
-# above does the same) and the operator who kept it has nothing left to decide; its one-click updater is still there
-# (rm_updater_if_last). Safe for its servers: each panel's nodes hold that panel's token only, so the ones enrolled to
-# the removed panel are refused by this one and keep their peers (a refused sync never reconciles), and this panel's
-# own nodes simply find it back. A panel the operator stopped with nothing beside it is not parked and is left alone.
 unpark_kept_panel(){
   local _lbl="" _how="" _why=""
   if $_BARE_PARKED && [ -f "$SD/swg-panel-server.service" ] && ! docker_running swg-panel; then
@@ -1250,17 +902,9 @@ _has_leftovers(){ [ -d /etc/swg-sub ] || [ -d /opt/swg-sub ] || [ -e "$SD/swg-su
   || [ -e "$SD/swg-relay.slice" ] || [ -e "$SD/swg-relay@.service" ] || [ -d /etc/swg-panel/relay ] \
   || id swgpanel >/dev/null 2>&1 || id swgsub >/dev/null 2>&1 || id swgpush >/dev/null 2>&1 || id swgagent >/dev/null 2>&1 \
   || getent group swg >/dev/null 2>&1 || [ -n "$(_fork_orphans)" ]; }
-# A WDTT / csqtt server's state no unit runs from (1.8.9 qualification L8-a): a bare → Docker convert carries each instance
-# into the container and keeps the bare original — and deletes the bare csqtt units (lib/common.sh stop_bare_csqtt) — so no
-# component ever named /opt/swg-csqtt/<iface>, its clients' password store, and a FULL uninstall left it. One per line.
 _fork_orphans(){ local d k; for d in "$WDTT_DIR"/*/ "$CSQTT_DIR"/*/; do d="${d%/}"; [ -d "$d" ] || continue
   k=csqtt; [ "${d%/*}" = "$WDTT_DIR" ] && k=wdtt; [ -e "$SD/swg-$k-${d##*/}.service" ] || printf '%s\n' "$d"; done; return 0; }
 
-# Delete the node-owned egress rules tagged for ONE interface (nat/POSTROUTING SNAT + filter/FORWARD accept +
-# mangle/FORWARD MSS), matching swg-noded's own tags. The END of the tag is matched — a quote, a space or the end of the
-# line — so swg-egress:wdtt1 never takes swg-egress:wdtt11. ⚠️ AND THE QUOTE IS OPTIONAL: iptables prints a comment in
-# quotes only when it holds a character other than letters, digits, `-` and `_` (these tags carry a `:`, so today they
-# are quoted — swg-smartdns, below, is not, and a quote-only match missed it for good). swg-noded's _comment_re: same rule.
 _ipt_comment_re(){ printf -- '--comment "?%s"?( |$)' "$(printf '%s' "$1" | sed 's/[][\.^$*+?(){}|/]/\\&/g')"; }
 _rm_egress_rules(){ local ifn="$1" t c l
   command -v iptables >/dev/null 2>&1 || return 0
@@ -1273,13 +917,6 @@ _rm_egress_rules(){ local ifn="$1" t c l
 $(iptables -t "$1" -S "$2" 2>/dev/null | grep -E -- "$(_ipt_comment_re "$3")")
 EOS
   done; }
-# Force-DNS's redirect: swg-noded DNATs every client's :53 on a Force-DNS interface to ITS dnsmasq on 127.0.0.1:5354
-# (tag `swg-smartdns`, with `swg-smartdns-net` RETURNs above it for carried networks). That dnsmasq is the NODE's and goes
-# with it — so the redirect goes too, whether or not the interfaces stay. Kept "so they keep working", it did the
-# opposite: every client on a kept Force-DNS interface lost DNS, while traffic by address still flowed (1.8.8
-# qualification, round 6, q1); and the full sweep never saw these rules at all, because iptables prints both tags
-# UNQUOTED (a Docker box kept six through a full purge). Callers skip it while another swg node is still on this box —
-# its dnsmasq still answers them, and it re-adds its own on its next pass anyway.
 rm_smartdns_redirect(){ local l n=0
   command -v iptables >/dev/null 2>&1 || return 0
   while IFS= read -r l; do
@@ -1291,15 +928,6 @@ EOS
   [ "$n" -gt 0 ] && ! $DRYRUN && info "  removed the DNS redirects to the node's own resolvers — Force DNS's and a SOCKS5 exit's ($n rule(s)) — an interface kept here resolves through its clients' own DNS server again"
   return 0; }
 
-# Remove the node's DATAPATH objects — the filtering / routing / NAT state swg-noded creates at runtime and that
-# nothing else cleans up (it lives in the kernel, not on disk, so removing files leaves it behind). Every match is
-# by an swg-OWNED name so a co-resident firewall/VPN is never touched:
-#   • iptables rules whose --comment starts with "swg-"  (nat/filter/mangle: egress, fwd, inet, catk, smartdns tags)
-#   • the "swg_smart" nftables table (smart-routing / blocking)
-#   • "swgk_*" / "swgs_*" ipsets (Kernel-SNI categories, and its per-person selections)
-#   • policy-routing rules + tables in swg's OWN band 7000-7099 (SWG_RT_BASE..SWG_RT_MAX; priority == table id)
-#     + the upstream-mark rules in 6890-6989 (SWG_RT_UP_BASE..SWG_RT_UP_MAX; rules only — they name no table)
-#   • the forwarding sysctl drop-in the installer wrote
 rm_node_netobjects(){
   info "Removing swg datapath objects (iptables/nft/ipset/policy-routing tagged swg-*)"
   local t chain l n mark table
@@ -1312,10 +940,6 @@ rm_node_netobjects(){
       done
     done
   fi
-    # The loop above only deletes rules that CARRY a swg- comment. Our own chains (SWG_INET, SWGK, SWG_CATK) and
-    # the jumps INTO them have no comment, so they survived every uninstall — leaving an empty SWG_INET plus a live
-    # "-A FORWARD -j SWG_INET" behind. Drop the jumps first (iptables refuses to delete a referenced chain), then
-    # flush + delete the chains. Matched on our SWG prefix, so nothing else is touched.
     if command -v iptables >/dev/null 2>&1; then
       for t in nat filter mangle; do
         for chain in $(iptables -t "$t" -S 2>/dev/null | sed -n 's/^-N \(SWG[A-Za-z0-9_]*\).*/\1/p'); do
@@ -1326,9 +950,6 @@ rm_node_netobjects(){
         done
       done
     fi
-    # nft: swg_smart is not the only table we create (swg_turn is the other) — sweep every swg* table we own.
-    # ⚠️ A RULESET THAT CANNOT BE READ IS NOT AN EMPTY ONE. On Debian 12 `nft list tables` segfaulted on a table a Docker
-    # node's newer nft wrote; this read nothing, deleted nothing and said ✓ below (R27). Its exit status decides now.
     local _nftl _nftrc=0 _unread=""
     if command -v nft >/dev/null 2>&1; then
       _nftl="$(nft list tables 2>/dev/null)" || _nftrc=$?
@@ -1355,21 +976,10 @@ rm_node_netobjects(){
         run ip rule del pref 6991 fwmark "$mark" lookup "$table"
       fi
     done < <(ip rule show 2>/dev/null | awk '$1=="6991:" && $4=="fwmark" && $6=="lookup" {print $5, $7}')
-    # ⚠️ AND THE UPSTREAM-MARK BAND BELOW IT (swg-noded's SWG_RT_UP_BASE..SWG_RT_UP_MAX = 6890..6989: `fwmark M lookup T`,
-    # how the relay names a leg). It survived every uninstall — `6890: from all fwmark 0x1aea lookup 7000` was still
-    # there on a fully removed master (1.8.8 qualification). A priority in it is NOT a table id (its rule looks up one in
-    # the 7000 band, flushed above), so only the rule goes — never `table 6890`. Band spelled out: this file does not
-    # read swg-noded; derived there as BASE − (MAX − BASE) − 11, so a change to the table band moves it. …And 6880, the torrent
-    # policy's rule (P2P_RULE_PRI: `fwmark 0x40000000 lookup main` under Direct) — a rule only, too (1.8.9 qualification NR-6).
-    # …And 6870, a SOCKS5 exit's partial arrivals' DNS bypass (S5X_ARR_DNS_PRI: `from S ipproto udp dport 53 lookup main`).
     for n in $(ip rule show 2>/dev/null | sed -n 's/^\([0-9]\+\):.*/\1/p' | awk '$1==6870 || $1==6880 || ($1>=6890 && $1<=6989)'); do
       run ip rule del pref "$n"
     done
   fi
-  # Orphaned wg-quick PostUp rules for a node<->node MESH link (swg-agent writes the FORWARD accept pair; `swg_` is
-  # noded's reserved mesh link-name prefix). They carry no swg- comment and sit in no SWG* chain, so neither loop
-  # above sees them, and PostDown never runs when the container/interface is force-removed. Only ever deleted when
-  # the named link is GONE — a rule for a link that still exists belongs to something the operator kept.
   if command -v iptables >/dev/null 2>&1; then
     for n in $(iptables -S 2>/dev/null | grep -oE '[-]{1,2}[io] swg_[A-Za-z0-9_]+' | awk '{print $2}' | sort -u); do
       ip link show "$n" >/dev/null 2>&1 && continue          # link still up → not an orphan, leave it alone
@@ -1381,9 +991,6 @@ rm_node_netobjects(){
   # 99-swg-forward.conf is the BARE installer's name; install-docker.sh writes 99-swg-node.conf instead, so the
   # docker drop-in was never removed. Both are ours and both are unconditionally rewritten by a re-install.
   rmrf /etc/sysctl.d/99-swg-forward.conf /etc/sysctl.d/99-swg-node.conf /etc/sysctl.d/99-swg-turn.conf   # + swg-noded's turn socket caps (DEB-2)
-  # …and the value they set stays LIVE until a reboot: route_localnet=1 (Force-DNS's DNAT to the node's own resolver — those
-  # files, and swg-noded at run time) lets hosts on this box's network reach its 127.0.0.1 services (1.8.8 deferred #3e).
-  # Turned off, unless a sysctl file that is not swg's still asks for it.
   grep -qsE --exclude='99-swg-*' '^[[:space:]]*net[./]ipv4[./]conf[./]all[./]route_localnet[[:space:]]*=[[:space:]]*1' /etc/sysctl.conf \
     /etc/sysctl.d/*.conf /run/sysctl.d/*.conf /usr/local/lib/sysctl.d/*.conf /usr/lib/sysctl.d/*.conf /lib/sysctl.d/*.conf \
     || run sysctl -q -w net.ipv4.conf.all.route_localnet=0 >/dev/null 2>&1 || true
@@ -1404,33 +1011,19 @@ rm_turn(){ local unit="$1" name fork
   ok "turn-proxy ($fork) removed"
 }
 
-# A WDTT server owns BOTH its service and its userspace interface (it brings the tunnel up itself), so removing one
-# is the turn-proxy flow plus an `ip link delete`. Its config-dir holds the SERVER IDENTITY (wg-keys.dat) and the
-# password store: deleting those can never be undone and no client on this instance could ever connect again — so
-# that part is a separate question, default NO, mirroring how the panel keeps its roster for a re-install.
-# (ask_yn returns immediately once the var is set, so the question is asked ONCE however many instances there are.)
 rm_wdtt(){ local unit="$1" name iface fork
   name="$(basename "$unit" .service)"; iface="${name#swg-wdtt-}"
   fork="$(sed -n 's/^Description=swg-wdtt (\([^)]*\)).*/\1/p' "$unit" 2>/dev/null | sed -n 1p)"; fork="${fork%%/*}"
   info "Removing WDTT server ($iface${fork:+ · $fork})"
   [ -e "$unit" ] && run systemctl disable --now "$name"
   rmrf "$unit"; run systemctl daemon-reload
-  # ⚠️ A STALE BARE UNIT BESIDE THE DOCKER NODE THAT RUNS THIS INSTANCE NOW (a box converted bare → Docker before the convert
-  # deleted these units, 7d6a9a07): the interface, its UAPI socket and its egress rules are the container's — deleting them
-  # cut the live server's clients off. Only the unit goes then.
   local live=no; docker_running swg-node && [ -d "$DOCKER_DIR/data/node/wdtt/$iface" ] && live=yes
   if [ "$live" = yes ]; then info "  the Docker node runs $iface now — only this stale bare unit goes; its interface, socket and rules stay"
   else
     command -v ip >/dev/null 2>&1 && run ip link delete dev "$iface" 2>/dev/null || true   # its userspace tunnel outlives the process
     rmrf "/var/run/wireguard/$iface.sock"   # the wireguard-go UAPI socket outlives it too — and a stale one makes the node report a PHANTOM adoption candidate
-    # The node owns this instance's egress rules (WDTT runs with -no-nat). Nothing else removes them, so they'd
-    # linger after an uninstall and a LATER install could reuse the iface name with a different subnet — leaving a
-    # MASQUERADE for the old one and clients with no internet. Delete by our own comment tag only.
     _rm_egress_rules "$iface"
   fi
-  # ask_yn returns immediately once its variable is set, so a single answer used to apply to EVERY instance —
-  # while the prompt named one specific path. This is the one irrecoverable action in the script, so ask per
-  # instance (a name-scoped variable), and let an unattended run still answer once via WDTT_DATA_DEL.
   local _delvar="WDTT_DATA_DEL_${iface//[^A-Za-z0-9_]/_}"
   [ -n "${WDTT_DATA_DEL:-}" ] && printf -v "$_delvar" '%s' "$WDTT_DATA_DEL"
   ask_yn "  Delete this WDTT interface identity + passwords ($WDTT_DIR/$iface)? Clients on it could never be restored." n "$_delvar"
@@ -1446,10 +1039,6 @@ rm_wdtt(){ local unit="$1" name iface fork
   ok "WDTT server ($iface) removed"
 }
 
-# csqtt: the same shape as rm_wdtt, with one difference that changes what the irrecoverable question means. csqtt has
-# NO server keypair — a password IS the credential — so its config-dir holds the password STORE and nothing else can
-# stand in for it: delete it and every client on this instance is locked out with no way back, exactly as if a WDTT
-# identity had been destroyed. Same per-instance question, same default NO.
 rm_csqtt(){ local unit="$1" name iface
   name="$(basename "$unit" .service)"; iface="${name#swg-csqtt-}"
   info "Removing csqtt server ($iface)"
@@ -1475,19 +1064,6 @@ rm_csqtt(){ local unit="$1" name iface
 
 # ───────────────────────── detect installed components ─────────────────────────
 declare -a CLABEL=() CDETAIL=() CFN=() CARG=() CHINT=() CVERB=() CPROMPT=() CNOAUTO=()   # init empty (not just `declare -a`) — bash 5.2 + set -u treats a never-assigned array as unbound for ${#arr[@]}
-# ── richer component details: interface names+ports, node endpoints, turn-proxy ports ──
-# ── WHOSE INTERFACE IS THIS? ────────────────────────────────────────────────────────────────────
-# `install-node.sh` has a scope test that refuses to ADOPT an interface swg did not create — a client
-# tunnel, another product's server. The uninstaller had no matching test: it listed every .conf in the
-# directory under "AmneziaWG interfaces", so `--yes` (or one careless Enter on a list whose label reads
-# as though all of it were ours) brought a stranger's interface DOWN, disabled its unit, and deleted its
-# keys with the `rm -rf` that follows. Measured on hel-flux 2026-09-08 — an awg0 from May with its own
-# flux_* keys, an interface this box's own panel correctly lists as an ADOPTION CANDIDATE rather than
-# owning, was in the removal plan. The installer and the uninstaller must answer this the same way.
-#
-# The bare node's agent config is the authority for what swg manages here. UNREADABLE ⇒ NOTHING IS
-# CLAIMED: a missing answer must not become a confident yes about somebody else's data. The lists are
-# built before any component runs, so a config the node component is about to delete is still present.
 swg_owned_ifaces(){
   [ -f /etc/swg-agent/config.json ] && command -v python3 >/dev/null 2>&1 || return 0
   python3 - <<'PY' 2>/dev/null || true
@@ -1499,19 +1075,6 @@ PY
 }
 _SWG_OWNED=" $(swg_owned_ifaces 2>/dev/null | tr '\n' ' ') "
 swg_owns(){ case "$_SWG_OWNED" in *" $1 "*) return 0;; *) return 1;; esac; }
-# THREE BUCKETS, and every .conf in the directory is in exactly one:
-#   mesh     `swg_`-prefixed — the panel's system links. ALWAYS ours; the prefix is ours by construction,
-#            so this holds even when the agent config cannot be read.
-#   own      a peer interface the node's agent config names.
-#   foreign  everything else — see the note above.
-#
-# ⚠️ THE MESH LINKS ARE THE NODE COMPONENT'S TO REMOVE, and until now nothing removed them. They were
-# excluded from the printed list on the grounds that "the node component removes them" — and it did not;
-# they only ever came down because `remove_ifaces` had no filter at all and took every .conf in the
-# directory, with `rm -rf` finishing the job. The first version of the ownership split made that
-# accidental coverage explicit and lost it: three mesh interfaces survived a COMPLETED uninstall on
-# hel-flux, still up, with :9999-:10001 still bound. `rm_node` now removes them, where the comment always
-# said they were removed.
 _iface_mesh(){ case "$1" in "${SWG_SYS_PREFIX:-swg_}"*) return 0;; *) return 1;; esac; }
 _iface_pick(){ local n="$1" want="${2:-own}"
   case "$want" in
@@ -1548,17 +1111,8 @@ docker_node_detail(){  # docker node: name/endpoint + interfaces (name:port) fro
     if [ -n "$ni" ]; then ifs="$(printf '%s' "$ni" | tr ',' '\n' | cut -d: -f1,2 | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
     else ifs="$(sed -n 's/^NODE_IFACE=//p' "$env" | sed -n 1p | tr -d '"')"; fi
   fi
-  # Turn-proxies and WDTT servers, DOCKER form. Both are detected elsewhere by their host systemd units
-  # (vk-turn-proxy-*.service / swg-wdtt-*.service), which a docker install simply does not have: turn-proxies
-  # run as SIBLING CONTAINERS and WDTT as a supervised subprocess inside swg-node. They were therefore removed
-  # with the node container while never appearing in the component list — the operator was never told a WDTT
-  # server and its identity were about to go. They cannot be offered as separate components (nothing can keep
-  # them once the node container is gone), so they are DISCLOSED here, on the node they belong to.
   local tn wl wn
   tn="$(docker ps -a --filter 'name=swg-turn-' --format '{{.Names}}' 2>/dev/null | sed 's/^swg-turn-//' | tr '\n' ',' | sed 's/,$//; s/,/, /g')"
-  # uninstall.sh is standalone (it must run on a box where lib/ may be gone), so the record is parsed here rather
-  # than via common.sh's wdtt_local. Heredoc body at column 0: indenting a python program is an IndentationError,
-  # and 2>/dev/null would swallow it and silently report "no WDTT" on a box that has one.
   wl="$(python3 - "$DOCKER_DIR/data/node/wdtt.json" <<'PYWD' 2>/dev/null
 import json, sys
 try:
@@ -1640,9 +1194,6 @@ csqtt_detail(){  # <unit> -> "csqtt · 1.2.3.4:56006 · 10.12.0.1/24 · 4 passwo
   local unit="$1" n iface lis addr pw
   n="$(basename "$unit" .service)"; iface="${n#swg-csqtt-}"
   lis="$(csqtt_env "$iface" SWG_LISTEN)"; addr="$(csqtt_env "$iface" SWG_TUNADDR)"
-  # csqtt <=2.0.1 kept passwords.json; 2.1.5 migrated it into SQLite csqtt.db and removed it. Reading only the
-  # JSON reported "no password store" for a server holding users — on the screen that says what is about to be
-  # destroyed, which is the one place that must not understate it.
   pw="$(python3 -c 'import json,os,sqlite3,sys
 d = sys.argv[1]
 try:
@@ -1662,9 +1213,6 @@ except Exception: print("")' "$CSQTT_DIR/$iface" 2>/dev/null)"
   add "Bare-metal swg-panel" "control panel (/opt/swg-panel)" rm_panel
 [ -d /opt/swg-noded ] || [ -d /opt/swg-agent ] || [ -f $SD/swg-noded.service ] && \
   add "Bare-metal node (swg-node)" "$(bm_node_detail)" rm_node
-# (the "swg-netctl (leftover helper)" component is added AFTER the docker detection below, for the same reason.)
-# (the "Leftover swg files" component is added AFTER the docker detection below — it must know whether a docker
-#  install is present, since the identities it removes own that install's data-dir files.)
 
 # Docker: the panel and node are separate containers — offer each independently. If the
 # deployment dir exists but neither container does, offer a files-only cleanup.
@@ -1673,41 +1221,21 @@ if command -v docker >/dev/null 2>&1; then
   docker_running swg-panel && DPANEL=true
   docker_running swg-node  && DNODE=true
 fi
-# ⚠️ A DOCKER NODE WHOSE CONTAINER IS ALREADY GONE (crashed and removed, `docker rm`, a `compose down` first) STILL LEFT ITS
-# HOST SIDE: host networking put its interfaces, their iptables rules, its nft tables and ip rules in this host's kernel. Not
-# knowing a node had been here, the run offered the panel or the files only, swept nothing and said "✓ Uninstall complete" —
-# wg0 still up and serving its clients (1.8.8 deferred #15; LC-24 lc7). Its two bind mounts exist only where a node ran: then
-# it is offered as the node it was (rm_docker_node reads its interfaces from node-confs, its image from the .env), BEFORE
-# the panel, whose data-dir answer can take node-confs with it. Never beside a BARE node: the host's interfaces and tables
-# are that node's now (a Docker data dir an uninstall kept stays through a bare install).
 if ! $DNODE && [ ! -f "$SD/swg-noded.service" ] && [ ! -d /opt/swg-noded ] \
    && { [ -d "$DOCKER_DIR/data/node" ] || [ -d "$DOCKER_DIR/data/node-confs" ]; }; then
   DNODE_GONE=true; add "Docker node (swg-node)" "$(docker_node_detail "its container is gone — what it left on this host goes")" rm_docker_node
 fi
 $DPANEL && add "Docker panel (swg-panel)" "container swg-panel" rm_docker_panel
 $DNODE  && add "Docker node (swg-node)"   "$(docker_node_detail)"   rm_docker_node
-# A PANEL PARKED FOR THE OTHER ONE. guard_second_panel (lib/common.sh) stops one panel when a panel of the other method
-# would answer beside it at the same address: a bare one disabled + stopped, a docker one stopped with restart=no. Which
-# of them is parked is read NOW, before anything is removed — unpark_kept_panel (below) needs to know it once the other
-# one is gone. TWIN of lib/common.sh's docker_parked / docker_panel_live (this file does not source it).
 _ctr_parked(){ [ "$(docker inspect -f '{{.State.Running}} {{.HostConfig.RestartPolicy.Name}}' "$1" 2>/dev/null)" = "false no" ]; }
 _BARE_PARKED=false; _DOCKER_PARKED=false
 if [ -f "$SD/swg-panel-server.service" ] && $DPANEL; then
   if ! systemctl is-enabled --quiet swg-panel-server 2>/dev/null; then ! _ctr_parked swg-panel && _BARE_PARKED=true
   else _ctr_parked swg-panel && _DOCKER_PARKED=true; fi
 fi
-# swg-netctl units lingering WITHOUT the panel they serve → offer on their own. ⚠️ PER FAMILY: swg-netctl.* belongs to
-# a bare panel (rm_panel sweeps both families), swg-netctl-docker.* to a docker one — which rm_docker_panel now removes.
-# Testing only "is there a bare panel" listed a LIVE docker panel's own helper as "(leftover helper)" (1.8.8 qualification).
 { { [ ! -d /opt/swg-panel ] && [ ! -f $SD/swg-panel-server.service ] && _has_bare_netctl; } || { ! $DPANEL && _has_docker_netctl; }; } && \
   add "swg-netctl (leftover helper)" "privileged network/TLS helper units" rm_netctl
 
-# swg-sub's dirs/units and the bare-metal service identities are removed by rm_panel/rm_node, which a docker-only
-# or post-convert box never runs — so they outlived every uninstall on exactly the boxes that have them. Offered
-# whenever no BARE-METAL panel/node is left (those own them). A docker install on the box used to keep this off the
-# list altogether — live, being removed in this very run, or already removed with its data dir KEPT — so a converted
-# box kept every bare-era file and identity for good. rm_leftovers now decides the identities at run time instead,
-# after the docker components above have been removed or kept (`swgpanel` owns data a convert copied in).
 if [ ! -d /opt/swg-panel ] && [ ! -f $SD/swg-panel-server.service ] \
    && [ ! -d /opt/swg-noded ] && [ ! -f $SD/swg-noded.service ] && _has_leftovers; then
   add "Leftover swg files" "swg-sub dirs/units + service identities from a docker or converted install" rm_leftovers
@@ -1716,30 +1244,16 @@ if ! $DPANEL && ! $DNODE && ! $DNODE_GONE && { [ -f "$DOCKER_DIR/docker-compose.
   add "Docker deployment (files)" "$DOCKER_DIR" rm_docker_files
 fi
 
-# NB: grep on a here-string, NOT 'dpkg -l | grep -q' — under pipefail, grep -q exits on first match and the
-# still-writing dpkg gets SIGPIPE (141), so the pipe reports failure even on a match (amneziawg sorts early in
-# dpkg -l, so it always tripped this; wireguard sorts late and usually slipped through).
 pkg_ii(){ grep -qE "$1" <<< "$(dpkg -l 2>/dev/null)"; }
 # interface configs (the PEERS) vs the system PACKAGE — detected + offered SEPARATELY
 awg_ifaces(){ ls /etc/amnezia/amneziawg/*.conf >/dev/null 2>&1 || ls $SD/awg*.service >/dev/null 2>&1; }
 wg_ifaces(){  ls /etc/wireguard/*.conf >/dev/null 2>&1 || ls $SD/wg-quick@*.service >/dev/null 2>&1; }
 awg_pkg(){ command -v dpkg >/dev/null 2>&1 && pkg_ii '^ii +amneziawg(-tools| |$)'; }
 wg_pkg(){  command -v dpkg >/dev/null 2>&1 && pkg_ii '^ii +wireguard '; }
-# The host WG/AWG PACKAGES are swg's to purge only when a BARE-METAL swg node installed them. A docker node runs
-# its datapath in-container (userspace amneziawg-go), so on a docker-only box these host packages belong to
-# something else (e.g. wg-easy, or another VPN) — purging them would break it. Peers (interface .conf files) are
-# still offered separately since those files ARE swg's own.
 _f=""; _fw=""   # the foreign interface lists, set by the registrations below and READ by the package ones
 _bare_swg=false; { [ -d /opt/swg-noded ] || [ -d /opt/swg-agent ] || [ -f "$SD/swg-noded.service" ] || [ -d /opt/swg-panel ] || [ -f "$SD/swg-panel-server.service" ]; } && _bare_swg=true
 awg_ifaces && { _d="$(iface_list /etc/amnezia/amneziawg own)"; [ -n "$_d" ] && add "AmneziaWG interfaces" "$_d" rm_awg_peers "" "$_d" Remove
                 _f="$(iface_list /etc/amnezia/amneziawg foreign)"; [ -n "$_f" ] && add "AmneziaWG interfaces NOT created by swg" "$_f" rm_awg_foreign "" "$_f" Remove "AmneziaWG interfaces NOT created by swg" never-auto; true; }
-# ⚠️ AND THE PACKAGE THAT INTERFACE NEEDS. Purging it runs `down_ifaces` first — which brings the
-# foreign interface DOWN — and then removes the kernel module out from under it, so keeping the .conf
-# and purging the package still ends with somebody else's tunnel dead, just less obviously. When a
-# foreign interface of this kind is present the package question is therefore never-auto too: it must
-# be typed, it is kept with no terminal, and the hint says why.
-# …and the amnezia PPA is swg's: only its bare installer adds it, never a Docker install — so a box converted to Docker, whose
-# packages (and their DKMS module, rebuilt at every kernel upgrade) its bare past installed, is offered them too (1.8.8 #1).
 awg_pkg    && { $_bare_swg || ls /etc/apt/sources.list.d/*amnezia* >/dev/null 2>&1; } && { if [ -n "$_f" ]; then add "AmneziaWG package (kernel module + tools)" "amneziawg · amneziawg-tools · amneziawg-dkms" rm_awg_pkg "" "$_f needs it" Uninstall "AmneziaWG package (kernel module + tools)" never-auto
                              else add "AmneziaWG package (kernel module + tools)" "amneziawg · amneziawg-tools · amneziawg-dkms" rm_awg_pkg; fi; }
 { awg_src_tools || [ -n "$(awg_src_trees)" ]; } && $_bare_swg && { if [ -n "$_f" ]; then add "AmneziaWG built from source (kernel module + tools)" "awg · awg-quick · its DKMS module" rm_awg_src "" "$_f needs it" Uninstall "AmneziaWG built from source (kernel module + tools)" never-auto
@@ -1778,25 +1292,14 @@ for i in $(seq 0 $((N-1))); do
   if ask_comp "${CPROMPT[$i]}" "${CHINT[$i]}" "${CVERB[$i]}" "${CNOAUTO[$i]}"; then "${CFN[$i]}" "${CARG[$i]}"
     case " ${NOT_DONE[*]-} " in *" ${CLABEL[$i]} "*) :;; *) DID_REMOVE+=("${CLABEL[$i]}");; esac
   else info "Kept ${CLABEL[$i]}."; DID_KEEP+=("${CLABEL[$i]}")
-    # Does what was kept RUN on swg's datapath objects? A package, the panel, a helper, leftover files or somebody
-    # else's interface does not — keeping one of those used to skip the sweep below all the same, so the common
-    # "remove swg, keep the wg/awg packages" left every swg ip rule, nft table and iptables tag behind for good.
-    # Anything not named here counts as datapath (a new component is safe until someone decides otherwise).
     case "${CFN[$i]}" in rm_awg_pkg|rm_awg_src|rm_wg_pkg|rm_awg_foreign|rm_wg_foreign|rm_panel|rm_docker_panel|rm_docker_files|rm_netctl|rm_leftovers) ;;
       *) KEPT_DATAPATH=true;; esac
   fi
   echo
 done
 
-# Datapath sweep, LAST — after every keep/remove decision. rm_node_netobjects deletes swg-tagged iptables rules,
-# the swg_smart nft table, swgk_* ipsets and our ip rules/tables; those are the datapath of the very interfaces,
-# turn-proxies and WDTT servers the operator may have chosen to KEEP, so it cannot run before they are asked.
-# Anything kept has already had its own rules removed by its own remover (rm_wdtt → _rm_egress_rules).
 if [ "${NEED_NETOBJ_SWEEP:-false}" = true ]; then
   if [ "${KEPT_DATAPATH:-false}" = true ]; then
-    # The sweep is all-or-nothing by tag — it cannot tell a kept interface's swg-egress rule from a removed one's.
-    # Keeping something means keeping it WORKING, so leave the objects: stale rules on a box that still runs our
-    # datapath are harmless, whereas deleting a kept WDTT server's SNAT silently kills internet for its clients.
     info "Some components were kept — leaving the routing/filter objects in place so they keep working."
     info "  To clear them later, once nothing swg-related remains: re-run this uninstaller."
   else
@@ -1804,10 +1307,6 @@ if [ "${NEED_NETOBJ_SWEEP:-false}" = true ]; then
   fi
 fi
 
-# Containers we TOOK an interface over from (see rm_node). Their server was somebody else's before it was ours,
-# and the take-over stopped it with restart=no on the promise that we would serve it instead. That promise ends
-# here, so put them back the way we found them — after the interfaces above are gone, so the port they bind is
-# free. Default YES: leaving a box with neither our interface nor their container is the one outcome nobody wants.
 if [ -n "${ADOPTED_CTRS:-}" ] && command -v docker >/dev/null 2>&1; then
   _nc="$(printf '%s\n' "$ADOPTED_CTRS" | grep -c .)"
   info "$_nc container(s) had an interface taken over by this node — still stopped, as the take-over left them."
@@ -1826,9 +1325,6 @@ fi
 unpark_kept_panel
 rm_log_journals   # swg's own journals + every log drop-in, once nothing of swg's is left (see there)
 rm_update_leftovers   # …and update.sh's lock
-# Recovery archives from earlier converts/uninstalls (.converted-* / .uninstalled-*). They are OURS, but they are
-# deliberately-kept state — a node token plus interface private keys — and the installer offers them as a recovery
-# list, so they are never deleted without being asked. Default NO; a preset ARCHIVES_DEL=y covers unattended wipes.
 _archives(){ ls -d /opt/swg-panel*.converted-* /opt/swg-panel*.uninstalled-* /etc/swg-panel*.converted-* \
                    /etc/swg-panel*.uninstalled-* /var/lib/swg-panel*.converted-* /var/lib/swg-panel*.uninstalled-* 2>/dev/null; }
 _seal_archives   # kept or not, every recovery archive is root's alone from here on (F90)
@@ -1857,10 +1353,6 @@ if { $REMOVED_PANEL || $REMOVED_NODE || [ "${REMOVED_LEFTOVERS:-false}" = true ]
   fi
 fi
 $DRYRUN || rmdir /etc/swg-agent 2>/dev/null || true   # (a dry run removes nothing, not even an empty directory)
-# The interface-config dirs, once EMPTY and NOT a package's. Our installers create them (writef's mkdir -p) and a
-# bare→docker convert empties them; with the wg/awg package still installed dpkg owns them and they stay (so does
-# anything with a file left in it, or any box without dpkg to ask). Seen: both left empty after a full uninstall.
-# /var/www too: the panel's stats and acme dirs made it, and went (1.8.8 deferred #3c).
 if [ "${#DID_REMOVE[@]}" -gt 0 ] && command -v dpkg >/dev/null 2>&1; then
   for _d in /etc/amnezia/amneziawg /etc/amnezia /etc/wireguard /var/www; do
     [ -d "$_d" ] && [ -z "$(ls -A "$_d" 2>/dev/null)" ] && ! dpkg -S "$_d" >/dev/null 2>&1 && run rmdir "$_d"

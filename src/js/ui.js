@@ -1,18 +1,3 @@
-/* ui.js — the shared presentation layer: primitives, the modal/sheet stack, toasts and mutations.
- *
- * LAYER 2 (see docs/APP-JS-SPLIT-PLAN.md). Imports util + store; every screen imports THIS.
- *
- * The modal stack is the one piece with real state. openModal REPLACES the current top (so every
- * single-modal flow behaves as it always did — the stack is just length 1), pushModal stacks a CHILD over
- * its parent, closeModal pops back. `_stack` is a synchronous mirror of the rendered state so an opener
- * can ask "is a modal already up?" without waiting for a render. App owns the actual rendering, and
- * registers its setter through setModalRenderer — an imported binding is read-only, so the previous
- * direct assignment to _setStack cannot cross a module boundary.
- *
- * _sheetStack is separate and deliberately so: it tracks MOUNTED Sheet tokens, and only the topmost one
- * handles Esc/Enter/Tab. Without it a child sheet's Escape would close its parent too.
- */
-
 import { $, esc, tkey, ipOf, isPrivIp, fmtBytes, rateIn, niceScaleCeilIn, seen, panelNowS, isMobile } from "./util.js";
 import { Store, api, bus, useStore } from "./store.js";
 import { go } from "./router.js";
@@ -51,9 +36,6 @@ export const ICON = {
   network: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="5" r="2.2"/><circle cx="5" cy="19" r="2.2"/><circle cx="19" cy="19" r="2.2"/><path d="M12 7.2v3.3M12 10.5 6.2 17M12 10.5 17.8 17"/></svg>',
   key: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="8" cy="15" r="4"/><path d="M10.9 12.1 21 2m-4 1 2.4 2.4M14 5l2.4 2.4"/></svg>',
   shield: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M12 3l7.5 3.2v5C19.5 16 16.4 19 12 21 7.6 19 4.5 16 4.5 11.2v-5z"/></svg>',
-  // Solid twin of `shield`, for the backup role — a filled mark reads as a STATE that is set, next to a star
-  // that is also filled when set. The outline `shield` above stays exactly as it is: nine other places use it
-  // for warnings and restore actions, where an outline is right and a solid block would shout.
   "shield-fill": '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3l7.5 3.2v5C19.5 16 16.4 19 12 21 7.6 19 4.5 16 4.5 11.2v-5z"/></svg>',
   compass: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M15.8 8.2l-2 5.6-5.6 2 2-5.6z"/></svg>',
   eye: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
@@ -129,13 +111,6 @@ export function toast(msg, kind = "info", ms = 5500) {
   host.appendChild(t);
   setTimeout(() => { t.classList.add("out"); setTimeout(() => t.remove(), 250); }, ms);
 }
-// The "type <name> to confirm" label above a destructive sheet's input. Shared: three delete sheets use it
-// (peer/user, interface, turn-proxy) and it lived private in sheets-crud.js, so the other two threw a
-// ReferenceError the moment they rendered — a delete dialog that could not open at all.
-// The phrase the operator has to retype, rendered so they can just take it: clicking the word (or the copy
-// mark beside it) puts it on the clipboard. Retyping a phrase is the point of the gate — copying it is not a
-// way around that, it is the same deliberate act without the typos, and it is the only way a phrase in a
-// language the operator does not use is reachable at all.
 export function ConfirmPhrase({ phrase, bold }) {
   return html`<button type="button" class="ctype-copy" title=${T("Copy")}
     onClick=${e => { e.preventDefault(); e.stopPropagation(); copy(phrase, T("Phrase copied")); }}>
@@ -147,18 +122,8 @@ export function typeToConfirm(phrase) {
 }
 export function copy(text, what) { navigator.clipboard.writeText(text); toast((what || T("Copied")) + ".", "ok", 1500); }
 
-// ───────────────────────── mutations (optimistic, status-on-failure) ─────────────────────────
-//
-// Single funnel for every write. The optimistic `patch` (if given) is applied to the store
-// immediately so the UI reacts instantly; the API call runs; on success the patch is kept until
-// the next poll supersedes it (no blink); on failure it's reverted and an *explained* error is
-// pinned to the row (rowErrors[key]) plus a toast. A safety timeout clears a stuck op and resyncs.
-// Verify-only actions (create / rekey / anything revealing a secret) simply pass no `patch`.
+// mutations (optimistic, status-on-failure)
 let _mutSeq = 0;
-// Optimistically claim an observed-but-unclaimed peer: write the roster entry the server is about to create,
-// so apply() re-derives it out of the orphans table and into the peers grid on the click instead of a poll
-// later. The id is a placeholder — the server assigns the real one, and the next poll supersedes this whole
-// overlay — so nothing downstream may key off it.
 export function adoptOrphanPatch(o) {
   return s => {
     const target = { node: o.node, iface: o.iface, ip: (o.allowed_ips || "").split("/")[0] };
@@ -201,11 +166,7 @@ export function mutate({ key, patch, call, onOk, timeout = 8000 }) {
     return r;
   })();
 }
-// ── a sheet's Save waits for the panel (q189 SPA-3, the root) ──
-// Sheets closed on Save and sent the change afterwards, so a refusal was a toast over a closed sheet and every edit in it was
-// gone. `sheetSend` sends FIRST and returns the panel's answer: a refusal is said in the sheet, in the panel's own words
-// (`setErr`, shown by Sheet's `err`), with every edit still there; only an accepted save goes on to close it. No rule of the
-// panel's is copied here — the panel judges, the sheet reports.
+// a sheet's Save waits for the panel (q189 SPA-3, the root)
 export async function sheetSend(call, setErr, setBusy) {
   if (setBusy) setBusy(true);
   if (setErr) setErr("");
@@ -218,10 +179,7 @@ export async function sheetSend(call, setErr, setBusy) {
 export function rowError(key) { return Store.rowErrors[key] || null; }
 export function dismissError(key) { if (Store.rowErrors[key]) { delete Store.rowErrors[key]; Store.apply(); } }
 
-// ───────────────────────── modal ─────────────────────────
-// Modal STACK. openModal replaces the current top (so every legacy single-modal flow behaves exactly
-// as before — the stack is just length 1), pushModal stacks a CHILD over its parent (parent stays
-// open behind it), closeModal pops back to the parent. _stack is a synchronous mirror of the state.
+// modal
 let _setStack = () => {};
 let _stack = [];
 let _modalSeq = 0;   // bumps on every open/close — lets a confirm tell if onConfirm replaced the modal
@@ -232,37 +190,15 @@ export function pushModal(node) { _applyStack([..._stack, node]); }
 function _blurActive() { requestAnimationFrame(() => { const a = document.activeElement; if (a && a.blur && a.tagName !== "BODY") a.blur(); }); }
 export function closeModal() { _applyStack(_stack.slice(0, -1)); _blurActive(); }   // drop the focus ring the trigger regains on ESC/close
 export function closeAllModals() { _applyStack([]); _blurActive(); }
-// Close the top `n` frames. Deleting a thing has to take down every modal that is ABOUT that thing and no
-// more: the peer view you deleted from is a view of something that no longer exists, but the user's-peers
-// modal underneath it is a list that is still perfectly valid — and closing that too dumped the operator
-// back to the screen after every single delete. `closeAllModals` is the blunt version of this and stays for
-// the cases that really do mean "empty the stack".
 export function closeModals(n) { _applyStack(_stack.slice(0, Math.max(0, _stack.length - Math.max(1, n | 0)))); _blurActive(); }
 let _sheetStack = [];   // mounted Sheet tokens (LIFO) — only the topmost handles Esc/Enter/Tab
 
-// Row activation: a single click runs `fn` after a short delay; a double click cancels that and runs `dbl`
-// instead (open the QR modal). Clicks on interactive children (buttons/links/inputs/the assign combo) pass
-// through untouched. One shared timer is enough — a person clicks one row at a time.
 let _rowClickT = null;
 const _rowInteractive = e => !!(e.target.closest && e.target.closest("button, a, input, select, textarea, label, .assigncell, .rowacts, .selwrap, .tg-gw"));
 export function rowSingle(e, fn) { if (_rowInteractive(e)) return; clearTimeout(_rowClickT); _rowClickT = setTimeout(() => { _rowClickT = null; fn(); }, 200); }
 export function rowDouble(e, fn) { if (_rowInteractive(e)) return; clearTimeout(_rowClickT); _rowClickT = null; fn(); }
 export const rowNoSelect = e => { if (e.detail > 1) e.preventDefault(); };   // stop the 2nd click of a double-click from selecting the row text
 
-// Minimal portal — renders children into a body-level node. A position:fixed popover that lives inside a
-// card paints BEHIND a later sibling once its own card forms a stacking context (turn cards lift with a
-// transform on hover; a `.down` card carries opacity:.5) — z-index can't rescue it across contexts.
-// Rendering at <body> escapes every ancestor context. Preact core has no createPortal, so we drive a
-// detached container with render().
-/* The content render is a LAYOUT effect, and that is not a preference — with a passive effect this portal
-   silently drops EVERY SECOND update. Reproduced in isolation: a component rendering the same counter inline
-   and through this portal went 1,1,3,3,5 in the portal against 1,2,3,4,5 inline. Preact debounces passive
-   effects into an after-paint flush, and calling render() from inside that flush re-enters the queue it is
-   draining, which swallows one pass; a layout effect runs synchronously inside the commit and lands every
-   time. The mount effect that appends the host stays passive — layout effects run first, so the content is
-   already in the detached div when it is attached, which is one fewer reflow, not a problem.
-   Every popover in the panel is this component, so the catalog search used to show the results for the
-   keystroke before last whenever you stopped typing on an even one. */
 export function Portal({ children }) {
   const host = useRef(null);
   if (!host.current) host.current = document.createElement("div");
@@ -271,16 +207,6 @@ export function Portal({ children }) {
   return null;
 }
 
-// Generic hover/click bubble (the DepBadge mechanics, reusable): hover opens, click pins (touch),
-// position:fixed anchored to the trigger so overflow:hidden can't clip it. The bubble is PORTALED to
-// <body> so it floats above sibling cards regardless of their stacking contexts.
-// hoverOnly: no click-to-pin — clicks fall through to whatever the trigger sits inside (e.g. a card link),
-// so a badge can show a hover bubble AND still navigate on click.
-// While a custom bubble is open the browser must not ALSO pop its native tooltip. The trigger usually
-// sits inside something that carries one — a peer row's "Double-click for QR / configs" — and often
-// carries its own as well; both are redundant beside the bubble and the native one covers it. A title
-// cannot be suppressed in CSS, so park every `title` on the trigger's ancestors AND inside its own
-// subtree for as long as the bubble shows, and put them all back when it closes.
 /* See parkTitles in js/screen-nodes.js — the same rule for the innerHTML header bubbles, which have no ref
    to hang an effect on. Keep the two in step. */
 function useNoNativeTitle(ref, active) {
@@ -303,13 +229,6 @@ export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly,
   const show = open || pinned;
   const cancelClose = () => clearTimeout(closeT.current);
   const scheduleClose = () => { cancelClose(); closeT.current = setTimeout(() => setOpen(false), 140); };
-  // alignRight: anchor the popover's left to the trigger's RIGHT edge, then translateX(-100%) so its own right
-  // edge lines up there (under the value, not the label) — scrollbar-proof, no width guessing.
-  // ⚠️ EVERY BUBBLE STAYS ON SCREEN. Flipping above was opt-in (`flipFit`), so a bubble whose trigger sat low — the user
-  // configs window's footer counts, measured on a 834px viewport: trigger at 807–829, bubble placed at top 836 — opened
-  // wholly below the fold, and at a small window that was most of them (operator, 2026-09-17). Now: below when it fits, above
-  // when it does not and above has more room, and when neither side holds it the height is capped to the room (the bubble
-  // scrolls). The size is the bubble's REAL one, measured once it has rendered — the first pass can only guess.
   const place = () => { const el = ref.current; if (!el) return; const r = el.getBoundingClientRect();
     const pop = popRef.current, M = 8, vw = window.innerWidth, vh = window.innerHeight;
     let ph = 340, pw = 300;
@@ -324,12 +243,6 @@ export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly,
     left = Math.round(left);
     const top = Math.round(flip ? r.top - 6 : r.bottom + 6);
     setPos(p => (p && p.left === left && p.top === top && p.flip === flip && p.maxH === maxH) ? p : { left, top, flip, maxH }); };
-  // the second pass: once the bubble exists its real size decides; setPos above returns the SAME object when nothing moved, so
-  // this settles in one step instead of re-rendering for ever
-  // ⚠️ AND AGAIN WHENEVER THE BUBBLE ITSELF CHANGES SIZE. Its content can grow after it opened — "+194 more" re-renders only the
-  // list inside, never this component — and a bubble placed for its folded size then grew off the window: measured at 1024×640,
-  // 200 devices unfolded to 320px (.onlpop's 50vh cap) from top 349, bottom 669. Observing the element re-places it on any
-  // change of its own size; placing again returns the same state when nothing moved, so the observer settles.
   const roRef = useRef(null);
   useLayoutEffect(() => {
     if (show && pos && popRef.current) place();
@@ -343,9 +256,6 @@ export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly,
   useEffect(() => {
     if (!show) return; place();
     const onMove = () => place();
-    // ⚠️ THE DISMISSING TAP MUST NOT ALSO REACH WHAT IS UNDERNEATH. A pinned popover inside a
-    // modal is the top layer; if the tap that closes it also lands on the sheet backdrop the
-    // operator loses both at once. Eat the click this pointerdown precedes, once.
     const onDoc = e => { const t = e.target;
       if ((ref.current && ref.current.contains(t)) || (popRef.current && popRef.current.contains(t))) return;
       setPinned(false); setOpen(false);
@@ -353,12 +263,6 @@ export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly,
       document.addEventListener("click", eat, true);
       setTimeout(() => document.removeEventListener("click", eat, true), 350);
     };
-    // ESCAPE CLOSES A PINNED BUBBLE, and only the bubble. On `window` in the capture phase so it runs before a Sheet's
-    // own Escape (document, capture) — otherwise the key meant for the bubble closed the whole sheet behind it.
-    // ⚠️ …BUT ONLY WHILE THE BUBBLE IS THE TOP LAYER. Running first, it also took the Escape meant for a Sheet or a
-    // confirm opened on top of it (from inside the bubble, or by code) and for an open dropdown, which then needed a
-    // second press. So it stands aside when the modal stack has grown since it was pinned, or a dropdown is open —
-    // that layer's own handler gets the key (the same test the Sheet makes).
     const depthAtPin = modalDepth();
     const onEsc = e => {
       if (e.key !== "Escape") return;
@@ -374,10 +278,6 @@ export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly,
   useNoNativeTitle(ref, show);
   return html`<span class=${(cls || "") + (show ? " on" : "")} ref=${ref}
     onClick=${hoverOnly && !isMobile() ? null : (e => {
-      // a phone has no hover: a hover-only bubble is a tap's, PINNED — opened by the emulated hover it closed on a swipe while
-      // the phone still counted the finger as hovering, and the next tap opened nothing (operator, 2026-10-29). A link or a
-      // button inside keeps its own tap, and the tap still reaches the row around it as the hover's did.
-      // A trigger with an action of its own (a gateway chip, role=button) is that action's, too (F10).
       if (hoverOnly) { if (!e.target.closest("a, button, [role=button]") && !(ref.current && ref.current.querySelector("button, [role=button]"))) setPinned(p => !p); return; }
       e.stopPropagation(); e.preventDefault(); setPinned(p => !p); })}
     onMouseEnter=${clickOnly || (hoverOnly && isMobile()) ? null : () => { cancelClose(); setOpen(true); }} onMouseLeave=${clickOnly ? null : scheduleClose}>${trigger}
@@ -387,16 +287,6 @@ export function Popover({ trigger, cls, popCls, alignRight, children, hoverOnly,
   </span>`;
 }
 
-// A phone has no hover, and about 700 values of the panel live in a `title=` (MOBILE-PLAN hook 5): a status badge's reason, a
-// version chip's "ahead", a mesh row's numbers. One delegated tap, mobile only, shows the tapped element's title in the docked
-// bubble. A tap that belongs to something else never does: on a link, a button, a field, or anything with a pointer cursor (a
-// clickable row or card) the tap is that thing's, and a title-less tap anywhere just closes the bubble.
-// A phone's Back closes what is on top — a QR, a bubble, a sheet — and leaves the page under it where it was (operator, 2026-10-29:
-// "must close the slider, not go back to the previous page"). Every sheet opened pushes an entry with the same address, so each
-// Back has one to take, however deep the sheets are nested ("the next one just minimizes the browser"). A sheet closed by its X
-// or a swipe leaves its entry behind: a Back that lands on one with nothing open goes on back by itself, never a dead press. A
-// bubble or a QR has no entry of its own: the address the page had is put back (pushState fires no event) and the hashchange
-// that back navigation fires is eaten before the router sees it. Nothing open → Back is the browser's.
 export function attachBackCloses() {
   let url = location.href, eat = false, depth = 0;
   _onStack = n => { if (n > depth) for (; depth < n; depth++) history.pushState({ swgSheet: depth + 1 }, ""); else depth = n; };
@@ -467,9 +357,6 @@ export function attachTitleTaps() {
   window.addEventListener("hashchange", drop);
 }
 
-// A row whose actions sit behind a left swipe says so (operator, 2026-10-29: "something for users to understand they can slide
-// left"): a grab bar on its right edge (m/m.css), and the first few times a list with such rows opens, its top row slides open
-// a little and back. Counted per device (localStorage), so it teaches and then stops.
 const SWIPE_ROW = ".urow > .urow-head:has(.u-acts), table.peergrid > tbody > tr.clk:has(.rowacts), .attn-row:has(.attn-acts), .acthist .act-row:has(> .iconbtn.danger)";
 export function attachSwipePeek() {
   const peek = () => setTimeout(() => {
@@ -494,9 +381,6 @@ export function attachSwipePeek() {
   }, true);
 }
 
-// A phone draws a bubble as a sheet at the bottom (m/m.css), so it closes the way a sheet does: dragged down by more than
-// 70 px, or flicked (operator, 2026-10-29: "swiping down doesn't close this"). A pinned one closes on its own Escape, one a
-// tap opened as a hover on its mouseleave (Popover), and a bubble drawn by the title tap is simply removed. A drag that starts in a part that scrolls, not at its top, scrolls it.
 export function attachBubbleSwipe() {
   let d = null;
   document.addEventListener("touchstart", e => {
@@ -563,10 +447,6 @@ export function attachToastSwipe() {
   }, { capture: true });
 }
 
-// A phone: a sheet is docked at the bottom and as tall as what it holds, so a hint, a check or an error that comes and goes
-// while someone types moved the whole sheet, the field with it, up and down (operator, 2026-10-29: "data entry must be
-// smooth"). The first time a text field in a sheet takes the focus, the sheet takes its full height and keeps it until it
-// closes: what changes below the field no longer moves it (m/m.css .sheet.m-typed).
 const TEXT_FIELD = "textarea, input:not([type]), input[type=text], input[type=search], input[type=email], input[type=url], input[type=number], input[type=password], input[type=tel]";
 export function attachTypingHold() {
   document.addEventListener("focusin", e => {
@@ -575,10 +455,6 @@ export function attachTypingHold() {
   }, true);
 }
 
-// A phone: while a list or a bubble is open (a dropdown, the user picker, a bottom bubble), a tap anywhere outside it only
-// closes it and drops the keyboard — the tap does not also open what happened to be under the finger (operator,
-// 2026-10-29: "tapping anywhere else must only close the list and focus out"). The layers close themselves on that
-// pointerdown as they always did; this eats the click that follows.
 export function attachOutsideTapGuard() {
   let eat = 0;
   document.addEventListener("pointerdown", e => {
@@ -598,20 +474,9 @@ export function attachOutsideTapGuard() {
   }, true);
 }
 
-/* Every label table below is built ONCE, on first use — never at module load. T() only answers correctly
-   after loadLang() has resolved, and these modules are imported before that; a table frozen at import time
-   would be English forever. Caching for the process is safe because setLang() reloads the page. */
 const once = build => { let v; return () => (v !== undefined ? v : (v = build())); };
 
-// Display label overrides where the internal status key differs from the word shown. Two remaps, both
-// display-only (keys stay put so persisted settings / filters / deep-links don't move):
-//   disabled → "blocked"    — the access-revoke settled state (key mirrors the roster `disabled` flag)
-//   blocked  → "restricted" — the DPI/no-handshake FAULT (freed the word "blocked" for the revoke state)
 export const STATUS_LABEL = { disabled: "blocked", blocked: "restricted" };
-/* The panel's status vocabulary — one table, because these words are the thing an operator reads on every
-   badge, filter and column, and they have to mean the same everywhere. Keys carry a `status|` context: the
-   same English word translates differently as a status than as a verb elsewhere ("Restoring" the noun-state
-   vs "restoring" the running op below), and the context is stripped for the English fallback. */
 const STATUS_WORDS = once(() => ({
   online: T("status|Online"), ready: T("status|Ready"), pending: T("status|Pending"), creating: T("status|Creating"),
   rotating: T("status|Rotating"), restoring: T("status|Restoring"), partial: T("status|Partial"),
@@ -623,11 +488,7 @@ const STATUS_WORDS = once(() => ({
 // badges show a capitalised label (Online / Dangling / Broken …); an unlisted status falls back to its key
 export const statusLabel = s => { const k = STATUS_LABEL[s] || s || ""; return STATUS_WORDS()[k] || (k.charAt(0).toUpperCase() + k.slice(1)); };
 
-// ── deferred navigation intent: "open Settings, on THIS section" ────────────────────────────────
-// The target screen may not be mounted yet (a fresh navigation) or may already be (a modal asking to jump
-// there), so both paths exist: a pending value the screen picks up on mount, and a setter the mounted
-// screen registers. It lives here rather than in the router because opening Settings from inside a modal
-// has to close the modal stack first, and that stack is this module's.
+// deferred navigation intent: "open Settings, on THIS section"
 let _pendingSection = null, _pendingTurnIps = false, _setSection = () => {};
 export function goSettings(section) { _pendingSection = section; closeAllModals(); go("#/panel/settings"); }
 export function goSettingsTurnIps() { _pendingSection = "turn"; _pendingTurnIps = true; closeAllModals(); go("#/panel/settings"); }
@@ -637,18 +498,11 @@ export const takePendingTurnIps = () => { const v = _pendingTurnIps; _pendingTur
 export const registerSectionSetter = fn => { _setSection = fn || (() => {}); };
 export const gotoSettingsSection = s => _setSection(s);
 
-// The generic inline tag chip — every dense row signature is built from these. `color` tints via --tgc.
-// `gen3`: an AWG tag of an AmneziaWG 3.1 interface — the 3.1 colour and its tooltip (docs/AWG3-PLAN.md D-colour); `notip` for a
-// tag that is itself a hover bubble's trigger, where a native tooltip would sit on top of the bubble.
 export function Tag({ kind, label, color, muted, gen3, notip }) {
   return html`<span class=${"tg tg-" + (kind || "gen") + (gen3 ? " awg3" : "") + (muted ? " muted" : "")} style=${color && !muted ? "--tgc:" + color : ""} ...${notip ? {} : tip3(gen3)}>${label}</span>`;
 }
 // Is this roster target an AWG deployment on an AmneziaWG 3.1 interface? What every protocol tag of a target passes as `gen3`.
 export const tgt3 = t => !!t && awgGen(t.node, t.iface) === "3.1";
-// A generation switch the node has not applied yet (model.js awgGenPending) — from the moment the operator confirms it until the
-// node reports the new version, however long that is: new QR codes already carry the new config, and until the node switches they
-// do not connect. Nothing for an interface with no switch in flight, which is every interface of a 2.0 fleet. `short` on the interface
-// card, where the version is already said by the badge's colour and a long tag squeezes the name.
 export function awgSwitchTag(node, iface, short) {
   const to = awgGenPending(node, iface);
   if (!to) return null;
@@ -657,14 +511,7 @@ export function awgSwitchTag(node, iface, short) {
       : T("Waiting for the node to apply it — until then its clients keep working on the old config, and new QR codes already show the new one.")}><${Ic} i="clock"/>${short ? T("tag|switching") : to === "3.1" ? T("tag|switching to 3.1") : T("tag|switching to 2.0")}</span>`;
 }
 
-// ───────────────────────── sheets, section furniture, confirms ─────────────────────────
-// The recurring section header: <h2>title</h2> + an optional .count pill + a right-hand spacer.
-// title/count may be a string or html; count null → no pill; grow===false → no spacer. The few
-// headers with a styled/classed h2 or extra children (the Live .tags) stay inline.
-/* `anchor` is a STABLE identity for the section, independent of the words in its heading. The Overview rail
-   jumps between sections and scroll-spies them; it used to find them by matching the <h2> text, which is
-   exactly the coupling that breaks the moment the heading is translated — silently, since a nav button that
-   finds nothing simply does nothing. Anything that needs to locate a section must key off data-sec. */
+// sheets, section furniture, confirms
 export function secTitle(title, count, grow, anchor) {
   return html`<div class="section-title" data-sec=${anchor || null}><h2>${title}</h2>${count != null ? html`<span class="count">${count}</span>` : null}${grow === false ? null : html`<span class="grow"></span>`}</div>`;
 }
@@ -675,28 +522,14 @@ export function SearchBox({ placeholder, value, onInput }) {
   return html`<div class="search"><${Ic} i="search"/><input placeholder=${placeholder} value=${value} onInput=${onInput}/></div>`;
 }
 
-// The standard modal footer action row: [optional `left` buttons] · spacer · Cancel · one primary/danger action.
-// Collapses the ~15 dialogs that share this exact shape into one call; irregular footers (multiple actions,
-// a left-aligned Cancel) stay inline. `danger` paints the action red; `actionCls` overrides the class outright;
-// `title`/`disabled` are only emitted when passed, so the rendered DOM stays byte-identical to the old inline form.
-// `btn-dismiss` marks the footer's Close / Cancel / Back — the same `btn-ghost` as QR or Targets, so CSS could not find it — for
-// the phone's footer rule (m/m.css: the dismiss and the main action share the bottom line). It styles nothing on a desktop.
 export function footRow({ left, cancelLabel, onCancel, action, onAction, danger, actionCls, disabled, title }) {
   return html`<${Fragment}>${left || null}<span class="grow"></span><button class="btn btn-ghost btn-dismiss" onClick=${onCancel}>${cancelLabel || T("Cancel")}</button>${action != null ? html`<button class=${actionCls || ("btn " + (danger ? "btn-danger" : "btn-primary"))} disabled=${disabled} ...${title != null ? { title } : {}} onClick=${onAction}>${action}</button>` : null}<//>`;
 }
-// subject = {kind:"peer"|"user", id} — when that peer/user is blocked, the whole modal takes the red "blocked"
-// treatment (border + header tint + a BLOCKED chip). Looked up live (useStore) so it reacts to block/unblock
-// done from within the modal, on every modal that carries a subject (QR / view / edit / targets / turn).
 export function subjectBlocked(subject) {
   if (!subject || !subject.id) return false;
   const rec = subject.kind === "user" ? Store.user(subject.id) : Store.peer(subject.id);
   return !!(rec && rec.disabled);
 }
-// Swipe down to close, on a phone (docs/MOBILE-PLAN.md hook 2; sub.js attachSwipeClose's gesture, downward only). Only the
-// TOPMOST sheet takes it — by construction: the listeners are on the sheet itself and a child's overlay covers its parent. It yields to an inner scroller that can still scroll up, a sideways move is never a close, and a touch
-// that starts on a field never closes (selecting text in a config). A committed swipe goes through the sheet's own tryClose, so
-// a dirty sheet shows its "Discard?" and springs back, and a sheet with onBack goes Back. `noSwipe`: a sheet holding a secret
-// shown once (a node token, the encryption key, a router config) ignores it, since tryClose closes a CLEAN sheet without asking.
 function attachSheetSwipe(root, canSwipe, wantsGuard, close) {
   let st = null;
   const scrollerAbove = el => {        // an element between the touch and the sheet that can still scroll content down
@@ -760,23 +593,10 @@ export function Sheet({ title, children, foot, onClose, width, headExtra, dirtyR
   const [discard, setDiscardState] = useState(false);
   const setDiscarding = v => { discardRef.current = v; setDiscardState(v); };
   const fields = () => Array.from(ref.current ? ref.current.querySelectorAll("input,textarea,select") : []);
-  // closing a dirty sheet swaps the footer into an inline "discard?" confirm instead of a native dialog. `dirtyRef`
-  // lets a caller flag changes the input/change listener can't see (e.g. click-toggled grids). `noGuard` opts out
-  // entirely — view modals (QR / turn configs) save every field inline, so there's nothing to discard.
   const wantsGuard = () => !noGuard && (dirty.current || (dirtyRef && dirtyRef.current)) && !discardRef.current;
   const tryClose = () => { if (wantsGuard()) { setDiscarding(true); return; } onClose(); };
   if (closeRef) closeRef.current = tryClose;   // expose the guarded close so a footer Cancel routes through it too
-  // ⚠️ A SHEET THAT SAVES ITSELF NEEDS A WAY TO SAY SO. `dirty` is set by any input/change event and was
-  // never cleared, so a sheet whose own body writes to the server (rather than closing through the footer
-  // action) went on guarding forever: save everything, click outside, and it asks whether to discard
-  // changes that are already on disk — which teaches the operator to click through the one dialog that
-  // matters. `cleanRef` is the caller saying "committed"; the input listener arms it again on the next edit.
   if (cleanRef) cleanRef.current = () => { dirty.current = false; };
-  // The keydown listener below is registered ONCE (useEffect []), but openModal REPLACES one <Sheet> with
-  // another at the same position, so Preact reuses this instance and only updates props — the effect never
-  // re-runs. Without this ref, Esc would keep calling the FIRST render's onClose: a config sheet reached via a
-  // `back` (turn configs → back to QR) closed everything on Esc while ✕/backdrop/Back (recreated each render)
-  // correctly went back. Route Esc through the live tryClose instead.
   const tryCloseRef = useRef(tryClose); tryCloseRef.current = tryClose;
   const noGuardRef = useRef(noGuard); noGuardRef.current = noGuard;   // read live (the Sheet instance is reused across openModal)
   const noSwipeRef = useRef(noSwipe); noSwipeRef.current = noSwipe;
@@ -800,18 +620,8 @@ export function Sheet({ title, children, foot, onClose, width, headExtra, dirtyR
       if (_qrZoomOpen()) return;   // a QR enlargement is open — let it handle Esc (collapse it, keep the modal)
       if (_sheetStack[_sheetStack.length - 1] !== tok) return;   // a child modal is on top — defer to it
       if ((e.key === "Enter" || e.key === "Escape") && e.target && e.target.dataset && e.target.dataset.enter === "self") return;   // input handles its own Enter/Esc (e.g. inline rename) — don't submit/close the sheet
-      // ⚠️ AN OPEN DROPDOWN OWNS ENTER AND ESCAPE, and this listener is on `document` in the CAPTURE phase —
-      // so without this it beats the popup's own handler every time. MEASURED: with a list open in a sheet,
-      // Enter on a row fired the sheet's primary button. The operator was choosing an option and the form
-      // submitted instead, which on the interface sheet means creating the interface. The popup is portalled
-      // to <body>, so it is not inside `root` and no focus- or containment-based test can see it; its class
-      // is the signal, exactly as `_qrZoomOpen()` above is for an enlarged QR.
       if ((e.key === "Enter" || e.key === "Escape") && document.querySelector(".ddpop")) return;
       if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); tryCloseRef.current(); return; }
-      // A focused button, link or switch IN THIS SHEET owns its Enter — the browser clicks IT. Taken for the sheet's primary,
-      // Enter on Cancel or Remove saved or created instead (s9b F10). Its pickers' layers count as the sheet (portalled to
-      // <body>, as `.ddpop` above). One behind the overlay (the phone keeps focus on the button that opened the sheet) is
-      // not the sheet's: its Enter stays the primary's, never a click behind the modal.
       if (e.key === "Enter" && e.target.closest && (root.contains(e.target) || e.target.closest(".uc-pop, .deppop, .osdd-menu, .osapp-menu, .catpick-pop"))
           && e.target.closest("button, a[href], [role=button], [role=switch], [role=radio], [role=checkbox], [role=tab]")) return;
       // A held Enter is one press: its repeats never reach the primary — on a phone the Enter that opened a confirmation
@@ -857,28 +667,15 @@ export function Sheet({ title, children, foot, onClose, width, headExtra, dirtyR
     </div></div>`;
 }
 
-// Designed confirmation modal — the in-app replacement for native confirm(). `danger` paints the
-// action button red; `danger`/`warn` give the notice a warn tint + icon (else a neutral info note).
-// `back` (optional) = where Cancel / Esc returns to (e.g. reopen the peer view it was launched from);
-// default just closes. After a confirmed action we always close, since the action changed the state.
-// Error/log bodies (captured installer output, command errors) carry ANSI colour codes + newlines that read
-// as one mashed line. `log:` renders them line-by-line, ANSI stripped for humans ("rendered"), with a toggle
-// to the unprocessed log ("raw", ESC shown as ␛, still line-by-line). Used by every error/detail modal.
 export function logRendered(s) { return String(s == null ? "" : s).replace(/\x1b\[[0-9;?]*[ -\/]*[@-~]/g, "").replace(/\r/g, "").replace(/[ \t]+$/gm, ""); }
 export function logRaw(s) { return String(s == null ? "" : s).replace(/\x1b/g, "␛").replace(/\r/g, ""); }
 export function LogBody({ text, raw }) {
   const t = (raw ? logRaw(text) : logRendered(text)).replace(/\n+$/, "");
   return html`<div class=${"logview" + (raw ? " raw" : "")}>${t.split("\n").map(l => html`<div class="logline">${l === "" ? " " : l}</div>`)}</div>`;
 }
-// Opened from within a modal → stack it as a child (parent stays mounted; ✕/Esc/Cancel pop back). Opened
-// standalone (from a table/card) → open as the root. This is the one rule: a modal opened from a modal is
-// a child. `openChildOrRoot` captures it for every opener that can be reached both ways.
 export function openChildOrRoot(node) { (_stack.length ? pushModal : openModal)(node); }
 export function openConfirm(opts) { openChildOrRoot(html`<${ConfirmSheet} ...${opts}/>`); }
 
-/* "Confirm by typing <b>NAME</b>" — a placeholder that has to be BOLD, so it cannot be one text node. It is
-   still ONE translatable sentence: split the translation on its own {name} marker and render the parts around
-   the bold word. That keeps each language's word order (Russian puts the name last) without concatenating. */
 function typePrompt(word) {
   const [before, after] = Tsplit("Confirm by typing {name}", "name");
   return html`<${Fragment}>${before}<${ConfirmPhrase} phrase=${word} bold=${true}/>${after}<//>`;
@@ -912,9 +709,6 @@ export function ConfirmSheet({ title, body, note, log, confirmLabel, busyLabel, 
   <//>`;
 }
 
-// A QR enlargement (see qrZoom) is a plain DOM overlay outside the Preact tree, and while one is open Esc
-// must collapse IT rather than close the sheet underneath. That overlay lives in the config/QR layer, above
-// this module, so the sheet asks through an injected probe instead of importing upward.
 let _qrZoomOpen = () => false;
 export const setQrZoomProbe = fn => { _qrZoomOpen = fn; };
 
@@ -928,9 +722,7 @@ export const modalDepth = () => _stack.length;
 export const clearModalStack = () => _applyStack([]);
 export const blurActive = () => _blurActive();
 
-// ───────────────────────── drag-to-reorder ─────────────────────────
-// Order `items` by their position in `savedOrder` (a list of ids); ids not in the saved order keep
-// their original relative order and go LAST (so a newly-reported iface/turn appears at the end).
+// drag-to-reorder
 export function orderById(items, savedOrder, idOf) {
   const ord = savedOrder || [];
   if (!ord.length) return items;
@@ -943,10 +735,6 @@ export function orderById(items, savedOrder, idOf) {
 }
 // 6-dot grip glyph used as the drag handle on reorderable cards.
 export const GRIP_SVG = `<svg width="11" height="16" viewBox="0 0 11 16" fill="currentColor"><circle cx="3" cy="3" r="1.4"/><circle cx="8" cy="3" r="1.4"/><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="3" cy="13" r="1.4"/><circle cx="8" cy="13" r="1.4"/></svg>`;
-// HTML5 drag-reorder. `ids` is the CURRENT visible order; `onReorder(newIds)` persists it. Returns
-// per-item props: grip(id) for the handle, zone(id) for the card wrapper, plus the live dragId.
-// FLIP: after a reorder re-renders the (keyed) cards into new positions, slide each from where it WAS
-// (`first` rects, snapshot at drop time) to where it now is, so it's visible what moved and where.
 export function flipPlay(container, first) {
   requestAnimationFrame(() => {
     const moved = [];
@@ -1055,18 +843,13 @@ export function useReorder(ids, onReorder, axis = "x", sel = {}) {   // axis "x"
   };
 }
 
-// ───────────────────────── shared bits ─────────────────────────
-// Interface op lifecycle labels, one per verb \u00d7 phase. Accessors rather than tables so the words are
-// looked up after the catalog loads (see `once` above); the verb itself is the fallback.
+// shared bits
 const IFOP_BUSY_W = once(() => ({ start: T("ifop|starting"), stop: T("ifop|stopping"), restart: T("ifop|restarting"), apply: T("ifop|applying"), ignore: T("ifop|ignoring"), unignore: T("ifop|restoring") }));
 const IFOP_DONE_W = once(() => ({ start: T("ifop|started"), stop: T("ifop|stopped"), restart: T("ifop|restarted"), apply: T("ifop|applied"), ignore: T("ifop|ignored"), unignore: T("ifop|restored") }));
 const IFOP_FAIL_W = once(() => ({ start: T("ifop|failed to start"), stop: T("ifop|failed to stop"), restart: T("ifop|failed to restart"), apply: T("ifop|failed to apply"), ignore: T("ifop|couldn\u2019t ignore"), unignore: T("ifop|couldn\u2019t restore") }));
 export const ifopBusy = verb => IFOP_BUSY_W()[verb] || verb;
 export const ifopDone = verb => IFOP_DONE_W()[verb] || verb;
 export const ifopFail = verb => IFOP_FAIL_W()[verb] || T("ifop|failed");
-// Verbs that resolve entirely IN THE PANEL (no node round-trip). trackIfaceOps judges an op by watching the
-// interface come up or go down on the node, and its final `else` branch would grab these too and call them
-// failed for never changing a datapath they never touch. Their click handler owns the whole lifecycle.
 export const IFOP_PANEL = new Set(["ignore", "unignore"]);
 // The optimistic op badge for an interface/WDTT card (busy→ok→fail flash, driven by trackIfaceOps). Returns the
 // tag vnode or null so a card can show a live "applying/applied/failed" status like every other card.
@@ -1136,9 +919,6 @@ export function Badge({ s, title }) {
   if (s === "online") return html`<span class="badge b-online" title=${title || ""}><span class="sdot"></span>${statusLabel(s)}</span>`;
   return html`<span class=${"badge b-" + s + (ic ? " ic" : "")} title=${title || ""}>${ic ? html`<${Ic} i=${ic}/>` : null}${statusLabel(s)}</span>`;
 }
-// Access-lifecycle flag icon shown AFTER the status badge, but only when the badge doesn't already say it (i.e. the
-// connectivity status — online / dangling / … — wasn't the neutral "ready" that the lifecycle overwrites). Red
-// circle = blocked, red triangle = expired, orange triangle = about to expire. `it` = a reconciled peer or user.
 export function lifecycleIcon(it, st) {
   if (!it) return null;
   st = st || it.status;
@@ -1148,11 +928,6 @@ export function lifecycleIcon(it, st) {
   return null;
 }
 
-// inline metadata tag (protocol / interface / turn-proxy / generic) — the dense, colored
-// row signature. iface tags take the node's colour via --tgc.
-// the tags that describe a peer's deployment on a (node,iface): protocol + interface + turn-proxy.
-// `muted` greys them out for inactive (offline / dangling / disconnected) rows.
-// operator title of a turn-proxy (by service) on a node, if one was set — for the "Connected via" bubble
 export function turnProxyTitle(node, service) {
   const tp = ((Store.stats[node] || {}).turn_proxies || []).find(x => x && x.service === service);
   return (tp && tp.title) || "";
@@ -1161,17 +936,9 @@ export function turnProxyTitle(node, service) {
 export function gridIfaceTag(t, notip) {
   return html`<${Tag} kind=${targetType(t)} label=${t.iface} muted=${!t.online} gen3=${tgt3(t)} notip=${notip}/>`;
 }
-// …and for a GROUPED row, which stands for several deployments at once. Naming just the representative's
-// interface there is simply wrong — the row is the peer, not that one deployment — so a peer on more than
-// one interface gets a count instead, in the PRIMARY deployment's protocol colour, and lit whenever ANY of
-// them is online (dimming it because the representative happens to be down would misreport a live peer).
-// The full list is on hover, the same shape the turn-proxy badge uses.
 export function gridIfacesTag(prim, all) {
   const ds = (all || []).filter(Boolean);
   if (ds.length < 2) return gridIfaceTag(prim);
-  // The rows go straight into the popover (which is a `.deppop`), NOT inside `.tgt-frontlist` — that class
-  // is a WRAPPING FLEX ROW meant for a handful of chips, and it laid the deployments out side by side.
-  // One deployment per line, same as the +N bubble this sits beside.
   return html`<${Popover} hoverOnly cls="tgt-frontpop" popCls="iflistbub"
     trigger=${html`<${Tag} kind=${targetType(prim)} label=${T("{n} interfaces", { n: ds.length })} muted=${!ds.some(d => d.online)} gen3=${tgt3(prim)} notip=${true}/>`}>
     <span class="tgt-frontlbl">${T("This peer's interfaces")}</span>
@@ -1181,9 +948,6 @@ export function gridIfacesTag(prim, all) {
       <span class="dep-ip addr">${d.ip || "—"}</span></div>`)}
   <//>`;
 }
-// Status badge for a peer-grid row. A peer ONLINE through a turn-proxy takes the fork colour on its status
-// badge with a glowing animated dot, plus a "Connected via <fork> <title>" hover bubble — consistent in
-// every grid regardless of which columns are shown. Otherwise the normal Badge.
 const STATUS_REASONS = once(() => ({
   blocked: blockedReason(null),
   broken: T("the interface is up but this peer's IP is outside its subnet — the record needs correcting, not the interface"),
@@ -1192,20 +956,11 @@ const STATUS_REASONS = once(() => ({
   expiring: T("the access date is coming up — will be removed from every server when it passes"),
 }));
 export const statusReason = s => STATUS_REASONS()[s] || "";
-// The blocked "wrong params" hint, naming the datapath the deployment runs (wg → WireGuard, awg → AmneziaWG,
-// unknown → both) so it points at the right knobs. Mirrors the dynamic reason reconcile.js sets peer-wide.
-// The protocol name is INTERPOLATED, not concatenated: it lands mid-sentence, and only one language puts it there.
 export function protoLabel(type) { return type === "awg" ? "AmneziaWG" : type === "wg" ? "WireGuard" : T("WireGuard or AmneziaWG"); }   // i18n-keys: protocol names
 export function blockedReason(type) { return T("reaching the server but the handshake never completes — likely DPI / MTU / wrong {proto} params", { proto: protoLabel(type) }); }
 // The other "restricted" signature: the handshake DOES complete, repeatedly, because the session will not
 // hold. Mirrors the dynamic reason reconcile.js sets peer-wide.
 export function churnReason() { return T("the tunnel keeps collapsing and being rebuilt — the session won't hold, which is what a filtered or DPI'd connection looks like"); }
-// The "why" bubble for an Uncategorised peer, as a Popover rather than the CSS-only .turnbub: every peers
-// grid lives inside `.panel`, which is `overflow:hidden` to clip the table to its rounded corners, so a bubble
-// anchored inside it is CUT OFF at the panel's bottom edge — measured, 54px of a 112px bubble on the last row.
-// Popover portals out and positions against the viewport, and flipFit puts it ABOVE the badge when the room
-// below runs out. Same escape screen-nodes' platformPill already had to make, for the same reason.
-// Shared, because the LIVE monitor renders a dot instead of a pill and has to say exactly the same thing.
 export function uncatPop(trigger) {
   return html`<${Popover} hoverOnly flipFit cls="turnwrap" popCls="uncatpop" trigger=${trigger}>
     <div class="onpop-h" style="color:var(--partial)">${T("hdr|Encrypted DNS")}</div>
@@ -1220,17 +975,9 @@ export function gridStatusBadge(t, p, re) {
     // stops telling a peer whose session keeps collapsing that its handshake never completed.
     : st === "blocked" ? (t.fault === "churn" ? churnReason() : blockedReason(t.type))   // name THIS deployment's datapath (wg / awg) in the "wrong params" hint
     : (p.reason || statusReason(st))) || "";
-  // UNCATEGORISED keeps the peer's real status word and recolours it, the same grammar `b-turn` uses for
-  // "online, but via a proxy". Replacing the word with "Uncategorised" threw away something true — the peer
-  // IS online — and only worked for peers that were; a Ready peer with a recent DoT hit would have been
-  // mislabelled. The amber + warning triangle carry the caveat, the bubble carries the why, and the status
-  // column keeps its width. Amber, not red: it works, it just isn't being category-routed.
   if (peerUncategorised(t) && !re && st !== "blocked" && st !== "faulty") {
     return uncatPop(html`<span class="badge b-uncat ic"><${Ic} i="warn"/>${statusLabel(st)}</span>`);
   }
-  // A csqtt / WDTT deployment always comes in through its own turn server: the same badge, in that server's fork colour
-  // (keylessVia, beside endpointCell) — once its node reports the server, so there is a colour to give. Not over a pinned
-  // action failure: that bubble (below) is the row's only trace of it once the toast is gone.
   const kv = t.online && !t.viaTurn && !re ? keylessVia(t) : null;
   if (t.online && (t.viaTurn || (kv && kv.fork))) {
     const tf = kv ? kv.fork : turnFork(t.viaTurn), tn = kv ? kv.label : forkLabel(tf), tc = turnColor(tf);   // the id picks the colour, the name is shown
@@ -1266,9 +1013,6 @@ export function badgeWithReason(st, reason) {
   }
   return html`<${Badge} s=${st} title=${reason}/>`;
 }
-// Compact live-status dot for the connections monitor. Same turn language as the peer-grid status badge,
-// scaled down to a single dot: online-via-turn → the fork-coloured glowing dot + "Connected via <fork>
-// <title>" bubble; online (direct) → a green glowing dot; otherwise a neutral idle dot.
 export function connDot(r) {
   if (r.online && r.viaTurn) {
     const tf = turnFork(r.viaTurn), tn = forkLabel(tf), tc = turnColor(tf), ptitle = turnProxyTitle(r.node, r.viaTurn);
@@ -1278,24 +1022,6 @@ export function connDot(r) {
   }
   return html`<span class=${"condot " + (r.online ? "on" : "off")} title=${r.online ? "online" : "idle"}></span>`;
 }
-// Endpoint cell for the live grids. A peer that came IN through a turn-proxy has its endpoint on the node's
-// loopback (127.0.0.1) — the relay forwards locally — so instead of the bare IP show "turn-proxy" tinted with
-// the fork colour + the same "Connected via <fork>" hover bubble the status dot uses.
-//
-// This holds once the peer goes OFFLINE too: wg keeps the last endpoint, so `via` is still "turn" and printing
-// the raw 127.0.0.1 tells the operator nothing at all. Keep the attribution, dim it, and say "Last connected
-// via". If the exact fork can no longer be resolved (the proxy was removed, or the node predates wg_sports) we
-// still know it was relayed — say so rather than fall back to a loopback address.
-//
-// A csqtt / WDTT deployment always comes in through its own turn server, but reconcile gives it no `via` (that field
-// carries wg meaning other widgets read), so it printed "—". It gets the same cell here, named after the server that
-// carries it: the fork of that interface as its node reports it (matched by iface, as reconcile matches it), and the line
-// for csqtt, as the interface card's badge. Only what the server's own report says: ONLINE is traffic now ("Connected
-// via"); READY with the server's entry for the password (kwXfer, set exactly when the server reports holding it, bound to a
-// device or not) is idle or never used — dimmed, the server named with no claim of a past connection (a keyless deployment has
-// no last endpoint to remember). Ready with no entry (not shipped yet), creating, dangling or unknown name no path: "—".
-// The kind is the target's own type, exactly as reconcile reads it: a target with none takes reconcile's WG path, and so
-// does its cell (a plain WG row pays one compare).
 function keylessVia(t) {
   const k = t.type;
   if (k !== "csqtt" && k !== "wdtt") return null;
@@ -1319,22 +1045,7 @@ export function endpointCell(t) {
   }
   return html`<span class="addr" title=${(obs && obs.endpoint) || ""}>${(obs && ipOf(obs.endpoint)) || "—"}</span>`;
 }
-// rate cell, green when traffic is flowing
-// Throughput display perspective (Panel settings): node-reported rx/tx is from the NODE's view (rx=down,
-// tx=up). "peers" flips it to the client's view — the peer's download is what the node uploads (tx), etc.
-// dlul(rx, tx) returns [downValue, upValue] for whichever perspective is active. Numbers are unchanged;
-// only which one is labelled ↓ vs ↑ swaps.
 export const dlul = (rx, tx) => ((Store.panelSettings || {}).throughput_perspective === "peers") ? [tx || 0, rx || 0] : [rx || 0, tx || 0];
-// ── the OTHER throughput display preference: which unit a speed is said in ──────────────────────────────
-// BYTES by default — it is what the node counts, what the panel stores, and what totals are already shown
-// in, so the two figures on one card agree. BITS are the opt-in, for reading the panel against a speed
-// test, an ISP plan or a "1 Gbps port" without dividing by eight. The wire figure is bytes/s either way;
-// only the wording changes, and it always names the unit (23.8 MB/s · 200 Mbit/s), never a bare "M/s".
-//
-// ⚠️ IT LIVES HERE, NOT IN util.js, FOR THE SAME REASON `dlul` DOES. util.js is LAYER 0 and store.js
-// imports it, so reading a setting there would be an import cycle as well as a violation of the rule
-// written at the top of that file. The arithmetic stays pure over there (`rateIn`/`niceScaleCeilIn`); this
-// is the one place that knows what the operator chose, and every screen takes `rate` from here.
 export const rateUnits = () => ((Store.panelSettings || {}).throughput_units === "bits" ? "bits" : "bytes");
 export const rate = bps => rateIn(bps, rateUnits());
 export const niceScaleCeil = bps => niceScaleCeilIn(bps, rateUnits());
@@ -1349,9 +1060,6 @@ export function xferCell(db, ub) {
   return html`<span class=${"addr xfer" + (has ? " live" : "")}>↓ ${fmtBytes(db)} <span class="up">↑ ${fmtBytes(ub)}</span></span>`;
 }
 
-// "+N" pill listing a peer's other deployments. Hover OR click opens a bubble (click pins it for
-// touch); each row is server name · interface tag · right-aligned IP. The bubble is position:fixed
-// (anchored to the pill's rect) so the table's overflow:hidden can't clip it.
 export function DepBadge({ others }) {
   const [open, setOpen] = useState(false);     // hover preview
   const [pinned, setPinned] = useState(false); // click-pinned (mobile / sticky)
@@ -1373,9 +1081,6 @@ export function DepBadge({ others }) {
   useEffect(() => {
     if (!show) return; place();
     const onMove = () => place();
-    // ⚠️ THE DISMISSING TAP MUST NOT ALSO REACH WHAT IS UNDERNEATH. A pinned popover inside a
-    // modal is the top layer; if the tap that closes it also lands on the sheet backdrop the
-    // operator loses both at once. Eat the click this pointerdown precedes, once.
     const onDoc = e => { const t = e.target;
       if ((ref.current && ref.current.contains(t)) || (popRef.current && popRef.current.contains(t))) return;
       setPinned(false); setOpen(false);
@@ -1425,21 +1130,6 @@ export function StatusTag({ cls, icon, label, msg, title }) {
 // The app-wide on/off switch (34×19). Used for every enable/disable toggle in Settings.
 export const Switch = ({ on, onChange, title, disabled }) => html`<label class=${"swt" + (disabled ? " swt-off" : "")} title=${title || ""}>
   <input type="checkbox" checked=${!!on} disabled=${!!disabled} onChange=${e => onChange(e.target.checked)}/><span class="track"></span><span class="knob"></span></label>`;
-// The mechanics of a list that opens under (or over) its trigger: one hook for every dropdown — the single-choice
-// `Dropdown` below and the log viewer's multi-choice lists and menu — so a fix to one reaches all of them.
-// The caller renders the trigger inside `ref` and the popup (portalled, class `ddpop`) inside `popRef`, and wires
-// `toggle`/`onBtnKey` to the trigger and `onPopKey` to the popup. `search` is the selector of a list's own
-// search box: it takes the focus at every open and the keys typed on a row (instead of the type-ahead). `rows` is the selector of what the arrows
-// walk; `minBelow` the room under the trigger below which the list opens upward; `clampW` keeps a list this wide
-// inside the window.
-//
-// ⚠️ KEYBOARD IS NOT A NICETY HERE, IT IS THE COST OF LEAVING <select>. A native select gives arrows, Home/End,
-// type-ahead, Enter and Escape for free, and every one of them is lost the moment it is replaced by <button>s — so a
-// control adopted "because it looks designed" would quietly be a downgrade for anyone who does not use a mouse.
-// Focus moves for real (rather than aria-activedescendant) because a row may hold its own control, and a real Tab has
-// to be able to reach it.
-// ⚠️ THE `ddpop` CLASS IS A CONTRACT. A Sheet and a pinned bubble stand aside for Enter and Escape while one is on the
-// page (they test `document.querySelector(".ddpop")`), so every list built on this hook must keep the class.
 export function usePopup({ keep = null, drop = "auto", onClose, disabled = false, rows = ".ddopt:not(:disabled)", minBelow = 240, clampW = 0, search = null } = {}) {
   const [open, setOpen] = useState(false), [pos, setPos] = useState(null);
   const ref = useRef(null), popRef = useRef(null);
@@ -1447,17 +1137,11 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
   // paint a focus ring nobody asked for); a keyboard open must, or the arrows have nothing to move.
   const kbd = useRef(null);
   const typed = useRef({ s: "", t: 0 });
-  // ⚠️ CLOSING IS AN EVENT THE CALLER NEEDS. Anything a row is doing — a delete waiting to be confirmed, say — is state
-  // that belongs to the OPEN popup, and there are six ways it can close (outside click, Escape, Tab, focus leaving,
-  // choosing a row, the trigger again). Watching `open` fall is the one place that catches all of them.
   const wasOpen = useRef(false);
   useEffect(() => { if (wasOpen.current && !open && onClose) onClose(); wasOpen.current = open; }, [open]);
   // what belongs to this list: its trigger, its popup, and what the caller says (`keep`) — ONE test for every place that
   // asks (outside click, focus moving, Escape), so they cannot drift apart
   const inside = t => !!t && ((ref.current && ref.current.contains(t)) || (popRef.current && popRef.current.contains(t)) || !!(keep && keep(t)));
-  // ⚠️ `drop:"up"` IS NOT A STYLE CHOICE. A caller that puts an editable form BELOW this control has to be able to say
-  // so: left on auto, the list opens downward whenever there is room and lands squarely on the fields the operator
-  // opened it to edit. Auto everywhere else — the geometry is right far more often than a caller's guess.
   const place = () => { const el = ref.current; if (!el) return; const r = el.getBoundingClientRect();
     const below = window.innerHeight - r.bottom - 12, above = r.top - 12;
     const flip = drop === "up" ? true : (below < minBelow && above > below);
@@ -1474,9 +1158,6 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
   const moveTo = i => { const els = rowEls(); if (els.length) focusAt(els[Math.max(0, Math.min(els.length - 1, i))]); };
   const moveBy = d => { const els = rowEls(); const i = els.indexOf(document.activeElement);
     moveTo(i < 0 ? (d > 0 ? 0 : els.length - 1) : i + d); };
-  // Type-ahead, the half of a native select nobody notices until it is gone. A single repeated letter CYCLES through
-  // the rows starting with it (search from the row after the current one); a longer buffer searches from the top, so
-  // "wa" always finds the same row whatever is focused. 700ms to type the next character.
   const typeAhead = ch => {
     const now = Date.now();
     typed.current = { s: (now - typed.current.t < 700 ? typed.current.s : "") + ch.toLowerCase(), t: now };
@@ -1490,22 +1171,8 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
     // many times a second) does not
     const onMove = e => { const t = e && e.target;
       if (t && t !== document && t.contains && ref.current && !t.contains(ref.current)) return; place(); };
-    // ⚠️ `keep` IS A THIRD "INSIDE", AND IT IS A PREDICATE RATHER THAN A REF ON PURPOSE. A caller can put a form beside
-    // the list that belongs to it — editing a row's title while the row is on screen — and without this the first
-    // click into that form counts as clicking away and dismisses the very list the form was opened from. A ref is not
-    // enough either: such a form holds controls whose own popups are PORTALLED to the body, so a click in one is not
-    // `contains`-inside anything the caller can name. Only the caller knows what belongs to it, so the caller answers.
     const onDoc = e => { if (!inside(e.target)) shut(); };
-    // focus moving to anywhere that is not the list's closes it, as a native select does — watched on the document, so
-    // it holds where a click does not focus a button (Safari, macOS Firefox) and no blur ever fires on the trigger. A
-    // `keep` form is the list's too: clicking into its field moves the focus there, and must not close the list.
     const onFocus = e => { if (!inside(e.target)) shut(); };
-    // in the capture phase, and marked: a layer behind the list (the full-screen log viewer) leaves a handled one alone.
-    // ⚠️ ONLY WHEN THE KEY IS THE LIST'S — pressed in it, on its trigger, or on nothing. A field elsewhere owns its own
-    // Escape (a draft it discards, a search it clears, an IME composition): taking it there would close the list, pull the
-    // focus back to the trigger and keep the field from ever seeing the key.
-    // A form the list owns (`keep`) is the list's too: the list closes with it, and its own Escape still runs (no refocus,
-    // nothing prevented). An IME composition's Escape is the composition's.
     const onKey = e => { if (e.key !== "Escape" || e.isComposing) return; const t = e.target;
       const ours = !t || t === document.body || t === document.documentElement
         || (ref.current && ref.current.contains(t)) || (popRef.current && popRef.current.contains(t));
@@ -1519,9 +1186,6 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
     // `drop` is a dependency because the caller changes it WHILE the list is open — the form that must not be covered
     // appears after the list was opened, so a placement fixed at open time would be the wrong one.
   }, [open, drop]);
-  // Land on the SELECTED row, not the first one — opening a 40-node list on "Auto" and making the operator arrow down to
-  // what is already chosen is the thing this control exists to be better than.
-  // A list with a search box of its own: the box takes the focus at every open, mouse or keyboard.
   useEffect(() => { if (!open || !pos || !search || !popRef.current || isMobile()) return;   // a phone: no keyboard over the list
     const s = popRef.current.querySelector(search); if (s) { kbd.current = null; s.focus(); } }, [open, !!pos]);
   useEffect(() => {
@@ -1558,29 +1222,11 @@ export function usePopup({ keep = null, drop = "auto", onClose, disabled = false
   return { open, setOpen, pos, ref, popRef, close, toggle, onBtnKey, onPopKey };
 }
 
-// Reusable styled dropdown — a drop-in for a native <select> so every dropdown in the app shares one look (the
-// OS-rendered <select> option list can't be styled, hence this). `options` is a flat [{value,label,disabled}] or
-// grouped [{group,items:[…]}]. `short(label)` optionally shortens the CLOSED label (e.g. cut at a comma).
-//
-// AN OPTION MAY ALSO CARRY:
-//   title      a tooltip — the one thing a native <option> could do that this could not
-//   className  an extra class, for a row that is a MODE rather than one more value in the list
-//   refuse     a sentence: the row is shown and stays reachable, but CHOOSING it says this instead. For a
-//              row whose own `extra` control is what unblocks it — refusing silently would leave the
-//              operator clicking a row that does nothing, with the fix sitting inches to its right.
-//   extra      a control rendered beside the label, inside the row (a switch, a count, a mini button).
-//              This is why an option is a <div class="ddrow"> wrapping the <button>: nesting one
-//              interactive element inside another is invalid HTML and the inner one stops receiving
-//              clicks in some browsers, so the row's own control has to be a SIBLING of the option.
 export function Dropdown({ value, onChange, options, className, placeholder, disabled, short, ariaLabel, title, onClose, closeRef, keep = null, drop = "auto" }) {
   const P = usePopup({ keep, drop, onClose, disabled });
   const flat = (options || []).flatMap(o => o.items ? o.items : [o]);
   const cur = flat.find(o => String(o.value) === String(value));
   const curLabel = cur ? (short ? short(cur.label) : cur.label) : (placeholder || "");
-  // ⚠️ A ROW'S OWN CONTROL CANNOT CLOSE THE POPUP BY ITSELF. It stops propagation (or the click would also choose the
-  // row), and the outside-click handler ignores anything INSIDE the popup — so a control that opens a sheet left the
-  // list sitting on top of it, and one that opens a form below the field left the form hidden underneath. Handed out
-  // the same way `Sheet` hands out its guarded close. No refocus: whatever the control opened takes the focus.
   if (closeRef) closeRef.current = () => P.close(false);
   const opt = o => {
     const sel = String(o.value) === String(value);
@@ -1611,9 +1257,6 @@ export function Dropdown({ value, onChange, options, className, placeholder, dis
 }
 // grow a textarea to fit its content (starts at one row like a textbox, expands as lines wrap)
 export const autoGrow = el => { if (!el) return; el.style.height = "auto"; el.style.height = el.scrollHeight + "px"; };
-// Reusable collapsible section (interface + turn-proxy modals): a full-width header (caret · title · right-aligned
-// summary) with the body shown only when open. Controlled — parent owns the `open` boolean + `onToggle`. `summary`
-// is optional JSX/text; `sumCls` ("on" → green count, "route" → rose count) tints a <b> inside it.
 export function Disclosure({ title, summary, sumCls, open, onToggle, children }) {
   return html`<${Fragment}>
     <button type="button" class=${"disc" + (open ? " open" : "")} onClick=${onToggle}>
@@ -1624,9 +1267,7 @@ export function Disclosure({ title, summary, sumCls, open, onToggle, children })
   <//>`;
 }
 
-// ── a list sized by the fleet, not by the operator ──────────────────────────────────────────────────────────────────────────
-// Everything must read as well with 2 rows as with 200 (operator, 2026-09-14): a list whose length the fleet decides is
-// paged, 15 rows at a time, with the panel's own pager markup (Activity's). Shared by the Networks window and the user sheet.
+// a list sized by the fleet, not by the operator
 export const LIST_PAGE = 15;
 export const pageSlice = (list, page) => list.slice((page - 1) * LIST_PAGE, page * LIST_PAGE);
 export function ListPager({ page, setPage, total }) {
@@ -1640,12 +1281,7 @@ export function ListPager({ page, setPage, total }) {
   </div>`;
 }
 
-// ── a list capped inside a hover bubble ─────────────────────────────────────────────────────────────────────────────────────
-// A bubble shows the first rows of a long list and a line for the rest. That line costs a row, so it is only worth it when it
-// stands for at least TWO: up to cap+1 rows show in full ("…and 1 more" in place of the one row it hides is never the answer),
-// past that the first `cap` show and the line says how many more — and opens them, in place, since the bubble is where the
-// reader already is (operator, 2026-09-17). The bubble's own max-height scrolls a long expansion. `capShown` is the same rule
-// for a caller that renders the rows itself.
+// a list capped inside a hover bubble
 export const capShown = (n, cap) => (n <= cap + 1 ? n : cap);
 export function useCapped(items, cap = 6) {
   const [all, setAll] = useState(false);
@@ -1659,9 +1295,6 @@ export function CapList({ items, cap = 6, row }) {
   return html`<${Fragment}>${shown.map(row)}${more}<//>`;
 }
 
-// dropdown of a node's known IPs + a trailing free-text "Custom IP / Host…". Shared by the interface
-// endpoint field and the turn-proxy listen-IP field so they look/behave identically. Parent owns the
-// sel/custom state; resolve the chosen value with ipPickerVal(sel, custom).
 export function IpPicker({ ips, sel, setSel, custom, setCustom, placeholder }) {
   return html`<${Fragment}>
     <${Dropdown} value=${sel} onChange=${v => setSel(v)} options=${[
@@ -1680,9 +1313,6 @@ export function trackIfaceOps() {
     if (IFOP_PANEL.has(op.verb)) continue;   // panel-side: settled by its own handler, not by watching the node
     const cut = key.indexOf("|"); const node = key.slice(0, cut), iface = key.slice(cut + 1);
     const nrec = (Store.nodes || []).find(n => n.id === node) || {};
-    // WDTT lives in snap.wdtt, csqtt in snap.csqtt — not snap.interfaces. ⚠️ csqtt was read from snap.interfaces, where it is
-    // not: nothing read as "up", so a Start said "Started" at once and the page offered Start again while the node was still
-    // bringing it up (operator, 2026-10-29)
     const _snap = Store.stats[node] || {};
     const _wSnap = (_snap.wdtt || []).find(w => w && w.iface === iface) || (_snap.csqtt || []).find(c => c && c.iface === iface);
     const istate = _wSnap
@@ -1698,10 +1328,6 @@ export function trackIfaceOps() {
       if (cerr && now - op.started > 4000) done = { phase: "fail", err: cerr };
       else if (now - op.started > 6000) done = { phase: "ok" };   // node has had a sync to pick it up
     } else if (_wSnap && (op.verb === "start" || op.verb === "stop")) {
-      // a WDTT / csqtt server: the node never lists it in starting/stopping, takes the flag on its next sync and then brings a
-      // service up — the 8 s "no request queued" rule below called a start that was still on its way "didn't come up", and that
-      // tag stayed while the server ran (operator, 2026-10-29). Done when the readback says so; failed on the node's error or
-      // after a minute.
       const there = op.verb === "start" ? !notup : notup;
       if (there) done = { phase: "ok" };
       else if (cerr && now - op.started > 4000) done = { phase: "fail", err: cerr };
@@ -1730,9 +1356,6 @@ export function trackIfaceOps() {
   }
 }
 
-// WDTT lifecycle — same optimistic op badge as a normal interface. start/stop ride the `stopped` flag (the node
-// enable/disable-s the swg-wdtt service); restart is a nonce the node picks up (systemctl restart). trackIfaceOps
-// drives the badge, reading the WDTT snapshot's active state (not snap.interfaces).
 export async function startOrRestartWdtt(node, iface, verb) {
   const key = node + "|" + iface;
   Store.ifaceOp[key] = { verb, phase: "busy", started: Date.now() }; Store.apply();
@@ -1770,22 +1393,6 @@ export function RowError({ k }) {
   return html`<span class="rowerr" title=${e.msg}><${Ic} i="err"/> ${e.msg}<button class="rowerr-x" onClick=${() => dismissError(k)}>×</button></span>`;
 }
 
-// dropdown of the node's internet IPs (already excludes wg/awg/swg/docker) + an Auto option; keeps a
-// current custom value (e.g. a hostname ingress) selectable even if it isn't in the reported IP list.
-// IP picker: only the node's PUBLIC (internet-routable) IPs are listed; internal/private IPs are hidden.
-// A "Use custom IP…" entry reveals a free-text field for any address not in the list (also how an already-set
-// private/custom value is shown — preserved, editable). value "" = the Auto option.
-/* ── DOES THIS HOST LAND ON THIS BOX? ──────────────────────────────────────────────────────────
-   For any field the node must BIND, a hostname is a perfectly good answer — but only if it resolves
-   to an address this node actually has, or the service dies with `bind: cannot assign requested
-   address`. The old test was membership in the node's IP list, which is not that question: it flags
-   EVERY hostname, correct ones included, and so trained the operator to ignore it. It also stayed
-   silent on the case that actually bites — a name that used to point here and now points at the box
-   this node was migrated away from.
-
-   So ask. The browser cannot resolve, the panel can; the answer is compared against the addresses the
-   node reports. Returns "" (nothing to say), "checking", "ok" or "bad" — callers warn only on "bad".
-   Debounced, because it runs on every keystroke of a hand-typed host. */
 const _resolveCache = new Map();
 export function useHostOnNode(host, ips) {
   const [state, setState] = useState("");
@@ -1793,10 +1400,6 @@ export function useHostOnNode(host, ips) {
     const h = String(host || "").trim().toLowerCase().replace(/\.$/, "");
     const have = (ips || []).filter(Boolean);
     if (!h) { setState(""); return; }
-    // ⚠️ THE SILENCE RULE COMES FIRST, for an IP literal as much as for a name. It used to sit BELOW the
-    // literal branch, so a node that had not reported its addresses yet (a fresh enrolment, a node that has
-    // been down since this panel booted) made every typed address answer "bad" — a warning built entirely
-    // out of missing data. "I cannot compare" is not "that is wrong".
     if (!have.length) { setState(""); return; }          // nothing to compare against yet — say nothing
     if (/^[\d.]+$/.test(h) || h.includes(":")) {        // an IP literal answers itself
       setState(have.includes(h) || ["0.0.0.0", "::", "*"].includes(h) ? "ok" : "bad");
@@ -1822,33 +1425,6 @@ export function useHostOnNode(host, ips) {
   return state;
 }
 
-/* ── IS THIS DEVICE AN EXIT ON THIS NODE? ──────────────────────────────────────────────────────
-   useHostOnNode's twin, and deliberately built to the same shape rather than to a new one: the operator
-   types a device name, and the honest answer has the SAME four states with the same silence rule.
-
-     ""        nothing to say — the node has never reported, is stale, or runs a build that does not send
-               its exit devices at all (three of four nodes on this fleet, the day this shipped). NOT a
-               warning, and never rendered as one.
-     checking  asked, waiting.
-     ok        the node reported its exit devices, this name is one of them, and its ROLE allows it.
-     bad       the ONLY state that warns — and it carries `why` so the caller can say which sentence:
-               a role refusal ("that is this node's own interface", "that is Exit via node → P") or,
-               when `why` is empty, the node answered and simply has no such device.
-
-   A boolean would collapse "not reported yet", "node is stale" and "no such device" into one red answer,
-   which is this project's most-repeated bug. `bad` has to be a POSITIVE finding: the node answered, and
-   the answer did not contain this name.
-
-   ⚠️ THE PANEL ANSWERS, NOT THIS. The verdict needs the node's snapshot AND its roles, and the SPA holds
-   most of that — which is exactly how a second copy of the grammar would look easy and then drift. One
-   reader. Unlike resolveHost there is nothing external to wait for, so the round trip is local and cheap;
-   debounced anyway, because it runs on every keystroke. */
-/* ⚠️ THIS CACHE EXPIRES, AND NEVER HOLDS AN "I CANNOT SAY". `useHostOnNode`'s twin caches DNS for the
-   page's life, which is fine for an answer that barely moves. This one is about a DEVICE and a NODE: the
-   device can be created or torn down while the sheet is open, and the node can come back from stale. A
-   permanent cache would pin the field to whichever answer it happened to get first — and the worst one to
-   pin is `known: null`, the transient "ask me again" state, which would leave the field silent for ever on
-   a node that started reporting one second later. So: a short TTL, and null answers are not stored at all. */
 const _exitCache = new Map();
 const _EXIT_TTL_MS = 15000;
 export function useExitDeviceOnNode(node, dev, iface) {
@@ -1886,13 +1462,6 @@ export function useExitDeviceOnNode(node, dev, iface) {
   return v;
 }
 
-/** ONE SENTENCE PER REFUSAL CODE, and one copy of them. `exit_device_refusal` on the server answers with a
- *  CODE; this is where that code becomes something an operator can act on. It lived inside `ExitDevicePick`,
- *  which meant the picker could explain a refusal and nothing else could — so a save that was refused
- *  reached the operator as the raw code in a toast ("exit device refused: nic_nogw") while the sentence for
- *  it sat three lines away. Exported so the save path shows the same words the picker does.
- *
- *  `value` is the device the sentence is about; the codes that do not name one ignore it. */
 export const exitRefusalSentences = (value) => ({
 
     self: T("An interface can't exit through itself."),
@@ -1902,11 +1471,6 @@ export const exitRefusalSentences = (value) => ({
     loopback: T("Loopback isn't a way out of this node."),
     name: T("Not a usable device name — up to 15 characters: letters, digits, dot, dash or underscore."),
     imported: T("This node already runs that device for one of its own exits — pick that exit instead."),
-    // ⚠️ THREE SENTENCES FOR THE CARD, because the one flat refusal became three verdicts and they are
-    // not interchangeable. Each names something the operator can act on — which is the whole idiom here.
-    //   `nic`       we have no data: this node has not reported gateways. NOT a claim about the card.
-    //   `nic_nogw`  the card has no way off the box. Two ways to give it one, both named.
-    //   `nic_wan`   it would work and change nothing, which is worse than refusing it.
     nic: T("This node hasn't said which of its network cards have a gateway yet. Update the node, and a card that has one can be used as an exit."),
     nic_nogw: T("This node reports no gateway for {v1}, so there's no way off the box through it. Give it a default route on the node, or set the gateway on the exit under Settings → Network.", { v1: value }),
     nic_wan: T("That's already where this node's traffic leaves, so choosing it would change nothing — and it would report no traffic of its own. Leave the outbound interface on Auto instead."),
@@ -1916,15 +1480,6 @@ export const exitRefusalSentences = (value) => ({
 export const exitRefusalText = (code, device) =>
   (code ? (exitRefusalSentences(device || "")[String(code)] || "") : "");
 
-/* The exit-device control: the devices this node reports it dials out on, plus Custom… for everything else.
-   BOTH halves are load-bearing and neither replaces the other (plan §11.3).
-
-   The dropdown is the discoverable path — no typing, no typos, and it shows the operator that the panel
-   knows what is on the box. But it can only ever offer what the node classified and the last sync carried,
-   and on this fleet that was measured at ZERO correct entries before the discovery work: a device that
-   exists only while a service is up, or was created ten seconds ago, is reachable by typing and by nothing
-   else. Typing is also the operator's CONSENT, which is the thing a curated list can never obtain — and
-   consent is exactly what `wg-wdtt-exit`, the surprise this whole feature began from, never got. */
 export function ExitDevicePick({ node, value, onChange, iface, disabled, placeholder, onVerdict }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const cands = nrec.exit_candidates || [];
@@ -1938,18 +1493,10 @@ export function ExitDevicePick({ node, value, onChange, iface, disabled, placeho
   const WHY = () => exitRefusalSentences(value);
   const msg = st.state !== "bad" ? ""
     : (WHY()[st.why] || T("This node doesn't report a device by that name."));
-  // The verdict, offered UPWARD for a caller that has a Save button to block — the exits list does, and the
-  // alternative was a second copy of this grammar in the settings screen, which is the one thing §11.3 is
-  // about. Reported from an effect on the resolved message, so it fires on change rather than every render,
-  // and clears on unmount: a removed row must not keep a Save disabled for a device that is no longer there.
   useEffect(() => { if (onVerdict) onVerdict(msg); return () => { if (onVerdict) onVerdict(""); }; }, [msg]);
   return html`<${Fragment}>
     <${Dropdown} value=${sel} onChange=${v => { if (v === "__custom__") setCustom(true); else { setCustom(false); onChange(v); } }}
       disabled=${disabled} options=${[
-        // THE NULL CHOICE ALWAYS HAS A LABEL. With offers present there was no `""` option at all, so a
-        // control whose value is blank rendered as a bare caret with nothing beside it — invisible until
-        // the exits list started every new row that way. The two blank states are different facts and say
-        // different things: "this node reported none" is about the NODE, "pick one" is about this field.
         ...(offer.length ? (value ? [] : [{ value: "", label: T("val|Choose a device…") }])
                          : [{ value: "", label: T("val|No device reported") }]),
         ...offer.map(n => ({ value: n, label: n })),
@@ -1977,10 +1524,6 @@ export function ExitDevicePick({ node, value, onChange, iface, disabled, placeho
 }
 
 export function NodeIpPick({ ips, value, onChange, auto, customPlaceholder, disabled }) {
-  // A WILDCARD bind is not an address you choose off a list — it is the deliberate "listen on everything",
-  // and the operator who typed it should see it back where they typed it. Keeping it out of the options
-  // makes `valIsCustom` below true for it, so the picker opens on Custom with the value in the box instead
-  // of silently resolving to the node's detected address (which is a DIFFERENT bind).
   const pub = (ips || []).filter(ip => !isPrivIp(ip) && !["0.0.0.0", "::", "*"].includes(ip));
   const valIsCustom = !!value && !pub.includes(value);
   const [custom, setCustom] = useState(valIsCustom);
@@ -1995,40 +1538,6 @@ export function NodeIpPick({ ips, value, onChange, auto, customPlaceholder, disa
   </${Fragment}>`;
 }
 
-/** THE SOURCE TRAFFIC LEAVES A DEVICE EXIT AS — a combobox: a dropdown whose face becomes a text field when
- *  the operator picks "custom", with the caret beside it opening the same list so "back to Auto" is one
- *  click. Built by OVERLAYING the input on the dropdown's own trigger rather than by teaching `Dropdown` a
- *  second face, so the popup keeps its width, keyboard handling, portal and outside-click logic — an
- *  <input> cannot live inside a <button> anyway, and the caret is what stays exposed.
- *
- *  Separate from `NodeIpPick`, which asks the same KIND of question, for two reasons that are not cosmetic:
- *    the LIST     `NodeIpPick` offers the node's own PUBLIC addresses and filters private ones out. A device
- *                 exit's source is an address ON THAT DEVICE, and those are private almost by definition —
- *                 10.66.0.2, 172.16.0.2. That picker would filter away the only value this one can offer.
- *    the DEFAULT  there, blank means "let the kernel choose out the WAN". Here it means MASQUERADE out THIS
- *                 device, whose answer we can usually name — so the option is labelled with the address the
- *                 node reported, and degrades to a bare "Auto" only where we have nothing to name.
- *
- *  ⚠️ THE DEFAULT STORES "", NEVER THE ADDRESS IT IS LABELLED WITH. Writing the address in would freeze it:
- *  the device renumbers, the stored source stops being local, and SNAT to a non-local source drops every
- *  packet — silently, because the row would still show the value the operator picked. "" keeps it a live
- *  question the node re-answers each sync, which is what "default" has to mean to be safe. For the same
- *  reason there is no third option beside Auto and Custom: two entries that produce identical packets today
- *  and differ only after a renumber are one delayed outage wearing a choice.
- *
- *  `onCommit` is for callers that WRITE THROUGH instead of drafting. An exit's fields are saved the moment
- *  they change, and a text input on that path would POST once per character — so typing is `onChange`
- *  (local) and `onCommit` fires on blur, Enter, or a dropdown change, the three moments the operator has
- *  finished speaking. Callers that draft (the grid, `ExitFields`) pass only `onChange`. */
-/** What the exit-source control shows: its rows, and which one is selected. PURE, and exported for that
- *  reason — the component around it uses three hooks, so it cannot be called outside a render, and the part
- *  worth gating is this: which addresses are offered and whether a stored value lands on a row or in the
- *  free-text box.
- *
- *  ⚠️ A KNOWN ADDRESS IS A ROW, NOT "custom". `addrs` are the addresses the node reports on this exit's own
- *  device — offered for a NETWORK CARD, where the panel can see them (see `cardAddrs`), and empty for an
- *  adopted tunnel, where it cannot. Derived from the VALUE rather than from state, so an address that
- *  becomes known on a later poll stops rendering as a hand-typed string under the operator. */
 export function exitEgressState(discovered, addrs, value, custom) {
   const val = String(value || "").trim();
   const known = (addrs || []).includes(val);
@@ -2043,13 +1552,6 @@ export function ExitEgressPick({ discovered, value, onChange, onCommit, disabled
   const [custom, setCustom] = useState(!!String(value || "").trim());
   const { val, sel, options } = exitEgressState(discovered, addrs, value, custom);
   const done = v => { if (onCommit) onCommit(v); };
-  // ⚠️ CHOOSING "custom" HAS TO PUT THE CARET IN THE FIELD, and neither `autofocus` nor hoping does it.
-  // `autofocus` is honoured on parse, not on a node inserted later; and `Dropdown.close(true)` deliberately
-  // focuses its own trigger on the way out, so the field appears while the BUTTON holds focus and every
-  // keystroke is swallowed as type-ahead. Measured: ten characters typed, nothing in the box. An effect
-  // runs after the DOM commit, i.e. after that refocus, so it wins — and only on the TRANSITION, or it
-  // would grab the caret on page load for every exit that already has a source, and in the grid it would
-  // fight over eight rows at once.
   const inRef = useRef(null), grab = useRef(false);
   useEffect(() => { if (grab.current && inRef.current) { grab.current = false; inRef.current.focus(); } }, [custom]);
   const onSel = v => { if (v === "__custom__") { grab.current = true; setCustom(true); }
@@ -2072,9 +1574,6 @@ export const ifaceFlash = {};         // "node|iface"   -> expiry ts for a ONE-S
                                       // has just arrived somewhere in a grid of a dozen, so the eye can find it
 export const adoptSeen = new Set();   // "node|<proc at>" -> that outcome has already armed its flash
 
-// A label-less pair of colour pickers — DARK then LIGHT — for one themed colour. Hovering a swatch pops a preview
-// of `sample(colour)` on that mode's real backdrop, so you see how it reads in that theme before committing. `val`
-// is {dark,light} (a legacy string is accepted and shown for both); onChange receives the whole updated object.
 export function ThemedSwatch({ val, onChange, sample, title }) {
   const v = (val && typeof val === "object") ? val : { dark: val || "", light: val || "" };
   const cell = mode => html`<span class="tsw">
@@ -2089,10 +1588,6 @@ export function ThemedSwatch({ val, onChange, sample, title }) {
   return html`<span class="tswrow">${cell("dark")}${cell("light")}</span>`;
 }
 
-// A type-to-filter user picker (the "assign to" control for unassigned peers).
-// Anchored-dropdown positioning: a fixed-position list at the trigger's rect so it escapes a grid/table's
-// overflow:hidden (and any stacking context) — the list is PORTALED to <body>. Returns refs + pos; the
-// caller renders <Portal> with the list and wires close-on-outside via the returned handlers.
 export function useAnchoredList(open, setOpen, deps) {
   const wrapRef = useRef(null), listRef = useRef(null);
   const [pos, setPos] = useState(null);
@@ -2111,10 +1606,6 @@ export function useAnchoredList(open, setOpen, deps) {
   return { wrapRef, listRef, pos, popStyle: pos ? ("left:" + pos.left + "px;top:" + pos.top + "px;min-width:" + pos.width + "px") : "" };
 }
 
-// ── theme appliers: they read Store and paint the document, so they sit above theme.js ──
-// Drive EVERY `.tf-<fork>` element (the .tg-turn tags + .iftype.turn badges scattered across the SPA) from the
-// picker override — those use a static CSS class, so without this the colour picker would only reach the handful of
-// inline-styled sites. One injected <style> keeps the whole app in sync with turn_fork_colors after each poll.
 export function applyForkColors() {
   let el = document.getElementById("tf-colors");
   if (!el) { el = document.createElement("style"); el.id = "tf-colors"; (document.head || document.documentElement).appendChild(el); }
@@ -2125,16 +1616,6 @@ export function applyForkColors() {
     + ".tg-raw{color:" + raw + ";background:color-mix(in srgb," + raw + " 15%,transparent)}"
     + ".rawport{color:" + raw + "}";
 }
-// ---- palette overrides (Panel settings → Interfaces / Display) ----
-// Interface protocol colours (wg / awg), peer-health colours (blocked / faulty) and the brand/theme colour
-// are all operator-tunable. A Panel-settings override wins over these built-in defaults; nothing is hardcoded
-// at the render sites — the wg/awg/blocked/faulty CSS classes and the --brand custom property are driven from
-// here via applyThemeColors() after every poll, exactly like applyForkColors() does for the turn tags.
-// Every operator-tunable colour carries a value PER light/dark mode ({dark,light}); the active mode's value is
-// resolved by pickThemed(). Nothing is hardcoded at the render sites — the wg/awg CSS classes and the --brand
-// property are injected by applyThemeColors() after every poll, exactly like applyForkColors() does for the tags.
-// A mesh link's type ("wg" | "2.0" | "3.1", absent = 2.0) as the operator reads it, and in its protocol's own (tunable)
-// colour — Settings → Mesh and the node page's connection cards say it the same way.
 export const meshGenLabel = g => ({ wg: "WG", "2.0": "AWG 2.0", "3.1": "AWG 3.1" })[g || "2.0"] || g;   // i18n-keys: protocol names, the same in every language
 export const meshGenColor = g => ifaceColor(g === "wg" ? "wg" : g === "3.1" ? "awg3" : "awg");
 export function ifaceColor(type) {
@@ -2150,9 +1631,6 @@ export function themeColor() {
   return resolvedTheme() === "light" ? (ps.theme_color_light || THEME_COLOR_LIGHT_DEFAULT)
                                      : (ps.theme_color || THEME_COLOR_DEFAULT);
 }
-// Drive the whole palette from the picker overrides: set --brand (and its lighter/chart siblings) on <html> so
-// every var(--brand) site follows the theme colour, and inject one <style> overriding the static wg/awg/blocked/
-// faulty classes (they don't read a custom property, so like the turn tags they need an explicit rule).
 let _themeSig = null;
 export function applyThemeColors() {
   const theme = themeColor(), wg = ifaceColor("wg"), awg = ifaceColor("awg"), awg3 = ifaceColor("awg3"), wdtt = ifaceColor("wdtt"), csqtt = ifaceColor("csqtt");
@@ -2182,9 +1660,6 @@ export function applyThemeColors() {
     ".chip.c-csqtt.on{color:" + csqtt + ";border-color:" + csqtt + ";background:" + cm(csqtt, 15, "transparent") + "}";
   applyFavicon(theme);
 }
-// Rebuild the browser-tab favicon (the indicator-LED mark) in the ACTIVE mode's accent colour, with a
-// mode-matched centre so it reads on either tab background. Regenerated whenever the theme colour or mode
-// changes (called from applyThemeColors, which fires exactly on those changes).
 export function applyFavicon(accent) {
   const centre = resolvedTheme() === "light" ? "#FFFFFF" : "#0A0E15";
   const svg = "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'>"
@@ -2194,11 +1669,6 @@ export function applyFavicon(accent) {
   if (!link) { link = document.createElement("link"); link.rel = "icon"; (document.head || document.documentElement).appendChild(link); }
   link.setAttribute("href", "data:image/svg+xml," + encodeURIComponent(svg));
 }
-// ---- light / dark / auto ----
-// The header switch cycles auto → light → dark. "auto" follows the OS. The resolved mode drives
-// <html data-theme>, which flips the structural palette (app.css :root[data-theme=light]); the brand
-// accent is then re-injected per mode by applyThemeColors(). Persisted in localStorage so it survives reloads;
-// an inline <head> script in index.html sets data-theme before first paint so there's no dark→light flash.
 export function applyThemeMode() {
   document.documentElement.dataset.theme = resolvedTheme();
   // The phone's status bar follows the panel's theme, not the system's (MOBILE-PLAN hook 7; index.html sets it at load).
@@ -2215,9 +1685,6 @@ export const THEME_ICON = {   // inline SVGs — the button shows the CURRENT mo
   dark: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`,
   auto: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none"/></svg>`,
 };
-// The language switch: a two-letter code, cycling through the available languages. Deliberately a plain
-// cycle rather than a dropdown — with two languages a menu is more chrome than choice, and setLang()
-// reloads anyway (every module reads T() at render time, so there is nothing to re-render in place).
 export function paintLangBtn(b) {
   if (!b) return;
   // The button shows the language you SWITCH TO, not the one you are in: in English it reads «РУ», in
@@ -2242,9 +1709,6 @@ export function paintThemeBtn(b) {
 
 export function StoreOffBanner() {
   if (Store.storeConfigs) return null;
-  // A declaratively-managed panel owns fleet.json through its configuration — a `sed` on it would not
-  // survive the next rebuild, and the file may be read-only. Point at the module option instead, the
-  // same way the Update and Access hints do. `declarative` is the panel's OWN flag (not a node's).
   const declarative = !!(Store.env && Store.env.declarative);
   const docker = !!(Store.env && Store.env.docker);
   const fp = (Store.env && Store.env.fleet_path) || "/etc/swg-panel/fleet.json";

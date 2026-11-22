@@ -5,15 +5,8 @@ import { T } from "./js/i18n.js";
 
 const DEFAULTS = { graceMs: 60000, nodeStaleMs: 30000, unblockMs: 300000, restoreGraceMs: 120000 };   // unblockMs: how long "restoring" shows after an unblock before falling back to the real status. restoreGraceMs: how long a peer must stay dangling/broken before Restore/Correct is offered (not a hiccup / mid-create)
 
-// status priority for rolling several targets/peers into one (most-alive wins). faulty (handshake up, no data)
-// sits just under online; blocked (reaching but no handshake) is a fault above the plain-missing states.
-// disabled/blocking rank BELOW every live state so a single per-peer block never dominates a user that still
-// has healthy peers; restoring ranks with the other transitional states.
 const RANK = { online: 8, faulty: 7, ready: 6, expiring: 6, blocked: 5, partial: 4, restoring: 3, pending: 3, creating: 3, rotating: 3, dangling: 2, broken: 2, blocking: 1, disabled: 0, expired: 0, unknown: 1 };
 
-// IPv4 membership: is `ip` inside `cidr`? Unknown/unparseable -> true (never false-flag "broken"). IPv6 -> true
-// (skip; the "broken" check only guards IPv4 subnets). Used to tell a present-but-wrong peer (broken) from a
-// gone-interface peer (dangling).
 function ipInCidr(ip, cidr) {
   if (!ip || !cidr || String(cidr).indexOf("/") < 0 || String(ip).indexOf(":") >= 0) return true;
   const parts = String(cidr).split("/"); const bits = +parts[1];
@@ -43,14 +36,6 @@ function reconcile(roster, stats, now, cfg) {
   const users = roster.users || {};
   const peerStore = roster.peers || {};
 
-  // ⚠️ ONE CLOCK, AND IT IS THE PANEL'S. `cfg.nodeSeen` is when the PANEL received each node's last sync, by the
-  // panel's own clock (`node_seen`), and `now` is this browser's clock corrected onto that same clock (panelNow,
-  // from `panel_now` in /api/state). Both ends of the subtraction therefore come from one machine's clock.
-  // It used to subtract the snapshot's `generated_at` — stamped by the NODE — from the browser's Date.now(),
-  // so an operator whose PC clock differed from a node's by more than nodeStaleMs saw that node as stale
-  // while it was syncing every 5 s: the node list (server-side, receipt time) said reporting, this said stale,
-  // and `blocked` on the node page greyed out every action, interface creation included (client report,
-  // 2026-09-22). `generated_at` stays as the fallback for a panel too old to send either field.
   const nodeStatus = {};
   for (const node of Object.keys(stats)) {
     const seen = (cfg.nodeSeen || {})[node];   // Number.isFinite, not != null: a non-numeric would go NaN below,
@@ -68,11 +53,6 @@ function reconcile(roster, stats, now, cfg) {
     }
   }
 
-  // turn-proxy attribution per node. A turn-proxied client reaches wg THROUGH the local proxy, so wg sees its
-  // endpoint IP as the proxy's connect IP (typically 127.0.0.1) — that only says it came via SOME proxy, not
-  // which. We attribute a turn-online peer to a proxy that forwards to the peer's OWN interface (proxy connect
-  // port == the iface's wg listen port); several such proxies (redundancy) → pick the first, so exactly ONE
-  // proxy claims the connection.
   const turnConnIps = {}, turnByPort = {}, turnSportSvc = {};   // node → {connectIP:true} · {wgPort:[svc]} · {wgSourcePort:svc}
   for (const node of Object.keys(stats)) {
     const ips = {}, byPort = {}, sportSvc = {};
@@ -97,11 +77,6 @@ function reconcile(roster, stats, now, cfg) {
     const wpass = p.wdtt_password || "";
     const cpass = p.csqtt_password || "";
     const targets = targetsIn.map(function (t) {
-      // Self-contained keyless target (WDTT or csqtt — authoritative from the roster target `type`): status comes
-      // from the server's OWN read-back (stats[node].wdtt / stats[node].csqtt), NOT WG observed peers. The
-      // panel-owned password is shipped to the server (present in the read-back once synced) and binds to a device
-      // once the client connects. `online`: WDTT = a recent WG handshake; csqtt (raw TUN, no handshake) = a
-      // byte-delta (recent traffic) — so an idle-but-connected csqtt peer reads `ready`, not `online`.
       if (t.type === "wdtt" || t.type === "csqtt") {
         const src = t.type === "csqtt" ? "csqtt" : "wdtt";
         const pass = t.type === "csqtt" ? cpass : wpass;
@@ -113,20 +88,9 @@ function reconcile(roster, stats, now, cfg) {
         else st = !dev ? (((now - createdMs) <= cfg.graceMs) ? "creating" : "ready")   // password not shipped yet
                        : (dev.online ? "online" : "ready");                            // shipped/provisioned = ready; recent traffic/handshake = online
         return { node: t.node, iface: t.iface, ip: (dev && dev.ip) || "", type: t.type, primary: t.primary || false,   // "primary" | "backup" | true (pre-backup rosters) | false
-                 // A qWDTT instance running RAW gives the peer a SECOND address on its own TUN. It is not an
-                 // alternative to `ip` — the peer holds both at once — so it rides alongside rather than
-                 // replacing it. "" whenever the instance runs no raw datapath.
                  raw_ip: (dev && dev.raw_ip) || "",
                  status: st, online: st === "online", observed: null, via: null, viaTurn: null,
-                 // keyless per-peer speed (byte-delta the node computes per password) — no wg wire counter exists, so
-                 // this is a SEPARATE field from `observed` (which carries wg semantics 8+ widgets read). Overview
-                 // top-talkers reads it to include WDTT/csqtt peers; nothing else touches it.
                  kwSpeed: dev ? { rx: dev.rx_speed || 0, tx: dev.tx_speed || 0 } : null,
-                 // …and the same numbers in WG's shape, so the rate/total cells can render a keyless deployment
-                 // without every widget learning what a password-keyed server is. `up_bytes` is client→server
-                 // (server rx), `down_bytes` the reverse — the node documents that in _pw_speed. NOT `observed`:
-                 // that field means "a wg wire peer" to a dozen call sites (handshake age, endpoint, faulty
-                 // detection) and a keyless server has none of it.
                  kwXfer: dev ? { rx_speed: dev.rx_speed || 0, tx_speed: dev.tx_speed || 0,
                                  rx_bytes: dev.up_bytes || 0, tx_bytes: dev.down_bytes || 0 } : null,
                  restorable: false, correctable: false, problemMs: 0, down: null };
@@ -139,30 +103,6 @@ function reconcile(roster, stats, now, cfg) {
       else if (obs) {
         if (obs.online) {
           st = "online";
-          // FAULTY: the session will not HOLD. WireGuard renews a live session every 120s (REKEY_AFTER_TIME)
-          // and a session dies at 180s, which is what `online` is measured against. So the INTERVAL between
-          // handshakes reads directly on whether the tunnel is healthy: ~120s is a peer renewing on schedule,
-          // and a much shorter interval means the session keeps collapsing and the client keeps rebuilding it.
-          //
-          // ⚠️ THIS REPLACES A RULE THAT COULD ONLY EVER FIRE ON A FALSE POSITIVE. The old test was "handshake
-          // still valid but rx has been flat for 45s". WireGuard has no disconnect, so a client that closes its
-          // tunnel leaves a valid handshake behind for up to 180s with rx flat — the rule's exact signature.
-          // That produced the reported online → faulty → ready flicker on every single disconnect. Worse, it
-          // could not detect anything else: sampling a production node showed a re-handshaking peer moving rx
-          // on 18 of its 19 handshakes, so handshake traffic itself advances rx_bytes and "rx is flat" is
-          // exactly equivalent to "the client is sending nothing at all" — idle or gone, never a fault.
-          //
-          // The node measures the cadence now (see _session_health), so it works with no browser open and
-          // survives a reload; the browser-side rx history it replaces did neither. An older node sends no
-          // cadence, and then nothing is flagged — a missing measurement must never invent a fault.
-          // ⚠️ CHURN ALONE IS NOT EVIDENCE OF FILTERING. A session rebuilt every 15s reads the same whether a
-          // middlebox is killing a working tunnel or the peer is connected and idle: neither moves data,
-          // because a client that cannot get through is not sending any and one that is not trying is not
-          // either. Measured on the production node — the operator's own router, working fine but with
-          // nobody behind it, churned at 15s moving 180 B rx / 229 tx per interval and was shown as
-          // Restricted; EVERY peer the rule flagged there was idle. So the fault is claimed only when
-          // something was actually trying to flow between the handshakes. Healthy peers there moved
-          // 65 KB–78 MB per interval, idle ones 180 B–2.8 KB, so the floor is nowhere near either edge.
           if (cfg.detectChurn !== false && obs.hs_gap_med != null
               && obs.hs_seen >= (cfg.churnMin || 3)
               && obs.hs_gap_med <= (cfg.churnGapS || 60)
@@ -170,24 +110,15 @@ function reconcile(roster, stats, now, cfg) {
               && !obs.ep_moves) { st = "blocked"; faultKind = "churn"; }   // a ROAMING client rehandshakes legitimately — its endpoint moved
         } else if (cfg.detectBlocked !== false && obs.endpoint && (obs.rx_bytes || 0) > 0
                    && obs.handshake_age == null && (now - createdMs) > cfg.graceMs) {
-          // BLOCKED: the client IS sending packets (rx moved) but no handshake ever completed — it reaches the
-          // server and the tunnel won't come up (DPI on the handshake, MTU, wrong params). The endpoint alone
-          // does not prove that: a server conf can carry one, and then nothing has arrived at all.
           st = "blocked"; faultKind = "nohs";
         } else st = "ready";
       }
       else {
-        // Not observed on a LIVE node. If the interface is still present but the peer's IP is outside its
-        // subnet, the node CAN'T add it — that's a record mismatch ("broken", → Correct), NOT the interface
-        // being gone ("dangling", → Restore recreates it).
         const ifm = ((stats[t.node] || {}).interfaces || {})[t.iface];
         const sub = ifm && ifm.meta && ifm.meta.subnet;
         if (sub && t.ip && !ipInCidr(t.ip, sub)) st = "broken";
         else st = (now - createdMs) <= cfg.graceMs ? "creating" : "dangling";
       }
-      // Per-deployment Restore/Correct ripeness. A PARTIAL peer has individually dangling/broken targets that
-      // must each ripen on their own before we offer to act, so the gate is keyed per deployment (not per peer).
-      // Same persistence rule as the rollup below: only a sustained problem (not a hiccup / mid-create) qualifies.
       const _tk = pid + "|" + t.node + "|" + t.iface;
       const _tprob = (st === "dangling" || st === "broken");
       if (cfg.probSince) {
@@ -210,9 +141,6 @@ function reconcile(roster, stats, now, cfg) {
         viaTurn = bySport || (svcs.length ? svcs[0] : null);
       }
       return { node: t.node, iface: t.iface, ip: t.ip, type: t.type, primary: t.primary || false,   // "primary" | "backup" | true (pre-backup rosters) | false
-               // THIS deployment's non-secret render overrides, carried through untouched (not derived — the
-               // roster's own). effectiveClientParams needs them to rebuild a config from the encrypted blob,
-               // and dropping them here is what made the panel's QR disagree with the peer's subscription page.
                overrides: t.overrides || null,
                status: st, fault: faultKind, online: !!(obs && obs.online), observed: obs, via: via,
                viaTurn: viaTurn,   // the SPECIFIC turn-proxy service the peer came in through (one per connection)
@@ -233,24 +161,11 @@ function reconcile(roster, stats, now, cfg) {
     else if (present.length === 0) status = (live.length && live.every(d => d.status === "broken")) ? "broken"
                                             : ((now - createdMs) <= cfg.graceMs ? "creating" : "dangling");   // broken record vs gone interface
     else if (present.length < live.length) status = "partial";
-    // All present → the most-alive of the targets' states, so a peer that still works somewhere is not
-    // alarmed about a node it also lives on. ⚠️ SEEDED FROM A REAL TARGET, not from the literal "ready":
-    // `blocked` RANKS BELOW `ready` (it is a fault, not an aliveness level), so seeding "ready" meant a
-    // single-target peer whose one target was blocked rolled up to "ready" and the status could never be
-    // seen. That was the second, independent reason "restricted" never appeared in the UI — the condition
-    // could fire and the roll-up would still throw it away.
     else { status = present[0].status; present.forEach(d => { if ((RANK[d.status] || 0) > (RANK[status] || 0)) status = d.status; }); }
 
     // a key rotation in flight: the new key isn't on the wire yet — show "rotating", not dangling
     if (cfg.rotating && cfg.rotating.has(pid) && (status === "dangling" || status === "creating" || status === "unknown")) status = "rotating";
 
-    // ACCESS LIFECYCLE (block / expiry) — DISPLAY rule. Priority: blocked > expired > about-to-expire > restoring.
-    // Enforcement (dropping the peer from the node's desired set) is separate — this only decides the badge.
-    //   • blocked / expired INTENTIONALLY remove the peer, so a resulting OFF-interface status (dangling, unknown,
-    //     creating, broken, partial) is EXPECTED — show Blocked/Expired, NOT "dangling". A dangling peer that ISN'T
-    //     blocked/expired is a real gone-interface fault and stands (→ Restore). The connected states (online/faulty)
-    //     always stand — the block just hasn't propagated to the wire yet.
-    //   • expiring / restoring don't remove the peer, so they overwrite only the neutral "ready".
     const blocked = !!(p.disabled || (user && user.disabled));
     const nowSec = now / 1000;
     const peerExp = +p.expiry || 0, userExp = (user && +user.expiry) || 0;
@@ -296,9 +211,6 @@ function reconcile(roster, stats, now, cfg) {
     else if (status === "broken") reason = T("the interface is up but this peer's IP is outside its subnet — the record needs correcting, not the interface");
     else if (status === "expired") reason = selfExpired ? T("this peer's access date has passed") : T("the subscription's access date has passed");
 
-    // Restore/Correct is a REAL-PROBLEM affordance, not a hiccup: each deployment tracks how long it has been
-    // dangling/broken (per-target block above, gated by restoreGraceMs) so a just-created peer, a brief node
-    // blip, or a re-provision in flight never prompts it. The peer rolls up to "any deployment ripe".
     const restorable = targets.some(d => d.restorable);
     const correctable = targets.some(d => d.correctable);
     const problemMs = targets.reduce((m, d) => Math.max(m, d.problemMs || 0), 0);
@@ -318,10 +230,6 @@ function reconcile(roster, stats, now, cfg) {
       sub_hide: Array.isArray(p.sub_hide) ? p.sub_hide : [],   // config kinds the operator keeps OFF this peer's subscription page
       routes: Array.isArray(p.routes) ? p.routes : [],         // networks behind this device (docs/NETWORKS-PLAN.md §6)
       share: (p.share && typeof p.share === "object" && !Array.isArray(p.share)) ? p.share : null,   // who may reach them (§15); null = everyone on the node
-      // ⚠️ CARRIED OR THE BROWSER HALF IS DEAD. This rebuild is a whitelist, exactly like peer_set's on the panel, and a
-      // field it does not name simply does not exist in the SPA — every `peer.private` test read undefined, so the
-      // sharing guard never fired and a private device's own sheet showed the switch OFF. The server was right the whole
-      // time, which is what made it look like it worked.
       private: p.private === true,      // the owner keeps this device and its networks to themselves (§18.6)
       router: p.router === true,        // a router: several devices behind this address — the torrent guard never flags it (S11b)
       overrides: p.overrides || null,   // peer-wide render overrides (the fallback under each target's own) — see the target field

@@ -15,12 +15,7 @@ if [ "$SWG_TTY" = /dev/null ] && [ -z "${SWG_TTY_WARNED:-}" ] && { : </dev/tty; 
   export SWG_TTY_WARNED=1
 fi
 
-# ───────────────────────── config (env or flags) ─────────────────────────
-# Snapshot which of these the CALLER actually provided, BEFORE any default is applied. The .env import below
-# skips a key that is already set ("an explicit flag/env wins over the stored value") — but a non-empty DEFAULT
-# assigned here is indistinguishable from an explicit one, so every defaulted key was silently un-importable and
-# reverted to its default on a re-install or on the node stage of a master convert. PANEL_PORT only escaped
-# because its default is empty. Observed: the panel stage wrote SUB_PORT=2087, the node stage rewrote it 8444.
+# config (env or flags)
 for _k in PANEL_URL NODE_TOKEN NODE_ENDPOINT PANEL_USER PANEL_PASSWORD PANEL_DOMAIN PANEL_PORT PANEL_BASE \
           PANEL_LOCAL_PORT SUB_PORT SUB_DOMAIN PANEL_BIND SUB_BIND SUB_TRUST_XFF CONSOLE_PORT CONSOLE_BIND \
           NODE_IFACE NODE_IFACES NODE_LISTEN_PORT NODE_ADDRESS NODE_MTU NODE_PLAIN_WG NODE_NET TURN_MANAGE DNS TLS_VERIFY \
@@ -30,10 +25,6 @@ done
 # bootstrap.sh exports `-endpoint` as ENDPOINT_IP (the bare-metal name); it becomes NODE_ENDPOINT below, so it is
 # just as explicit. Missing here, a re-install's .env import quietly put the OLD endpoint back over it.
 _GIVEN_NODE_ENDPOINT="${NODE_ENDPOINT:-${ENDPOINT_IP:-}}"
-# ⚠️ …AND A FLAG IS AN EXPLICIT VALUE TOO. The snapshot above runs before the flags are parsed, so every value
-# given as a flag (-domain, -port, -user, -base, -endpoint, …) looked "not given", and the .env import replaced it
-# with the stored one: re-installing with `-domain 10.0.2.15` kept serving the old address and issued the new
-# certificate for it. The flag parser records what it sets through _flag, below.
 _flag(){ printf -v "$1" '%s' "$2"; printf -v "_GIVEN_$1" '%s' "$2"; }
 PROFILE="${PROFILE:-host}"
 ROLE="${ROLE:-}"                        # master | host — asked in Step 1 when the entry is `host`.
@@ -123,14 +114,7 @@ ask_yn_tty(){ local v p="$1" d="${2:-n}"   # y/n on the tty -> echoes yes|no (de
   v="$(ask_tty "$p ($([ "$d" = y ] && echo 'Y/n' || echo 'y/N'))" "")"
   case "${v:-$d}" in [Yy]*) printf yes;; *) printf no;; esac; }
 rand_pw(){ head -c12 /dev/urandom | base64 | tr -d '/+=' | cut -c1-16; }
-# Is there a terminal to ask on? `sudo bash -c "$(curl …)"` keeps one (/dev/tty) — `curl | sudo bash` under sudo-rs does not
-# (swg_tty_ok, above); `setsid … </dev/null`, cron and CI do not.
-# ⚠️ Without it every `read … </dev/tty` below printed a raw "line 216: /dev/tty: No such device or address" into an
-# unattended log — the redirection fails before the read runs, so a trailing 2>/dev/null never covered it. Probe once.
 HAVE_TTY=no; swg_tty_ok && HAVE_TTY=yes
-# the value of KEY in an .env file, as compose reads it: first KEY= line, an unquoted value's inline ` # comment`
-# dropped, surrounding quotes stripped. ⚠️ Reading the raw line fed the comment back in as part of the value: every
-# re-install wrote `CONSOLE_PORT=8445   # …   # …` with one more copy of its comment than the last.
 _env_val(){ local v; v="$(sed -n "s/^$1=//p" "$2" 2>/dev/null | sed -n 1p)"
   case "$v" in \"*|\'*) ;; *) v="$(printf '%s' "$v" | sed 's/[[:space:]]\{1,\}#.*$//')";; esac
   v="${v%"${v##*[![:space:]]}"}"; v="${v%\"}"; v="${v#\"}"; printf '%s' "$v"; }
@@ -152,9 +136,6 @@ ask(){ local v p="$1" d="${2:-}"; echo
   printf -v "$3" '%s' "${v:-$d}"; }
 # no terminal: say which answer was taken for the prompt that could not be shown, so an unattended log still reads
 _notty(){ printf '  %s: %s  %s\n' "$1" "$(b "${2:-(blank)}")" "(no terminal — default taken)"; }
-# …and an answer already in hand: the prompt helpers returned on it silently, so an unattended install printed "Step 3.
-# Node name for THIS box" with nothing under it (1.8.8 qualification, round 4 — the bare installers say it since
-# 4c809a4). <prompt> <value> <var>: a value this re-install read back from .env is named as that, not as given.
 _given(){ local g="_GIVEN_$3" src="given — not asked"
   { declare -p "$g" >/dev/null 2>&1 && [ -z "${!g:-}" ]; } && src="kept from $INSTALL_DIR/.env — not asked"
   printf '  %s: %s  %s\n' "$1" "$(b "${2:-(blank)}")" "($src)"; }
@@ -198,12 +179,6 @@ v_url(){     case "$1" in ""|*" "*) return 1;; esac
              local h="${1#http://}"; h="${h#https://}"; h="${h%%/*}"; h="${h%%:*}"; v_host "$h"; }
 v_httpsurl(){ case "$1" in https://*|http://*) v_host "$(x="${1#http://}"; x="${x#https://}"; x="${x%%/*}"; printf '%s' "${x%%:*}")";; *) v_host "$(x="${1%%/*}"; printf '%s' "${x%%:*}")";; esac; }   # no scheme ok → https:// is prepended after the prompt
 v_token(){   [ -n "$1" ] && [ "${#1}" -ge 8 ]; }
-# parse_panel_url <input> -> PANEL_HOST_NOPORT, PANEL_BASE (subpath), URL_PORT  (same logic as bare-metal)
-# A BARE PORT IS A PORT — the bare-metal installer's fix, and the same prompt lives here. `v_url 8443`
-# is TRUE (digits are legal host characters), so answering the ":443 is in use" prompt with the port its
-# own example suggests set the HOST to "8443", left the port alone, and reprinted the same message for
-# ever. All-digits is judged as a port and nothing else, so an out-of-range one is an error rather than
-# a hostname.
 answer_to_url(){ # answer_to_url <answer> -> echoes a URL, or nothing if it is neither
   local a="$1"
   case "$a" in
@@ -247,10 +222,6 @@ ask_valid(){ local p="$1" d="$2" var="$3" fn="$4" hint="$5" v forced rc
     echo "  re-enter, or append ' --force' to use it anyway"
   done; }
 
-# ── turn-proxy (vk-turn-proxy) — host systemd service forwarding to the published wg port ──
-# Each turn-proxy runs as a sibling CONTAINER (swg-turn-*); the installer only writes the record into
-# ./data/node, which is bind-mounted into swg-node at /var/lib/swg-noded. swg-noded (SWG_TURN_RECORD)
-# materialises it into containers on its first run and reports them to the panel.
 TURN_RECORD="${TURN_RECORD:-$INSTALL_DIR/data/node/turn-proxy.json}"
 MIGRATED_TURNS=""   # bare turn-proxy units migrate_baremetal_turns brought into the docker record → torn down at the switch
 declare -A TP_LISTEN TP_CONNECT TP_WRAP
@@ -277,9 +248,6 @@ PY
 # One instance == one container (swg-turn-<fork>-<port>) so the SAME fork can run many times
 # (2× wings, 3× samosvalishe, …) — each on its own port with its own wrap key.
 install_turn_binary(){ local fork="$1" owner="$2" listen="$3" connect="$4" extra="$5" pin="${6:-}" port inst svc
-  # CONTAINER model: don't install a host systemd unit or download here — just write the turn RECORD.
-  # swg-noded materialises it into a sibling container (swg-turn-*) on its next start (it fetches the binary).
-  # `listen` is what clients DIAL; `pin` the operator's "Listen on" (bind_ip), kept only when it is an address.
   port="${listen##*:}"; inst="$fork-$port"; svc="vk-turn-proxy-$inst"
   if $DRYRUN; then echo "    [skip] record turn-proxy $svc ($owner: $listen → $connect) in $TURN_RECORD"
   else
@@ -301,11 +269,6 @@ json.dump({"turn_proxies": tps}, open(p, "w"))
 PY
   fi
   ok "configured turn-proxy $(col "$C_GREEN" "$inst") ($owner) — $listen → $connect (starts as a container on first run)"; }
-# every wg/awg interface on this node as "<name> <listen-port> <proto>": persisted node-confs (AUTHORITATIVE
-# ListenPort) first, then this session's NODE_IFACES additions not already on disk. Drives the turn-proxy
-# forward-to picker so it lists ALL interfaces with their REAL ports — not just the bootstrap NODE_IFACE on a
-# stale .env port (which is why a re-install showed only awg0:51820 + the new iface, missing wg2/wg4).
-# the interface a turn-proxy forwards to: the node iface whose listen port matches the connect port (else empty)
 fwd_iface_for(){ local cp="${1##*:}" nm pt; while read -r nm pt _; do [ -n "$nm" ] && [ "$pt" = "$cp" ] && { printf '%s' "$nm"; return 0; }; done <<< "$(node_iface_rows)"; return 0; }   # no match → empty + success (non-zero would trip set -e)
 node_iface_rows(){
   local seen=" " c n pt pr e _ifs
@@ -325,9 +288,6 @@ node_iface_rows(){
     done
   fi
 }
-# one styled interface row (green name + proto + endpoint:port + address) for the manage-loop lists, matching the SUMMARY.
-# queued spec for an interface from NODE_IFACES (name:port:addr:proto:ep), if any — so a just-queued iface
-# (no conf written yet) still shows its real proto/port/address instead of guessing.
 node_iface_spec(){ local n="$1" e _ifs; [ -n "${NODE_IFACES:-}" ] || return 1; IFS=',' read -ra _ifs <<< "$NODE_IFACES"
   for e in "${_ifs[@]}"; do [ "$(printf '%s' "$e" | cut -d: -f1)" = "$n" ] && { printf '%s' "$e"; return 0; }; done; return 1; }
 iface_row(){ local n="$1" conf spec proto="" ep="" lp="" addr=""   # set -e safe; prefer a queued NODE_IFACES spec, else the conf
@@ -351,10 +311,6 @@ iface_row(){ local n="$1" conf spec proto="" ep="" lp="" addr=""   # set -e safe
 # turn-proxy forward-to value: accept an interface NAME (resolved to 127.0.0.1:<its listen port>) or a custom ip:port.
 fwd_resolve(){ local n p x; while read -r n p x; do [ -n "$n" ] && [ "$n" = "$1" ] && { echo "127.0.0.1:$p"; return; }; done <<< "$(node_iface_rows)"
   [ -n "${NODE_IFACE:-}" ] && [ "$1" = "$NODE_IFACE" ] && { echo "127.0.0.1:${NODE_LISTEN_PORT:-51820}"; return; }; echo "$1"; }
-# bare→docker convert: migrate THIS box's host turn-proxy systemd units → the docker turn RECORD (swg-noded
-# materialises them as sibling containers). The exact mirror of install-node's migrate_docker_turns: runs in the
-# turn step (node stage), lists them, asks "Transfer? (Y/n)", and copy-firsts — the bare units keep serving until
-# the atomic switch tears them down (recorded in MIGRATED_TURNS). Decline ⇒ left on bare-metal (stopped at switch).
 migrate_baremetal_turns(){
   [ "${SWG_CONVERT_DIR:-}" = convert-docker ] || return 0
   local units u svc owner lis con params envf exe inst pin
@@ -457,21 +413,10 @@ if [ -f "$INSTALL_DIR/.env" ]; then
             TLS_FINGERPRINT ACME_EMAIL CF_TOKEN CF_ORIGIN_TOKEN; do
     _g="_GIVEN_$_k"; [ -n "${!_g:-}" ] && continue      # an explicit flag/env wins — checked against the PRE-DEFAULT snapshot
     _v="$(_env_val "$_k" "$INSTALL_DIR/.env")"
-    # The CF creds land in *_SAVED (a prompt DEFAULT) instead of the live var — see install-host.sh: loading
-    # them live made the prompt self-skip on a re-install, so a broken token was reused without a word.
-    # TLS_FINGERPRINT likewise: it is the pin for the panel URL it was taken against, so ask_node_conn decides
-    # whether it still applies (same URL, same certificate) instead of it riding along blindly.
     case "$_k" in CF_TOKEN|CF_ORIGIN_TOKEN|TLS_FINGERPRINT) [ -n "$_v" ] && printf -v "${_k}_SAVED" '%s' "$_v"; continue;; esac
     [ -n "$_v" ] && printf -v "$_k" '%s' "$_v"
   done
   EXIST_TLS="$(_env_val TLS "$INSTALL_DIR/.env")"   # for the 'reuse' TLS option (not auto-applied)
-  # ⚠️ …BUT A NODE SYNCS WITH WHAT IT LEARNED. A transfer (another panel took the node over) or a re-point (its panel
-  # moved) is written by swg-noded to data/node/panel-url / -token / -verify / -fp, and docker/node-entrypoint.sh reads
-  # those AHEAD of the .env at every start — the .env still names the panel the node USED to sync with. A re-install
-  # that went by the .env offered that OLD panel as the default, sent it the status posts with the old token, and
-  # decided the pin against the old panel's certificate: a certificate changed THERE stopped the run (pin_kept_stop)
-  # while the panel the node really uses was fine. A node re-install now starts from that panel — docker_node_panel
-  # (lib/common.sh), read as update.sh, uninstall.sh and convert.sh read it; an explicit flag/env still wins.
   _EFF_URL=""; _LEARNED_MSG=""
   if [ "$PROFILE" = node ] && [ -z "${SWG_CONVERT_DIR:-}" ]; then
     docker_node_panel "$INSTALL_DIR"; _EFF_URL="$DNP_URL"
@@ -491,9 +436,6 @@ if [ -f "$INSTALL_DIR/.env" ]; then
       fi
     fi
   fi
-  # ⚠️ NOT DURING A CONVERT: there the .env is the one the conversion itself just staged, and "existing install …
-  # to start fresh, uninstall first" described the conversion's own work as somebody else's install (1.8.8
-  # qualification, bare → docker master: once per stage). convert.sh has already said what it staged.
   if [ -n "${SWG_CONVERT_DIR:-}" ]; then :
   elif [ "$PROFILE" = node ]; then
     info "Existing node install detected — keeping your interfaces + data.$([ "$HAVE_TTY" = yes ] && printf ' Press %s to keep each value' "$(b Enter)") (to start fresh, run the uninstaller first)."
@@ -503,23 +445,9 @@ if [ -f "$INSTALL_DIR/.env" ]; then
   fi
 fi
 
-# RE-INSTALL: signal "re-installing" + arm the traps. Node → POST to the panel (+ re-baseline the server key); panel →
-# flag the still-running container's host_proc. A re-install installs the latest → terminal is "re-installed and updated"
-# (a convert keeps its own op via SWG_CONVERT_DIR). The box-name rename is pushed later, once ask_node_conn has it.
-# ⚠️ A NODE RUN ARMS THIS ONLY ONCE ask_node_conn HAS DECIDED WHOM IT TRUSTS. It ran at the very start, before any prompt:
-# the "reinstalling" POST went out with the kept .env's token to whatever answered at its URL (curl -k — the pin was not
-# even loaded yet), and the key backups were deleted, all before the run compared the panel's certificate with its pin
-# and "kept the old pin" (1.8.8 qualification, round 6). Now the decision comes first — a kept pin stops the run there
-# (pin_kept_stop) — and the POST carries the node's trust (LC_VERIFY / LC_FP → panel_req). A panel or master run arms
-# it at the start as before: its node reports to this box's own panel over loopback, where there is no pin to decide.
 _lc_docker_arm(){
   if { [ "$EXISTING_DOCKER" = yes ] || [ -n "${SWG_CONVERT_DIR:-}" ] || ls "$INSTALL_DIR/data/node-confs/"*.conf >/dev/null 2>&1; } && ! $DRYRUN; then
     if [ -n "${NODE_TOKEN:-}" ] && [ -n "${PANEL_URL:-}" ]; then   # token from kept .env, -key recovery, or convert — any re-enroll posts the lifecycle
-      # ⚠️ …TO A PANEL THAT CAN HEAR IT, AS A NODE. A panel-only install's NODE_TOKEN is the placeholder
-      # `set-in-nodes-screen` — POSTed as a token it got a 401 after up to 6 s, and "couldn't reach the panel" twice. And
-      # a panel install's own node (a master) reports to THIS box's docker panel: after an uninstall no swg-panel
-      # container is running, and the re-install spent 6 s telling the removed panel it was "reinstalling" (1.8.8
-      # qualification, q3). A node-profile run reports to its panel wherever that is, as before.
       if [ "$NODE_TOKEN" != set-in-nodes-screen ] \
          && { [ "$PROFILE" = node ] || docker ps --format '{{.Names}}' 2>/dev/null | grep -cx swg-panel >/dev/null; }; then
         LC_URL="$PANEL_URL"; LC_TOKEN="$NODE_TOKEN"; LC_VERIFY="${TLS_VERIFY:-no}"; LC_FP="${TLS_FINGERPRINT:-}"
@@ -528,12 +456,6 @@ _lc_docker_arm(){
       fi
       rm -rf "$INSTALL_DIR/data/node/iface-keys" 2>/dev/null || true
     fi
-    # set the panel header file when a swg-panel container exists (re-install) OR will be created by THIS run
-    # (a bare→docker host/master convert — the container reads data/lib/host_proc once compose brings it up, so the
-    # 'converted-docker' terminal lands on the new panel's header). A node convert has no panel → no host_proc.
-    # ...but NEVER for a node-profile op — a node's status belongs on its node tile (the POST above), not the panel
-    # header. On a master box a swg-panel container exists, so guard the WHOLE condition with PROFILE != node (else a
-    # plain `docker node` re-install would write "reinstalling" onto the panel header).
     if [ "$PROFILE" != node ] \
        && { docker ps -a --format '{{.Names}}' 2>/dev/null | grep -cx swg-panel >/dev/null || [ "${SWG_CONVERT_DIR:-}" = convert-docker ]; }; then
       mkdir -p "$INSTALL_DIR/data/lib" 2>/dev/null; LC_FILE="$INSTALL_DIR/data/lib/host_proc"
@@ -558,13 +480,6 @@ if [ -n "${SWG_CONVERT_DIR:-}" ] && [ -f "$PREFIX$INSTALL_DIR/data/etc/auth" ]; 
   _au="$(cut -d: -f1 "$PREFIX$INSTALL_DIR/data/etc/auth" 2>/dev/null | sed -n 1p)"; [ -n "$_au" ] && PANEL_USER="$_au"
   PANEL_PASSWORD="(preserved)"
 fi
-# ⚠️ …AND A RE-INSTALL THAT DOESN'T KNOW THE PASSWORD KEEPS THE LOGIN IT HAS. uninstall.sh keeps data/ + .env for a
-# later re-install but strips PANEL_PASSWORD from the .env (no plaintext password at rest) — so the re-install minted
-# a random one, deleted the kept login and printed a "new login": the operator's own password stopped working and
-# nothing said why (1.8.8 qualification: q3 uninstall → re-install). The login itself IS kept, in data/etc/auth; keep
-# using it, as bare-metal does (install-host's KEEP_AUTH). A placeholder in .env is not a password either — re-applying
-# "(preserved)" would make the placeholder the login. `-pass` still sets a new one; a real password in .env is still
-# re-applied, as before.
 KEPT_LOGIN=no
 case "${PANEL_PASSWORD:-}" in ""|"(preserved)"|converted-login-preserved|unused-on-node-only) _pw_unknown=yes;; *) _pw_unknown=no;; esac
 if [ "$KEEP_AUTH" != yes ] && [ "$PROFILE" != node ] && [ "$EXISTING_DOCKER" = yes ] && [ "$_pw_unknown" = yes ] \
@@ -574,10 +489,6 @@ if [ "$KEEP_AUTH" != yes ] && [ "$PROFILE" != node ] && [ "$EXISTING_DOCKER" = y
   PANEL_PASSWORD="(preserved)"
   info "Keeping the existing panel login ($(b "$PANEL_USER")) — this re-install has no password for it (.env keeps none once the panel holds its login). Pass $(b -pass) to set a new one."
 fi
-# ⚠️ …AND ONE THAT KNOWS IT KEEPS IT TOO. A re-install whose .env still holds the real password re-applied it: deleted the
-# login, wrote the same one back, and the summary called it a "new login — save the password now" and printed it (1.8.8
-# qualification, round 4). The same user with a password the kept hash already verifies — from .env or given again —
-# is the login in force: keep it, print nothing. A different password (-pass) is still applied, as asked.
 if [ "$KEEP_AUTH" != yes ] && [ "$PROFILE" != node ] && [ "$EXISTING_DOCKER" = yes ] && [ "$_pw_unknown" = no ] \
    && [ -s "$INSTALL_DIR/data/etc/auth" ] \
    && [ "$(cut -d: -f1 "$INSTALL_DIR/data/etc/auth" 2>/dev/null | sed -n 1p)" = "$PANEL_USER" ] \
@@ -597,12 +508,6 @@ then
   KEEP_AUTH=yes; PANEL_PASSWORD="(preserved)"
   info "Keeping the existing panel login ($(b "$PANEL_USER")) — its password is the one it already has. Pass a different one with $(b -pass) to change it."
 fi
-# ⚠️ …AND A PASSWORD GIVEN TO CHANGE THE LOGIN CHANGES IT, WHATEVER HAPPENS TO THE CERTIFICATE. The kept login was replaced
-# only when the certificate was re-issued with it: a re-install that reused its certificate — the unattended default — kept
-# the old login although -pass was given (the lines above promise "-pass to set a new one"), said nothing, and left the new
-# password in .env in plain text for good (1.8.8 qualification, round 10, F91). A given password the kept login does not
-# hold (the block above verified it) is applied now: the login file goes, the entrypoint writes the new one, the
-# certificate stays as the TLS step decides, and the password leaves .env once the panel holds it (F88).
 SET_GIVEN_PW=no
 if [ "$KEEP_AUTH" != yes ] && [ "$PROFILE" != node ] && [ -n "${_GIVEN_PANEL_PASSWORD:-}" ] \
    && ! docker_pw_placeholder "$_GIVEN_PANEL_PASSWORD" && [ -s "$INSTALL_DIR/data/etc/auth" ]; then
@@ -617,9 +522,7 @@ _vault_reset_marker(){ local s="$PREFIX$INSTALL_DIR/data/lib/subs"
   printf 'reset\n' > "$s/vault.reset" 2>/dev/null && chmod 640 "$s/vault.reset" 2>/dev/null || true
   warn "an Encryption Vault is kept here, wrapped under the OLD panel password. Nothing was lost — at your next sign-in the panel will ask to reconnect it, with that old password or the encryption key you saved."; }
 
-# ───────────────────────── per-profile requirements ─────────────────────────
-# Compose interpolates the whole file (both services), so every referenced var must be
-# non-empty even when its service isn't in the active profile — fill sane placeholders.
+# per-profile requirements
 ask_panel_login(){   # Panel URL (identical look + parsing to bare-metal); login auto-generated
   step "Panel URL"
   echo
@@ -627,16 +530,10 @@ ask_panel_login(){   # Panel URL (identical look + parsing to bare-metal); login
   echo "      live under an existing site (e.g. $(b 'vpn.example.com/swg'))."
   echo
   local def="${PANEL_DOMAIN:-$(detect_public_ip)}"; [ -z "$def" ] && def=localhost; local _url_ans _forced="" _pp _who
-  # re-install (or -host): show the saved port/subpath in the default URL, e.g. host:8443/swg — not just the host
-  # (only onto a BARE host — a -domain given as a whole URL already says its own port/subpath, and appending the
-  # stored ones made `host:8443:2087`)
   if [ -n "${PANEL_DOMAIN:-}" ]; then case "$PANEL_DOMAIN" in *:*|*/*) ;; *)
     { [ -n "${PANEL_PORT:-}" ] && [ "$PANEL_PORT" != 443 ]; } && def="$def:$PANEL_PORT"
     [ -n "${PANEL_BASE:-}" ] && def="$def$PANEL_BASE";; esac
   fi
-  # a domain the caller GAVE (-domain / PANEL_DOMAIN) is the answer — said, not asked; else (a re-install's .env value
-  # or nothing) it is the prompt's default. It used to be asked either way, and with no terminal read "(no terminal —
-  # default taken)" about a value that was given (1.8.8 qualification, round 4).
   if [ -n "${_GIVEN_PANEL_DOMAIN:-}" ]; then PANEL_DOMAIN="$def"; else PANEL_DOMAIN=""; fi
   ask_valid "Enter panel URL (https://…)" "$def" PANEL_DOMAIN v_url "enter a host or IP, optionally with a /subpath (e.g. vpn.example.com/swg)"
   while :; do
@@ -711,9 +608,6 @@ ask_panel_tls(){     # TLS certificate (same look as bare-metal); issued INSIDE 
   else                               _le="$(keyd l 'etsencrypt (default)')"; _lip="$(keyd l 'etsencrypt-ip (default)')"; _ss="$(keyd s 'elfsigned (default)')"; fi
   while :; do
     _tn=0
-    # ⚠️ A TLS the caller already GAVE (-tls / TLS=) is the answer — ask_choice returns on it without asking. The
-    # menu used to print anyway, with "[r]euse (default) … it already covers <host>" over a run that then issued a
-    # NEW certificate: a menu describing a choice nobody was offered. Say what was given instead.
     if [ -n "${TLS:-}" ] && _in "$TLS" "$_opts"; then
       :   # given: no menu — ask_choice below says which (and asks nothing)
     else
@@ -759,14 +653,6 @@ ask_panel_tls(){     # TLS certificate (same look as bare-metal); issued INSIDE 
     break
   done
   if [ "$TLS" = reuse ]; then REUSE_TLS=yes; TLS="${EXIST_TLS:-selfsigned}"; ok "reusing the existing certificate (TLS mode: $(b "$TLS"))"; return 0; fi
-  # ⚠️ A GIVEN `selfsigned` OVER A SELF-SIGNED CERT THAT ALREADY FITS KEEPS THAT CERT. Re-issuing it hands the panel a
-  # NEW self-signed certificate, and every node that pinned the old one — a pin is how a node trusts a self-signed
-  # panel — stops syncing with "tls fingerprint mismatch" until someone re-installs it. Measured in the 1.8.8
-  # qualification: a docker master re-installed with TLS=selfsigned, and its docker node (q4) went dark. Nothing was
-  # gained by it: the old cert already named the host. So only the cert FILES are spared (the login is re-applied as
-  # before), only for a GIVEN mode — an operator who picks `selfsigned` from a menu that offered reuse is asking for a
-  # new one — and only for a self-signed cert with its key: a CA cert, a cert for another host, or none at all, and
-  # every other mode, behave exactly as before.
   case "$_tls_in" in s|self|selfsigned)
     if [ "$TLS" = selfsigned ] && [ "$EXISTING_DOCKER" = yes ] && [ -s "$_cur_key" ] \
        && cert_is_selfsigned "$_cur_cert" && cert_covers_host "$_cur_cert" "$PANEL_DOMAIN"; then
@@ -798,11 +684,6 @@ ask_panel_tls(){     # TLS certificate (same look as bare-metal); issued INSIDE 
   esac
   return 0
 }
-# How this node trusts the panel's certificate: CA verification, or a PIN of a self-signed one (trust on first use).
-# The decision a fresh install makes, shared with a re-install. $1 = the pin an earlier install recorded for THIS
-# SAME panel URL, if any: it is kept while the panel still presents that certificate — and also while the panel
-# can't be reached to say otherwise, because a panel outage during a node re-install must not cost the node its pin.
-# A certificate that CHANGED is never taken silently (panel_pin_changed, lib/common.sh). Sets TLS_VERIFY / TLS_FINGERPRINT.
 node_panel_trust(){ local _old="${1:-}" _tls_def=y _rc _fp=""
   if [ -n "$_old" ]; then
     $DRYRUN || _fp="$(_docker_panel_fp "$PANEL_URL")"
@@ -815,9 +696,6 @@ node_panel_trust(){ local _old="${1:-}" _tls_def=y _rc _fp=""
       else warn "couldn't reach the panel to re-check its certificate — keeping the existing pin (sha256 ${_old:0:16}…)"; fi
       return 0
     fi
-    # CHANGED: never taken silently — asked with a terminal (default no), refused without one (lib/common.sh). This
-    # decided afresh with only a warning, i.e. re-pinned whatever answered (1.8.8 qualification, round 4). Refused, the
-    # run stops right here — nothing changed, nothing sent (pin_kept_stop); a CA-valid new one is verified, not pinned.
     panel_pin_changed "$_old" "$_fp" "$PANEL_URL" || pin_kept_stop
     if [ "${PIN_TO_CA:-}" = yes ]; then TLS_VERIFY=yes; TLS_FINGERPRINT=""; else TLS_FINGERPRINT="$_fp"; TLS_VERIFY=no; fi
     return 0
@@ -852,20 +730,9 @@ node_panel_trust(){ local _old="${1:-}" _tls_def=y _rc _fp=""
   return 0
 }
 ask_node_conn(){     # NODE SETUP — panel connection (endpoint moved into the per-interface wg/awg step)
-  # Panel connection — normally supplied by the install command's -host / -key flags.
-  # On a re-install, ALWAYS re-prompt the URL + TLS (the panel may have moved / changed cert) with the
-  # current value as the default; the TOKEN is reused silently (re-typing it is useless). Mirrors bare-metal.
-  # CONVERT (the master's node step, or a standalone node convert): convert.sh passes the panel URL/token/verify
-  # already — use them as-is, no prompts (a convert isn't a re-install; the operator confirmed at the convert's
-  # proceed step). Keeps the master's node step identical to a standalone node convert (no extra re-install prompts).
   if [ -n "${SWG_CONVERT_DIR:-}" ] && [ -n "${PANEL_URL:-}" ]; then
     case "$PANEL_URL" in https://*|http://*) ;; *) PANEL_URL="https://$PANEL_URL";; esac
     [ -z "${TLS_VERIFY:-}" ] && TLS_VERIFY=no
-    # a convert should STILL let you set this box's name in the panel (mirrors bare-metal install-host/master) —
-    # fetch its current name + offer to change it; the rename is pushed via /api/node/rename below if changed.
-    # the token goes only with the node's own trust (panel_req — never curl -k). ⚠️ A name the panel did not give is never
-    # pushed as a default (install-node.sh, round 8): with no answer the hostname was offered and an unattended convert
-    # renamed the node to it; only a name that differs from what was offered goes out.
     local _cur="" _wj _dflt _why=""
     if _wj="$(SWG_TOK="${NODE_TOKEN:-}" panel_req GET "${PANEL_URL%/}/api/node/whoami" "${TLS_VERIFY:-no}" "${TLS_FINGERPRINT:-}" 8 2>/dev/null)"; then
       _cur="$(printf '%s' "$_wj" | python3 -c 'import json,sys;print((json.load(sys.stdin).get("data") or {}).get("name") or "")' 2>/dev/null || true)"
@@ -880,19 +747,9 @@ ask_node_conn(){     # NODE SETUP — panel connection (endpoint moved into the 
   fi
   if [ "$EXISTING_DOCKER" = yes ]; then
     local _exurl="$PANEL_URL" _extls="$TLS_VERIFY" _exfp="${TLS_FINGERPRINT_SAVED:-}" _pinurl; PANEL_URL=""; TLS_VERIFY=""
-    # the URL the stored pin was taken against is the STORED one — not $_exurl, which a -host flag already replaced —
-    # and for a node that LEARNED its panel (a transfer or a re-point) the stored one is that learned address: the
-    # node verified it under its trust before it took it (_EFF_URL, from docker_node_panel above)
     _pinurl="${_EFF_URL:-$(_env_val PANEL_URL "$INSTALL_DIR/.env")}"; case "$_pinurl" in http://*|https://*) ;; ?*) _pinurl="https://$_pinurl";; esac
     ask_valid "Panel URL (https://host[/subpath])" "$_exurl" PANEL_URL v_httpsurl "enter the panel's https:// URL (pass -host to skip this)"
     case "$PANEL_URL" in https://*) ;; http://*) _url_is_loopback "$PANEL_URL" || warn "panel URL is http:// — the key would travel in clear. Continue only if you know why.";; *) PANEL_URL="https://$PANEL_URL";; esac   # no scheme → default https://
-    # ⚠️ THE PIN IS PART OF THE INSTALL, NOT A FRESH-INSTALL EXTRA. This branch used to ask a bare "verify? (y/N)"
-    # defaulted from the stored TLS_VERIFY — which is `no` on EVERY pinned node, because a pin is how a self-signed
-    # panel is trusted — and never looked at TLS_FINGERPRINT at all. An Enter (or no terminal) therefore rewrote the
-    # .env with `TLS_VERIFY=no` and `TLS_FINGERPRINT=`: the node synced verifying nothing. Measured on a docker node
-    # (q4, 1.8.8 qualification). Now: an explicit -verify / TLS_FINGERPRINT wins; a CA-verified node keeps verifying;
-    # everything else goes through the same decision a fresh install makes, with the stored pin carried over while
-    # it is still for this URL and the panel still presents it.
     if [ -n "${_GIVEN_TLS_VERIFY:-}" ] || [ -n "${_GIVEN_TLS_FINGERPRINT:-}" ]; then
       TLS_VERIFY="${_GIVEN_TLS_VERIFY:-no}"; TLS_FINGERPRINT="${_GIVEN_TLS_FINGERPRINT:-}"
     elif [ "${PANEL_URL#http://}" != "$PANEL_URL" ]; then
@@ -970,10 +827,6 @@ current_node_ifaces(){
     case "$seen" in *" $NODE_IFACE "*) : ;; *) echo "$NODE_IFACE";; esac; fi
   } | drop_sys_ifaces   # never present panel-managed mesh-link (swg_*) interfaces
 }
-# EVERY interface NAME already present or queued on this box: node confs + queued spec (current_node_ifaces),
-# live wg/awg ifaces, a co-located bare-metal node, and any /etc/amnezia//etc/wireguard conf. A new
-# interface's default (and a typed name) is checked against this so it never collides with one that's
-# already there, available to onboard, or queued this run.
 taken_iface_names(){
   { current_node_ifaces; host_wg_ifaces; bm_node_ifaces
     { [ -d /etc/amnezia ] && find /etc/amnezia -maxdepth 3 -type f -name '*.conf' 2>/dev/null
@@ -982,9 +835,6 @@ taken_iface_names(){
   } 2>/dev/null | sort -u || true   # must end 0 (set -euo pipefail): a non-file glob makes the inner while exit 1
 }
 v_iface_free(){ v_iface "$1" || return 1; if taken_iface_names | grep -cx "$1" >/dev/null; then return 1; fi; return 0; }   # valid name AND not already taken
-# add one interface to NODE_IFACES (seeding the single bootstrap into the list first, so the entrypoint
-# — which ignores NODE_IFACE once NODE_IFACES is set — doesn't drop it).
-# ── interface picker helpers ──────────────────────────────────────────────
 host_wg_ifaces(){   # live wg/awg interface NAMES on the host (any owner) — excludes panel-managed mesh links
   ip -o link show 2>/dev/null | sed -n 's/^[0-9]\{1,\}: \([^:@]*\).*/\1/p' | while read -r d; do
     [ "$d" = lo ] && continue
@@ -1014,16 +864,8 @@ except Exception: pass
 PY
 }
 _in(){ case " $2 " in *" $1 "*) return 0;; *) return 1;; esac; }
-# bare→docker CONVERT: migrate THIS box's bare interfaces (kernel awg/wg) into the docker node's conf dir, in the
-# NODE STAGE — the mirror of migrate_baremetal_turns. Lists them, asks "Transfer? (Y/n)", copy-firsts (strips host
-# NAT — the container does its own; keys preserved). The bare interfaces keep serving until the atomic switch
-# (lc_teardown_baremetal) brings them down. Decline ⇒ left on bare-metal (start empty / add fresh in the loop).
 migrate_baremetal_ifaces(){
   [ "${SWG_CONVERT_DIR:-}" = convert-docker ] || return 0
-  # WDTT servers migrate INDEPENDENTLY of regular wg/awg interfaces — a master may run ONLY WDTT instances (no plain
-  # interfaces), and the interface transfer below returns early when there are none / the operator declines. So carry
-  # WDTT FIRST, unconditionally. (Path map + copy/strip rationale live in migrate_wdtt, lib/common.sh; the bare
-  # swg-wdtt UNITS are stopped at the atomic switch, not here — a mid-convert abort must not drop WDTT early.)
   migrate_wdtt to-docker "$INSTALL_DIR"
   migrate_csqtt to-docker "$INSTALL_DIR"   # same, for csqtt servers (units stopped at the switch, as above)
   # a CONVERT's docker conf dir must hold ONLY this run's migrated set — wipe stale confs a previous convert
@@ -1045,10 +887,6 @@ migrate_baremetal_ifaces(){
   # Approach B: auto-carry — always migrate the bare node's managed interfaces (no prompt). New ones / adoption of
   # anything else on the box are handled from the panel.
   mkdir -p "$INSTALL_DIR/data/node-confs"
-  # ⚠️ AN ADOPTED (#swg:onboarded) CONF'S HOOKS ARE ITS OWN. They are stripped here like ours — the container does not run
-  # a host's hooks (one that fails there takes the interface down) — but the bare original went with the switch, and its
-  # hooks with it, for good (1.8.8 qualification, round 8). It is kept, byte for byte, in /etc/swg-panel-confs.converted-<ts>,
-  # and a convert back to bare metal puts them back from it (convert.sh import_bare_conf). One line says so.
   local _cbak="" _hk
   for n in $ifs; do
     src="/etc/amnezia/amneziawg/$n.conf"; [ -f "$src" ] || src="/etc/wireguard/$n.conf"; [ -f "$src" ] || continue
@@ -1066,10 +904,6 @@ migrate_baremetal_ifaces(){
   migrate_node_state to-docker "$INSTALL_DIR"
   echo
 }
-# wg/awg step: pick from the host's interfaces (available / used-by-another-node) or create new
-# WDTT instances this node runs, from the record the container writes into the mounted data dir. Their interfaces
-# are created by the WDTT server itself (no .conf), so the conf scan can never see them — list them explicitly.
-# Emits "<iface>\t<listen>\t<subnet>" per line.
 manage_node_ifaces(){
   step "Datapath tooling"
   echo
@@ -1077,9 +911,6 @@ manage_node_ifaces(){
   echo "      created from the panel, and anything already on this box appears there as an adoption candidate."
   echo
   migrate_baremetal_ifaces   # convert: auto-carry the bare node's managed interfaces → data/node-confs (no prompt)
-  # record-only: detect what else is on the box and just DISPLAY it. The node reports these to the panel, where they
-  # show as adoption candidates (classify WG / AWG / WDTT, or ignore). Nothing is onboarded/moved here — a kernel
-  # interface stays on the kernel until the operator adopts it from the panel.
   local mine cand n other=""
   mine="$(current_node_ifaces | tr '\n' ' ')" || true
   cand="$( { host_wg_ifaces
@@ -1119,14 +950,7 @@ case "$PROFILE" in
     [ "$ROLE" = master ] && PROFILE=master || PROFILE=host
     echo; info "DOCKER SWG PANEL SETUP"
     ask_panel_login; ask_panel_tls
-    # The co-located node's dedicated loopback port gets its OWN 127.0.0.1:<port> publish in docker-compose, so it must
-    # not equal the panel's public port or the sub port — else compose fails at `up` with "port is already allocated".
-    # This bites the DEFAULT reverse-proxy install: TLS=none sets PANEL_PORT=8088 (ask_panel_tls), the same as the
-    # loopback default 8088. Bump it clear, exactly like install-host.sh does for the bare-metal SWG_PANEL_LOCAL_PORT.
     while [ "$PANEL_LOCAL_PORT" = "$PANEL_PORT" ] || [ "$PANEL_LOCAL_PORT" = "$SUB_PORT" ]; do PANEL_LOCAL_PORT=$((PANEL_LOCAL_PORT + 1)); done
-    # Same again for the operator console's port: compose publishes it unconditionally, so a collision with
-    # any other publish fails `up` outright and takes the panel down with it — for a port that is inert until
-    # the operator turns the console on. Bump it clear of all three.
     while [ "$CONSOLE_PORT" = "$PANEL_PORT" ] || [ "$CONSOLE_PORT" = "$SUB_PORT" ] || [ "$CONSOLE_PORT" = "$PANEL_LOCAL_PORT" ]; do CONSOLE_PORT=$((CONSOLE_PORT + 1)); done
     if [ "$PROFILE" = master ]; then
       PANEL_URL="https://swg-panel:8443"   # placeholder; manage_node_ifaces (below) resets it to the STABLE loopback (http://127.0.0.1:$PANEL_LOCAL_PORT for host-net, http://swg-panel:$PANEL_LOCAL_PORT for bridge) — the port a public flip never moves
@@ -1159,10 +983,6 @@ case "$PROFILE" in
     PANEL_PASSWORD="${PANEL_PASSWORD:-unused-on-node-only}"; PANEL_DOMAIN="${PANEL_DOMAIN:-localhost}"
     ;;
 esac
-# A node run never prompts for TLS, but it rewrites the .env that the PANEL shares in a master/converted
-# project — so defaulting straight to "selfsigned" silently downgraded a letsencrypt panel's recorded mode and
-# (below) deleted its :80 publish, breaking the next ACME renewal and reporting the wrong cert in the summary.
-# Inherit whatever the existing .env already says; only a genuinely fresh install falls back to selfsigned.
 [ -n "${TLS:-}" ] || [ ! -f "$INSTALL_DIR/.env" ] || TLS="$(sed -n 's/^TLS=//p' "$INSTALL_DIR/.env" 2>/dev/null | sed -n 1p)"
 TLS="${TLS:-selfsigned}"         # concrete value for .env (node profile never prompts for it)
 TLS_VERIFY="${TLS_VERIFY:-no}"   # concrete value for .env (host profile leaves it unset)
@@ -1178,11 +998,6 @@ info "Docker"
 if ! have docker; then
   info "installing Docker (get.docker.com)"; run sh -c "curl -fsSL https://get.docker.com | sh"
 fi
-# The client binary existing says NOTHING about the daemon being up — `docker compose version` answers from the
-# plugin alone, and `docker pull` failing is treated as "offline, use the local image". So a stopped daemon used
-# to sail all the way to the bare→docker switch, which tears the bare-metal install down BEFORE starting the
-# containers: the box ended up with neither, and a panel that was serving fine a moment earlier was gone.
-# Prove the daemon answers HERE, while nothing has been touched, and start it if the unit is merely stopped.
 if ! $DRYRUN; then
   if ! docker info >/dev/null 2>&1; then
     info "the Docker daemon isn't responding — starting it"
@@ -1200,42 +1015,18 @@ if $DRYRUN; then COMPOSE="$(compose_probe)" || COMPOSE="docker compose"
 else COMPOSE="$(compose_probe)" || die "$(compose_missing) — nothing has been changed${SWG_CONVERT_DIR:+, and your bare-metal install is still serving}."
 fi
 
-# ───────────────────────── stage project ─────────────────────────
-# Default pulls prebuilt images from GHCR, so only the compose file is needed on the host
-# (.env is written below, data/ is created by compose). --build also stages the full build
-# context and flips the compose file to build-from-source.
+# stage project
 info "Staging project in $INSTALL_DIR"
 mkdir -p "$PREFIX$INSTALL_DIR"
 cp -a "$REPO/docker/docker-compose.yml" "$PREFIX$INSTALL_DIR/"
 if $BUILD; then
   stage_docker_context "$REPO" "$PREFIX$INSTALL_DIR" || die "could not stage the Docker build context"
-  # flip compose: uncomment the build: blocks. The `image:` lines STAY.
-  # ⚠️ `image:` + `build:` TOGETHER IS THE POINT, NOT AN OVERSIGHT. Compose names a built image with the
-  # `image:` value, and this compose has ONE consumer of that name outside compose itself: swg-noded runs
-  # every turn-proxy container from `SWG_TURN_IMAGE`, which the node service resolves to
-  # `ghcr.io/tesla-prep/swg-node:${SWG_IMAGE_TAG:-latest}`. Comment `image:` out and compose names the
-  # build `<project>-swg-node` instead, so SWG_TURN_IMAGE points at an image the box has never built —
-  # docker then PULLS main's published image to run the proxies, or fails outright with no network. That is
-  # the same "reverted to published code" failure a --build install exists to prevent, moved one layer down.
-  # Measured on docker 29.7.2 / compose v5.2.0: with `image:` the build is tagged
-  # ghcr.io/tesla-prep/swg-node:latest; without it, cmpxb-swg-node:latest.
-  #
-  # The hazard that motivated commenting it — `compose pull` replacing a local build with `latest` — is
-  # answered by the TAG instead, below: a build install pins SWG_IMAGE_TAG to a name GHCR does not publish,
-  # so the local images cannot be confused with main's and a stray `compose pull` fails loudly rather than
-  # silently overwriting them. (`update.sh` never pulls here at all: it greps for an active `build:` and
-  # takes the rebuild branch.)
   sed -i -E 's@^( *)# build: \.@\1build: .@; s@^( *)# (build:)$@\1\2@; s@^( *)#   (context: \.)@\1  \2@; s@^( *)#   (dockerfile: Dockerfile.node)@\1  \2@' "$PREFIX$INSTALL_DIR/docker-compose.yml"
   ok "staged full build context (--build: images built from source)"
 else
   ok "staged compose file (images pulled prebuilt from GHCR — no build context needed)"
 fi
 
-# Node datapath networking (profiles: node, master). HOST (default) = every interface port, incl.
-# panel-created ones, binds directly on the host: no publishing, best UDP throughput. BRIDGE = isolated,
-# but each created interface's UDP port must be published in docker-compose.yml. host net disallows
-# per-container ports/sysctls (disabled below + ip_forward set on the host); the master's node also
-# leaves the compose network, so it reaches the panel over loopback instead of the swg-panel name.
 if [ "$PROFILE" = node ] || [ "$PROFILE" = master ]; then
   if [ -z "$NODE_NET" ]; then
     step "Networking mode"; echo
@@ -1286,9 +1077,6 @@ PYHOST
     [ "$TURN_SOCK_BUF_LOW" = 1 ] && warn "UDP socket-buffer caps could not be raised on this host (net.core.{r,w}mem_max) — csqtt handshakes may fail under load"
   fi
 
-  # ── turn-proxy management — how this node's host turn-proxy services are managed ──
-  # Approach B: turn-proxies are managed from the PANEL (they run as sibling swg-turn-* containers). No prompt —
-  # mount the Docker socket so swg-noded can drive them. An explicit TURN_MANAGE=manual env still opts out.
   case "$TURN_MANAGE" in manual) ;; *) TURN_MANAGE=panel;; esac
   if [ "$TURN_MANAGE" = panel ] && ! $DRYRUN; then     # mount the Docker socket so swg-noded can drive host turn-proxy units (B1)
     python3 - "$PREFIX$INSTALL_DIR/docker-compose.yml" <<'PYSOCK'
@@ -1320,23 +1108,11 @@ case "$PROFILE" in
   master) _UPD_TRIG=/var/lib/swg-panel/.update-request; _NODE_UPD_TRIG=/var/lib/swg-noded/.update-request;;
   node)   _NODE_UPD_TRIG=/var/lib/swg-noded/.update-request;;
 esac
-# .env is a FULL REWRITE, and a convert of a MASTER finishes by running this script as `node` for the datapath —
-# so a node pass blanked the PANEL's trigger and stamped the box `node`, on a box that still runs the panel. The
-# panel then reported "auto-update is not connected here" and its Update button could do nothing, even though the
-# host watcher was already watching data/lib/.update-request. Carry forward whatever the previous .env set that
-# this pass does not (the panel's own settings are preserved the same way above); a box that ends up with BOTH
-# triggers runs both halves and is a master, whatever this pass was invoked as.
 _prev_env(){ [ -f "$PREFIX$INSTALL_DIR/.env" ] && sed -n "s/^$1=//p" "$PREFIX$INSTALL_DIR/.env" | sed -n 1p || true; }
 [ -n "$_UPD_TRIG" ]      || _UPD_TRIG="$(_prev_env SWG_UPDATE_TRIGGER)"
 [ -n "$_NODE_UPD_TRIG" ] || _NODE_UPD_TRIG="$(_prev_env NODE_UPDATE_TRIGGER)"
 _ENV_PROFILE="$PROFILE"
 [ -n "$_UPD_TRIG" ] && [ -n "$_NODE_UPD_TRIG" ] && _ENV_PROFILE=master
-# csqtt's dataplane is io_uring, which docker's DEFAULT seccomp profile denies — a csqtt server in a
-# container dies on start with "create io_uring" and the panel says so. A node that ALREADY runs csqtt
-# servers (carried over by a bare-metal → docker conversion, or already recorded here) was working a
-# minute ago, so keep it working: opt that node's container out of the default profile. A node with no
-# csqtt server keeps the stricter default and only loosens it if the operator adds one and follows the
-# panel's message. An operator's own SWG_NODE_SECCOMP= in .env always wins.
 _SECCOMP_LINE=""
 case "$PROFILE" in node|master|host-node)
   _prev_seccomp="$(_prev_env SWG_NODE_SECCOMP)"
@@ -1346,33 +1122,13 @@ case "$PROFILE" in node|master|host-node)
     _SECCOMP_LINE="SWG_NODE_SECCOMP=unconfined   # this node runs csqtt servers, whose io_uring dataplane the default profile denies"
   fi;;
 esac
-# ⚠️ A LOCAL BUILD MUST NOT WEAR THE PUBLISHED NAME. Both services interpolate
-# `${SWG_IMAGE_TAG:-latest}` into their `image:`, so an unpinned --build install tags its own images
-# `ghcr.io/tesla-prep/swg-{panel,node}:latest` — indistinguishable in `docker images` from what CI
-# publishes from main, and one `docker compose pull` away from being silently replaced by it. Pinning a tag
-# GHCR does not publish keeps the name (so SWG_TURN_IMAGE still resolves to the image this box built) while
-# making that pull fail loudly instead. An explicit SWG_IMAGE_TAG always wins: an operator pinning a real
-# published tag and asking for --build has said something deliberate.
 _IMAGE_TAG_LINE=""
 if $BUILD; then _IMAGE_TAG_LINE="SWG_IMAGE_TAG=${SWG_IMAGE_TAG:-local}   # built on this box from source — not a published GHCR tag"
 elif [ -n "${SWG_IMAGE_TAG:-}" ]; then _IMAGE_TAG_LINE="SWG_IMAGE_TAG=$SWG_IMAGE_TAG"
-# ⚠️ …AND A PIN ALREADY IN .env IS THE OPERATOR'S TOO. This rewrite used to keep SWG_IMAGE_TAG only when it was
-# exported again, so a plain re-install of a box pinned to sha-6bd6d8c pulled `latest` (1.8.7-beta) for panel AND
-# node — a silent downgrade. Keep it, except the tag a --build stamped on its own images: this run pulls, and a
-# name GHCR never published would only fail the pull and leave the stale local build running.
 elif _prev_tag="$(grep -m1 '^SWG_IMAGE_TAG=' "$INSTALL_DIR/.env" 2>/dev/null)" && [ -n "$(_env_val SWG_IMAGE_TAG "$INSTALL_DIR/.env")" ]; then
   case "$_prev_tag" in *"built on this box from source"*) ;; *) _IMAGE_TAG_LINE="SWG_IMAGE_TAG=$(_env_val SWG_IMAGE_TAG "$INSTALL_DIR/.env")"; _KEPT_TAG=yes;; esac
 fi
-# ⚠️ .env IS REWRITTEN WHOLE, so every key this script does not write was DELETED by a re-install: SWG_LATEST_URL
-# (the panel's pre-release update channel, which .env.example tells operators to add), SWG_TURN_IMAGE, and anything
-# else the operator put there. Snapshot the previous file now; its extra keys are appended below, after the keys
-# this run owns (read from the LIVE file even on --dry-run: that is the file a real run would rewrite).
 _OLD_ENV="$(cat "$INSTALL_DIR/.env" 2>/dev/null || true)"
-# ⚠️ …AND ON A CONVERT BACK TO DOCKER, THE .env OF THE DOCKER INSTALL THIS BOX WAS CONVERTED FROM. A Docker → bare-metal
-# convert moves the whole deployment aside (<dir>.converted-<ts>) and bare metal keeps no .env; the convert back stages a
-# fresh one, so every key the operator had added (SWG_LATEST_URL, SWG_TURN_IMAGE, PULL_POLICY, their own) was lost by the
-# round trip (1.8.8 qualification, round 6: q3 and q4). Its keys come after the live file's; installer-decided ones stay
-# decided here (SWG_IMAGE_TAG above, SWG_NODE_SECCOMP from what the box runs now).
 _CONV_ENV=""; _CONV_DIR=""
 if [ "${SWG_CONVERT_DIR:-}" = convert-docker ]; then
   _CONV_DIR="$(ls -d "$INSTALL_DIR".converted-*/ 2>/dev/null | sort | tail -n 1 || true)"; _CONV_DIR="${_CONV_DIR%/}"
@@ -1422,9 +1178,6 @@ DNS=$DNS
 $_SECCOMP_LINE
 $_IMAGE_TAG_LINE
 EOF
-# carry forward: every KEY= line of the previous .env whose key the file above does not define — first one wins,
-# the operator's own line kept byte for byte (comment included). Keys this script writes are never duplicated, and
-# SWG_IMAGE_TAG is decided above (a --build's own tag must NOT come back through here).
 if [ -n "$_OLD_ENV" ]; then
   _carried="$(printf '%s\n' "$_OLD_ENV" | awk -v new="$PREFIX$INSTALL_DIR/.env" '
     BEGIN { have["SWG_IMAGE_TAG"] = 1
@@ -1438,9 +1191,6 @@ if [ -n "$_OLD_ENV" ]; then
   _kept_names="$([ "${_KEPT_TAG:-no}" = yes ] && printf 'SWG_IMAGE_TAG ')$(printf '%s\n' "$_carried" | sed -n 's/=.*//p' | tr '\n' ' ')"
   [ -n "${_kept_names// /}" ] && sub "kept from the previous .env: $_kept_names"
 fi
-# …then what the BARE services this box is leaving held in their own drop-ins (convert.sh carry_dropins_to_env read
-# them, said which, and kept the rest aside): SWG_CARRY_ENV. Ahead of the converted-from Docker install's keys below —
-# the bare box is the newer of the two — and by the same rule: a key already in the file is never written twice.
 if [ -n "${SWG_CARRY_ENV:-}" ] && [ -s "$SWG_CARRY_ENV" ]; then
   _carried="$(awk -v new="$PREFIX$INSTALL_DIR/.env" '
     BEGIN { have["SWG_IMAGE_TAG"] = 1; have["SWG_NODE_SECCOMP"] = 1
@@ -1463,11 +1213,6 @@ if [ -n "$_CONV_ENV" ]; then
 fi
 chmod 600 "$PREFIX$INSTALL_DIR/.env" 2>/dev/null || true
 ok "${_WROTE:-wrote} $INSTALL_DIR/.env (profile $PROFILE)"
-# ⚠️ THE .env NOW NAMES THE PANEL THIS NODE SYNCS WITH, SO ITS LEARNED COPY GOES. docker/node-entrypoint.sh reads
-# data/node/panel-url / -token / -verify / -fp AHEAD of the .env at every start: left behind, a copy from an earlier
-# transfer or re-point overrode the panel this run decided — an address or key given here (-host / -key, typed at the
-# prompt, or a fresh install over a kept data/node) was replaced by the old one at the next start, silently. The .env
-# carries what they said (docker_node_panel above); swg-noded writes them again after the next transfer or re-point.
 if [ "$PROFILE" = node ] && [ -z "${SWG_CONVERT_DIR:-}" ]; then
   _lrn=""; for _lf in panel-url panel-token panel-verify panel-fp; do [ -e "$INSTALL_DIR/data/node/$_lf" ] && _lrn="${_lrn:+$_lrn, }$_lf"; done
   if [ -n "$_lrn" ]; then
@@ -1496,17 +1241,6 @@ OVERRIDE="$PREFIX$INSTALL_DIR/docker-compose.override.yml"
 P80HELD="$PREFIX$INSTALL_DIR/data/etc/acme/.port80-held"
 if [ "$PROFILE" = node ]; then :   # the override publishes :80 on the PANEL container — not this run's business
 elif [ "$TLS" = letsencrypt ] || [ "$TLS" = letsencrypt-ip ]; then
-  # ⚠️ …BUT ONLY IF :80 IS ACTUALLY FREE. Publishing a port something else holds does not fail here — it
-  # fails when the container STARTS, which on a convert is after the bare-metal panel has been stopped:
-  # "driver failed programming external connectivity", no panel, and a box whose operator is now reading
-  # `docker compose logs` to find out why their panel is gone. Measured on a real convert of a box running
-  # nginx — the very "serving it behind that web server" case the panel's own prompts invite.
-  #
-  # A held :80 is not a reason to refuse the install: the certificate that already exists keeps serving, and
-  # only RENEWAL needs the challenge. So skip the publish, keep the panel startable, and say plainly what
-  # will not happen by itself. `SWG_FORCE_PORT80=1` overrides for an operator who is about to free it.
-  # …and the holder is not THIS panel: on a re-install the running container still holds :80 through its docker-proxy,
-  # and reading that as "taken" dropped the publish, so the panel came back unable to renew (S9f review F5).
   _own80=0
   if have docker && [ -n "$(ss -lntH 'sport = :80' 2>/dev/null)" ]; then
     _own80="$(docker ps --filter 'name=^swg-panel$' --format '{{.Ports}}' 2>/dev/null | grep -c ':80->80/tcp' || true)"
@@ -1537,24 +1271,12 @@ elif [ -f "$OVERRIDE" ]; then
   ok "removed docker-compose.override.yml (TLS=$TLS doesn't need host port 80)"
 fi
 
-# ── reset login + cert on every install (matches bare-metal) ───────────────────
-# The entrypoint only writes data/etc/auth and data/etc/tls/* when they're MISSING, so a reused
-# data dir keeps the OLD login AND an OLD cert (e.g. a self-signed left by a previously-failed
-# letsencrypt run, which then gets served instead of the TLS mode you just picked → Cloudflare 526).
-# Drop both and --force-recreate so the entrypoint re-applies the freshly-chosen login + TLS mode.
-# (acme state in data/etc/acme is kept, so letsencrypt/cloudflare reuse their cached cert.)
+# reset login + cert on every install (matches bare-metal)
 RECREATE=""
-# NEW_LOGIN tracks the one case where PANEL_PASSWORD is actually APPLIED: auth is deleted here and the entrypoint
-# writes the freshly-chosen login. Only then may the summary print it — with a reused or staged login the generated
-# string is not the real password, and showing it would be worse than showing nothing.
 NEW_LOGIN=no
 if [ "$PROFILE" != node ]; then
   if [ "${REUSE_TLS:-no}" = yes ]; then
     : # reuse: keep the existing login + certificate (entrypoint serves them as-is)
-    # ⚠️ …BUT A LOGIN FILE THAT IS GONE IS A NEW LOGIN. The entrypoint writes it from PANEL_PASSWORD at this start — the
-    # password this run generated in place of a placeholder — and with NEW_LOGIN left "no" the summary never showed it
-    # and it stayed in .env: a login nobody was told (1.8.8 qualification, round 9b: the login file lost, the installer
-    # re-run as the refusing entrypoint says).
     [ -s "$PREFIX$INSTALL_DIR/data/etc/auth" ] || { $DRYRUN || NEW_LOGIN=yes; }
     # …and a password given to change the login replaces it; the certificate stays (F91, above)
     if [ "$SET_GIVEN_PW" = yes ] && ! $DRYRUN; then rm -f "$PREFIX$INSTALL_DIR/data/etc/auth"; _vault_reset_marker; NEW_LOGIN=yes; fi
@@ -1572,24 +1294,8 @@ fi
 # so changes from a re-install (e.g. an added interface in NODE_IFACES) never reach the running node.
 RECREATE="--force-recreate"
 
-# ── master: auto-enroll the local node in ONE pass (mirrors bare-metal master) ──
-# Write the node into ./data/lib/nodes.json BEFORE compose up. The panel entrypoint only seeds
-# an empty {} when nodes.json is MISSING, so this pre-written file wins; the node container gets
-# the matching raw token via NODE_TOKEN (.env). No "add the node in the panel first" round-trip.
-# Merge into any existing nodes.json so a reinstall keeps other (remote) nodes intact.
 if [ "${AUTOENROLL:-}" = yes ] && ! $DRYRUN; then
   ndir="$PREFIX$INSTALL_DIR/data/lib"; mkdir -p "$ndir"
-  # The endpoint the operator GAVE this run (-endpoint / NODE_ENDPOINT / ENDPOINT_IP) is also the address the panel
-  # hands out for this node — nodes.json endpoint_host. Left blank, the panel only auto-fills it from a PUBLIC IP the
-  # node reports, so a master whose clients dial a private/LAN or NAT'd address came up with no dial host at all
-  # (measured: NODE_ENDPOINT=192.168.77.6 → endpoint_host ''). Fills a BLANK one only — an address set in the panel
-  # is the operator's and stays; an auto-detected endpoint is left to the panel, as before.
-  # ⚠️ …AND A RE-INSTALL FILLS IT WITH THE ENDPOINT THIS NODE ALREADY HAS — update.sh's seed_local_node_ep, for Docker.
-  # Given only, a master installed without -endpoint (1.8.7 had no seed at all) kept '' through every re-install: the
-  # kept .env's NODE_ENDPOINT never counts as given (1.8.8 qualification, q3: uninstall → re-install, still ''). Taken
-  # under the same rules as that seed, so no client config changes: an address of THIS box (the record is also the
-  # listen address pre-filled for turn-proxies), and every interface reports it (a NODE_IFACES endpoint of its own
-  # would be overridden by the record). A FRESH install still takes only a given endpoint — it has nothing reported yet.
   _EP_SEED="${_GIVEN_NODE_ENDPOINT:-}"
   if [ -z "$_EP_SEED" ] && [ "$EXISTING_DOCKER" = yes ] && [ -n "${NODE_ENDPOINT:-}" ] && host_is_local "$NODE_ENDPOINT" \
      && [ -z "$(printf '%s' "${NODE_IFACES:-}" | tr ',' '\n' | cut -s -d: -f5 | grep -vxF -e '' -e "$NODE_ENDPOINT" || true)" ]; then
@@ -1647,17 +1353,6 @@ fi
 # (port checks happen earlier: the panel port at the URL step, :80 at the TLS step for letsencrypt)
 info "Starting compose profile '$PROFILE'$($BUILD && echo ' (building from source)')"
 BUILDFLAG=""; $BUILD && BUILDFLAG=--build   # default pulls prebuilt images from GHCR
-# ⚠️ SAY WHICH CODE IS ACTUALLY ABOUT TO RUN. CI publishes `ghcr.io/…:latest` on push to `main` and nowhere
-# else, so a docker install FROM A BRANCH pulls main's image and the containers run main's code — while
-# every script on the box, the host updater and the summary all say the branch. Measured: `bootstrap docker
-# master -y` at SWG_REF=dev completed cleanly, wired an updater pinned to `dev`, and both containers
-# reported 1.8.5-beta. The operator has no way to see it short of exec'ing into a container and reading
-# VERSION. Nothing here can conjure an image that was never built — so say it, and name the one flag that
-# does run the branch. (Silent on `main`, on a tag, and when SWG_IMAGE_TAG pins something deliberately.)
-# ⚠️ …AND THE PIN LIVES IN `.env`, NOT IN THE SHELL. `.env.example` tells operators to put
-# `SWG_IMAGE_TAG=sha-1a2b3c4` there and compose resolves it from there, so a re-install over an .env that
-# already pins a real, existing image read `${SWG_IMAGE_TAG:-}` as empty and told the operator their
-# containers would run `latest` — which was false. Ask the file too.
 _pinned_tag(){ [ -n "${SWG_IMAGE_TAG:-}" ] && return 0
   [ -f "$INSTALL_DIR/.env" ] && [ -n "$(sed -n 's/^SWG_IMAGE_TAG=//p' "$INSTALL_DIR/.env" 2>/dev/null | sed -n 1p | sed 's/[[:space:]]*#.*//; s/[[:space:]]*$//')" ]; }
 # A COMMIT (bootstrap's SWG_COMMIT — a going back by commit) is installed while SWG_REF is the branch the box tracks, so the
@@ -1671,13 +1366,6 @@ elif ! $BUILD && ! _pinned_tag && [ -n "${SWG_REF:-}" ] && [ "${SWG_REF}" != mai
     images are built from $(b main), so there is none for $(b "$SWG_REF"). Re-run with $(b --build) to build
     this branch from source, or set $(b SWG_IMAGE_TAG) to an image tag that exists."
 fi
-# A re-install MUST refresh the prebuilt image first: compose's pull_policy is "missing", so a plain
-# `up --force-recreate` rebuilds the container from the STALE local :latest — entrypoint/datapath fixes
-# shipped in a newer image never reach a re-installed node (this is exactly how a stale entrypoint kept
-# silently dropping an interface added on re-install). Pull the profile's image(s) up front, like update.sh.
-# Skipped when --build (we're compiling locally) and non-fatal (offline → fall back to the local image).
-# on_tty runs compose on the controlling terminal (/dev/tty) so it shows its live progress BAR — lc_init's
-# log-capture pipe, a `| tee`, or the `exec bash` chain otherwise leave a non-tty and it drops to plain text.
 if ! $BUILD; then
   if $DRYRUN; then echo "    [skip] (cd $INSTALL_DIR && $COMPOSE --profile $PROFILE pull)"
   else ( cd "$INSTALL_DIR" && on_tty $COMPOSE --profile "$PROFILE" pull ) \
@@ -1690,24 +1378,9 @@ fi
 if [ "${SWG_CONVERT_DIR:-}" = convert-docker ] && ! $DRYRUN; then
   docker info >/dev/null 2>&1 \
     || die "the Docker daemon went away — refusing to tear the bare-metal install down. It is still serving; nothing was changed."
-  # A live daemon is not a present IMAGE. The pull above is deliberately non-fatal (offline → use the local copy),
-  # so on a first-ever convert with GHCR unreachable there is no local copy either: we would tear the bare-metal
-  # panel down and then fail on "image not found", leaving the box with neither. Check before the point of no return.
   if ! $BUILD; then
-    # ⚠️ ASK COMPOSE FOR THE IMAGE NAMES — never sed them out of the file. `image:` reads
-    # `ghcr.io/tesla-prep/swg-node:${SWG_IMAGE_TAG:-latest}`, a COMPOSE variable, and a `sed` returns it
-    # VERBATIM: `docker image inspect` can then never match it, so this guard — whose whole job is to refuse
-    # a convert when the image is missing — refused EVERY bare-metal → docker convert instead. The pull
-    # directly above succeeds and prints "pulled current image(s)", and then this dies saying the image
-    # "isn't available locally and couldn't be pulled", naming the unexpanded ${...} in a sentence that sends
-    # the operator to look at their connectivity. Measured on svo-im 2026-09-08 with the image present and
-    # freshly pulled; broken since the guard was introduced. `config --images` is compose resolving its own
-    # file with its own .env, which is the only answer that agrees with what `up` will run.
     _imgs="$( cd "$INSTALL_DIR" && $COMPOSE --profile "$PROFILE" config --images 2>/dev/null | grep '^ghcr\.io/' | sort -u )"
     if [ -z "$_imgs" ]; then
-      # Could not resolve them at all (a compose too old for `config --images`, or a broken file). Say so and
-      # carry on: a guard that cannot answer must not be the thing that stops a convert — that is the bug
-      # above, one step further along.
       warn "couldn't resolve the image names from compose — skipping the pre-switch image check"
     fi
     for _img in $_imgs; do
@@ -1722,31 +1395,15 @@ if [ "${SWG_CONVERT_DIR:-}" = convert-docker ] && ! $DRYRUN; then
   # ONLY tear the bare NODE down when its datapath is actually being converted (master/node). A HOST-only
   # convert moves just the panel → docker; the co-located bare node must stay UP + keep serving its peers.
   [ "$PROFILE" != host ] && lc_teardown_baremetal ${MIGRATED_TURNS:-}
-  # WDTT servers are their own systemd units (not covered by lc_teardown_baremetal's interface/turn teardown) — stop
-  # them at the switch so their DTLS/WG ports free up for the container's WDTT, and only NOW (past the point of no
-  # return) so a mid-convert abort never drops WDTT while the bare node is still the live install.
   if [ "$PROFILE" != host ]; then
     stop_bare_wdtt    # stopped and deleted — a unit left behind is a later uninstall's "WDTT" component, which removes the live one
     stop_bare_csqtt   # same for csqtt — and its raw TUN, which outlives the process and would keep the iface name taken
   fi
 fi
-# swg-sub masks the panel's secret state with /dev/null (files) + tmpfs (dirs). A bind/tmpfs mount can only CREATE
-# its mountpoint if the target already exists on the (read-only) ./data volumes — otherwise the container dies with
-# "read-only file system". vault.json/escrow.json don't exist until a subscription vault is set up, panel-settings
-# not until the panel first boots, and the tls/ + configs/ dirs may not exist yet on a fresh install or a convert
-# that carried no vault. Pre-create them so swg-sub starts. (The node profile doesn't run swg-sub.)
-# ⚠️ ONE guarded block. The helper below used to be called on its own line AFTER this `! $DRYRUN` block, so a
-# `--dry-run` wrote four real (empty) files into /opt/swg-panel-docker — measured on a pristine box (1.8.7
-# qualification S7) — and a node-only install got panel files it never mounts. update.sh already guards its call.
 if [ "$PROFILE" != node ] && ! $DRYRUN; then
   mkdir -p "$INSTALL_DIR/data/lib/configs" "$INSTALL_DIR/data/etc/tls" 2>/dev/null || true
   ensure_docker_mask_files "$INSTALL_DIR"   # auth, panel-settings, vault, escrow — the four files swg-sub /dev/null-masks
 fi
-# ⚠️ THE PASSWORD LEAVES .env BEFORE `up` WHEN THE LOGIN ALREADY HOLDS IT. A container keeps the environment it was created
-# with — `docker inspect`, config.v2.json — until the next compose up, so a password taken out after `up` stayed there
-# (1.8.8 qualification, round 10, F94). A login this run applies (NEW_LOGIN) cannot hold it yet: that one is below — and
-# not tried here, where it could only say "the login does not hold it yet … it stays there" moments before it went (q6,
-# round 12).
 if [ "$PROFILE" != node ] && ! $DRYRUN && [ "${NEW_LOGIN:-no}" != yes ]; then docker_env_forget_password "$INSTALL_DIR" 0; fi
 if $DRYRUN; then echo "    [skip] (cd $INSTALL_DIR && $COMPOSE --profile $PROFILE up -d $RECREATE $BUILDFLAG)"
 else
@@ -1771,11 +1428,6 @@ fi
 
 # ── surface the cert outcome (don't let a silent self-signed fallback hide as a Cloudflare 526) ──
 if [ "$PROFILE" != node ] && [ "$TLS" != none ] && ! $DRYRUN && have openssl; then
-  # ⚠️ THE WAIT MUST OUTLAST THE ISSUANCE IT REPORTS ON. This was 6 tries x 2s — about twelve seconds.
-  # A cloudflare (DNS-01) issuance waits on DNS propagation, and 60-120s is entirely normal, so the
-  # panel is not listening yet, $iss stays empty, and the guard whose whole purpose is to catch a
-  # silent fallback silently does nothing — on the one TLS mode most likely to need it. Scale the
-  # budget to the mode actually chosen.
   _cert_wait=30
   case "$TLS" in cloudflare) _cert_wait=180;; letsencrypt|letsencrypt-ip) _cert_wait=90;; esac
   iss=""; _cert_t0="$(date +%s)"
@@ -1816,10 +1468,7 @@ if [ "${NEW_LOGIN:-no}" = yes ] && ! $DRYRUN; then
   fi
 fi
 
-# ───────────────────────── one-click update wiring (host/master) ─────────────────────────
-# A container can't recreate itself, so a docker panel gets the SAME mechanism as bare-metal: a root host
-# path-unit watches the panel's data/lib/.update-request and runs a swg-ONLY update. The Update button just
-# touches the trigger (the panel writes it via its SWG_UPDATE_TRIGGER env, set in .env above).
+# one-click update wiring (host/master)
 wire_host_updater(){
   local paths="" line="" _p
   case "$PROFILE" in
@@ -1838,18 +1487,8 @@ wire_host_updater(){
 }
 wire_host_updater
 
-# The Docker root helper for ADDRESS changes (mirrors the updater above). A bare-metal panel runs unprivileged and
-# delegates host jobs (rebind a listener, restart swg-sub) to swg-netctl; Docker has no swg-netctl, and a container
-# can't `docker compose` the host. So the panel container writes the SAME netctl request to data/lib/netctl/queue,
-# and THIS host unit drains that queue into `docker compose` actions (restart / recreate a service). Started by a
-# .path unit (the host's inotify sees the container's write: a bind mount is the same inode) and by a 10 s timer, which
-# covers a watch that died. Panel-bearing profiles only.
 wire_docker_netctl(){
   case "$PROFILE" in host|master|host-node) ;; *) return 0;; esac
-  # ⚠️ FROM THE SOURCE TREE, like update.sh's ensure_netctl_docker. It used to look only in $INSTALL_DIR/docker/,
-  # which exists only after a --build (that is the one path that stages docker/). A default, image-pulling install
-  # therefore NEVER wired the helper — "swg-netctl-docker missing" on every fresh panel — until the first update
-  # healed it. The staged copy stays as a fallback for a run from a tree that lacks it.
   local drainer="$REPO/docker/swg-netctl-docker"
   [ -f "$drainer" ] || drainer="$INSTALL_DIR/docker/swg-netctl-docker"
   if $DRYRUN; then echo "    [skip] wire the docker address helper (swg-netctl-docker.timer → docker compose restart/up)"; return 0; fi
@@ -1903,19 +1542,13 @@ wire_docker_netctl
 if ! $DRYRUN; then docker_host_log_dropins; [ "$DOCKER_LOG_DROPINS_CHANGED" -gt 0 ] && { systemctl daemon-reload 2>/dev/null || true; }; fi
 true   # the timer units' systemd lines capped (lib/common.sh); never fatal
 
-# ── a convert invalidates a reverse proxy's vhost ──────────────────────────────────────────────────────────
-# The cert dir just moved (/etc/swg-panel → the container's data/etc) and the upstream ports changed. nginx keeps
-# serving its STALE in-memory config, so a broken vhost is invisible until something reloads — at which point
-# `nginx -t` fails and the site is simply down. Repoint the vhost we wrote; report the operator's own. Convert
-# only: a fresh install has nothing to repoint. (nginx_convert_fixup / ngx_upstream, lib/common.sh)
+# a convert invalidates a reverse proxy's vhost
 if [ "${SWG_CONVERT_DIR:-}" = convert-docker ] && [ "$PROFILE" != node ] && ! $DRYRUN; then
   nginx_convert_fixup "$INSTALL_DIR/data/etc/tls" \
     "$(ngx_upstream "$PANEL_LOCAL_PORT")" "$(ngx_upstream "$SUB_PORT")"
 fi
 
-# ───────────────────────── SUMMARY ─────────────────────────
-# TLS=none → the operator fronts the panel + swg-sub with their OWN reverse proxy: print ready nginx/Caddy
-# configs (both on :443, different subdomains → the two containers on loopback). Installs nothing.
+# SUMMARY
 if [ "$TLS" = none ] && { [ "$PROFILE" = host ] || [ "$PROFILE" = master ]; }; then
   print_proxy_configs "$INSTALL_DIR/reverse-proxy" "$PANEL_DOMAIN" "127.0.0.1:${PANEL_PORT}" "$PANEL_BASE" \
     "${SUB_DOMAIN:-sub.example.com}" "127.0.0.1:${SUB_PORT}"
@@ -1924,21 +1557,12 @@ fi
 # A master sub-step (SWG_LC_PARENT=1) prints just a one-liner — convert.sh emits ONE unified summary at the very
 # end of the master convert. An individual host/node convert (not a sub-step) prints its full summary here.
 if [ "${SWG_LC_PARENT:-}" = 1 ]; then echo; ok "$PROFILE → docker done — continuing the master convert…"
-# ⚠️ A DRY RUN HAS NOTHING TO SUMMARISE. print_summary describes the LIVE box (it reads the installed .env and
-# `docker exec`s the running containers for their version), so on a dry run it announced "RE-INSTALL COMPLETE" and
-# printed a "new login — save the password now" that had never been applied. Say what a dry run actually did.
 elif $DRYRUN; then
   echo; ok "Dry run of the docker $(b "$PROFILE") $([ "$EXISTING_DOCKER" = yes ] && echo re-install || echo install) finished — nothing was installed or changed."
   if [ "$PROFILE" = node ]; then echo "    The node would sync to $(b "$PANEL_URL") ($([ -n "$TLS_FINGERPRINT" ] && echo "panel cert pinned, sha256 ${TLS_FINGERPRINT:0:16}…" || { [ -n "${_TLS_DRY_WOULD_PIN:-}" ] && echo "self-signed — the real run pins its certificate" || { [ "$TLS_VERIFY" = yes ] && echo "CA-verified" || echo "certificate NOT verified"; }; }))."
   else echo "    The panel would be served at $(b "$([ "$TLS" = none ] && echo http || echo https)://$PANEL_DOMAIN$(case "${PANEL_PORT:-443}" in 443) ;; *) printf ':%s' "$PANEL_PORT";; esac)${PANEL_BASE}/") (TLS $(b "$TLS"))."; fi
 else
 echo; ok "Docker install complete (profile: $PROFILE)."
-# We MINTED this login → hand the plaintext to the summary, the only place it is ever shown (the auth file keeps
-# just the pbkdf2 hash, so afterwards it can only be reset, never recovered). install-host has always done this;
-# the docker path never did, so a fresh docker install generated a password and showed nobody — the operator was
-# left with a brand-new panel and no way in short of resetting a login they had never seen.
-# ⚠️ …but never one the operator GAVE (-pass / PANEL_PASSWORD=): they have it, and an unattended install's log held it
-# (1.8.8 qualification, round 8). The summary says it was given.
 if [ "${NEW_LOGIN:-no}" = yes ]; then
   if [ -n "${_GIVEN_PANEL_PASSWORD:-}" ]; then export SWG_SUMMARY_PASS_GIVEN=1; else export SWG_SUMMARY_PASS="$PANEL_PASSWORD"; fi
 fi

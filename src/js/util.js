@@ -1,31 +1,12 @@
-/* util.js — pure helpers for the operator console.
- *
- * LAYER 0 of the SPA module graph (see docs/APP-JS-SPLIT-PLAN.md). This module must stay a LEAF:
- * it may import from `preact`/`preact/hooks` and (later) `./i18n.js`, and from NOTHING else in js/.
- * Nothing here may read `Store` — anything that does belongs in `model.js`, one layer up.
- *
- * The formatters below (`ago`, `seen`, `rate`, `dur`, `configErrors`) return USER-VISIBLE text and
- * are therefore the first things the i18n pass will route through `T()`; that is why i18n.js sits
- * BELOW this module in the graph rather than beside it.
- */
-
 import { useRef } from "preact/hooks";
 import { T } from "./i18n.js";
 
-// ───────────────────────── the panel's clock ─────────────────────────
-// ⚠️ EVERY TIME THE PANEL SENT IS READ AGAINST THIS, NEVER AGAINST Date.now(). Almost every timestamp the SPA
-// shows or measures (a node's last sync, a peer's created_at, a token's last use) was stamped by the panel or by
-// a node, on ITS clock — and this browser's clock is a different machine's. `skewMs` is how far ahead of the
-// panel this browser reads, measured on every /api/state (`panel_now`); store.js sets it, and it stays 0 for a
-// panel too old to send the field. A 30 s node-staleness window against an unsynced desktop clock is how a node
-// syncing every 5 s read "stale" on its own page while the node list read "reporting" (client report 2026-09-22).
+// the panel's clock
 export const clock = { skewMs: 0 };
 export const panelNow = () => Date.now() - clock.skewMs;         // ms, on the panel's clock
 export const panelNowS = () => Math.floor(panelNow() / 1000);    // epoch seconds, as the panel stamps them
 
-// ───────────────────────── tiny helpers ─────────────────────────
-// The phone UI is on (docs/MOBILE-PLAN.md). index.html's inline bootstrap decides it once, before first paint, and marks
-// <html data-ui="m">; this only reads that mark, so the decision is never taken twice. Changing it reloads the page.
+// tiny helpers
 export const isMobile = () => document.documentElement.dataset.ui === "m";
 export const $ = (s, r = document) => r.querySelector(s);
 export const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
@@ -47,15 +28,6 @@ export function orderedTargets(targets) {
     .sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1])
     .map(x => x[0]);
 }
-// Is this target the peer's primary? (explicit `primary`, else the first target is the implicit primary.)
-// A deployment's ROLE is a label the operator sets by hand — "primary", "backup", or nothing at all.
-// Nothing derives it, and it is not exclusive: several rows may be primary (one per protocol family is the
-// ordinary case) or several backup, or none. Legacy rosters carry `primary: true`, the old exclusive pointer;
-// read that as the primary role so a peer somebody already starred keeps its label.
-// It lives in the EXISTING `primary` field, which now carries "primary" | "backup" | nothing instead of a
-// bare boolean — no second field, and no migration: a roster written before backups existed says `true`, which
-// still reads as primary. One field decides both the label and the order, because a peer's preferred
-// connection and the word printed beside it are one fact, not two.
 export function targetRole(t) {
   const v = (t || {}).primary;
   if (v === "backup") return "backup";
@@ -63,15 +35,9 @@ export function targetRole(t) {
 }
 
 export function isPrimaryTarget(targets, t) {
-  // "Does this deployment LEAD?" — i.e. is it the one ordering puts first. With roles non-exclusive that is
-  // the first primary if any exists, else simply the first row; either way it is whatever orderedTargets
-  // already decided, so the grid's representative row and the card order can never disagree.
   const lead = orderedTargets(targets || [])[0];
   return !!lead && lead.node === t.node && lead.iface === t.iface;
 }
-// Primary-first order FROZEN on first render (per component mount) — so toggling the primary ★ or picking targets
-// inside a modal never re-shuffles the rows under the operator's cursor; the order re-sorts only on the next open.
-// New targets append (they stay put on subsequent renders too). Call at the top level of a component (it's a hook).
 export function useStableOrder(targets) {
   const ref = useRef(null);
   const ts = targets || [];
@@ -83,16 +49,9 @@ export function useStableOrder(targets) {
   out.forEach(t => { const k = tkey(t.node, t.iface); if (!pos.includes(k)) pos.push(k); });
   return out;
 }
-// ⚠️ NOT a classifier — these only recognise the names the PANEL used to mint. Adoption takes a foreign
-// server's name as found (`wdttx`, `csqfbm2`) and creation now lets the operator choose one, so a name proves
-// nothing on its own. They survive as the LAST resort inside model.js's scKindByName, which asks the fleet
-// first; ask that (or targetType, for a roster target) instead of reaching for these directly.
 export const isWdttIface = (name) => /^wdtt\d{1,3}$/.test(String(name));   // mirrors the node's _WDTT_IFACE_RE
 export const isCsqttIface = (name) => /^csqtt\d{1,4}$/.test(String(name));   // mirrors the node's _CSQTT_NAME_RE
 export const isSelfContainedIface = (name) => isWdttIface(name) || isCsqttIface(name);   // WDTT + csqtt own their own interface (keyless, not a WG target)
-// The self-contained turn-family KINDS: they own their interface, mint the client address on connect, and carry a
-// panel-owned access password instead of a browser keypair. ONE source of truth — every shared gate reads these,
-// so adding the next such kind is a single edit here, not a hunt through every filter/colour/vault/picker site.
 export const SELF_CONTAINED_KINDS = ["wdtt", "csqtt"];
 export const isSelfContainedKind = (kind) => kind === "wdtt" || kind === "csqtt";
 export function ipOf(hostport) { if (!hostport) return ""; const s = String(hostport); return s[0] === "[" ? s.slice(1, s.indexOf("]")) : s.split(":")[0]; }
@@ -100,20 +59,12 @@ export const listenAddr = (host, port) => (port ? ((host ? host : "0.0.0.0") + "
 
 export function portOf(hostport) { if (!hostport) return ""; const s = String(hostport); const i = s.lastIndexOf(":"); return i < 0 ? "" : s.slice(i + 1); }
 export const ipPickerVal = (sel, custom) => sel === "__custom__" ? (custom || "").trim() : sel;
-// The addresses an IpPicker should offer for a node: whatever is already set, the node's configured
-// INGRESS host, then the addresses the box reports. The ingress host is the one an operator actually
-// wants — set it once in Panel settings → Network and every picker should propose it — and it was
-// missing from four of the six pickers, so the turn-proxy modal offered `msk-main.sanitygate.net` while
-// the interface and WDTT/csqtt ones made you retype it under "Custom". One list, one place.
 export const ipChoices = (nrec, ...first) =>
   [...new Set([...first, ((nrec || {}).endpoint_host || "").trim(),
                ...((nrec || {}).endpoint_hosts || []),      // the other names this node answers to
                ...((nrec || {}).ips || [])]
               .map(x => (x || "").trim()).filter(Boolean))];
 
-// An AGE in seconds, as words. Prefer this wherever the age itself was measured by whoever owns the clock — a
-// node reports `handshake_age` beside the absolute stamp precisely so a reader never has to subtract across two
-// machines' clocks. `ago()` is the same words for a timestamp THE PANEL stamped.
 export function agoAge(age) {
   if (age == null) return "—";
   const d = Math.max(0, Math.floor(age));
@@ -130,27 +81,6 @@ export function seen(age) {
   if (age < 172800) return Math.round(age / 3600) + T("unit|h");
   return Math.round(age / 86400) + T("unit|d");
 }
-// Throughput. The wire figure is always BYTES per second — that is what the node measures (`rx_bytes`
-// deltas over real elapsed time) and what the panel stores end to end. `units` chooses only how it is SAID.
-//
-// ⚠️ THE UNIT LETTER STAYS ON AT EVERY MAGNITUDE, AND THAT IS THE FIX. The old ladder was
-// ["B","K","M","G"], so a small rate read "512 B/s" and a large one "23.8 M/s" — the B present while the
-// number is unambiguous and gone the moment it is not. "M/s" is not a unit, and on a screen about network
-// speed it is read as megaBITS, because bits are what every speed test, ISP plan and router page quotes.
-// Reported from the fleet: a 200 Mbit/s speed test against a panel reading "23.8 M/s" looked like the panel
-// was under-counting by an order of magnitude. It was not — 200 Mbit/s IS 23.8 MB/s, a factor of 8.39, and
-// the missing letter was the entire discrepancy. Measured through every hop by `.campaign/rate-truth-rig.py`
-// (node counters, sync, /api/state, the hrrd history, the SPA's own summing): the number is carried exactly.
-//
-// BYTES ARE THE DEFAULT — it is what the node counts, what the panel stores, and what `fmtBytes` already
-// renders for totals two lines down, so the two figures on a card agree. Bits are offered for the operator
-// who wants to read the panel against a speed test without dividing by eight; naming the unit is what makes
-// either one safe to read.
-//
-// ⚠️ AND THE BASE FOLLOWS THE UNIT. Bytes are binary (1 KB/s = 1024 B/s); bits are DECIMAL — nobody writes
-// Mibit/s, and a speed test's "200" is 200,000,000 bit/s exactly. Formatting bits over a 1024 ladder would
-// print "190.7 Mbit/s" for the very number the operator switched units to compare against, which is the
-// whole defect again in a new place.
 const RATE_UNITS = {
   bytes: { mul: 1, base: 1024, u: ["B", "KB", "MB", "GB", "TB"] },     // the default: what the node counts
   bits:  { mul: 8, base: 1000, u: ["bit", "kbit", "Mbit", "Gbit", "Tbit"] },   // opt-in: what a speed test says
@@ -163,12 +93,6 @@ export function rateIn(bps, units) {
   return (v >= 100 || i === 0 ? v.toFixed(0) : v.toFixed(1)) + " " + u[i] + "/s";
 }
 
-// Nice y-axis ceiling for a throughput graph: the smallest "1/5/10/50/100/500 × unit" value >= bps, in the
-// unit the axis is labelled in — so the badge lands on a round figure in BOTH modes (base-1000 for bits,
-// base-1024 for bytes) and the legend's "nearest 1/5/10/50/100/500 unit" stays true either way.
-// Past 500 it rolls to the next unit (…500 Mbit -> 1 Gbit, never an ugly "1000 Mbit").
-// Returns BYTES per second, like its input: only the LADDER is unit-aware, so callers and the series they
-// scale never have to know which mode is on. Callers pass peak/0.85 to guarantee >=15% headroom.
 export function niceScaleCeilIn(bps, units) {
   const k = RATE_UNITS[units] ? units : "bytes";
   const { mul, base } = RATE_UNITS[k];

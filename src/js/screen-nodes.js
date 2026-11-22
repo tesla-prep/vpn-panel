@@ -1,13 +1,3 @@
-/* screen-nodes.js — the fleet: the node list, one node's page, its health and its updates.
- *
- * LAYER 10 (see docs/APP-JS-SPLIT-PLAN.md). A screen: nothing imports it except the router table.
- *
- * The host/node update lifecycle lives here rather than in app.js because the pill that reports it IS a
- * node card. hostUpdating/pendingUpdateDone/seenPanelVer are module-level on purpose: an update outlives
- * the component that started it — the panel restarts mid-update on a master — so the state has to sit
- * above any mount.
- */
-
 import { openLogs, NODE_SOURCES } from "./journal.js";   // the node's live logs, from its page
 import { $, esc, seen, dur, ago, fmtBytes, tkey, ipOf, portOf, listenAddr, panelNowS, isMobile } from "./util.js";
 import { Store, api, bus, useStore } from "./store.js";
@@ -59,14 +49,7 @@ function autoUpdateIntro(side) {
   const [c, d] = [r2.split("{repairs}")[0], r2.split("{repairs}").slice(1).join("{repairs}")];
   return html`<${Fragment}>${a}<b>${T("automatic update of SWG components only")}</b>${b}<b>${T("Update now")}</b>${c}<b>${T("repairs")}</b>${d}<//>`;
 }
-// The declarative pair. Deliberately does NOT promise the repairs the bootstrap updater performs
-// (reinstall what is missing, re-enable services, rebuild the datapath) — a rebuild does none of
-// that, it re-realises what the configuration already says, and claiming otherwise is how an
-// operator ends up believing a repair ran.
 function declUpdateIntro(side, hasCmd) {
-  // Without a command to show, the sentence must not end by promising one. That case is real: an
-  // operator can declare a host managed without this panel knowing WHAT manages it, and printing the
-  // bootstrap command there is the one thing that must never happen.
   const [a, b] = hasCmd
     ? Tsplit("This box's installation comes from its {what}, so an update is a rebuild of it — run this on the {side} box:", "what", { side })
     : Tsplit("This box's installation comes from its {what}, so an update is a rebuild of it — do that on the {side} box, however that configuration is applied.", "what", { side });
@@ -94,22 +77,11 @@ function goneSentence(text, ok, verdict) {
   return html`<${Fragment}>${before}<span class=${ok ? "mi-ok" : "mi-bad"}>${verdict}</span>${after}<//>`;
 }
 
-// The platform pill and what it says on hover. Two render sites (the node header and the Nodes list) share it
-// so they cannot drift. A native `title` was the first version and it was the wrong idiom: it takes about a
-// second to appear, cannot be styled, and puts four unrelated facts on one line. This is the app's own bubble
-// (.turnwrap/.turnbub), the same one the peer status and "connected via" chips use.
 function platformPill(nrec) {
   if (!nrec || !nrec.platform) return null;
   const decl = !!nrec.declarative, i = nrec.platform_info || {};
   const tone = decl ? "nix" : "os";
   const head = i.name || (platformLabel(nrec.platform) + (i.version ? " " + i.version : ""));
-  // Popover, not the CSS-only .turnbub: the node card is `overflow:hidden`, so a bubble anchored inside it is
-  // CLIPPED — measured, two thirds of it cut off. Popover portals out and positions against the viewport, which
-  // is what it exists for. hoverOnly, because this is a label to read, not a menu to operate.
-  //
-  // The bubble states FACTS about the host and nothing else. "This installation is owned by its own
-  // configuration" used to sit under them, and it was explaining NixOS to the only people who ever saw it. The
-  // pill's COLOUR already carries that distinction, which is the whole reason it has two.
   return html`<${Popover} hoverOnly cls="platwrap" popCls="osbub" trigger=${html`
       <span class=${"tport " + tone}>${platformLabel(nrec.platform)}</span>`}>
     <span class="osbub-h" style=${"color:var(--tport-" + tone + ")"}>${head}</span>
@@ -121,10 +93,6 @@ function platformPill(nrec) {
 export function HealthDot({ issues, i18n }) {
   if (!issues || !issues.length) return null;
   const n = issues.length;
-  // The lines were rendered RAW, so the bubble read half-translated: its header went through T() while every
-  // sentence under it stayed English. They carry an interface name, so the panel now ships them perr-shaped
-  // ({v1} sentence + values) alongside the plain English, and srvText() — the same helper every other server
-  // sentence already uses — translates one. Falls back to the English list when the node record predates it.
   const line = i => (i18n && i18n[i]) ? srvText(i18n[i]) : issues[i];
   // plural(), not `issue${n>1?"s":""}` — the badge was the last English word in a bubble whose header and
   // lines are both translated now, and Russian picks between three forms that an English -s cannot express.
@@ -136,12 +104,6 @@ export function HealthDot({ issues, i18n }) {
 }
 const _CTR_PROC = new Set(["adopted-container", "adopt-container-failed"]);   // one interface's outcome, not the node's
 
-/* §1.2 — the superseded box. A migration leaves TWO boxes alive: the new one, and the old one still
-   running and still serving the peers it had, locked out of this panel by a rotated token and nothing
-   else. That has to be visible on the node ROW rather than only inside the node, because an operator with
-   twenty nodes needs to see at a glance which ones have an old server still out there. On the node's own
-   page the same badge is the door to both decisions (roll back to it / it's gone) — a badge nobody can
-   act on is a badge nobody reads. */
 function supersededTitle(n) {
   const at = (n.superseded_box || {}).at;
   const when = at ? T("{ago} ago", { ago: seen(Math.floor(panelNowS() - at)) }) : T("recently");
@@ -154,10 +116,6 @@ function SupersededTag({ n, onClick }) {
     : html`<span class="nstat superseded" title=${supersededTitle(n)}>${inner}</span>`;
 }
 
-/* T-10's badge, and the same reasoning one operation over: a node on its way to (or now living on) a
-   DIFFERENT PANEL is a fact about the fleet, not a detail inside one node. While it is pending the node
-   is still fully ours and still syncing here, which is exactly the state an operator would otherwise
-   have no way to see; once it is done, the record here is a keepsake and the badge says so. */
 function transferTitle(n) {
   const x = n.transfer || {};
   const where = x.target_name || x.url || T("another panel");
@@ -165,16 +123,6 @@ function transferTitle(n) {
     ? T("This node now reports to {v1}. Its record here no longer controls it — keep it for reference, or remove it.", { v1: where })
     : T("Being handed to {v1}. It keeps syncing here until that panel answers it, so nothing has moved yet.", { v1: where });
 }
-/* T-16 — the other end of a Transfer, and the only one that is not an alert. The receiving panel has
-   recorded where a node came from since T-10 and showed it nowhere, so an operator on the target had no
-   way to know that this node's history and its stored baselines are on somebody else's panel — or that a
-   split user's other peers still live there. It needs no action and never expires, so it is a quiet pill
-   on the node's own page rather than a badge on every row for ever. */
-/* The note this panel keeps about a node that came from somewhere else — and, until now, kept for ever:
-   nothing cleared `transferred_from`, so a node transferred once wore the badge for the rest of its life,
-   long after the fact stopped being news. It cannot expire on a timer either, because how long it stays
-   interesting is the operator's judgement and not a constant. So it is DISMISSABLE: the tag opens this,
-   which says exactly where and exactly when, and offers to clear it. */
 function ArrivedSheet({ n }) {
   const x = n.transferred_from || {};
   const [busy, setBusy] = useState(false);
@@ -193,9 +141,6 @@ function ArrivedSheet({ n }) {
     if (r && r.ok) { closeModal(); await Store.poll(); }
     else toast(srvText(r) || T("Couldn't clear it."), "err");
   };
-  /* 700, measured rather than picked: "Arrived from <url> on <date> at <time>." runs to ~629px at the
-     sheet's 15px face for a normal panel URL, and the body's own padding takes 40 more. At the default
-     640 the line broke mid-sentence. The Sheet clamps to the viewport, so this stays sane on a phone. */
   return html`<${Sheet} title=${T("Transferred here")} width=${700} onClose=${closeModal}
     foot=${html`<${Fragment}><button class="btn btn-ghost" disabled=${busy} onClick=${clear}>${busy ? T("Clearing…") : T("Clear")}</button>
       <span class="grow"></span><button class="btn btn-primary" onClick=${closeModal}>${T("Close")}</button><//>`}>
@@ -234,31 +179,14 @@ export function NodeDetail({ node: rawName }) {
   const meta = Store.describe[name] || null;       // interface meta from the consolidated state
   const metaErr = node && !meta;
 
-  // if a node we were viewing gets removed (force-remove, or a flagged node that signed off), bounce
-  // to the Nodes list instead of stranding the operator on a dead detail page. A node that was never
-  // here (stale link) just shows the message below.
   const seenRef = useRef(false);
   useEffect(() => { if (node) seenRef.current = true; else if (seenRef.current) go("#/nodes"); }, [node]);
 
-  // split the node's interfaces: USER interfaces (operator-created) vs SYSTEM mesh links (node↔node connections).
-  // System ifaces are EXCLUDED from the user list by BOTH the reported `system` flag AND the reserved name
-  // prefix — a mesh iface mid-delete loses its override flag but keeps its swg_ name, so it must never leak
-  // onto the User-interfaces screen as a card.
   const meshPfx = (nrec.mesh_prefix || (Store.panelSettings || {}).reserved?.iface_prefix || "swg_");
   const isSysName = k => k.startsWith(meshPfx) || k.startsWith("swg_");
   const isSysIface = k => (meta[k] && meta[k].system) || isSysName(k);
   const userKeys = meta ? Object.keys(meta).filter(k => !isSysIface(k)) : [];
-  /* T-14 — interfaces the NODE runs that this panel has no record of. They used to render as ordinary
-     cards, so nothing said that this panel manages neither their peers nor their settings, and that a
-     rebuild cannot bring them back. The panel REPORTS them and never adopts one on its own: recording an
-     interface because a box runs it would make the sync loop compute a desired peer set for peers it has
-     never seen, which converges to zero. Adopting stays the operator's explicit act. */
   const _unmanaged = new Set(nrec.unmanaged_ifaces || []);
-  // drag-to-reorder the (user) interface cards — the saved order overlays the node's reported set, and
-  // WDTT-owned interfaces reorder alongside the wg/awg ones (same "User interfaces" grid, so one order).
-  // `gone` keeps an interface being deleted in the list until the node stops reporting it, so its
-  // "deleting" card holds the SLOT the live card had: without it the name left ifaceIds the moment its
-  // server died and the card re-rendered outside the ordered grid — jumping to the top mid-teardown.
   const ifaceIds = nodeIfaces(name, { gone: true }).map(x => x.ifn);
   const ifReorder = useReorder(ifaceIds, ids => mutate({
     patch: s => { const nn = (s.nodes || []).find(x => x.id === name); if (nn) nn.iface_order = ids; },
@@ -270,11 +198,6 @@ export function NodeDetail({ node: rawName }) {
   const dname = node.name || name;
 
   const live = Store.recon.nodeStatus[name] === "live";
-  // T-24: a migration in flight is ONE fact, and while it is true this page stops offering per-item
-  // actions. Every card state below is a truthful symptom of a healthy move — links re-provisioning,
-  // interfaces creating, a WDTT server the node has legitimately stopped reporting — and meeting them all
-  // at once, each with a button that would make things worse, is how an operator is talked into breaking
-  // a migration that was going fine.
   const migrating = !!nrec.migrating;
   const blocked = migrating || !live || inProc(nrec.proc_status);   // node down or mid convert/re-install → only recovery actions (rotate key, delete) stay enabled (a timed-out/failed tag doesn't block)
   const down = !live && !inProc(nrec.proc_status);      // genuinely not reporting (not just mid-convert) → offer one-click Recover in place of rotate-token
@@ -390,21 +313,11 @@ export function NodeDetail({ node: rawName }) {
         const m = (ifn && meta) ? meta[ifn] : null;   // reported stats for the link's CURRENT iface (absent mid-rebuild)
         const col = Store.nodeColor(peer);
         const reprov = !!mp.reprovisioning || (!!ifn && !m);   // staged create, or iface not reported yet → re-provisioning
-        // link health → one glowing dot: green up (recent handshake) · amber connecting (never handshook)
-        // · red down (handshook then went stale, or either end is dark). reprov takes over the card.
-        // BOTH ends must be reporting, the same rule meshHealth() applies — this dot read only the node whose
-        // page you are on, so a live node showed a GREEN link to a peer the nodes list simultaneously called
-        // offline. Our own handshake age lags up to 180s behind a peer actually going away, so one end alone
-        // cannot assert the link is up: that is the exact bug meshHealth's comment records, fixed there and
-        // missed here.
         const lk = reprov ? "reprov" : (nodeStale(name) || nodeStale(peer)) ? "down" : (!m || m.handshake_age == null ? "connecting" : (m.handshake_age < 180 ? "up" : "down"));
         const lkTitle = { up: T("Link up"), connecting: T("Connecting…"), down: T("Link down") }[lk];
         const muted = lk === "down" || reprov;
         const carried = reprov ? [] : userKeys.filter(k => meta[k].egress_mode === "forward" && meta[k].egress_node === peer);   // user iface NAMES forwarded whole (cascade) out through THIS link
         const smartCarried = reprov ? [] : userKeys.filter(k => meta[k].egress_mode === "smart" && (meta[k].routing || []).some(r => r.action === "exit" && r.node === peer));   // ifaces SMART-routing some destinations out via THIS link
-        // What the NODE said about this link's interface. The dot could only ever say "down"; the reason
-        // ("Address already in use", a port clash) sat in cmd_errors where only the interface cards showed it,
-        // so a broken mesh link read as an unexplained 0/3 on the Nodes list. Same CmdErr the other cards use.
         const _lkErr = ifn ? (nrec.cmd_errors || {})[ifn] : null;
         const canOpen = !reprov && !!ifn && !blocked;   // node unavailable (converting / down / mid-proc) → dim + not editable, matching the interface/turn cards
         return html`<div key=${peer} class=${"ifcard tp" + (canOpen ? " clickable" : "") + (muted ? " down" : "") + (blocked ? " locked" : "")} onClick=${canOpen ? () => openConnectionEdit(name, ifn) : null}>
@@ -421,9 +334,6 @@ export function NodeDetail({ node: rawName }) {
             <div class="ifrow"><span class="l">${T("Type")}</span><span class="r">${mp.type_set || mp.awg_set ? html`<span class="faint" style="margin-right:6px">${mp.type_set && mp.awg_set
               ? T("type and AWG params set on this link") : mp.type_set ? T("set on this link") : T("AWG params set on this link")}</span>` : null}<span class="tg-proto" style=${"--c:" + meshGenColor(mp.type)}>${meshGenLabel(mp.type)}</span></span></div>
             ${(() => {
-              // Leg quality, same measurement the mesh bubble shows, on the card that names the link. Latency
-              // always (it is the link's defining fact); loss only when it is enough to matter — a "0.0%" row
-              // on every healthy card is a row nobody reads, and then the one that matters reads like the rest.
               const _lk = m && m.link;
               if (!_lk || _lk.rtt_ms == null) return null;
               const _ls = typeof _lk.loss === "number" ? _lk.loss : null;
@@ -436,9 +346,6 @@ export function NodeDetail({ node: rawName }) {
               // first lost packet rather than at the 0.05% the client-facing counters use.
               const _val = html`<${Fragment}>${Math.round(_lk.rtt_ms)}${T("unit|ms")}${_warn
                 ? html` <span class="dp-num" style=${"color:" + lossColorMesh(_ls)}>${T("(Loss {v1}%)", { v1: _ls })}</span>` : null}<//>`;
-              // 0.167% is ONE lost packet in half an hour and reads like a persistent fault; the bubble says
-              // which packet count, which direction and when. Card click opens the connection sheet, so the
-              // figure has to swallow its own click — Popover preventDefaults it.
               return html`<div class="ifrow"><span class="l">${T("col|Latency")}</span><span class="r addr"
                 onClick=${e => { e.preventDefault(); e.stopPropagation(); }}><${LossPop} l=${_lk} pl=${_pl}
                   peerName=${Store.nodeName(peer)} node=${name} iface=${ifn} trigger=${_val}/></span></div>`;
@@ -457,9 +364,6 @@ export function NodeDetail({ node: rawName }) {
               // Same as the optimistic card below: a create the node REFUSED never arrives, so this card sat on
               // "creating" beside its own error icon for ever. `label` also arrived as a raw English word.
               const _ce = (nrec.cmd_errors || {})[ifn];
-              // T-22: HELD, not creating. The node is refusing to mint a replacement identity because the
-              // panel holds the original in the vault — so the card must send the operator to unlock it,
-              // not leave them watching a spinner that will never finish.
               const _held = (nrec.awaiting_key || []).includes(ifn);
               if (migrating && !_ce && !_held) return html`<${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|migrating")}
                 title=${T("This node is being migrated — it comes back with this interface as it was. Nothing to do until it reports.")}/>`;
@@ -479,10 +383,6 @@ export function NodeDetail({ node: rawName }) {
         // header — identical layout to the turn-proxy optimistic card. Shown until the node reports the iface.
         const optIfCard = (ifn, e) => html`<div class="ifcard down" key=${"new:" + ifn}>
           <div class="ifcard-top"><span class=${"iftype " + (e.type || "turn") + (e.gen === "3.1" ? " awg3" : "")} ...${tip3(e.gen === "3.1")}>${e.type || T("tag|load")}</span><span class="ifname">${ifn}</span><span class="grow"></span>${(() => {
-              // A create that FAILED left this card reading "creating" for ever: the optimistic card clears only
-              // when the node reports the interface, and a failed one never arrives — so the card sat in-progress
-              // next to its own error icon. If the node reported an error for this name, say so instead.
-              // (The label was also passed raw, so it rendered as English "creating" inside a translated page.)
               const _ce = (nrec.cmd_errors || {})[ifn];
               return html`<${CmdErr} err=${_ce}/><${StatusTag}
                 cls=${_ce ? "tg tg-warn" : "tg-busy"} icon=${_ce ? "warn" : "clock"}
@@ -493,12 +393,6 @@ export function NodeDetail({ node: rawName }) {
             ${(e.endpoint || e.port) ? html`<div class="ifrow"><span class="l">${T("Listen")}</span><span class="r addr">${(e.endpoint || "") + (e.port ? ":" + e.port : "") || "—"}</span></div>` : null}
             ${e.subnet ? html`<div class="ifrow"><span class="l">${T("Subnet")}</span><span class="r addr">${e.subnet}</span></div>` : null}
             <${RowError} k=${"ifcancel:" + name + "|" + ifn}/></div></div>`;
-        // DELETING card — the optimistic card for a teardown in flight. Same chrome as the live card it
-        // replaces (so the grid doesn't jump), but inert: no pencil, no drag grip, not a link, and no × —
-        // unlike a create, a delete already executing on the node isn't cancellable.
-        // Rows come from the marker captured at Delete, NOT from the live maps: a WDTT server leaves snap.wdtt
-        // the instant its process dies, so reading them here rendered the card as a green "wg" with empty rows
-        // for the rest of the teardown. Live data is only the fallback (e.g. a marker from an older tab).
         const delCard = (ifn, g) => { const _m = (meta && meta[ifn]) || {};
           const _w = wdttIfaces.find(w => w.iface === ifn);
           const _t = g.type || (_w ? "wdtt" : (_m.awg_params && Object.keys(_m.awg_params).length) ? "awg" : "wg");
@@ -513,11 +407,6 @@ export function NodeDetail({ node: rawName }) {
               <div class="ifrow"><span class="l faint">${T("the node is tearing it down…")}</span></div>
             </div></div>`; };
         const _pfx = name + "|";
-        // drop a client-optimistic entry only once the node REPORTS the iface (meta), or it's gone stale —
-        // keep it through the whole "creating" phase so its details stay on the card AND the next form's
-        // suggestions (name / subnet / port) account for it.
-        // A WDTT interface is REPORTED via stats.wdtt (it owns its own interface), not the wg/awg `meta` map — so
-        // its optimistic "creating" card must dedupe against the live WDTT set too, else it lingers as a ghost.
         const _wLive = new Set([...((Store.stats[name] || {}).wdtt || []), ...((Store.stats[name] || {}).csqtt || [])].filter(w => w && w.iface).map(w => w.iface));   // self-contained (WDTT + csqtt) live ifaces — for optimistic create/delete dedup
         const _reported = i => (meta && meta[i]) || _wLive.has(i);
         for (const k of Object.keys(Store.ifaceNew)) {
@@ -527,17 +416,6 @@ export function NodeDetail({ node: rawName }) {
           else if (Date.now() - (Store.ifaceNew[k].at || 0) > 900000) delete Store.ifaceNew[k];
         }
         const optNames = Object.keys(Store.ifaceNew).filter(k => k.startsWith(_pfx)).map(k => k.slice(_pfx.length));
-        // client-optimistic DELETE — ifaceNew inverted: it is set the instant Delete is confirmed and cleared
-        // once the node STOPS reporting the interface. Without it the card kept every action live on a doomed
-        // interface, and a WDTT one then flickered into an adoption CANDIDATE — the panel drops its record at
-        // once while the node still reports the device, and a WDTT iface isn't in `meta`, so `_known` said
-        // "not ours, adopt it?" about the very server being torn down.
-        // Cleared once OUR instance is gone — the live set plus the panel's own record. Deliberately NOT
-        // "until the node stops mentioning the name at all": a name can stay on the node under a DIFFERENT
-        // owner, and an unmanaged WDTT server is pinned to wdtt0 (upstream compiles the name in), so that
-        // reading left the card on "deleting" for ever after deleting the managed instance beside it. The
-        // orphan card this used to suppress is now prevented at the source, on the node (_wdtt_remove drops
-        // the cached proc walk it was being resurrected from).
         const _stillOnNode = i => _reported(i) || !!(nrec.wdtt_cfg || {})[i] || !!(nrec.csqtt_cfg || {})[i];
         for (const k of Object.keys(Store.ifaceGone)) {
           if (!k.startsWith(_pfx)) continue;
@@ -573,24 +451,14 @@ export function NodeDetail({ node: rawName }) {
               <button class="mi-restore" disabled=${blocked || !mi.ripe} title=${mi.ripe ? T("Recreate this interface with its original identity — recovers every peer on it") : T("Confirming it's really gone (a couple of minutes) before Restore is offered")} onClick=${e => { e.preventDefault(); e.stopPropagation(); confirmRestoreInterface(name, ifn, mi); }}><${Ic} i="refresh"/> ${T("Restore")}</button>
               <${StatusTag} cls="tg-del" icon="warn" label="missing" title=${T("This interface is gone from the node")}/></div>
             <div class="ifcard-rows"><div class="mi-text">${sentence}</div></div></a>`; };
-        // GHOST card — a lost interface with NO recoverable key (cold: no saved config; or a keyless missing
-        // interface). Restore can't help, so it offers "Recreate" (fresh key + rekey every peer). Semi-
-        // transparent until hover (it's a phantom), mirroring the .ifcard.down treatment.
         const gcard = (ifn, g) => { const gp = ghostPeers(name, ifn);
           return html`<a class="ifcard ghost" key=${"ghost:" + ifn} href=${"#/node/" + encodeURIComponent(name) + "/" + encodeURIComponent(ifn)} title=${T("Open the interface (read-only) — recreate & rekey")}>
             <div class="ifcard-top"><span class="iftype gh">${T("tag|gone")}</span><span class="ifname">${ifn}</span><span class="grow"></span>
               <button class="mi-restore ghost" disabled=${blocked || !g.ripe} title=${g.ripe ? T("Recreate this interface with a NEW key and rekey every peer on it (clients re-import)") : T("Confirming it's really gone (a couple of minutes) before Recreate is offered")} onClick=${e => { e.preventDefault(); e.stopPropagation(); openRecreateRekey(name, ifn); }}><${Ic} i="refresh"/> ${T("Recreate")}</button>
               <${StatusTag} cls="tg-del" icon="warn" label="ghost" title=${T("Gone with no recoverable key — recreate fresh + rekey")}/></div>
             <div class="ifcard-rows"><div class="mi-text">${goneSentence(T("The node no longer reports {iface}, and {verdict} — there's nothing to restore. Recreate it with a new key; {count} get fresh configs to re-import.", { iface: ifn, count: plural(gp.length, "peer") }), false, T("its server key can't be recovered"))}</div></div></a>`; };
-        // MISSING WDTT server: the panel still wants it (wdtt_cfg) but the node reports nothing for it in
-        // snap.wdtt — a rebuilt box, or a node running a build without WDTT support. The whole WDTT UI keys off
-        // the snapshot, so without this the server simply VANISHED: no card, no hint that its identity is safely
-        // escrowed, no way to restore it. Same orange treatment and inline action as a missing wg/awg interface.
         const wmcard = (ifn, wc) => { const vaulted = !!((nrec.wdtt_vault || {})[ifn]);
           const restoring = (nrec.wdtt_restoring || []).includes(ifn);
-          // ⚠️ T-24: mid-migration the node has legitimately stopped reporting this server, and the whole
-          // "it VANISHED — Restore or Delete" story is a false alarm with two destructive buttons on it.
-          // The server is coming back with the node; say that, and offer nothing to press.
           if (migrating) return html`<div class="ifcard down" key=${"wmig:" + ifn}>
             <div class="ifcard-top"><span class="iftype wdtt">WDTT</span><span class="ifname">${ifn}</span><span class="grow"></span>
               <${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|migrating")}
@@ -601,9 +469,6 @@ export function NodeDetail({ node: rawName }) {
           const fork = wc.fork || "amurcanov";
           const dtls = String(wc.listen || "").split(":").pop() || "";
           const ifn0 = ifn;   // T-23: the card names the SERVER, not its fork's product name
-          // A server the node REFUSED to install (no binary for the fork, bad params) never existed, so the
-          // "it vanished / its key is gone / recreate with a new identity" story is wrong AND its only actions
-          // are impossible. Show what the node actually said, and offer the one thing that works: remove it.
           const nerr = (nrec.cmd_errors || {})[ifn] || "";
           const never = !!nerr && !vaulted;
           const sentence = never
@@ -634,12 +499,6 @@ export function NodeDetail({ node: rawName }) {
               <div class="ifrow"><span class="l">${T("Subnet")}</span><span class="r addr">${wc.wg_addr || "—"}</span></div>
               <div class="ifrow"><span class="l faint">${T("taking it over…")}</span></div>
             </div></div>`; };
-        // An adoption in flight writes the instance into wdtt_cfg immediately, while the node may still report
-        // the ORPHAN it is taking over — that orphan card carries the state, so showing this one too would put
-        // two cards on screen for one server. But a DORMANT install has no orphan card: the panel drops it from
-        // wdtt_dormant the moment it is claimed, and the node hasn't started the server yet — so skipping it
-        // here left NO card at all and the server simply vanished until the take-over finished. Skip only when
-        // something else is already showing it; otherwise show the take-over itself.
         const _wAdopting = new Set(nrec.wdtt_adopting || []);
         const _wHasOrphanCard = ifn => (nrec.iface_candidates || []).some(c => c && c.name === ifn);
         const wmcards = Object.entries(nrec.wdtt_cfg || {})
@@ -655,15 +514,7 @@ export function NodeDetail({ node: rawName }) {
           // wdtt_adopting is the SERVER's word for a WDTT take-over; Store.ifaceNew is the client's optimistic
           // marker for a wg/awg adopt, set the instant Adopt is submitted. Either means "in flight".
           const adopting = _wAdopting.has(cd.name) || !!Store.ifaceNew[name + "|" + cd.name];
-          // Ignore is decided on the DETAIL page but lands here — the operator is bounced to this grid the
-          // instant they click, so without this the card would sit unchanged until the next poll quietly
-          // removed it, and the click would read as having done nothing.
           const _cop = opTag(name + "|" + cd.name);
-          // ALIEN vs ORPHAN is about an OWNER, not about containers: alien = something is running this and
-          // taking it over means stopping that something first; orphan = nothing is running it, so there is
-          // nobody to stop and the panel can simply adopt it. A running WDTT server owns its interface; a bare
-          // unmanaged wg/awg interface is kernel state with no daemon behind it. `wctr` only NAMES the owner
-          // when it happens to be a container — it is not what decides the word.
           const wctr = (cd.wdtt || {}).container || "";
           const alien = !!cd.wdtt;                    // a server process owns this interface
           // `blocked` = the node is converting / re-installing / down. Every managed card dims and disables for
@@ -698,17 +549,7 @@ export function NodeDetail({ node: rawName }) {
                  return html`<div class="ifrow"><span class="l">${cd.wdtt ? T("Users") : T("Peers")}</span><span class="r">${_n
                    ? html`<b>${_n}</b>` : html`<span class="faint">${T("None")}</span>`}</span></div>`; })()}
             </div></a>`; };
-        // A name the panel already has for THIS node is not an orphan — it is one of ours the node stopped
-        // reporting, which is the missing/ghost card right above. Showing both said "we manage it, it's gone"
-        // and "we don't manage it, adopt it?" about the same interface, in the same grid.
-        // …but NOT while it is being taken over: adopting writes the instance into wdtt_cfg immediately, so
-        // treating that as "known" hid the orphan card at the very moment it is meant to show "adopting" — and
-        // wmcards skips it too, leaving the interface with no card at all until the node finished.
         const _known = ifn => !_wAdopting.has(ifn) && !!((meta && meta[ifn]) || (nrec.missing_ifaces || {})[ifn] || (nrec.ghost_ifaces || {})[ifn] || (nrec.wdtt_cfg || {})[ifn]);
-        // DORMANT WDTT: an install on disk with nothing running. It owns its TUN, so while stopped there is no
-        // interface, no socket and no process — it can't be an interface candidate, and staying silent about it
-        // is how a real server goes unnoticed. Adoption STARTS it: we have the binary, its identity and its
-        // password store, so "go start it yourself" would be pointless advice from the one thing that can.
         const _claimed = new Set(nrec.wdtt_claimed_dirs || []);
         const dcard = d => { const taking = _claimed.has(d.config_dir);   // an instance already points at this dir
           return html`<div class=${"ifcard candidate" + ((taking || blocked) ? " down" : " clickable") + (blocked ? " locked" : "")} key=${"dormant:" + d.config_dir}
@@ -731,9 +572,6 @@ export function NodeDetail({ node: rawName }) {
               : html`<span class="faint">${T("None")}</span>`}</span></div>
           </div></div>`; };
         const dcards = (nrec.wdtt_dormant || []).map(dcard);
-        // FOREIGN csqtt: a csqtt server running on the box that this panel doesn't manage. It owns its own raw
-        // TUN and is a distinct kind, so it never appears among the wg/awg interface candidates — without a card
-        // of its own the operator sees nothing where a real server, with real users, is running.
         const _cAdopting = new Set(nrec.csqtt_adopting || []);
         const cqcard = c => { const taking = _cAdopting.has(c.iface);
           return html`<div class=${"ifcard candidate" + ((taking || blocked) ? " down" : "") + (blocked ? " locked" : "")} key=${"csqcand:" + c.iface}>
@@ -759,20 +597,6 @@ export function NodeDetail({ node: rawName }) {
         const _gset = {};   // dedupe cold (ghost_ifaces) + keyless-missing into one gcard per iface; a recreate in flight (pending) drops the ghost card in favour of its "creating" card
         for (const ifn of Object.keys(nrec.ghost_ifaces || {})) if (!(meta && meta[ifn]) && !pending.includes(ifn) && !isSysName(ifn)) _gset[ifn] = 1;
         for (const [ifn, mi] of Object.entries(nrec.missing_ifaces || {})) if (!mi.key_source && !(meta && meta[ifn]) && !pending.includes(ifn) && !isSysName(ifn)) _gset[ifn] = 1;
-        // Interfaces running inside ANOTHER container's network namespace — AmneziaWG's server is the case: its
-        // container has its own netns and brings the interface up from a conf on a filesystem we cannot reach, so
-        // every scan we have finds nothing and this grid was simply empty. Somebody looking at a working AmneziaWG
-        // server reads that as the panel being broken. Say what is there instead.
-        // Same chrome as a candidate so it belongs to this grid, minus every affordance that does not apply: no
-        // link, because there is no detail page for something we do not manage, and no Adopt, because it cannot be
-        // adopted in place — their container brings the interface back up from its own conf on every restart, so
-        // peers added here would vanish. Migration is the honest next step, and this is what it will hang off.
-        // A pending take-over names ONE interface. Gating every card on it meant a request that never landed
-        // (node offline — the panel's sweep only runs on that node's own sync) hid every take-over button on the
-        // box with no way back. Each card now answers only for itself, and a pending one can be withdrawn.
-        // A take-over's outcome belongs to ONE interface, not to the node — so it lands on the card. On success
-        // the interface has just appeared among a dozen others: flash it once so the eye finds it, and let the
-        // usual green "ready" tag say what happened. Armed once per outcome (keyed by its timestamp).
         const _adAt = nrec.proc_at || (nrec.proc_status ? String(nrec.proc_status) : "");
         if (nrec.proc_status === "adopted-container" && !adoptSeen.has(name + "|" + _adAt)) {
           adoptSeen.add(name + "|" + _adAt);
@@ -822,12 +646,6 @@ export function NodeDetail({ node: rawName }) {
                 ? html`<b>${x.peers}</b>` : html`<span class="faint">${T("None")}</span>`}</span></div>
             </div></a>`);
         const gcards = Object.keys(_gset).map(ifn => [ifn, ghostIface(name, ifn)]).filter(([, g]) => g).map(([ifn, g]) => gcard(ifn, g));
-        // WDTT-owned interfaces: a self-contained WDTT fork brings up its OWN userspace-WireGuard interface. Show it
-        // here (flagged) so the operator sees the datapath, but it's READ-ONLY for peer/key management — WDTT owns
-        // its keys + peers, so it's managed from the Turn-proxies card (click opens that). Routing/blocking applies.
-        // WDTT interface card — SAME chrome/behavior as the normal interface card (hover, edit-flash, dimming,
-        // status, click→detail), rows identical EXCEPT Listen shows the fork:port instead of the interface IP.
-        // The pencil opens the WDTT edit modal (endpoint/fork/ports + routing/filters/egress), like a normal iface.
         const wcard = w => {
           const active = w.active === "active"; const awaiting = !!w.await_restore;
           const restoring = (nrec.wdtt_restoring || []).includes(w.iface);
@@ -853,11 +671,6 @@ export function NodeDetail({ node: rawName }) {
                 : awaiting
                 ? html`<${StatusTag} cls="tg-busy del" icon="shield" label=${T("Restore")} title=${T("Server wiped — its identity is escrowed; open to Restore or Recreate fresh")}/>`
                 : restoring ? html`<span class="tg tg-busy"><${Ic} i="clock"/>${T("tag|restoring")}</span>`
-                /* T-14, the turn-family half — and it sits ABOVE `active`, which is where the first cut
-                   put it wrongly. Being unrecorded has nothing to do with running: `svo-im` runs an ACTIVE
-                   wdtt1 and csqtt1 with a user each and no record, and below `active` they got no tag at
-                   all. Below it the label only appeared on `nixos`'s INACTIVE pair, where it replaced a
-                   "starting" that would never end — true, but the smaller half of the same fact. */
                 : !(nrec.wdtt_cfg || {})[w.iface] ? html`<span class="tg tg-pending" title=${T("This panel holds no record of this {v1} server, though the node still has it — so nothing starts it, its users aren't in the roster, and a rebuild can't bring it back. Open it and Reclaim it to take it back, users and all.", { v1: "WDTT" })}><${Ic} i="info"/>${T("tag|unclaimed")}</span>`
                 : active ? null
                 : wcfg.stopped ? html`<span class="tg-off" title=${T("Stopped by you — open to Start it")}><${Ic} i="stop"/>${T("tag|stopped")}</span>`
@@ -876,9 +689,6 @@ export function NodeDetail({ node: rawName }) {
                     trigger=${() => html`<b class=${"oncount" + (onlc ? " on" : "")}>${onlc}</b><span class="faint">/${ps.length}</span>`}/>`
                 : html`<span class="faint">${T("None")}</span>`}</span></div>
             </div></a>`; };
-        // csqtt in the node store (csqtt_cfg) but NOT yet reported in snap.csqtt — a just-created instance the node
-        // hasn't brought up yet, or a wiped one it will re-establish (csqtt self-heals from panel state, no vault).
-        // Shows a syncing card so it doesn't vanish in that window. Same orange treatment as a WDTT missing card.
         const cmcard = (ifn, cc) => (migrating ? html`<div class="ifcard down" key=${"cmig:" + ifn}>
             <div class="ifcard-top"><span class="iftype csqtt">CSQTT</span><span class="ifname">${ifn}</span><span class="grow"></span>
               <${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|migrating")}
@@ -967,10 +777,6 @@ export function NodeDetail({ node: rawName }) {
               // a wide status badge is showing → keep it on one line by compacting the turn badges (turn→t) and
               // letting the name ellipsize; reverts to full once no such status is shown
               const tight = iopBusy || iconverting || deleting || idown || irestarting || !!(nrec.cmd_errors || {})[ifn];
-              // `.down` = THIS interface needs attention or is in flight. Node-wide states (offline, converting,
-              // re-installing, updating) are `.locked` instead — nothing is wrong with the interface, it just
-              // can't be edited, and every card on the page gets it at once. `iconverting`/`nodeStale` moved out
-              // of here into `blocked` for exactly that reason.
               const idim = deleting || idown || istopped || irestarting || iopBusy || !!iprog || !!(nrec.cmd_errors || {})[ifn];
               const iflash = ifaceFlash[name + "|" + ifn] && Date.now() < ifaceFlash[name + "|" + ifn];
               return html`<a key=${ifn} class=${"ifcard" + (deleting ? " pending" : "") + (idim ? " down" : "") + (blocked ? " locked" : "") + (iflash ? " flash" : "") + it.cls} href=${"#/node/" + encodeURIComponent(name) + "/" + encodeURIComponent(ifn)} draggable=${false} data-rid=${it.rid}>
@@ -979,16 +785,6 @@ export function NodeDetail({ node: rawName }) {
                   <div class="ifrow"><span class="l">${T("Listen")}</span><span class="r addr">${m.endpoint || ((m.address || "").split("/")[0] + (m.listen_port ? ":" + m.listen_port : "")) || "—"}</span></div>
                   <div class="ifrow"><span class="l">${T("Subnet")}</span><span class="r addr">${m.subnet || "—"}</span></div>
                   ${(() => {
-                    // The node's OWN errored/dropped share for this interface — its queues and datapath, not
-                    // the path to the client. Free (kernel counters), and invisible until now. Shown only when
-                    // there is something to see, on the same colour ramp as mesh loss so a percentage means
-                    // the same thing wherever it appears in the panel.
-                    // ⚠️ CARDS STAY QUIET ON PURPOSE — kept after being questioned, and deliberately NOT
-                    // aligned with the interface page, which shows the figure at any value (a count below the
-                    // 200-packet floor both share, see dropsEnough) — the card adds a 0.05% cutoff. The
-                    // card is scanned across a whole fleet, where a "0.000%" on every healthy interface is
-                    // a row the eye learns to skip — and then skips the one that matters. The detail page
-                    // is opened about ONE interface, where "we measure this, and it is clean" is the answer.
                     const _d = m.drops;
                     // …and not on too little traffic to carry a rate (dropsEnough): the interface page still shows the count.
                     if (!_d || !dropsEnough(_d) || !(_d.pct >= 0.05)) return null;
@@ -1023,13 +819,6 @@ try { matchMedia("(prefers-color-scheme: light)").addEventListener("change", () 
 
 
 // ═════════════════════════ SCREEN: PEERS (by node) ═════════════════════════
-
-
-
-
-// The shared peers grid — one row per (peer, target) deployment. Reused by the Peers screen and
-// the interface-detail screen so they're identical. `agg` adds the Server/IF column; `shownByPeer`
-// drives the "+N other deployments" badge; row click opens the peer-view popup.
 
 
 
@@ -1104,10 +893,6 @@ export function NodesScreen() {
 }
 // load/util tone: green under 70%, amber to 90%, red above.
 export function htone(pct) { return pct >= 90 ? "hot" : (pct >= 70 ? "warn" : "ok"); }
-   // green→amber→red util ramp (matches hm-fill + the CPU cpuColor ramp)
-// Threshold alerts for a node: disk/memory > 90%, CPU saturated, one core pinned, load > 1.5/core.
-// CPU and load are separate signals: load counts D-state tasks, so heavy disk I/O raises load while
-// the CPU sits idle. Reporting both keeps each honest.
 export function healthAlerts(health) {
   const out = [];
   for (const d of (health && health.disk || [])) if (d.total && d.used / d.total > 0.9) out.push({ sev: "hot", msg: "disk " + d.mount + " " + Math.round(d.used / d.total * 100) + "%" });
@@ -1115,10 +900,6 @@ export function healthAlerts(health) {
   if (m && m.total && m.used / m.total > 0.9) out.push({ sev: "hot", msg: "memory " + Math.round(m.used / m.total * 100) + "%" });
   const ncpu = (health && health.ncpu) || 1;
   if (health && typeof health.cpu_pct === "number") {
-    // Saturation is described per-CPU, counted from the node's per-vCPU list — never inferred from
-    // (max − mean), which can't tell 1 pinned CPU from 5 and goes silent at 6-of-8. The all-saturated case
-    // MUST be tested before any mean-based alert: when every CPU is hot the mean is necessarily ≥ SAT_PCT,
-    // so a mean-first branch would swallow it and "All … saturated" could never appear.
     const cores = cpuCores(health), hot = hotCores(health), tot = cores.length;
     const pk = tot ? T(" (peak {v1}%)", { v1: Math.max(...cores) }) : "";
     if (!tot) {                                                    // older swg-noded: mean only, no per-CPU list
@@ -1132,15 +913,6 @@ export function healthAlerts(health) {
                  msg: T("{v1} of {v2} {v3} saturated{v4}", { v1: hot, v2: tot, v3: cpuNamePl(health, tot), v4: pk }) });
     }
   }
-  // ⚠️ LOAD ALONE IS NOT PRESSURE, AND ON THESE NODES IT IS USUALLY NOT EVEN CPU. Linux counts every
-  // short-lived process in the load average, and swg-noded shells out constantly (nft, ip, iptables,
-  // systemctl) on its 5s loop — measured on swgt: **22 new processes per second**, load 1.61/1.72/1.74 on
-  // 1 vCPU, and at the same instant cpu 11.7%, iowait 0.4%, ONE runnable process. That lit this warning
-  // permanently on a box that was 88% idle, which trains an operator to ignore the warning strip.
-  // So corroborate with the CPU figures the node already sends. Real saturation is not lost by this: it has
-  // its own "N of M saturated" warning above, driven by per-core percentages.
-  // A node too old to report cpu_pct sends nothing to corroborate with, so there the load stands alone
-  // rather than the warning disappearing.
   const cpuKnown = health && typeof health.cpu_pct === "number";
   const cpuBusy = !cpuKnown || health.cpu_pct >= 50 || (health.cpu_iowait_pct || 0) >= 10;
   if (health && Array.isArray(health.load) && (health.load[0] || 0) / ncpu > 1.5 && cpuBusy)
@@ -1153,17 +925,8 @@ export const hotCores = h => cpuCores(h).reduce((n, c) => n + (c >= SAT_PCT ? 1 
 // /proc/stat's cpuN are LOGICAL cpus: vCPUs under a hypervisor, hardware threads on bare metal. Never
 // "cores" — an 8-core box with hyperthreading lists 16. The node reports `virt`; unknown ⇒ plain "CPU".
 export const cpuName = h => (h && h.virt) ? T("vCPU") : T("CPU");
-// The COUNTED form. `cpuName() + "s"` appended an English plural to an already-translated word, so a
-// Russian panel read «8 vCPUs»; Russian does not decline a borrowed acronym at all («8 vCPU»). The noun
-// table answers that with three identical forms, and English still gets its "s" from enPlural because
-// PLURALS is only loaded for a translated language.
 export const cpuNamePl = (h, n) => pluralWord(n, (h && h.virt) ? "vCPU" : "CPU");
 
-// The CPU bar+number is ALWAYS the hover target — per-vCPU detail is useful on a healthy node too.
-// The triangle is only an attention marker, added when at least one vCPU is saturated.
-// `idle` is 100 - usage (i.e. it folds in that vCPU's iowait share). Per-CPU iowait is not reported:
-// the kernel credits it to whichever CPU was idle when the I/O completed, so only the node-level
-// figure in the header is meaningful — and it's the share that used to masquerade as CPU.
 export function CpuPop({ health, trigger, alignRight }) {
   const cores = cpuCores(health);
   if (!cores.length) return trigger;                    // older swg-noded: no per-vCPU data, no bubble
@@ -1186,21 +949,7 @@ export const CpuWarnIc = ({ health }) => hotCores(health) ? html`<span class="cp
 
 // Inline "x of y" usage bar for table rows — a compact track + count.
 
-// ── one node's interfaces, derived once ──────────────────────────────────────────────────────────
-// The ordered, typed, muted-flagged interface list for a node — the single source of truth for every
-// place that shows them: the fleet card's badge row, the detail ribbon's badge row, and the order of
-// the detail grid's cards. It used to be derived three times, and the copies drifted: a WDTT
-// interface lives in snap.wdtt, NOT in `describe`, so a filter over describe alone silently drops it
-// however it filters — which is how the ribbon lost its WDTT badges while the card kept them.
-//
-// Two things the callers must not have to know:
-//  · a WDTT interface is reported separately (it owns its own TUN device), but on every one of these
-//    surfaces it is simply another interface of this node, so it is merged in — WDTT-coloured — and
-//    ordered with the rest. iface_order already carries WDTT names (the grid reorders them together).
-//  · `gone: true` also yields interfaces mid-teardown, which the node has stopped reporting: their
-//    card must hold its slot until it does. Those have NO `describe` entry, so `type` can never be
-//    read off meta[ifn] blind — a member access on a missing entry is the shape of bug that took the
-//    node page down in 1.7.0. Anything meta can't answer is classified by NAME instead.
+// one node's interfaces, derived once
 export function nodeIfaces(node, { gone = false } = {}) {
   const meta = Store.describe[node] || {};
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
@@ -1222,9 +971,6 @@ export function nodeIfaces(node, { gone = false } = {}) {
     };
   });
 }
-// One interface badge: protocol-coloured, links to the interface, and shows a start/stop/restart in
-// flight in place of the plain name. Every badge row renders through this — two renderers is how the
-// rows diverged in the first place.
 export const IfaceTag = (node, { ifn, type, muted }) => {
   const op = Store.ifaceOp[node + "|" + ifn];   // op in flight → say so here too (optimistic, set on click)
   const href = "#/node/" + encodeURIComponent(node) + "/" + encodeURIComponent(ifn);
@@ -1247,10 +993,6 @@ function ifaceSummary(node, nTurn) {
   return tags;
 }
 
-// The other half of the same badge rows: the node's turn-proxies, in the operator's saved order.
-// `turn_order` also holds "wdtt:<iface>" entries, because the Turn-proxies grid it comes from lists
-// WDTT servers next to the proxies — those never match a tp.service, so they simply don't place a
-// badge here, which is right: a WDTT server is already in the interface half of the row.
 export const nodeTurns = node => {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   return orderById(((Store.stats[node] || {}).turn_proxies) || [], nrec.turn_order, tp => tp.service);
@@ -1261,13 +1003,6 @@ export const TurnTag = (node, tp) =>
   html`<span class=${"tg tg-turn tf-" + turnFork(tp.service) + ((nodeStale(node) || turnDown(tp)) ? " muted" : "")}>${forkLabel(turnFork(tp.service))}</span>`;
 
 
-// Node throughput panel: a Peers/Mesh toggle in the header (right-aligned) splits the graph into client (rx−mrx),
-// mesh (mrx), or both. Never both off — turning off the only-selected one switches to the other (like the doughnuts).
-// Node health panel: CPU/Mem/Disk meters + the CPU-load history, with the range picker hoisted into the header.
-// NETWORKS P2 — the private network this node sits on (docs/NETWORKS-PLAN.md D10, §8 P2). Measured: a client
-// already reaches it with nothing built, and nobody chose that. There is no save for this to announce itself at, so
-// it is said HERE, unprompted, with the way to close it beside it. A node with no private address (a VPS on public
-// addresses only) has nothing to disclose and shows nothing.
 function NodeLanPanel({ nrec }) {
   const lans = nrec.lans || [];
   // Switched off panel-wide, this whole subject is settled elsewhere: the networks are closed on every node and the
@@ -1353,19 +1088,12 @@ export function NodeThroughput({ name, nrec }) {
   <//>`;
 }
 
-// Per-node health: CPU / Memory / Disk on one row (each a third), with the CPU-load history
-// charted below. `history=false` omits the inline chart (node detail uses RangedHistory instead).
-// The CPU/Memory/Disk meter row — reused standalone (as the head of the node-detail Health
-// chart row) and inside NodeHealth (overview cards).
 export function healthCols(health) {
   const cols = [];
   const ncpu = health.ncpu || 1;
   const l1 = Array.isArray(health.load) ? (health.load[0] || 0) : null;
   const loadTxt = () => l1.toFixed(2) + " / " + ncpu + " " + cpuNamePl(health, ncpu);
   if (typeof health.cpu_pct === "number") {
-    // Only bounded percentages get a bar. Load is unbounded and system-wide, so a bar clamped at 100%
-    // would erase the one thing load adds over utilization: how DEEP the run queue is (util reads 100%
-    // at load 1.0 and at load 8.0 alike). It lives as a plain number in the CPU hover bubble instead.
     cols.push({ label: T("CPU"), heat: true, cpu: true, pct: health.cpu_pct, text: Math.round(health.cpu_pct) + "%" });
   } else if (l1 !== null) {
     cols.push({ label: T("CPU load"), heat: true, pct: l1 / ncpu * 100, text: loadTxt() });   // older swg-noded: no cpu_pct, load-per-core as before
@@ -1396,9 +1124,6 @@ export function HealthAlerts({ health }) {
 export function NodeHealth({ health, node, compact, history, range, nodeHist }) {
   if (!health) return compact ? null : html`<div class="hint" style="margin:2px">${T("No health data reported yet.")}</div>`;
   const hh = (node && (Store.nodes || []).find(n => n.id === node) || {}).health_history || null;  // server-side RRD (node = id)
-  // CPU history follows the dashboard range. `range` here is the range the passed nodeHist is FOR (the Overview passes
-  // rangeHist.range) — it LAGS the just-clicked range while a fetch is in flight, so the chart keeps showing the last
-  // loaded range's data until the new one lands (no flick to empty or to live).
   const useRanged = range && range !== "live" && nodeHist && Array.isArray(nodeHist.cpu) && nodeHist.cpu.some(x => x != null);
   const liveCpu = (hh && Array.isArray(hh.cpu) && hh.cpu.length > 1) ? hh.cpu : null;
   const cpuHist = useRanged ? nodeHist.cpu : liveCpu;
@@ -1449,13 +1174,6 @@ export function openUpdateDone(from, to) {
     </div>
   <//>`);
 }
-// One consistent update modal for both a node and the panel header: the full (third-party-included) command to
-// run by hand, plus an "Update now" button that kicks off the automatic swg-only update.
-// `declarative` is not a styling flag here. The command in this dialog is shown BEFORE anything is
-// clicked, and on a host whose installation comes from its configuration the bootstrap one-liner is
-// not merely inert: it appears to work, writes into /opt, and leaves an install the configuration
-// cannot see. So the command comes from the server (env.update_cmd) and the surrounding prose says
-// what an update actually is there. `auto` says whether "Update now" can do anything at all.
 export function openUpdateModal({ title, side, onConfirm, declarative, cmd, auto }) {
   // `cmd` undefined = "no opinion, use the default"; cmd === "" = "there is no command I can honestly
   // print here", which is not the same thing and must not fall back to the bootstrap one.
@@ -1471,11 +1189,6 @@ export function openUpdateModal({ title, side, onConfirm, declarative, cmd, auto
   <//>`);
 }
 export function updateNode(n) {
-  // The panel knows this node is declaratively managed, and knows from `update_auto` whether its
-  // Update button can do anything — but it does NOT know its flake ref, so the command is the
-  // generic one its own daemon names when it refuses. A declarative node whose platform we cannot
-  // name gets no command block at all rather than the bootstrap one, which on such a host appears
-  // to work and leaves an install the configuration cannot see.
   const cmd = n.declarative ? (n.platform === "nixos" ? "sudo nixos-rebuild switch" : "") : undefined;
   openUpdateModal({
     title: T("Update {name}", { name: n.name }), side: T("node's"),
@@ -1498,14 +1211,8 @@ export function updateHost() {
       if (!r.ok) return toast(srvText(r) || T("Failed to start update."), "err");
       if (r.data && r.data.manual) return toast(T("Automatic update isn't wired on this install — run the command shown in the dialog on the host."), "err");
       setHostUpdating();
-      // The panel now fans the update out to every node that can take it, so SAY so — an operator
-      // told only about the panel has no reason to think the fleet moved, and would go and press
-      // Update on each node by hand.
       const _n = ((r.data || {}).nodes || {}).started || [];
       toast(_n.length
-        // ⚠️ THE COUNT IS IN PARENTHESES — a count can never be the subject of a verb that will not
-        // inflect for it. «1 нода обновятся» is wrong for exactly 1, the same shape as 091ac8e's
-        // «1 пир получат»; the subject is "the nodes", the number sits beside it.
         ? T("Update started — the panel will restart shortly. The nodes ({v1}) follow on their next sync.", { v1: plural(_n.length, "node") })
         : T("Update started — the panel will restart shortly."), "ok");
     },
@@ -1519,10 +1226,6 @@ export async function checkForUpdate(e, nodeId) {
     const r = await api.checkUpdate();
     await Store.poll();
     if (!r.ok) toast(srvText(r) || T("Couldn't check for updates."), "err");
-    // The panel now says WHY it could not reach the repo — no DNS, an unverifiable certificate, a reset, a
-    // rate limit — because the bare sentence was a dead end: it named no cause and left nothing behind, so a
-    // panel being supported from the outside could not be diagnosed at all. The generic line stays as the
-    // fallback for a panel too old to send a reason.
     else if (r.data && !r.data.checked) toast(r.data.why_key ? T(r.data.why_key, srvVars(r.data.why_vars))
                                                              : T("Couldn't reach the repo to check for updates."), "err");
     else if (nodeId) {                               // invoked from a NODE header → show the result THERE, not on the panel header
@@ -1534,13 +1237,6 @@ export async function checkForUpdate(e, nodeId) {
     else { Store.updFlash = Date.now() + 15000; Store.apply(); setTimeout(() => Store.apply(), 15100); }   // panel up to date + healthy → T("up to date") pill (clickable to re-run/repair) for 15s
   } finally { if (btn) btn.classList.remove("checking"); if (!nodeId) { Store.hostChecking = false; Store.apply(); } }
 }
-// ⚠️ TOUCH HAS NO MOUSEOUT, AND THESE BUBBLES ONLY HID ON ONE. On a phone the tap that opens the
-// update badge can never be undone: the bubble is body-level and covers the update modal, and the
-// only way out — a tap elsewhere — lands on the sheet's own backdrop, which closes the MODAL and
-// leaves you with neither. So the topmost layer must CONSUME the dismissing tap: hide the bubble and
-// swallow the click that follows it, so whatever is underneath survives to be used.
-// Returns a detach function; every caller must run it when the bubble goes away, or the listener
-// outlives the element it was guarding.
 function dismissOnOutsideTap(el, anchor, hide) {
   const onDown = ev => {
     if (el.contains(ev.target) || (anchor && anchor.contains(ev.target))) return;
@@ -1554,14 +1250,6 @@ function dismissOnOutsideTap(el, anchor, hide) {
   document.addEventListener("pointerdown", onDown, true);
   return () => document.removeEventListener("pointerdown", onDown, true);
 }
-/* The bubble IS the caption, so nothing else may caption the same hover. A `title=` anywhere on the hover
-   path — the anchor, anything inside it, or any wrapper AROUND it — makes the browser raise its own tooltip a
-   second later, unstyled, on top of a bubble that already says strictly more. Two captions for one gesture.
-   Park them while the bubble is up and put them back on drop, so the tooltip still names the control for AT
-   and for any hover that produces no bubble at all.
-
-   This is the non-Preact twin of useNoNativeTitle in js/ui.js — same rule, same three places to look; these
-   header widgets are innerHTML-driven and have no ref/effect to hang it on. Keep the two in step. */
 function parkTitles(anchor) {
   const parked = [];
   const park = el => {
@@ -1576,9 +1264,6 @@ function parkTitles(anchor) {
 export function hostHoverBubble(anchor, contentFn, onAction) {
   // A phone has no hover: the tap that opens the badge's own sheet would also raise this bubble over it (MOBILE-PLAN hook 1).
   if (isMobile()) return;
-  // SINGLETON, self-hiding bubble. The header is innerHTML-driven and re-renders every poll, replacing `anchor` —
-  // so the anchor's own mouseleave can't be trusted to clean up. Guard against orphans (remove any stray bubble
-  // before showing) and hide when the pointer leaves the BUBBLE too, so it never gets stuck or stacks a glow.
   let bub = null, t = null, detach = null, untitle = null;
   const drop = () => { if (untitle) { untitle(); untitle = null; } if (detach) { detach(); detach = null; } if (bub) { bub.remove(); bub = null; } };
   const hide = () => {                                   // a poll re-render removes the anchor → its mouseleave fires; if the
@@ -1613,30 +1298,14 @@ export function hostHoverBubble(anchor, contentFn, onAction) {
   };
   anchor.addEventListener("mouseenter", show);
   anchor.addEventListener("mouseleave", later);
-  // Clicking the anchor takes the action the bubble was previewing — and usually opens a sheet over it. The
-  // anchor is then behind an overlay, so it never gets the mouseleave that would hide the bubble, and
-  // dismissOnOutsideTap does not fire for a tap on the anchor itself: the bubble hung above the sheet until
-  // the next re-render. Dropping it here closes that for every header badge.
   anchor.addEventListener("click", () => { clearTimeout(t); drop(); });
 }
-// Panel-version changelog bubble — an EXACT copy of the update-to-version hover bubble (same .hub-* markup + the same
-// self-hiding, hover-safe singleton mechanism, so it stays open while the pointer is over it), plus ‹ older / › newer
-// buttons to browse releases. Changelog fetched once and cached.
-// ⚠️ THIS USED TO BE FETCHED ONCE PER PAGE LOAD AND NEVER AGAIN. `if (!_changelogCache) fetch()` meant
-// that whatever text was live when you first opened the bubble was the text you saw for the rest of the
-// session — so a changelog published wrong and then corrected stayed wrong until a hard reload, which
-// looks exactly like "the panel only ever pulled once". A short TTL fixes it at no cost: the refetch is
-// one request to OUR OWN panel (which does its own ~1h upstream caching), and only when an operator
-// actually opens the bubble. Nothing polls in the background.
 const CHANGELOG_TTL = 5 * 60 * 1000;
 const CHANGELOG_WANT_RETRY = 30 * 1000;   // a copy without the badge's version is asked for again at most this often
 let _changelogCache = null;   // {entries:[{version,date,notes[]}], current}
 let _changelogAt = 0;         // when it was fetched — stale after CHANGELOG_TTL
 let _changelogIdx = 0;
 let _changelogReq = null;     // the request in flight — both bubbles share it
-// ONE loader for both bubbles. `want` = the version on the update badge: a cached copy that lacks it is fetched again
-// (the panel then asks GitHub again too), so a changelog read before the CDN caught up is not what the bubble keeps
-// showing. Resolves when the cache is as fresh as it is going to get.
 export function loadChangelog(want) {
   const es = (_changelogCache && _changelogCache.entries) || [];
   const age = Date.now() - _changelogAt;
@@ -1729,15 +1398,9 @@ export function updBubbleHtml(repaint) {
   let loading = false;
   if (!e && want) { loading = !_changelogCache || _changelogReq != null || Date.now() - _changelogAt >= CHANGELOG_WANT_RETRY;
     if (loading) loadChangelog(want).then(() => { if (repaint) repaint(); }); }
-  // ⚠️ no `footer` here any more. It read "Click to update this server." — which described the ANCHOR,
-  // and the anchor is exactly what this bubble covers on a phone. The button says what it does.
-  // ONE translatable sentence with the version bolded in it — split on its own {v} marker so each language keeps its word order
   const [wnA, wnB] = Tsplit("What's new in {v}", "v");
   return hubEntryHtml({ titleHtml: `${esc(wnA)}<b>${esc(want || "?")}</b>${esc(wnB)}`, date: e ? e.date : "",
     notes: e ? e.notes : [], emptyNote: loading ? T("Loading changelog…") : T("See the changelog for what's new."),
-    // reuse the keys the catalogue already carries — "Update now" and "Update this server" are both
-    // translated, and keeping the wording identical to the rest of the update flow matters more than
-    // saving a word in a header ([[panel-i18n-plan]]: sentence = key, so a new phrasing = a new key).
     action: { label: T("Update now"), title: T("Update this server") } });
 }
 export function fixBubbleHtml() {
@@ -1746,9 +1409,6 @@ export function fixBubbleHtml() {
   const body = iss.map(i => `<div class="hub-row"><span class="hub-dot ${i.sev}"></span><span><b>${esc(i.label)}</b> — ${esc(i.msg)}</span></div>`).join("");
   return head + body + `<div class="hub-foot">${esc(T("Click to review & run the repair."))}</div>`;
 }
-// Hover content for the header's turn-family update badge. Same shape as fixBubbleHtml — one row per thing
-// you can act on, then what clicking does. A row is a (fork, node): csqtt and WDTT share one binary there, so
-// listing interfaces would show three lines for one action.
 export function turnUpdBubbleHtml() {
   const rows = Store.turnUpdates || []; if (!rows.length) return "";
   // Grouped by fork, one line each, so the bubble's height tracks how many FORKS are behind and not how big
@@ -1760,10 +1420,6 @@ export function turnUpdBubbleHtml() {
     if (!g.nodes.includes(r.node)) g.nodes.push(r.node);
     if (g.same !== r.installed) g.same = "";
   }
-  // Ordered by what is READ, not by the key. The server sorts rows by fork id, which was the same string
-  // until labels arrived; now "qwdtt" prints as SpaceNeuroX and "wdttplus" as Ivan4537, so an id-ordered list
-  // looks shuffled — uppercase ids first, then authors in no visible order. Sorting on the rendered label puts
-  // the column back in reading order and keeps one author's servers adjacent (amurcanov · WDTT, · CSQTT).
   groups.sort((a, b) => forkPickLabel(a.fork).localeCompare(forkPickLabel(b.fork), undefined, { sensitivity: "base" }));
   const head = `<div class="hub-h">${esc(T("{v1} available", { v1: plural(groups.length, "update") }))}</div>`;
   // The dot carries the FORK's own colour — the same cue the fork tags, iface cards and settings rows already

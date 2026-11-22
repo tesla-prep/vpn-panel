@@ -1,22 +1,3 @@
-/* store.js — the data spine: the API client, the Store, and the reactive bus.
- *
- * LAYER 1 (see docs/APP-JS-SPLIT-PLAN.md). Imports util + theme and NOTHING above itself: every screen
- * imports the Store, so if the Store imported a screen the graph would cycle.
- *
- * `hooks` is how it stays that way. Store.apply() has to trigger six pieces of work that live in higher
- * layers — repaint the theme, accumulate the dashboard's trend series, raise the service-issue modal,
- * finish a ghost rekey, and consult the encryption vault. Rather than importing upward, each is a NAMED
- * slot the owning module fills in. Named rather than a generic list because they fire at three different
- * points of apply() and the ORDER is load-bearing.
- *
- * Every slot is scaffolding with a known end: when the module that owns a callback is extracted, its
- * assignment moves there, and the slot can go away once nothing above the Store needs to be called back.
- *
- * A 401 is the same shape of problem — the fetch layer must not import the login screen — so the handler
- * is injected too. The default THROWS, matching require401's contract, so an unwired build fails loudly
- * rather than treating an expired session as an empty response.
- */
-
 import { url, clock, panelNow, esc } from "./util.js";
 import { T, lang } from "./i18n.js";
 import { pickThemed, NODE_COLOR_DEFAULT } from "./theme.js";
@@ -38,15 +19,8 @@ export const hooks = {
 let _on401 = () => { throw new Error("unauthorized"); };   // i18n-keys: a control-flow sentinel, never displayed
 export const setUnauthorizedHandler = fn => { _on401 = fn; };
 
-// ───────────────────────── api ─────────────────────────
-// Every request has a ceiling so a wedged/overloaded panel rejects instead of hanging a modal open forever (a save
-// modal used to await a dead request with no exit). 90s is generous — a save's HTTP round-trip returns once state is
-// written; the node reconcile that "takes a minute" happens asynchronously on the node, not in this request.
+// api
 export const REQ_TIMEOUT = 90000;
-/* Every request carries the UI language. The panel does not translate anything itself — but a few answers
-   are fetched from OUTSIDE it (the changelog lives in the repo, in one file per language), and the server
-   is the one holding the outbound connection. One header here beats a query parameter on each endpoint:
-   it applies to calls that already exist, and it cannot be forgotten by the next endpoint someone adds. */
 async function _fetch(u, opts, ms) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), ms || REQ_TIMEOUT);   // `ms`: the one call that legitimately outlasts it (docker-confirm)
@@ -55,9 +29,6 @@ async function _fetch(u, opts, ms) {
   catch (e) { if (e && e.name === "AbortError") throw new Error(T("the panel didn't respond in time")); throw e; }
   finally { clearTimeout(t); }
 }
-// A range key as a query: a named range, or a custom window's key "custom:YYYYMMDD-YYYYMMDD" (views.js dashKey) → its
-// panel days. The ranged endpoints answer a custom window with the axis they used (`axis`), which the Overview reads.
-// The custom-key grammar lives HERE, the lowest module, once: views.js re-exports it.
 export const isCustomKey = k => typeof k === "string" && /^custom:\d{8}-\d{8}$/.test(k);
 const _iso = d => d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6, 8);
 export function customKeyWindow(k) { const [f, t] = k.slice(7).split("-"); return { range: "custom", from: _iso(f), to: _iso(t) }; }
@@ -81,9 +52,6 @@ export const api = {
   turnHistory(range) { return this.get("/api/turn-history?" + rangeQ(range)); },
   exitHistory(range) { return this.get("/api/exit-history?" + rangeQ(range)); },
   blockStats(range) { return this.get("/api/block-stats?" + rangeQ(range)); },
-  // DISTINCT peers/users seen online over a range — set-union of per-bucket presence bitmaps, never a mean
-  // and never a traffic proxy (so an idle-but-connected peer counts). One call feeds the bars, the node
-  // cards and the doughnuts' "online" figure, so they can no longer disagree.
   presence(range, blocks, step, nodes) {
     return this.get("/api/presence?" + rangeQ(range) + "&blocks=" + blocks + "&step=" + step
       + (nodes && nodes.length ? "&nodes=" + encodeURIComponent(nodes.join(",")) : ""));
@@ -161,18 +129,12 @@ export const api = {
   awgLoad(b) { return this.post("/api/node/awg-load", b); },   // "Load now": swap in the AmneziaWG module an update installed
   asnCount(n) { return this.get("/api/asn?n=" + encodeURIComponent(n)); },   // resolve an ASN → prefix count (live editor feedback)
   nodeRotate(b) { return this.post("/api/nodes/rotate", b); },
-  // Restore / migrate: arms the rebuild (baseline, interface restores, turn capture, mesh re-provision)
-  // and rotates the token, which is BOTH the handle for the new box and the lockout of the old one.
-  // NOT nodeRotate — that rotates a token and nothing else. See the plan's §3.1.
   nodeRebuild(b) { return this.post("/api/nodes/rebuild", b); },
   // T-11: the SAME analysis, read-only and before the token rotates. It writes nothing, so the confirm
   // sheets can show what a rebuild would do while the operator can still decide not to.
   nodeRebuildPreflight(nid) { return this.get("/api/nodes/rebuild/preflight?node=" + encodeURIComponent(nid)); },
   nodeRebuildRollback(b) { return this.post("/api/nodes/rebuild/rollback", b); },   // {discard:true} = forget the old box instead
   nodeRemesh(b) { return this.post("/api/nodes/remesh", b); },   // rebuild THIS node's mesh links on demand
-  // T-10 — Transfer to ANOTHER panel. One endpoint in two modes so the preview and the act cannot answer
-  // different questions: the pre-flight parses the paste, reaches the target and reports what would move;
-  // the commit does the same and then pushes. Neither touches the box.
   nodeTransferPreflight(b) { return this.post("/api/nodes/transfer/preflight", b); },
   nodeTransfer(b) { return this.post("/api/nodes/transfer", b); },
   // "is it Reporting on the target panel yet" — asked OF the target, not inferred from our silence.
@@ -290,9 +252,6 @@ export const Store = {
   rowErrors: {},             // entityKey -> { msg, at }        — explained failure, shown on the row
   async init() {
     await this.poll();
-    // Poll every 5s, but SKIP while the tab is HIDDEN — a background tab needs no live data, and each poll
-    // makes the (often 1-CPU) panel rebuild the /api/state bundle. Resume with an immediate poll the moment
-    // the operator returns, so they never look at stale numbers.
     setInterval(() => { if (document.visibilityState !== "hidden") this.poll().catch(() => {}); }, 5000);
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") this.poll().catch(() => {}); });
   },
@@ -305,15 +264,6 @@ export const Store = {
     this._server = { roster: d.roster || { version: 1, users: {}, peers: {} }, nodes: d.nodes || [] };
     this.describe = d.describe || {};
     this.stats = d.snapshots || {};
-    // How far ahead of the PANEL this browser's clock reads — every age the SPA measures or prints is read on the
-    // panel's clock through it (util.js `clock`). `panel_now` is stamped while the (memoized, ≤ STATE_CACHE_TTL)
-    // bundle is built, so the reading is that old by the time it arrives: the offset comes out BIGGER by the
-    // bundle's age plus the round trip, panelNow() therefore reads a beat behind the panel's true now, and every
-    // age comes out a beat SMALL. That is the safe direction here — a node is called live for a second or two
-    // past its window, never greyed out early, which is the failure this whole change exists to prevent. Re-measured
-    // every poll, so a corrected panel clock is picked up in one round. A panel too old to send it → 0 → the
-    // behaviour before this existed. Not a number (a proxy's error page, a truncated body) → keep the last good
-    // offset: a NaN here would silently poison every window and every "x ago" in the console.
     if (Number.isFinite(d.panel_now) && d.panel_now > 0) clock.skewMs = Date.now() - d.panel_now * 1000;
     trackInstance(d.instance, d.panel_now, d.nodes || []);
     // store_configs is now an enum: "encrypted" (blob at rest) | "off". storeConfigs stays a convenience bool
@@ -359,19 +309,12 @@ export const Store = {
     if (s && s.ok) { this.hostProc = d.host_proc || null; this.hostProcErr = d.host_proc_err || null; }   // only on a clean poll → the tag HOLDS through the panel's own re-install downtime
     if (ev && Array.isArray(ev.data)) this.events = ev.data;
     this.apply();
-    // Silent auto-heal net: catch peers that ended up unpublished (created/assigned while locked, or in another
-    // session) and publish them once the key is available. Gated on a cheap signature — the peer/user counts plus
-    // lock state — so the extra /api/sub/users round-trip fires on a roster change or an unlock, not every idle poll.
     try {
       const hk = ((hooks.vaultKeyCached && hooks.vaultKeyCached()) && this.storeMode === "encrypted")
         ? (Object.keys(this.roster.peers || {}).length + ":" + Object.keys(this.roster.users || {}).length)
         : "off";
       if (hk !== this._healKey) { this._healKey = hk; if (hk !== "off") hooks.vaultAutoHeal && hooks.vaultAutoHeal(); }
     } catch (_) {}
-    // T-22: and the same net for a MIGRATED node's server keys. Its own signature — the set of interfaces
-    // any node is holding for the vault — because that set changes on a migration, not on a roster edit,
-    // and it must not be gated on `storeMode === "encrypted"`: the interface-key vault is a separate thing
-    // and is commonly on when subscription encryption is not.
     try {
       const heldList = [];
       for (const n of (this.nodes || [])) {
@@ -380,9 +323,6 @@ export const Store = {
       }
       const held = heldList.sort().join(",");
       if (held !== this._heldKey) { this._heldKey = held; if (heldList.length) hooks.ifaceKeyAutoRestore && hooks.ifaceKeyAutoRestore(); }
-      // …and escrow the panel is holding but cannot classify. Keyed on the SET of unverified interfaces,
-      // not on the ciphertext: an unstamped node re-seals every five seconds, so the blob changes
-      // constantly while the thing worth acting on — which interfaces are unproved — does not.
       const unver = [];
       for (const n of (this.nodes || [])) {
         const ifs = (this.describe || {})[n.id] || {};
@@ -394,10 +334,6 @@ export const Store = {
       if (uk !== this._unverKey) { this._unverKey = uk; if (unver.length) hooks.escrowAutoVerify && hooks.escrowAutoVerify(); }
     } catch (_) {}
   },
-  // Re-derive everything the UI reads from a PRISTINE copy of server data + the optimistic
-  // overlay. Confirmed ops (done) are dropped first — fresh server data already reflects them
-  // — then still-pending patches are layered on a fresh clone, so re-applying is idempotent and
-  // an in-flight change never blinks out between polls.
   apply() {
     for (const id of Object.keys(this.pending)) if (this.pending[id].done) delete this.pending[id];
     const snap = (typeof structuredClone === "function") ? structuredClone(this._server)
@@ -421,16 +357,10 @@ export const Store = {
     this.recon = reconcile(this.roster, this.stats, panelNow(), { retiring, systemIfaces, nodeSeen, rotating: new Set(Object.keys(this.rotating)),
       probSince: this._probSince,
       ...(_adv.churn_gap_s ? { churnGapS: _adv.churn_gap_s } : {}), ...(_adv.churn_min ? { churnMin: _adv.churn_min } : {}),
-      // Both detectors raise the SAME badge ("restricted") from different evidence, and each stays
-      // independently switchable. `_sc.faulty` keeps its stored name: it gated the flat-rx rule that the
-      // churn detector replaced, and renaming the key would silently re-enable it for anyone who turned it off.
       detectBlocked: _sc.blocked !== false, detectChurn: _sc.faulty !== false,
       expiryWarnDays: (this.panelSettings || {}).expiry_warn_days,   // "about to expire" warn window (days) for the derived status
       ...(_adv.restore_grace_ms ? { restoreGraceMs: _adv.restore_grace_ms } : {}),
       ...(_adv.node_stale_ms ? { nodeStaleMs: _adv.node_stale_ms } : {}), ...(_adv.peer_grace_ms ? { graceMs: _adv.peer_grace_ms } : {}) });
-    // Missing-interface Restore gate: the node view carries `missing_ifaces` but the server doesn't stamp WHEN
-    // each went missing, so track first-sight client-side (like the peer probSince) and mark each ripe once it
-    // has stayed missing past the grace window — so the node screen offers Restore only for a real outage.
     this._missIfSince = this._missIfSince || {};
     { const _now = Date.now(), _grace = _adv.restore_grace_ms || 120000, _seen = new Set();
       for (const n of (this.nodes || [])) { const mi = n.missing_ifaces || {}, gi = n.ghost_ifaces || {};
@@ -457,11 +387,6 @@ export const Store = {
       // confirm) must survive the poll that lands before the rekey has actually taken the peer not-ready.
       if ((pr && (pr.status === "online" || pr.status === "ready" || pr.status === "partial") && Date.now() - this.rotating[id] > 4000) || (Date.now() - this.rotating[id] > 45000)) delete this.rotating[id];
     }
-    // auto-clear a peer's pinned action error once it's no longer true — no manual dismiss needed. A
-    // "<node> hasn't reported <iface> yet" error resolves the instant that iface's meta arrives; a generic
-    // action failure clears once the peer reconciles healthy. A long age cap sweeps anything else (e.g. the
-    // peer was deleted, or a one-off failure on a row that never settles). Runs every apply(), so the bubble
-    // disappears on the same poll the condition clears.
     for (const k of Object.keys(this.rowErrors)) {
       if (!k.startsWith("peer:")) continue;
       const e = this.rowErrors[k];
@@ -477,32 +402,7 @@ export const Store = {
   },
   node(id) { return this.fleet.find(n => n.id === id); },              // lookup by stable id
   nodeName(id) { const n = this.node(id); return (n && n.name) || id; }, // display title (falls back to id)
-  // ⚠️ THE FLEET HAS AN ORDER AND IT IS THE OPERATOR'S. The Nodes screen is drag-reorderable and the
-  // position is persisted per node (`pos`, POST /api/order); the server sorts every node list it builds by
-  // it, so `Store.nodes` — and this projection — arrive in that order. Screens that grouped by node then
-  // re-sorted the groups ALPHABETICALLY, which silently threw that away: an operator who had put their
-  // busiest server at the top found it third in the peer sheet, the interface picker and the turn list,
-  // with nothing on screen explaining why those disagreed with the Nodes screen they had just arranged.
-  //
-  // `nodeRank` is the position; `byNode` is the comparator to sort by. A node the projection has not seen
-  // sorts AFTER every known one (rather than to the front, where an unloaded record would look deliberate)
-  // and ties break on the display name, so the order stays stable while /api/state is still arriving.
   nodeRank(id) { const i = this.fleet.findIndex(n => n.id === id); return i < 0 ? Number.MAX_SAFE_INTEGER : i; },
-  // ⚠️ THE `|| ""` GUARDS WERE LOAD-BEARING AND THIS DROPPED THEM. `nodeName(id)` is `(n && n.name) || id`,
-  // so an id of `undefined` comes back `undefined` and `.localeCompare` on it throws. The call sites this
-  // replaced all wrote `(Store.nodeName(x) || "")`, and one of them needs it: `AddPeersSheet` sorts by
-  // `rep(p).node` where `rep = p => orderedTargets(p.targets || [])[0] || {}` — an UNASSIGNED peer has no
-  // deployment, so `.node` is undefined. Two of those in one list tie on rank (both unknown), the tiebreak
-  // runs, and `Array.sort` throws inside the comparator: the Add-peers sheet renders nothing.
-  //
-  // ⚠️ WHAT IS AND IS NOT DEMONSTRATED. The throw is: `byNode(undefined, undefined)` raises, measured. That
-  // a peer can reach it with no targets at all is NOT — the swgt fleet has 28 peers and none of them is
-  // target-less, so that screen would not have crashed there. ("Free" peers, of which it has 21, are peers
-  // with no USER; they still have deployments. Do not confuse the two — an earlier version of this comment
-  // did, and inflated the severity.) The guard goes back because the call sites this comparator replaced
-  // all wrote `|| ""` deliberately and the reconciler tolerates `targets: []`; removing a guard whose case
-  // you have not disproved is the regression, whether or not today's data reaches it.
-  // [[review-your-own-fixes]] (check the CALLERS of what you changed).
   byNode(a, b) {
     return this.nodeRank(a) - this.nodeRank(b)
         || String(this.nodeName(a) || "").localeCompare(String(this.nodeName(b) || ""));
@@ -516,9 +416,6 @@ export const Store = {
     if (!iface) return false;
     const m = (this.describe[node] || {})[iface] || {};
     const pfx = (this.panelSettings || {}).reserved?.iface_prefix || "swg_";
-    // NB: wdtt* is NOT system — it IS a valid peer target (for keyless WDTT peers). Peer-create dispatches on the
-    // target's kind (iTypeOf → "wdtt"), so a wdtt* target mints a WDTT peer, not a broken WG one. Only the turn
-    // Forwards-to pickers exclude wdtt* (their own filter), since a -connect fork can't front a WDTT interface.
     return !!m.system || String(iface).startsWith(pfx) || String(iface).startsWith("swg_");
   },
   userIfacesOf(node) {   // wg/awg from describe + WDTT + csqtt ifaces (self-contained kinds own their iface, absent from describe → pulled from the readback)
@@ -529,10 +426,6 @@ export const Store = {
   },
   peer(id) { return this.recon.peers.find(p => p.id === id); },
   user(id) { return this.recon.users.find(u => u.id === id); },
-  // A user GROUP as the screens read it (docs/GROUPS-PLAN.md G1): the members that still exist — a deleted user stays in the stored
-  // list and is filtered here, where it is read. Sorted by name.
-  // Built ONCE per roster: apply() replaces the roster object on every poll and every optimistic patch, so its identity is the
-  // cache key. group(id) is called inside sort comparators and per row — a rebuild per call was O(groups · members) each time.
   groups() {
     if (this._groupsOf !== this.roster) {
       const g = (this.roster && this.roster.groups) || {}, us = (this.roster && this.roster.users) || {};
@@ -545,9 +438,6 @@ export const Store = {
     return this._groupsList;
   },
   group(id) { this.groups(); return this._groupsById.get(id) || null; },
-  // A user's groups, keyed by MEMBER and built once per roster beside groups(). The users list asks this per row on every poll
-  // (5 s), and filtering every group per row was O(rows · groups · members) each time — the reason the sheet's field kept it off
-  // the list until now (docs/GROUPS-PLAN.md G11).
   groupsByUser(id) {
     if (this._gByUserOf !== this.roster) {
       const m = new Map();
@@ -558,10 +448,6 @@ export const Store = {
     return this._gByUser.get(id) || [];
   },
   peersOfUser(id) { return this.recon.peers.filter(p => p.user_id === id); },
-  // The devices whose networks are shared with a group, keyed by GROUP and built once per recon (the peers' private flag and
-  // share live there): the Groups grid reads it per row on every poll, and a walk over every peer per group was
-  // O(groups · peers) each time. ⚠️ A PRIVATE device grants a group nothing, whatever its stored share still says — see
-  // groupShares() in views.js.
   sharesByGroup(gid) {
     if (this._sByGroupOf !== this.recon) {
       const m = new Map();
@@ -574,9 +460,6 @@ export const Store = {
     }
     return this._sByGroup.get(gid) || [];
   },
-  // The same, by OWNER, built once per RECON (not per roster: these are the reconciled peers, rebuilt on every poll, and a stale
-  // map would hand back devices with last poll's online state). peersOfUser() walks every peer per call — fine for one sheet,
-  // O(users · peers) for a list that asks per row.
   peersByUser(id) {
     if (this._pByUserOf !== this.recon) {
       const m = new Map();
@@ -590,15 +473,7 @@ export const Store = {
 };
 
 
-// ── TWO PANELS BEHIND ONE ADDRESS (see _INSTANCE in swg-panel-server) ─────────────────────────────────────────────
-// Every /api/state names the panel process that built it. This browser remembers each one it has been served by and
-// how long it saw it alive — on the servers' own clocks, never this PC's. A restart or an update is a new process
-// whose life starts after the old one's last answer: nothing to say. Two processes alive AT THE SAME TIME behind the
-// same address is the failure: the fleet, the settings and the saves go to whichever answers, and the one the nodes
-// sync to may not be the one being edited. Judged across page loads, not between polls: the panel keeps connections
-// alive, so a single page often talks to ONE of the two for its whole life and only a reload lands on the other.
-// Keyed by the panel's mount path too: browser storage is per ORIGIN, and two separate panels under one domain
-// (`/swg` and `/swg2` behind a proxy) are two fleets, not one panel answering twice.
+// TWO PANELS BEHIND ONE ADDRESS (see _INSTANCE in swg-panel-server)
 const INST_KEY = "swg.panelInstances:" + url(""), INST_DISMISS = "swg.panelTwinsDismissed:" + url("");
 const INST_MARGIN = 120;          // seconds of clock disagreement tolerated between two servers' clocks
 // The other one must have answered within this window to still count. Short on purpose: once the operator stops the

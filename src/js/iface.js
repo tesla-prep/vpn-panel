@@ -1,15 +1,3 @@
-/* iface.js — the interface page: one screen per (node, interface), and the sheets that manage it.
- *
- * LAYER 9 (see docs/APP-JS-SPLIT-PLAN.md). Near the top: it renders turn cards, peer grids, routing and
- * blocking policy, and opens the CRUD sheets.
- *
- * IfaceDetail is a DISPATCH, and that is the part worth preserving. It routes on what the interface
- * actually is — a WDTT server, an adoption candidate, a dormant one, or a plain wg/awg interface — and
- * each kind gets its own detail component. It keys off CONFIG PRESENCE rather than the interface name,
- * which is why it will survive the TUN-only WDTT: a fourth kind is a fourth branch here plus a kind in
- * model.js, not a rename hunt. See docs/APP-JS-SPLIT-PLAN.md §5.
- */
-
 import { T, Trich, Tsplit, plural, pluralWord, srvText, fmtNum } from "./i18n.js";
 import { esc, tkey, seen, dur, ago, fmtBytes, ipOf, ipChoices, portOf, listenAddr, ipPickerVal, V, agoAge, isMobile } from "./util.js";
 import { Store, api, bus, useStore } from "./store.js";
@@ -41,14 +29,7 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// ═════════════════════════ SCREEN: ADOPTION CANDIDATE ═════════════════════════
-// A wg/awg interface the node reported but the panel doesn't manage (Approach B). Stripped detail: facts +
-// Adopt / Ignore only. wdtt_hint ones steer to WDTT (coming soon) / Ignore — never wg/awg-adopt (would break the server).
-// Every interface the operator has dismissed, fleet-wide. Ignoring one is a deliberate "the panel doesn't manage
-// this" decision, so it does NOT belong on the node's interface grid dimmed at the bottom — that put a permanent
-// piece of clutter on the screen the operator looks at most, for interfaces they had already dealt with. This is
-// the single place they exist: a plain list, one action, and it disappears again the moment the node stops
-// reporting the interface. Adopting is the only way back — that IS the un-ignore.
+// SCREEN: ADOPTION CANDIDATE
 /* Adopt-sheet intro. The node NAME is a value the code supplies, so it rides in as a marker; the rest of
    the emphasis is the translator's, so it travels as *…* (see Trich in js/i18n.js). */
 /* The docker step names a compose KEY (swg-node → ports:) that must stay verbatim and monospace. */
@@ -107,9 +88,6 @@ export function IgnoredIfacesCard() {
   const rows = [];
   for (const n of (Store.nodes || [])) {
     for (const cd of (n.ignored_candidates || []))
-      // Store.ifaceIsSystem, NOT isSysName: that one is a local of the node screen, and calling it from here
-      // threw a ReferenceError on every render of this section — which is exactly why this card appeared to do
-      // nothing no matter what was ignored. (Same trap the turn-button comment above warns about.)
       if (cd && cd.name && !Store.ifaceIsSystem(n.id, cd.name) && !Store.ifaceMeta(n.id, cd.name))
         rows.push({ n, id: cd.name, name: cd.name,
                     info: (cd.wdtt_hint ? "WDTT" : (cd.address || "—")) + (candDialPort(cd) ? " · :" + candDialPort(cd) : ""),
@@ -150,9 +128,6 @@ export function CandidateIfaceDetail({ node, iface, cand, nrec, ignored, dorm, c
   useStore();
   const dname = nrec.name || node;
   const wd = !!cand.wdtt_hint;
-  // ALIEN vs ORPHAN is about an OWNER, not about containers: alien = something is running this and taking
-  // it over stops that first; orphan = nothing is running it, so there is nobody to stop. A dormant install
-  // is files on disk and can only ever be the latter.
   const alien = !dorm && (wd || !!ctr);
   const _adc = (nrec || {}).adopt_container;
   const _ctrPending = !!ctr && !!_adc && typeof _adc === "object" && _adc.container === ctr.container
@@ -163,9 +138,6 @@ export function CandidateIfaceDetail({ node, iface, cand, nrec, ignored, dorm, c
   const _named = (cand.peer_list || []).some(p => p && p.name);   // only widen the table when there IS a name
   const title = (dorm || ctr) ? cand.name : iface;   // addressed by a config dir / container key; show the name
   const ip0 = (cand.address || "").split("/")[0];
-  // Optimistic: the tag flips to "ignoring" on the click and we leave for the node page immediately, so the
-  // decision is visible where its result lands (the card) instead of the page sitting still through a round-trip
-  // and then vanishing. The request runs underneath; a failure puts the reason back on the card.
   const panelOp = (verb, call, okMsg, leave) => {
     const key = node + "|" + iface;
     Store.ifaceOp[key] = { verb, phase: "busy", started: Date.now() }; Store.apply();
@@ -183,11 +155,6 @@ export function CandidateIfaceDetail({ node, iface, cand, nrec, ignored, dorm, c
   };
   const doIgnore   = () => panelOp("ignore",   () => api.ifaceIgnore({ node, iface }),   T("Interface ignored — listed in Settings → Interfaces."), true);
   const doUnignore = () => panelOp("unignore", () => api.ifaceUnignore({ node, iface }), ctr ? T("Back on the node screen.") : T("Interface un-ignored — back as an adoption candidate."), false);
-  // Never disable Adopt: the sheet lets the operator pick a different type, and for WDTT it explains exactly why
-  // an identity-less server can't be taken over. A blocked action that says why beats a dead control.
-  // Same shape as a managed interface's page — head, "Interface details", "Peers on this interface" — so a
-  // candidate reads as the same kind of object, just not managed yet. Only those two sections: throughput,
-  // turn-proxies and peer management all describe things the panel doesn't run for it.
   return html`<div class="screen">
     <${NodeRail} active=${node}/>
     <div class="crumb"><a href="#/nodes">${T("col|Nodes")}</a><span class="sep">/</span><a href=${"#/node/" + encodeURIComponent(node)}>${dname}</a><span class="sep">/</span><b>${title}</b></div>
@@ -214,9 +181,6 @@ export function CandidateIfaceDetail({ node, iface, cand, nrec, ignored, dorm, c
 
     <${Panel} icon="key" title=${T("Interface details")} tone="orphan"
           actions=${Store.ifaceGone[node + "|" + iface]
-            // A teardown in flight lands HERE for a WDTT server: the panel drops its record at once, so this
-            // page (the candidate/orphan view) is what the router picks while the node still reports the
-            // device. Offering Adopt on the server being deleted is the detail-page half of the orphan flicker.
             ? html`<${StatusTag} cls="tg-del" icon="clock" label="deleting" title=${T("The node tears it down on its next sync")}/>`
             : Store.ifaceNew[node + "|" + iface]
             // Adopt already submitted, node has not reported it yet. Offering the buttons again invites a
@@ -316,26 +280,12 @@ export function CandidateIfaceDetail({ node, iface, cand, nrec, ignored, dorm, c
     <//>`}
   </div>`;
 }
-// The adopt modal: confirm/override the type (wg/awg → shows/hides AWG params), optionally tweak endpoint/port, then
-// adopt. Subnet is fixed (like Edit). Onboard adds it to the managed set (peers kept); edits go via the normal update
-// path afterwards. Existing-peer warning when the port/endpoint would change.
-// Adopting a DORMANT install: the identity and password store are on disk, but the runtime parameters only ever
-// existed in the process that isn't running — so the operator supplies them and the panel STARTS the server with
-// its original key. (Telling them to start it by hand would be odd advice from the one thing that can do it.)
-// Adopt a FOREIGN csqtt server the node found running. Far less to ask than a WDTT take-over: csqtt has no
-// server keypair — its whole credential is the password — so there is no identity to locate, nothing to vault,
-// and no way to break every client by minting a fresh key. What must survive is the password store, and the
-// node copies it, serves it through the hand-off, and offers each user up to become a roster peer.
 export function AdoptCsqttSheet({ node, c }) {
   useStore();
   const forks = enabledTurnForks().filter(f => f.kind === "csqtt");
   const [fork, setFork] = useState((forks[0] || {}).id || "csqtt");
   const [busy, setBusy] = useState(false);
   const n = (c.users || []).length;
-  // Did the node manage to READ its password store? Distinct from "it has none": an empty store is fine, but a
-  // store we could not reach means adopting drops every client this server has with nothing to re-issue from — so
-  // the promise below is withdrawn and the operator has to accept the loss instead of being told the opposite.
-  // Undefined = a node older than this signal, whose only working case was a local read; treat as read.
   const storeGone = c.store_found === false;
   // Which csqtt line it runs, so ours starts on the same one ("" = the node couldn't name it: the panel refuses the adopt).
   const lineUnknown = c.line === "";
@@ -381,23 +331,11 @@ export function AdoptDormantWdttSheet({ node, d, nrec }) {
   const forks = enabledTurnForks(d.fork).filter(f => f.kind === "wdtt");
   const [fork, setFork] = useState(d.fork || (forks[0] || {}).id || "amurcanov");
   const [iface, setIface] = useState(nextWdttName(node));
-  // Ports the node managed to recover (the unit's ExecStart, the fork's own store) are used as-is, so an
-  // adopted server comes back on the SAME ports its existing clients already dial.
-  // When NOTHING could be recovered, offer the WDTT DEFAULTS rather than the next free pair: this server was
-  // almost certainly on them, since every unpatched build compiles 56000/56001 in. That is the opposite of the
-  // CREATE form, which deliberately avoids the defaults — there a collision with an unmanaged server is the
-  // risk; here matching what its clients already dial is the whole point. If they are genuinely taken, the
-  // usual port validation says so and the operator picks.
   const [host, setHost] = useState("");
   const [dtls, setDtls] = useState(String(d.listen_port || WDTT_DEFAULT_DTLS));
   const [wgPort, setWgPort] = useState(String(d.wg_port || WDTT_DEFAULT_WG));
   const [subnet, setSubnet] = useState(suggestSubnet(node));
   const [busy, setBusy] = useState(false);
-  // One error for two fields put the internal-WG conflict under the DTLS box, so changing the port it named
-  // could never clear it. Validate each field on its own and show each message where it belongs.
-  // portErrMsg's second argument is a SKIP list, so passing dtls there exempts the very collision we care about
-  // — every other WDTT form checks the two against each other explicitly first. And a blank port is deliberately
-  // not portErrMsg's business, so without a required-check Adopt stayed enabled and posted "host:".
   const dtlsErr = !dtls.trim() ? T("The DTLS port is required.") : portErrMsg(node, dtls, []);
   const wgErr = !wgPort.trim() ? T("The internal WG port is required.")
     : (Number(wgPort) === Number(dtls)) ? T("The DTLS port and internal WG port must differ.")
@@ -443,14 +381,7 @@ export function AdoptDormantWdttSheet({ node, d, nrec }) {
     </div>
   <//>`;
 }
-// First free wdtt<N> name on this node — a dormant install has no interface, so we pick the name.
-// Upstream WDTT compiles these in and registers no flag to change them (verified against ildarmaga and
-// amurcanov builds), so they are what a foreign server is listening on unless something says otherwise.
 export const WDTT_DEFAULT_DTLS = 56000, WDTT_DEFAULT_WG = 56001;
-// ONE adopt flow for every interface type. The backends differ — wg/awg is "start managing this conf"
-// (ifaceOnboard, add-only, keys untouched), WDTT is a seeded create that reuses the foreign server's identity —
-// but to the operator it is a single act: adopt this interface, as this type. So the type pills stay put and
-// only the type-specific fields swap underneath; dispatch happens at Adopt, not by swapping the whole sheet.
 export function AdoptIfaceSheet({ node, iface, cand, nrec }) {
   useStore();
   const w = cand.wdtt || {};
@@ -505,9 +436,6 @@ export function AdoptIfaceSheet({ node, iface, cand, nrec }) {
     Store.ifaceNew[node + "|" + iface] = { at: Date.now() };   // flash "ready" once it appears as managed
     closeAllModals(); await Store.poll();
     toast(T("Adopting interface — the node will start managing it."), "ok");
-      // Stay on the NODE page: the optimistic "onboarding" card (Store.ifaceNew, set just above) lives there, and
-      // this interface's own page is still the ORPHAN view until the node reports it — landing on a screen that
-      // still offers Adopt/Ignore reads as though the click did nothing. The WDTT branch already stayed put.
       location.hash = "#/node/" + encodeURIComponent(node);
   };
   const blockMsg = (type === "wdtt" && needsIdentity)
@@ -525,9 +453,6 @@ export function AdoptIfaceSheet({ node, iface, cand, nrec }) {
     ${cand.peers ? html`<div class="notice warn"><${Ic} i="warn"/><span>${Trich("This interface has {count} existing. Changing the *listen port* or *endpoint* will break their current configs — you'd re-distribute the QR codes.", { count: plural(cand.peers, "peer") })}</span></div>` : null}
     <div class="field"><label>${T("Interface type")}</label>
       <div class="typepick">${[["wg", "WireGuard", "var(--online)"], ["awg", "AmneziaWG", "var(--brand)"], ["wdtt", "WDTT", WDTT_COLOR]]
-        // WDTT is offered ONLY where the node positively identified one — a server process on this interface, or
-        // an install on disk. Both signals are unambiguous, so there is nothing to "maybe" adopt as WDTT: without
-        // either the node refuses it anyway, and the option only invites a wrong answer.
         .filter(([id]) => id !== "wdtt" || wd).map(([id, label, col]) => html`
         <button type="button" key=${id} class=${"tp-opt" + (type === id ? " on" : "")} style=${"--tpc:" + col} onClick=${() => setType(id)}>${label}</button>`)}</div>
       ${(wd && type !== "wdtt") ? html`<div class="notice warn" style="margin:8px 0 0"><${Ic} i="warn"/><span>${Trich("A *WDTT server owns this interface* and manages its own peers. Adopting it as {type} leaves both the panel and that server writing the same peer list — it appears to work until they disagree. Adopt it as *WDTT* unless you know why you want this.", { type: type.toUpperCase() })}</span></div>` : null}
@@ -590,27 +515,14 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   // WDTT owns its interface (reported in snap.wdtt, not describe) → a dedicated detail (server info + users),
   // not the wg/awg config view. Keyed off the read-back so it's never mistaken for a missing/ghost wg iface.
   const _wInst = ((Store.stats[node] || {}).wdtt || []).find(w => w && w.iface === iface);
-  // A WDTT server the panel still WANTS but the node no longer reports (rebuilt box, or a node running a build
-  // without WDTT support) has no snapshot entry at all — without this it fell through to the wg/awg views and
-  // showed up as a ghost interface, or as nothing. Route it here on the desired config alone; WdttIfaceDetail
-  // already falls back to cfg for every field, and `missing` puts it in the restore-or-recreate state.
   const _wCfg = !_wInst && ((nrec.wdtt_cfg || {})[iface] || null);
   if (_wInst || _wCfg) return html`<${WdttIfaceDetail} node=${node} iface=${iface} w=${_wInst || { iface }} nrec=${nrec} missing=${!_wInst}/>`;
-  // csqtt owns its interface the same way (reported in snap.csqtt, absent from describe), so it takes the same
-  // detail rather than falling through to the wg/awg view — where it read as "hasn't been reported in a
-  // snapshot yet" for a server that was reporting hundreds of megabytes.
   const _cInst = ((Store.stats[node] || {}).csqtt || []).find(c => c && c.iface === iface);
   const _cCfg = !_cInst && ((nrec.csqtt_cfg || {})[iface] || null);
   if (_cInst || _cCfg) return html`<${WdttIfaceDetail} node=${node} iface=${iface} w=${_cInst || { iface }} nrec=${nrec} missing=${!_cInst} kind="csqtt"/>`;
-  // A DORMANT WDTT install has no interface at all — no device, no socket, no process — so it has no interface
-  // NAME to be routed by. It is identified by its config dir, which url-encodes into this same slot (a path has
-  // no bare "/" once encoded). Its users can run to dozens, which is why they get a screen and not a modal.
   if (iface.startsWith("/")) {
     const _dorm = (nrec.wdtt_dormant || []).find(x => x && x.config_dir === iface)
               || (nrec.ignored_dormant || []).find(x => x && x.config_dir === iface);
-    // Shaped as a CANDIDATE so it lands on the SAME screen: the head, the details panel, Ignore/Adopt and the
-    // user grid are already there and behave identically — a stopped install is the same decision as a running
-    // orphan, minus a running interface.
     if (_dorm) return html`<${CandidateIfaceDetail} node=${node} iface=${iface} nrec=${nrec} dorm=${_dorm}
       ignored=${(nrec.ignored_dormant || []).some(x => x && x.config_dir === iface)}
       cand=${{ name: (_dorm.config_dir || "").split("/").filter(Boolean).pop() || "wdtt", wdtt_hint: true,
@@ -659,9 +571,6 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   const idown = !istopped && istate.down;   // genuinely down (failed to come up)
   const notup = !!idown || istopped;        // either way: offer Start + Edit
   const op = Store.ifaceOp[node + "|" + iface];   // start/stop/restart lifecycle (busy/ok/fail flash)
-  // AmneziaWG params split into the four header columns: J* under Endpoint, S* under Server
-  // address, H* under DNS, and I* (+ anything else) under MTU. The 3.x keys are not "anything else" — HeaderProtectionKey
-  // is no H column entry — they have their own row below (Awg3Row, docs/AWG3-PLAN.md §7.5).
   const ap = (meta && meta.awg_params) || (missIf && missIf.awg_params) || {};
   // …and where the record is the whole set (`awg_exact`), a 2.0 field it lacks is NONE — said, faintly, in its column
   const apNone = meta && meta.awg_exact ? AWG_ORDER.filter(k => !AWG3_KEYS.includes(k) && ap[k] == null) : [];
@@ -772,13 +681,6 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   </div>`;
 }
 
-// A WDTT interface's detail page: the self-contained server (info + lifecycle) + its users (the shared PeerGrid).
-// One record — the server's turn-half is edited from its Turn-proxies card; here we manage the interface + peers.
-// A turn-family server the node still holds that this panel has no record of. Confirming rather than acting
-// straight away, because the operator needs two facts before they can judge it: how many users are in its
-// store (they are kept, and that is the whole reason not to just delete it and start again), and which
-// subnet it will come back on — the reported one can be unusable, since a server installed long ago may sit
-// on a range something else in the fleet has taken since, and mesh routes by subnet.
 export function ReclaimSheet({ node, iface, w, family, onBusy }) {
   const isCsq = family === "csqtt";
   const reported = (isCsq ? w.tun_addr : w.wg_addr) || "";
@@ -822,29 +724,15 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
   const live = Store.recon.nodeStatus[node] === "live";
   const blocked = !live || inProc(nrec.proc_status);
   const cfg = (isCsq ? (nrec.csqtt_cfg || {}) : (nrec.wdtt_cfg || {}))[iface] || {};
-  // The node says it holds this server and that THIS panel does not claim it (see swg-noded's _CLAIMED).
-  // Older nodes never send the flag; fall back to "we hold no record", which is the same fact seen from
-  // this side — the flag exists because only the node can tell that apart from a report we simply lost.
   const unclaimed = w ? (w.unclaimed === true || (w.unclaimed === undefined && !Object.keys(cfg).length)) : false;
   const [reclaiming, setReclaiming] = useState(false);
   const reclaim = () => pushModal(html`<${ReclaimSheet} node=${node} iface=${iface} w=${w}
     family=${isCsq ? "csqtt" : "wdtt"} onBusy=${setReclaiming}/>`);
   const fork = w.fork || cfg.fork || (isCsq ? "csqtt" : "amurcanov");
   const active = w.active === "active";
-  // `missing` = the node doesn't report this server at all. Treat it exactly like await_restore: the identity is
-  // escrowed, so offer Restore (or Recreate fresh) and keep every other control off — there is nothing running
-  // to start, stop or edit.
-  // A take-over in flight writes the instance into wdtt_cfg at once, while the node has not reported it yet —
-  // which reads exactly like "gone from the box". So this page offered Restore / Recreate fresh for a server
-  // being ADOPTED, and "Recreate fresh" there would mint a new key and break the very clients the adoption
-  // exists to keep. `adopting` therefore wins over `missing`, and stands down every lifecycle control until
-  // the node reports the result.
   const adopting = ((isCsq ? nrec.csqtt_adopting : nrec.wdtt_adopting) || []).includes(iface);   // a csqtt take-over too: same window
   const awaiting = !adopting && (!!w.await_restore || !!missing);
   const stopped = !!cfg.stopped;
-  // The node REFUSED to install this one (no binary for the fork, bad params) — it never existed, so there is
-  // no identity to restore, nothing to recreate, and nothing to stop or restart. Its only honest actions are
-  // reading the reason and removing it.
   const failErr = (nrec.cmd_errors || {})[iface] || "";
   const never = !adopting && !!missing && !!failErr && !((nrec.wdtt_vault || {})[iface]);   // a take-over's failure is not "never created"
   // csqtt derives every client credential from the panel-owned password — there is no server keypair to escrow,
@@ -891,11 +779,6 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
           // Take-over in flight: Stop/Restart/Edit/Delete would all act on a server that is being replaced.
           ? html`<${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|adopting")} title=${T("The node applies the take-over on its next sync")}/>`
           : unclaimed
-          // ⚠️ OWNERLESS: the node still holds this server, this panel has no record of it, and so nothing
-          // will ever start it — a node runs only what the panel desires. Offering Start here was worse than
-          // useless: with no record to submit, it posted an empty instance and came back "wg_addr must be an
-          // IPv4 CIDR", which reads as a corrupt server rather than a missing record. Reclaim writes the
-          // record from what the node reports, keeping the users already in its store.
           ? html`<button class="btn btn-mini btn-primary" disabled=${blocked || reclaiming} onClick=${reclaim}
               title=${T("Take this server back under the panel, keeping the users in its store")}><${Ic} i="check"/>${
               reclaiming ? T("Reclaiming…") : T("Reclaim")}</button>`
@@ -941,11 +824,6 @@ export function OrphanRow({ o }) {
     </td></tr>`;
 }
 
-// Edit an interface: the Endpoint IP (what clients dial — config-facing only) and the Listen
-// port (pushed to the node's wgXX.conf — the interface rebinds to it; peers are untouched and
-// reconnect via the new port). Default DNS / MTU seed new peers. Interface key shown read-only.
-// Ask the node to manage an existing wg/awg interface the panel didn't auto-detect. The node only
-// needs the tool (wg/awg) + the .conf path; the public endpoint is a panel-side render override.
 export function openOnboardIface(node) { openModal(html`<${LoadIfaceSheet} node=${node}/>`); }
 export function BridgePortSheet({ iface, port }) {   // shown after creating an iface on a bridge docker node
   const p = port || "PORT";
@@ -957,19 +835,9 @@ export function BridgePortSheet({ iface, port }) {   // shown after creating an 
   <//>`;
 }
 
-// Two-dropdown egress: where an interface's traffic exits — Auto, Direct out a NIC, or Forward (cascade)
-// to another node — plus the source IP (this node's, or the TARGET node's for forward). value =
-// {mode:"auto"|"direct"|"forward", nic, node, ip}; the routing for "forward" is wired in Phase 2.
-
-
-
 // ═════════════════════════ AmneziaWG 3.1 (docs/AWG3-PLAN.md §7.7) ═════════════════════════
 // The 3.x keys — the tail of AWG_ORDER, the SPA's one list, never a second copy of it.
 const AWG3_KEYS = AWG_ORDER.slice(AWG_ORDER.indexOf("HeaderProtectionKey"));
-// An interface's 3.x keys on its page (§7.5): the four columns and the pairs the Edit sheet and Settings draw (AWG3_EDIT_COLS),
-// under the same caption, written the way the 2.0 columns above them are (key=value); the 44-character HeaderProtectionKey
-// never printed — it reads set. A DisableCookies the panel never writes (an onboarded interface) joins the first column.
-// Nothing at all for a dict without a 3.x key.
 function Awg3Row({ ap }) {
   const has = k => String((ap || {})[k] ?? "").trim() !== "";
   if (!AWG3_KEYS.some(has)) return null;
@@ -981,14 +849,7 @@ function Awg3Row({ ap }) {
     ${cols.map(g => html`<div class="ig-item"><span class="ig-v">${g.length ? g : "—"}</span></div>`)}
   </div>`;
 }
-// The 3.1 set as a fifth group of AWG cells, drawn by the Edit sheet (an interface's own values) and by Settings (the defaults a
-// 3.1 create or switch takes). HeaderProtectionKey and RandomTrailers are never typed — `hpk` / `rt` are what they read, in
-// read-only inputs so they sit in the same box as their neighbours, and `hpkTip` / `rtTip` say why — and the six the panel
-// checks are cells. `placeholders` only where given: Preact writes a null placeholder as placeholder="".
 export const AWG3_EDIT_COLS = [["ContentPaddingAddition", "MaxHandshakeAttempts"], ["RekeyAfterTime", "RekeyTimeout"], ["RejectAfterTime", "KeepaliveTimeout"]];   // i18n-keys: conf key names, as the conf spells them
-// An AmneziaWG field set to none (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md A7): "-" typed in a cell — no such line. Stored as "-" in
-// the templates (Settings), sent as "-" by the Edit sheet (the panel removes the key). The panel checks the rules; these mirror
-// the two an operator meets while typing, for the line under the grid (its sentence, not a second rule set).
 export const awgIsNone = v => String(v == null ? "" : v).trim() === "-";
 // The 2.0 grid's four columns (J / S / H / I), drawn by the Edit sheet and by Settings' templates.
 export const AWG_COLS = [["Jc", "Jmin", "Jmax"], ["S1", "S2", "S3", "S4"], ["H1", "H2", "H3", "H4"], ["I1", "I2", "I3", "I4", "I5"]];   // i18n-keys: conf key names, as the conf spells them
@@ -1017,13 +878,6 @@ const awgLowS = d => ["S1", "S2", "S3", "S4"].some(k => { const v = String((d ||
 // The one sentence that says which apps carry 3.1 (docs/AWG3-PLAN.md §3) — in the switch window, where the switch is confirmed,
 // and under the switch in the create form, which has no switch window.
 const awg3Apps = () => T("Only apps that carry AmneziaWG 3.1 can connect: Amnezia VPN 5.0.1.5 or newer, AmneziaWG from the App Store or from GitHub (not the Google Play build), WG Tunnel 5.6 or newer. WINGS V, Keenetic and MikroTik cannot.");
-// The AmneziaWG version switch — the create form, the Edit sheet, and Settings' preset for new interfaces (`label`, `hint`).
-// `no3` / `no2` are the panel's own reason a switch that way would be refused here (its sentence, never the rule re-derived),
-// which greys that side and is said under it. `was` (the Edit sheet: the saved version) keeps it quiet until the version is being
-// changed — an Edit sheet opened for anything else does not explain AmneziaWG versions every time.
-// "Load now" (docs/AWG31-LOAD-PLAN.md D5): under the switch of a node where an update installed AmneziaWG 3.1 but the kernel
-// module in use is older — the button, then "loading…" until the node answers that press, then its result for an hour. The
-// panel decides it can be offered (`awg31_loadable`) and words the result (`awg_load.msg`); nothing is re-derived here.
 export function AwgLoadLine({ node, nrec }) {
   const st = (nrec || {}).awg_load || null;
   const name = (nrec || {}).name || node;
@@ -1040,9 +894,6 @@ export function AwgLoadLine({ node, nrec }) {
 export function AwgGenField({ value, onChange, no3, no2, label, hint, was, node, nrec }) {
   label = label || T("AmneziaWG version");
   const why = value === "3.1" ? no2 : no3;
-  // ⚠️ THE CREATE FORM NAMES THE APPS (`was == null`: nothing saved yet). The Edit sheet stays quiet on 3.1 because the switch
-  // window it opens names them (the operator's request, GUI review round 1); the create form has no such window, so a new 3.1
-  // interface would otherwise be made with no word that WINGS V, Keenetic, MikroTik and the Google Play build cannot connect.
   const say = why || hint || ((was == null || value !== was)
     ? (value === "3.1" ? (was == null ? awg3Apps() : "") : T("Every AmneziaWG app can connect.")) : "");
   return html`<div class="field awggen"><label>${label}</label>
@@ -1074,11 +925,6 @@ function AwgDevicesSheet({ node, iface }) {
     <${ListPager} page=${pg} setPage=${setPage} total=${rows.length}/>
   <//>`;
 }
-// What a 2.0 ⇄ 3.1 switch does to everyone on the interface — said BEFORE it happens, never as a toast. Header protection and
-// random trailers are per device, so every client of the interface moves together: the window counts devices per deployment
-// here ("of U users"), names the network gateways first (the clients least able to follow — a typed name confirms), names each
-// turn proxy whose app cannot carry 3.1 (the panel refuses the switch while one points here) and says what follows by itself.
-// The request is sent from here and the window stays until the panel answers, so a refusal is read where the choice was made.
 const GW_SHOWN = 5;   // gateways named in the switch window; the rest are counted, and listed in the device window
 function AwgSwitchSheet({ node, iface, to, commit, sent }) {
   useStore();
@@ -1140,9 +986,6 @@ function AwgSwitchSheet({ node, iface, to, commit, sent }) {
 }
 const awgTail = " · AWG";   // i18n-keys: a protocol acronym, appended to the already-translated summary
 const natTail = " · NAT";   // …and the NAT source card, which now lives in the same section
-/* The disguise of an AmneziaWG interface (docs/AWG-MIMICRY-PLAN.md §3.1, §5) — what mimicOf reads from I1–I5, as the picker
-   names it, as the Advanced summary names it, and what a failed mimicCheck means. One function per key: a key a ternary picks
-   is never a key (memory i18n-bare-gate). */
 const MIMIC_NAME = { off: () => T("mimic|Off"), quic: () => "QUIC (HTTP/3)", dns: () => T("DNS query"),   // i18n-keys: a protocol name
   builtin: () => T("Built-in"), custom: () => T("mimic|Custom") };
 const MIMIC_TAIL = { off: () => T("disguise: off"), quic: () => T("disguise: QUIC"), dns: () => T("disguise: DNS"),
@@ -1200,26 +1043,12 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
   const _defProto = (pre && pre.proto) || "awg";
   const [proto, setProto] = useState(_defProto);   // wg | awg | wdtt | existing
   const sugAwg = suggestIface(node, "awg"), sugWg = suggestIface(node, "wg");   // auto-suggested names (per base)
-  // WDTT name + subnet suggestions (next free wdttN + a free 10.66.N.1/24, avoiding other WDTT instances).
-  // Ports use the SHARED suggestPort() — WDTT instances are now counted in usedPortsOn(), so a 2nd wdtt on the
-  // node never clashes on its DTLS listen or its internal wg-port (nor with any interface / turn-proxy).
-  // nextWdttName(), NOT a local scan of snap.wdtt: the readback only lists servers the node is already RUNNING,
-  // so while one is still being created this handed out its name a second time — and /api/wdtt/set is an upsert,
-  // so creating a second WDTT back-to-back silently overwrote the first ("the second one never appears"). The
-  // ports and subnet below never had the bug because they use the shared suggestPort/suggestSubnet, which
-  // already count the desired set and the in-flight ones; the name had a bespoke copy that did not.
   const sugWdtt = nextWdttName(node);
   const sugWdttNet = suggestSubnet(node);   // WDTT takes the SAME subnet form as wg/awg (10.X.0.0/24, fleet-unique); the server .1 is derived on save
   const sugWdttListen = suggestPort(node, "turn");                        // external DTLS (turn-proxy family)
   const sugWdttWg = suggestPort(node, "turn", [sugWdttListen]);           // internal userspace-WG port (≠ the listen)
   const [iface, setIface] = useState((pre && pre.iface) || (_defProto === "wdtt" ? sugWdtt : _defProto === "awg" ? sugAwg : sugWg)); const [subnet, setSubnet] = useState((pre && pre.subnet) || ((pre && pre.proto) === "wdtt" ? sugWdttNet : suggestSubnet(node)));
-  // `pre.port` — a RECREATE knows the port the interface actually had; only a fresh create should be handed a
-  // suggestion. Without this the sheet ignored what openRecreateRekey passed and offered the next free port,
-  // so an interface that had lived on 443 came back on 51821 and every client needed a new endpoint anyway.
   const [host, setHost] = useState(""); const [port, setPort] = useState(String((pre && pre.port) || ((pre && pre.proto) === "wdtt" ? sugWdttListen : suggestPort(node, "iface"))));
-  // WDTT server forks the operator has enabled. A fork with no PUBLISHED build has nothing for a node to
-  // install, so it is offered but not selectable — visible (it exists, and a build may land) with the reason
-  // attached, instead of silently creating a server that can never come up.
   const _wdttForks = enabledTurnForks().filter(f => f.kind === "wdtt");
   const _forkBuildable = f => (f.wdtt_versions || []).length > 0;
   const [wgPort, setWgPort] = useState(String(sugWdttWg)); const [fork, setFork] = useState(((_wdttForks.find(f => (f.wdtt_versions || []).length) || _wdttForks[0] || {}).id) || "amurcanov");   // WDTT: internal userspace-WG port + which server fork (default = first enabled one that has a build)
@@ -1227,9 +1056,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
   // nothing to create) — if every WDTT fork is disabled in Settings, don't offer the WDTT protocol at all.
   const wdttOk = turnEnabled() && nrec.turn_manage && nrec.turn_arch_ok !== false && enabledTurnForks().some(f => f.kind === "wdtt");
   const isWdtt = proto === "wdtt";
-  // csqtt — a SELF-CONTAINED raw-IP TUN server, created as its own interface exactly like WDTT (peers target it).
-  // Same gate (turn-managed node + csqtt enabled). It takes a subnet like wg/awg (server .1 derived), a UDP DTLS
-  // listen, and a password cap — but NO fork (single binary) and NO internal WG port (raw TUN, no WireGuard).
   const sugCsqtt = nextCsqttName(node);
   const sugCsqttNet = suggestSubnet(node);
   const sugCsqttListen = suggestPort(node, "turn");
@@ -1242,9 +1068,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
   const [cline, setCline] = useState(CSQTT_DEFAULT_LINE);   // csqtt version — new servers start on 2.1 (docs/CSQTT-LINES-PLAN.md §8)
   const isCsqtt = proto === "csqtt";
   const _idf = (Store.panelSettings || {}).interface_defaults || {};   // panel-wide new-interface defaults
-  // `pre.dns` / `pre.keepalive` — a RECREATE knows what the interface was serving; only a fresh create takes
-  // the panel-wide default. The sheet posts all three unconditionally, so an unseeded field is not a blank
-  // the server ignores, it is the default overwriting what the operator chose. See openRecreateRekey.
   const [dns, setDns] = useState(pre && pre.dns != null ? pre.dns : (_idf.dns || ["1.1.1.1"]).join(", ")); const [mtu, setMtu] = useState(String((pre && pre.mtu) || _idf.mtu || 1280)); const [ka, setKa] = useState(String(pre && pre.keepalive != null ? pre.keepalive : (_idf.keepalive || 25)));
   const [reach, setReach] = useState((pre && pre.reach) || _idf.reach || "user");   // device access (§10.6): a recreate keeps the level it had (§11.2 F1); a fresh create takes the panel-wide default
   // A recreate starts with the saved version; a fresh create uses the panel default when the node supports it.
@@ -1255,9 +1078,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
     : no31 ? "2.0" : _idf.awg_gen || DEFAULT_AWG_GEN);
   const [conf, setConf] = useState("");
   const ips = ipChoices(nrec);
-  // No creation seed: a new interface starts on AUTO and INHERITS the node's default exit live, exactly as
-  // a blank egress IP already inherits the node's default IP. Nothing is copied at creation, so nothing can
-  // go stale, and changing the node default moves every interface that never made its own choice.
   const [eg, setEg] = useState(() => egressInit({}));
   const [blk, setBlk] = useState(() => defaultBlockFor(node));   // Filters & abuse — seeded from each category's default_on once the catalog loads
   const blkSeeded = useRef(false);
@@ -1288,9 +1108,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
     setProto(p);
   };
   const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false);
-  // "Adopt existing" is a MODE, not a protocol: the same wg/awg/wdtt row above chooses the type either way.
-  // As a fourth chip it forced a second identical type row underneath — the same three names twice, in two
-  // different styles, one of them meaning something else.
   const [adoptMode, setAdoptMode] = useState(false);
   const existing = adoptMode;
   // Adopting BY PATH — the same choice the adopt sheet offers, because it is the same decision: what is this
@@ -1299,18 +1116,7 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
   const fail = t => { setBusy(false); setMsg({ k: "err", t }); };
   const save = async () => {
     setBusy(true); setMsg({ k: "work", t: T("requesting…") });
-    /* ONE GATE FOR EVERY BRANCH THAT SHIPS ROUTING. wdtt, csqtt and wg/awg all spread `egressBody(eg)` into
-       their create call; only the adopt branch (`existing`) ships none, which is why the foot's `disabled`
-       carries the same `!existing` — the two now say it in the same words. This check used to live INSIDE
-       the wg/awg branch, so its two neighbours rested entirely on the button being disabled: one edit to
-       that expression, or a fifth branch added below, and a wdtt/csqtt create would have shipped the rules
-       as they stood BEFORE the operator's unapplied text, silently. Before the vault prompt on purpose —
-       a save that is about to be refused should not ask for a passphrase first. */
     if (!existing) { const ee = egressSaveBlock(eg, nrec.routing_mode || "kernel"); if (ee) return fail(ee); }
-    // Recreating a ghost rekeys its peers in the background once the fresh interface returns — the ONE moment the
-    // browser holds each new private key. Unlock the vault UP FRONT so those fresh configs are captured as they're
-    // rekeyed (re-viewable in the panel + served on subscription pages) instead of being lost on the next reload.
-    // Proceed either way: if the operator skips, the prompt has already spelled out that the peers will be stranded.
     if (ghost && !existing && Store.storeMode === "encrypted" && (ghost.peers || []).length && !subSKCached()) {
       const n = ghost.peers.length;
       await ensureVaultUnlocked({
@@ -1323,10 +1129,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
     let r;
     if (existing) {
       if (proto === "wdtt") {
-        // Hand the typed directory to the SAME sheet a discovered dormant install opens: it owns the fork,
-        // name, ports and subnet this adoption needs, and posts /api/wdtt/adopt (adopt_config_dir), which is
-        // the path that actually seeds a WDTT take-over. The old form posted ifaceOnboard — the wg/awg
-        // endpoint — so typing a WDTT directory here never completed an adoption in the first place.
         const c = conf.trim();
         if (!c.startsWith("/")) return fail(T("Enter the absolute path to the server's config directory (the one holding wg-keys.dat)."));
         setBusy(false); closeModal();
@@ -1347,9 +1149,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
       const _ne = turnIfaceNameError(node, nm, "wdtt"); if (_ne) return fail(_ne);
       if (!/^\d{1,3}(\.\d{1,3}){3}\/\d{1,2}$/.test(subnet.trim())) return fail(T("Enter the tunnel subnet as CIDR, e.g. 10.8.0.0/24."));
       if (wgPort.trim() && !/^\d+$/.test(wgPort.trim())) return fail(T("Internal WG port must be a number."));
-      // Endpoint host/IP + Listen port = the turn-proxy (DTLS) side → compose the WDTT server's -listen from them
-      // (blank host → 0.0.0.0, all interfaces). The interface side binds 127.0.0.1:<internal wg port>, not shown.
-      // The form takes the SUBNET (10.8.0.0/24) like wg/awg; the server lives on the first host (.1) — derive it here.
       const _dtlsHost = ipPickerVal(hostSel, hostCustom).trim() || "0.0.0.0";
       r = await api.wdttSet({ node, iface: nm, wg_addr: subnetServerAddr(subnet.trim()), listen: _dtlsHost + ":" + (port.trim() || "56000"),
         wg_port: wgPort.trim() || "56001", fork, block: blk, reach, ...(pin ? { bind_ip: pin } : {}), ...egressBody(eg) });   // carry the routing mode + filters chosen at create time (same as edit)
@@ -1393,11 +1192,6 @@ export function LoadIfaceSheet({ node, pre, ghost, back }) {
   // subnets must be UNIQUE across the fleet (the mesh routes by subnet) → warn + block Save on a duplicate. Skip
   // for onboarding (the node reports its own subnet) and for a ghost recreate (same iface, its subnet is expected).
   const _subConflict = (!existing && !ghost && subnet.trim()) ? subnetFleetConflict(subnet.trim(), null, null) : null;
-  // The NAME had no collision check at all — only the suggestion avoided taken names, so anything typed (or a
-  // name reused deliberately) went straight through. The costly case is an UNMANAGED server already holding it:
-  // upstream WDTT compiles in "wdtt0", so creating our own wdtt0 beside one leaves two servers fighting over the
-  // interface — ours bound to its port while the device carries the foreign subnet, and neither serving.
-  // Skipped for adopt (`existing`, keyed by conf path) and for a ghost recreate, which reuses its name by design.
   const _nameTaken = (!existing && !ghost && iface.trim()) ? (() => { const nm = iface.trim();
     if ((Store.describe[node] || {})[nm] || (nrec.wdtt_cfg || {})[nm] || (nrec.csqtt_cfg || {})[nm]
         || ((Store.stats[node] || {}).wdtt || []).some(w => w && w.iface === nm)
@@ -1556,19 +1350,6 @@ export async function startOrRestartIface(node, iface, verb) {
 }
 export function openEditIface(node, iface) { openModal(html`<${EditIfaceSheet} node=${node} iface=${iface}/>`); }
 
-/** Open the RIGHT editor for an interface whose KIND the caller does not know.
- *
- * ⚠️ THREE KINDS, THREE SHEETS, and `openEditIface` is only one of them. A csqtt or WDTT server owns its own
- * raw-IP/userspace tunnel and its settings live under the node's `csqtt`/`wdtt` map, not under `ifaces` — so
- * the WireGuard sheet opened on one finds nothing: no tunnel IP (it renders "—"), an empty external port,
- * and an egress mode of "Auto (MASQUERADE)" for a server that is stored as `smart` with rules. Nothing is
- * broken on the node; the editor is simply reading the wrong half of the record, and Save would then write
- * that emptiness back.
- *
- * Reported from the Routing-lists screen, whose interface chips open "the interface that asked for this
- * list" and could not know which kind it was. The two pages that DO know (the WG interface detail and
- * WdttIfaceDetail) dispatch inline and are unaffected; this exists for every caller that does not.
- */
 export function openIfaceEditor(node, iface) {
   const k = iTypeOf(node, iface);
   if (k === "csqtt") return openEditCsqtt(node, iface);
@@ -1629,12 +1410,6 @@ export function AwgGrid({ value, onChange, readOnly, placeholders, omit }) {
     ? html`<p class=${"hint awg-omit-hint" + (issue ? " err" : "")}>${issue || omit}</p>` : null}`;
 }
 
-/* The mesh AWG params, in Settings → Mesh (the fleet's default) and on a link's sheet (its own), drawn for the TYPE selected there (`eff`, the
-   draft — so it follows the switch before a Save): WG — no block at all; AWG 2.0 — the 2.0 grid; AWG 3.1 — the 2.0 grid and the
-   six 3.1 fields a 3.1 link takes (plan §8 round 11; a blank cell takes the next layer down, shown as its background text,
-   `ph3`). Values the template holds for fields the type does not use are kept, and one line says so (operator, 2026-10-06:
-   show only what the selected type uses). Generate MERGES: it draws the 2.0 set and, for 3.1, fills the 3.1 cells with what
-   they inherit — it never drops a field it does not draw. */
 export function MeshAwgParams({ title, eff, value, onChange, placeholders, about, ph3 }) {
   const v = value || {};
   const set2 = AWG_KEYS.some(k => String(v[k] ?? "").trim() !== ""), set3 = AWG3_EDIT_COLS.flat().some(k => String(v[k] ?? "").trim() !== "");
@@ -1675,9 +1450,6 @@ export function meshAwgHints(live, gen) {
   return Object.fromEntries(AWG_KEYS.map(k => [k, awgIsNone(pt[k]) ? T("val|none")
     : String(pt[k] ?? "").trim() || String(live[k] ?? "").trim() || hints[k]]));
 }
-/** A mesh link type switch (docs/AWG-OMIT-AND-MESH-GEN-PLAN.md B1, §8 round 12): AmneziaWG 2.0, 3.1 or plain WireGuard — the
- *  fleet's default in Settings → Mesh, and one link's own on its connection sheet, where `inherit` (the default) adds a
- *  "Default (…)" button, "" in the draft. Each type in its protocol's own colour. The server decides what a link can be. */
 export function MeshGenField({ value, onChange, inherit, hint, label, after }) {
   const opts = [...(inherit ? [["", T("Default ({v1})", { v1: meshGenLabel(inherit) })]] : []), ...["wg", "2.0", "3.1"].map(g => [g, meshGenLabel(g)])];
   const eff = value || inherit || DEFAULT_AWG_GEN;
@@ -1704,11 +1476,6 @@ export function ConnectionEditSheet({ node, iface }) {
   const [dialEp, setDialEp] = useState(meta.dial_endpoint || "");
   const relayOn0 = ((meta.relay || {}).mode || "forward") === "relay";
   const quota0 = String(((nrec.relay || {}).quota_pct) || 50);
-  // ⚠️ FOLLOW THE SERVER UNTIL THE OPERATOR TOUCHES IT — do not seed useState from the store and freeze.
-  // The sheet can mount before /api/state has landed, and a frozen seed then shows "Forward" for the life
-  // of the sheet on a link that is relaying: a control that lies about the current state is worse than no
-  // control. `null` means "not touched", so a later poll corrects the display; once touched, the operator's
-  // choice owns it and polling can no longer clobber it (the same rule as every other live-updating editor).
   const [relayPick, setRelayPick] = useState(null);
   const [quotaPick, setQuotaPick] = useState(null);
   const relayOn = relayPick === null ? relayOn0 : relayPick;
@@ -1745,9 +1512,6 @@ export function ConnectionEditSheet({ node, iface }) {
     closeModal();
     Store.poll().catch(() => {});
   };
-  // ⚠️ 90, not 100. The relay is a single event loop, so one core is its structural ceiling anyway; what
-  // 100 would mean on a 1-vCPU node is "the relay may have the whole machine". CPUQuota is the only hard
-  // reservation in the design, so the last tenth of a core is not the operator's to give away.
   const QUOTA_MAX = 90;
   const quotaErr = (() => { const q = Number(quota); return (!Number.isInteger(q) || q < 5 || q > QUOTA_MAX) ? T("CPU cap must be between {v1} and {v2}", { v1: "5", v2: String(QUOTA_MAX) }) : ""; })();
   const connDirty = dialSrc !== (meta.dial_src || "") || dialEp !== (meta.dial_endpoint || "")
@@ -1761,9 +1525,6 @@ export function ConnectionEditSheet({ node, iface }) {
   const _listTitle = Object.fromEntries((Store.panelSettings?.custom_lists || []).map(l => [l.id, l.title]));
   const smartCarried = Object.keys(allMeta).filter(k => !allMeta[k].system && allMeta[k].egress_mode === "smart")
     .map(k => ({ iface: k, cats: (allMeta[k].routing || []).filter(r => r.action === "exit" && r.node === peer)
-      // A custom rule is said the way its BADGES say it, not by joining two of the four arrays it can hold:
-      // that left out `asns` and `patterns` (a rule carrying only `*.ru` read as the word "custom") and
-      // printed punycode where the field shows the name the operator typed. One display path, one answer.
       .map(r => r.category === "custom"
         ? ((rulesToRows([r]).rows[0] || {}).badges || []).map(b => targetLabel(b.kind, b.value)).join(", ") || "custom"
         : (SMART_CAT_LABEL[r.category] || _listTitle[r.category] || r.category)) }))
@@ -1784,10 +1545,6 @@ export function ConnectionEditSheet({ node, iface }) {
         ${Cell(T("col|Rate"), rateCell(meta.rx_speed, meta.tx_speed))}
         ${meta.rx_bytes != null || meta.tx_bytes != null ? Cell(T("col|Total"), xferCell(...dlul(meta.rx_bytes, meta.tx_bytes))) : null}
         ${Cell(T("col|Latency"), (() => {
-          // Same reading, same rendering, same bubble as this link's card on the node page — this sheet is
-          // where an operator decides what to do about a leg, so it should not be the one place that shows
-          // only whether it handshook. The handshake age it replaces already drives the status pill at the
-          // top of this card, so nothing is lost.
           const _lk = meta.link;
           if (!_lk || _lk.rtt_ms == null) return "—";
           const _ls = typeof _lk.loss === "number" ? _lk.loss : null;
@@ -1822,47 +1579,19 @@ export function ConnectionEditSheet({ node, iface }) {
       <div class="hint" style="margin-top:16px">${Trich("These interfaces' client traffic exits the fleet through *{node}*{smart}.", { node: Store.nodeName(peer), smart: smartCarried.length ? T(" — smart-routed by destination") : "" })}</div>
     </div>` : null}
     ${(() => {
-      // ── Datapath for this leg (RELAY-FEATURE-PLAN §4) ────────────────────────────────────────────────
-      // The mode is the operator's INTENT; the line under it is what the node is actually doing. Those are
-      // not the same thing and the difference is the whole point of the control: the node arms the divert
-      // only while it has just re-proven the relay is serving, and drops it otherwise. A switch that showed
-      // only its own position would be the one thing this feature must never ship.
+      // Datapath for this leg (RELAY-FEATURE-PLAN §4)
       const rst = ((Store.stats[node] || {}).relay) || {};
-      // Keyed by relay INSTANCE (`<iface>` for a whole-interface cascade, `<iface>.<peer>` for one leg of
-      // a smart one), which is also the key the node reports each leg's health under — so `rst.ifaces[k]`
-      // needs no translation. `mark` is what separates the two kinds: 0 is the whole interface.
       const elig = Object.entries(((nrec.relay || {}).eligibility) || {}).filter(([, e]) => e.via === peer);
       const canRelay = elig.filter(([, e]) => !e.why).map(([k]) => k);
       const barred = elig.filter(([, e]) => e.why);
       const smartLegs = elig.filter(([, e]) => !e.why && e.mark);
-      // ⚠️ FROM THE SMART LEGS, NOT FROM ALL OF THEM. This is the subject of a sentence that says only
-      // SELECTED destinations are relayed — true of a smart leg and false of a whole-interface cascade, where
-      // every packet the interface sends over this link is relayed. One link can carry both (one interface
-      // forwarding to the peer, another smart-routing to it), and built from `elig` the sentence named the
-      // forward interface too and told the operator something untrue about it.
       const legIfaces = [...new Set(smartLegs.map(([k, e]) => e.iface || k))];
-      // ⚠️ NO CHOICE IS NOT NO ANSWER. This returned null, so a leg with nothing to accelerate showed
-      // NOTHING — and the card above it says "cascade" for BOTH kinds, so an operator comparing two legs
-      // sees the same badge with the control on one and not the other, with no way to find out why.
-      // Reported from the fleet as "the Forward/Relay switch is gone". It has three reachable causes and
-      // each has a different answer, so each gets its own sentence rather than a shared shrug.
       if (!elig.length) {
-        // Does the FAR end forward to us? Then the choice exists — on their side, because the mode belongs
-        // to whoever sends the traffic. Read from the peer's own eligibility, the same field ours comes
-        // from, so the two ends cannot disagree about who owns the switch.
-        // `prec` is the same lookup, already in scope at the top of the sheet — a second copy is one
-        // more thing that can drift from the first.
         const _fromPeer = Object.entries(((prec.relay || {}).eligibility) || {}).filter(([, e]) => e.via === node);
         const _why = _fromPeer.length
           ? Trich("The traffic on this leg comes from *{peer}*, so its datapath is chosen there — open this link from {peer}'s page.",
                   { peer: Store.nodeName(peer) })
           : smartCarried.length
-            // ⚠️ THIS USED TO SAY "only an interface that sends ALL its traffic through this link can be
-            // accelerated", which stopped being true the moment a smart leg could be relayed. What is
-            // actually true when smart rules name this peer and no leg is offered is that the panel has
-            // not planned one — it works the legs out on a node sync, so the usual cause is that none has
-            // landed since the panel started. If it stays empty the node's own card says why (a node that
-            // routes to more destinations than it has tables for drops the extras).
             ? Trich("The panel hasn't worked out this link's routes yet, so there is nothing to accelerate here. The choice appears after *{node}*'s next sync.",
                     { node: Store.nodeName(node) })
             : Trich("Nothing sends its whole traffic through this link yet. Set an interface's egress to *Forward to {peer}* and the datapath choice appears here.",
@@ -1896,10 +1625,6 @@ export function ConnectionEditSheet({ node, iface }) {
           </div>` : null}
         </div>
         ${(() => {
-          // The choice turns entirely on ONE measured fact — is this leg losing packets — and the panel has
-          // it. Saying "on a healthy link it buys nothing" without saying whether THIS link is healthy makes
-          // the operator go and look, several blocks up. Stated as of now, because it is a live reading and
-          // a leg that is clean this minute may not be clean tonight.
           const _l = (meta.link || {});
           const _ls = typeof _l.loss === "number" ? _l.loss : null;
           if (_l.rtt_ms == null || _ls === null) return null;
@@ -1908,19 +1633,9 @@ export function ConnectionEditSheet({ node, iface }) {
             : html`<div class="hint dp-verdict ok"><${Ic} i="check"/> ${Trich("This leg is clean right now — *Forward* is the cheaper choice.")}</div>`;
         })()}
         ${relayOn && smartLegs.length ? html`<div class="hint" style="margin-top:9px">${
-          // Said only under Relay: under Forward nothing is relayed, and the note read as if something were.
-          // ⚠️ UNDER A CASCADE "accelerated" READS AS "THIS INTERFACE" AND UNDER SMART IT DOES NOT. Only the
-          // destinations these interfaces route over THIS link are relayed; everything else they send is
-          // untouched. And the relay terminates TCP, so half a rule's traffic staying on the forwarding
-          // path is a thing the sheet has to say out loud rather than leave to be discovered.
           Trich("Only the destinations *{ifaces}* routes over this link are relayed — the rest of that traffic is untouched. And the relay terminates TCP, so UDP keeps forwarding either way.",
                 { ifaces: legIfaces.join(", ") })}</div>` : null}
         <div class="hint dp-why">${relayOn
-          // ⚠️ THE CAP IS NOT THIS LEG'S. It is written into one slice that every relay on the node shares,
-          // and one switch here can start several instances — a leg can carry smart rules from more than
-          // one interface. Measured on a 1-vCPU node at a 50% cap: two loaded legs together took 13% of a
-          // core with zero throttled periods, so the number defends the node's control plane rather than
-          // rationing throughput.
           ? Trich("*{node}* answers the client itself and opens its own connection to {peer}. Loss on the link stops reaching the client, so a bad leg costs the user far less. In exchange it uses noticeably more CPU, and on a link that is already healthy it buys nothing. The cap is {node}'s whole relay budget, shared by every leg it accelerates.", { node: Store.nodeName(node), peer: Store.nodeName(peer) })
           : Trich("Packets cross this link untouched. The simplest and cheapest option — *{node}* barely spends CPU on them and there is nothing in the path to fail. Right while the link to {peer} is healthy.", { node: Store.nodeName(node), peer: Store.nodeName(peer) })}</div>
         ${relayOn0 ? html`<div class="conncard" style="margin-top:11px"><div class="conn-grid">
@@ -1932,9 +1647,6 @@ export function ConnectionEditSheet({ node, iface }) {
               : Cell(T("Reason"), html`<span class="faint">${stalled || T("waiting for the node")}</span>`)}
             ${running.length ? Cell(T("Carried"), fmtBytes(down) + " ↓  " + fmtBytes(up) + " ↑") : null}
             ${(() => {
-              // The cap the KERNEL reports, not the one we asked for. A transient `systemctl set-property`
-              // drop-in outranks the unit file silently, and showing the configured number would display a
-              // limit nothing was enforcing.
               const eff = live.map(([, v]) => v && v.quota_pct).find(v => v != null);
               return (eff != null && String(eff) !== quota0)
                 ? Cell(T("CPU cap"), html`<span class="dp-num" style="color:var(--warn)">${T("{v1}% enforced, {v2}% set", { v1: eff, v2: quota0 })}</span>`)
@@ -1977,15 +1689,8 @@ export function EditIfaceSheet({ node, iface }) {
   const isAwg = !!(meta.awg_params && Object.keys(meta.awg_params).length);
   const [awg, setAwg] = useState(() => Object.assign({}, meta.awg_params || {}));
   const setAwgK = (k, v) => setAwg(a => ({ ...a, [k]: v }));
-  // The disguise (docs/AWG-MIMICRY-PLAN.md §3.1): read back from I1–I5, never stored by name. A pick fills the five cells once,
-  // here — a render on every poll would redraw its random parts under the operator. A line the record holds goes with "-";
-  // one it never had stays blank. `mimEff` = the lines Save would leave: a blank cell keeps the record's (the update merges).
   const pickMimic = id => { const f = mimicFill(mimicRender(id), meta.awg_params); setAwg(a => ({ ...a, ...f })); };
   const mimWas = mimicLines(meta.awg_params), mimEff = mimicAfter(awg, meta.awg_params);
-  // A value the operator changed that the panel would refuse — said under the picker, and Save waits instead of closing on a
-  // save that then fails (F9: an app refuses the whole config; code review 2026-10-08): an I line some app cannot read, any
-  // field outside printable ASCII, and a line taken off ("-") on a node that cannot hold an empty field yet, or before the
-  // node has reported an interface whose set is not whole — the panel's own two refusals (awg_exact_refusal), in its words.
   const _apT = k => String((meta.awg_params || {})[k] ?? "").trim();
   const mimBad = isAwg ? AWG_ORDER.filter(k => { const d = String(awg[k] ?? "").trim(); return d && !awgIsNone(d) && d !== _apT(k); })
     .map(k => [k, awgFieldCheck(k, awg[k])]).find(([, c]) => !c.ok) : null;
@@ -2002,9 +1707,6 @@ export function EditIfaceSheet({ node, iface }) {
   const [gen, setGen0] = useState(genWas);
   const genChanged = genSw && gen !== genWas;
   const mimErr = mimBad ? mimicWhy(mimBad[0], mimBad[1]) : omitNo;
-  // Flipped to 3.1 before a Save: the 3.1 cells appear at once, holding what the switch would give them (Settings' 3.1
-  // defaults over Amnezia's), so they are set in the same Save — never saved, reopened and saved again. A cell the operator
-  // already typed is kept. Header protection and trailers stay the panel's: the key is born on the node's switch.
   const setGen = g => { setGen0(g);
     // Flipped back before a Save: the 3.1 cells the flip filled go with it (a 2.0 save never sends them), so the sheet is as
     // it was and does not ask about unsaved changes that were never the operator's.
@@ -2046,9 +1748,6 @@ export function EditIfaceSheet({ node, iface }) {
     if (genChanged) return pushModal(html`<${AwgSwitchSheet} node=${node} iface=${iface} to=${gen} commit=${() => doSave(true)} sent=${awg}/>`);
     const portChanged = port.trim() !== String(meta.desired_port || meta.listen_port || "");
     const epChanged = host.trim() !== epHost;
-    // …and a line taken off (a cell set to "-") breaks every client the same way (A7) — named in the same window
-    // — but not I1–I5: each side sends its own, so taking one off cuts no device (docs/AWG-MIMICRY-PLAN.md F1; the line under
-    // the disguise picker says what does happen)
     const awgRm = isAwg ? AWG_ORDER.filter(k => awgIsNone(awg[k]) && (meta.awg_params || {})[k] != null && !MIMIC_KEYS.includes(k)) : [];
     if (portChanged || epChanged || awgRm.length) {           // client-breaking → confirm first (the editor stays open behind it)
       const what = portChanged && epChanged ? T("endpoint and listen port") : portChanged ? T("listen port") : "endpoint";
@@ -2072,11 +1771,6 @@ export function EditIfaceSheet({ node, iface }) {
     // and must not light Save — "-" is how a line is removed, and the line under the grid says so
     || (isAwg && Object.entries(_awgTrim(awg)).some(([k, v]) => v !== (_awgTrim(meta.awg_params)[k] || ""))) || genChanged;
   const ifaceDirty = notup || edited;
-  // ⚠️ WHAT WAS CHANGED BY A CLICK COUNTS AS A CHANGE TO LOSE. The sheet's own guard sees typed fields only (input/change), so the
-  // AmneziaWG version switch, the access level, the exit and its routing rules, the filter chips — all clicks — closed on
-  // Escape, ✕ or a click outside with no word, and the footer's Cancel bypassed the guard altogether (1.8.8 qualification: a
-  // pending 2.0 → 3.1 switch vanished on Escape while a changed port asked). `edited` is the same test that enables Save;
-  // a down interface's bring-up (`notup`) is not an edit.
   const dirtyRef = useRef(false), closeRef = useRef(null);
   dirtyRef.current = edited;
   return html`<${Sheet} title=${T("Edit {v1} interface · {v2}", { v1: kindOf(node, iface).toUpperCase(), v2: iface })} width=${720} dirtyRef=${dirtyRef} closeRef=${closeRef} err=${saveErr}
@@ -2088,10 +1782,6 @@ export function EditIfaceSheet({ node, iface }) {
     <div class="iface-intro"><div>${Trich("Changing the *endpoint* or *port* will break the existing clients' connections; you will need to re-distribute the configs / QR codes.")}</div></div>
     ${idown ? html`<div class="notice warn"><${Ic} i="warn"/><span>${Trich("This interface is *down* on the node. Change the *Listen port* to a free one and *Save* — the panel will write the new port and restart the interface to bring it up.")}</span></div>` : null}
     ${((meta.drift && meta.drift.public_key) || driftDone) ? (() => {
-      // Once the operator acts, this area becomes a terminal confirmation (no buttons), kept for the life of the
-      // sheet via driftDone so the stale Adopt/Restore buttons never linger. ADOPT is instant (panel-side) → one
-      // terminal "adopted". RESTORE is two-phase (request → node reverts on its next sync) → restoring →
-      // restored (drift cleared) OR restore-failed (the node reported an error via cmd_errors — retry below).
       const rerr = driftDone === "restoring" ? (nrec.cmd_errors || {})[iface] : null;
       if (driftDone === "adopted") return html`<div class="notice ok"><${Ic} i="check"/><span>${Trich("*New server key adopted.* Re-issue and re-distribute the QR codes / configs — *subscribed users update automatically*.")}</span></div>`;
       if (driftDone === "restoring" && !rerr) {
@@ -2099,15 +1789,7 @@ export function EditIfaceSheet({ node, iface }) {
           ? html`<div class="notice ok"><${Ic} i="check"/><span>${Trich("*Restoring the original key…* The node reverts to its backed-up key on its next sync — existing clients keep working, no re-distribution.")}</span></div>`
           : html`<div class="notice ok"><${Ic} i="check"/><span>${Trich("*Original key restored.* The node reverted to its backed-up key — existing clients keep working, no re-distribution needed.")}</span></div>`;
       }
-      // else: the drift warning + buttons — also the RESTORE-FAILED retry surface (driftDone==="restoring" && rerr).
-      // Restore only helps if the node's key BACKUP is the blessed key. `drift_restorable === false` means the
-      // node reported a backup that can't restore it (a re-created node whose backup IS the new key) → hide
-      // Restore, steer to Adopt. Unknown (old node not reporting a backup pubkey) → keep offering Restore.
       const canRestore = meta.drift_restorable !== false;
-      // ⚠️ T-22 ②: and when the BOX cannot restore it, the VAULT still can. This is the state a migration
-      // lands in — the node minted a key on its first sync and backed THAT up, so reverting to the backup
-      // is a no-op, while the original sits in the operator's Encryption Vault, openable. Until now the
-      // panel hid Restore here and steered to Adopt, i.e. re-key every client, with the real key in reach.
       const vaultRestore = !canRestore && !!meta.drift_key_blob;
       const vaultAct = html`<div class="kd-act">
         <button type="button" class="kd-btn kd-restore" onClick=${async () => {

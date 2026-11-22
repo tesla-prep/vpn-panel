@@ -1,16 +1,3 @@
-/* swg-sub front-end — the public per-user subscription page.
- *
- * Everything secret happens here, in the browser: the unlock key rides in the URL fragment
- * (never sent to the server), decrypts each peer's private key + PSK client-side, and the
- * config is assembled locally. The server only ever hands us ciphertext + non-secret params.
- *
- * URL shape:  https://sub.<domain>/<token>#<unlock-key>
- *   <token>       — last path segment; identifies the ciphertext bucket to fetch.
- *   <unlock-key>  — URL fragment; base64url of a 32-byte AES-GCM key. Decrypts the secrets.
- *
- * Phase 3 renders every peer's every deployment (desktop-style). Phase 5 layers the mobile
- * primary-QR + swipe UX on top of this same data.
- */
 (function () {
   "use strict";
 
@@ -178,10 +165,6 @@
 
   var AWG_ORDER = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4", "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5",
     "HeaderProtectionKey", "RandomTrailers", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "DisableCookies"];   // + AmneziaWG 3.x; twin of js/crypto.js AWG_ORDER
-  // Turn-proxy fork display order, wg-only set and colours are driven by the panel's turn_catalog (single source of
-  // truth — the keystone). The hardcoded *_FALLBACK values are the last-known set for an OLDER panel that doesn't
-  // serve the catalog in the sub bundle yet; catalog-driven is also more CURRENT (the fallback lacks MYSOREZ, which
-  // the catalog carries). Mirrors app.js's TURN_FORKS_FALLBACK + turnForkList().
   var FORK_ORDER_FALLBACK = ["cacggghp", "WINGS-N", "samosvalishe", "Moroka8", "anton48"];
   function turnServers() { return (_lastData && _lastData.turn_catalog && _lastData.turn_catalog.servers) || null; }
   function turnServer(f) { var s = turnServers() || []; for (var i = 0; i < s.length; i++) if (s[i].id === f) return s[i]; return null; }
@@ -195,16 +178,6 @@
   var TURN_WG_ONLY_FALLBACK = { anton48: 1 };   // samosvalishe (hack-diaz) carries AmneziaWG since free-turn-proxy v3.2.0, as the catalog says
   function turnWgOnly(f) { var s = turnServer(f); if (s && s.protocols) return s.protocols.indexOf("awg") < 0; return !!TURN_WG_ONLY_FALLBACK[f]; }
 
-  // AXIS-3: the client-app install link for a server fork, from the panel's turn_catalog (server → clients[0] →
-  // platforms). Returns {app, url, platform} or null when the fork's client has no published app link (e.g. the
-  // CLI sidecar forks cacggghp/Moroka8). The catalog rides the sub bundle (_lastData.turn_catalog); missing on an
-  // older panel → no link (graceful). "platform" is the store key (android/ios); the value is the download URL.
-  // The client-app for the SELECTED OS ONLY — the first curated client (native GUI before cross-fork before CLI)
-  // whose app actually runs on the visitor's OS. NEVER falls back to a wrong-OS build (an iPhone must not be offered
-  // WINGS V for Android): returns null when no client ships for this OS, so the cell just shows no get-app row.
-  // platforms[os] may carry `url` (resolved latest asset) and/or `github` (releases page) — prefer the resolved asset.
-  // A peer's deployments in the order its labels promise: primary first, unmarked next, backups last, and
-  // creation order inside each band. Same rule the panel uses — one field decides both the word and the place.
   function orderedTargets(targets) {
     var rank = function (t) { var r = (t && t.primary) || ""; return r === "primary" ? 0 : r === "backup" ? 2 : 1; };
     return (targets || []).map(function (t, i) { return [t, i]; })
@@ -226,9 +199,6 @@
   // fork's own wire, and so does its CLI — EXCEPT WINGS, whose wrap needs the app's SessionHello, so its CLI is plain.
   var _TURN_GUI_OBF = { Moroka8: 1, samosvalishe: 1, anton48: 1, MYSOREZ: 1, "WINGS-N": 1 };
   var _TURN_CLI_OBF = { Moroka8: 1, samosvalishe: 1, anton48: 1, MYSOREZ: 1 };
-  // Does the client we resolve for THIS visitor connect WITHOUT obfuscation? Plain = the fork's normal transport,
-  // which VK throttles → slower. A plain fork (cacggghp) is always plain; an obfuscated fork is plain only
-  // for a cross-fork "plain"-class client. Same rule as the panel picker, so the turtle matches the admin view.
   function turnCellPlain(forkId, awg) {
     var ga = turnGetApp(forkId, null, awg); if (!ga || !ga.cid) return false;
     var compat = (turnServer(forkId) || {}).compat || {};
@@ -248,12 +218,6 @@
   // A magnet — the torrent sign — marks a deployment torrents may leave by (swg-sub's `p2p`). Body and pole tips apart.
   var MAGNET_SVG = '<svg viewBox="0 0 24 24" width="1em" height="1em" fill="currentColor" aria-hidden="true">'
     + '<path d="M4 7h5v4.5a3 3 0 0 0 6 0V7h5v4.5a8 8 0 0 1-16 0z"/><path d="M4 3h5v3H4zM15 3h5v3h-5z"/></svg>';
-  // `ver` = the server's RUNNING version (the cell's deployment): an app published from the server's own repository
-  // follows it — the release that version names (the panel's `pins`), not the latest (operator, 2026-10-14).
-  // `awg` = the deployment is an AmneziaWG interface: an app whose own tunnel is WireGuard only (`awg: false` in the
-  // catalog — anton48's VK TURN Proxy on iOS) is never handed out for it; the next app is, or none.
-  // `line` — a csqtt server's running line (2.1 / 2.5): the two do not speak to each other, so only an app of the server's
-  // line is offered. "" (an older node, which runs 2.1 only) filters nothing.
   function turnGetApp(forkId, ver, awg, line) {
     var srv = turnServer(forkId), clients = ((_lastData && _lastData.turn_catalog) || {}).clients || {};
     var os = subOs();
@@ -283,9 +247,6 @@
       // A release not resolved yet (no tag) is the latest, which is 2.1's unless proven otherwise: only a 2.1 server takes it.
       var relLine = verLine(links.tag) || "2.1";
       if (lineGate && own && srv && own[1] === srv.owner && !links.pinned && relLine !== line) return null;
-      // Attribute the download to the app's REAL author — the explicit `author` field wins over `native_fork` (which
-      // only pins the client to a server fork for schema resolution, e.g. pwdtt→ildarmaga even though it's luminescq's).
-      // Mirrors the panel's turnClientAuthor rule so Settings and the sub page agree.
       var store = links.play || links.appstore;                      // store / TestFlight install link
       var page = links.page || links.github || store || links.url;   // downloads PAGE (bubble header / "manually")
       var file = links.url || store || page;                         // DIRECT installer (button); store when no file
@@ -303,23 +264,12 @@
     // compat map for this fork (modern catalog); a legacy serve.json had none → hasCompat gates the fallbacks below.
     var compat = (srv && srv.compat) || {};
     var hasCompat = false; for (var _c in compat) { hasCompat = true; break; }
-    // 1) the admin's chosen END-USER default for this (fork, OS): a client id, or "sidecar@<author>" (a CLI build).
-    //    Honoured ONLY if that client is still COMPATIBLE with the fork — a saved default goes stale when a pairing is
-    //    retired (e.g. VK TURN Proxy dropped from MYSOREZ), and a stale default must never resurrect a dead pairing.
-    // A csqtt 2.5 server reads the operator's default for its line first (turn_client_default["csqtt@2.5"]; operator,
-    // 2026-10-29): "none" hides only 2.5 servers on this OS, an app of the line is handed out, and anything else — unset,
-    // stale, of the other line — falls through to the path below, unchanged (the "csqtt" default if it speaks 2.5, else
-    // the rank).
     if (forkId === "csqtt" && line === "2.5") {
       var d25 = (((_lastData && _lastData.turn_client_default) || {})["csqtt@2.5"] || {})[os];
       if (d25 === "none") return null;
       if (d25 && clients[d25] && (compat[d25] || !hasCompat)) { var b25 = build(d25); if (b25) return b25; }
     }
     var def = (((_lastData && _lastData.turn_client_default) || {})[forkId] || {})[os];
-    // "none" = the operator chose DON'T OFFER this server on this OS. Return nothing and stop — every caller
-    // already treats a falsy app as "hide this deployment entirely" (no card, no dot), which is exactly the
-    // intent. It must short-circuit BEFORE the compat-ranked fallback below, or the deliberate choice would
-    // silently resolve to some other app instead.
     if (def === "none") return null;
     if (def) {
       // a CLI build is honoured only while this fork still offers its author (a hidden fork's build is withdrawn)
@@ -378,11 +328,6 @@
     return _selOs;
   }
   function setSubOs(os) { _selOs = os; _lsSet("swgsub-os", os); paintCtl(); reRender(); }
-  // SETTINGS SPLIT: the admin's saved default VALUES for the client being encoded (`enc` — the OS-resolved app, which
-  // may be a cross-fork one; defaults to the fork's native encoder), for the VISITOR'S OS
-  // (turn_client_settings[fork][clientId][os]) — so a phone gets the Android value-set and a laptop the desktop
-  // one. Falls back to the app's primary platform when it doesn't ship for the visitor's OS. Schema is per-client;
-  // this just selects which saved value-set to apply. The encoder fills anything unset with the app's own default.
   function turnClientCS(forkId, enc) {
     var clients = ((_lastData && _lastData.turn_catalog) || {}).clients || {};
     enc = enc || ((typeof SWGTurn.nativeEncoder === "function") ? SWGTurn.nativeEncoder(forkId) : null);
@@ -396,26 +341,10 @@
     return ((store[cid] || {})[pk]) || {};
   }
 
-  // AXIS-3: canonical install links for the WireGuard / AmneziaWG client apps (the WG/AWG cells). Unlike the turn
-  // forks, these are the well-known official apps, so their store links are hardcoded defaults (not admin-curated).
-  // Platform-aware — the sub page is opened on the user's OWN device, so we link to the matching store; desktop
-  // falls back to the app's install page.
-  // The WG/AWG client apps, per OS. Amnezia VPN is the one app with a `vpn://` browser one-tap import (Android only —
-  // WireGuard/AmneziaWG register NO URL scheme on any OS), so it leads; the others import a .conf by file/QR.
-  // ── Vendor brand marks, inline ───────────────────────────────────────────────────────────────────
-  // These were three files swg-sub served (_a/wireguard.svg, _a/amneziavpn.svg, _a/amneziawg.png).
-  // Inline now, like the turn mark further down: a logo is one place in one file instead of an asset
-  // named in FOUR shipped-file lists (Dockerfile COPY, swg-sub's serve map, nix/package.nix subWeb,
-  // lib/common.sh SUB_WEB) whose omission breaks only a FRESH build, never a running box.
-  // FULL COLOUR on purpose — this is the download/picker-row set. The flat brand-tinted marks the
-  // protocol TABS use are PROTO_SVG, and they stay separate because those have to remain tintable.
   var BRAND_SVG = {
     wireguard: '<svg viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg"><path d="m 299.74526,145.56 c 0,0 6.9396,-145.56 -153.04,-145.56 C 5.2252602,0 0.80526022,139.63 0.80526022,139.63 c 0,0 -20.81100022,160.37 149.15999978,160.37 163.02,0 149.78,-154.44 149.78,-154.44 z" fill="#88171a" /><path fill="#ffffff" d="m 101.94526,94.697 c 30.017,-18.364 68.366,-7.1401 82.735,20.476 2.7233,5.2338 3.0694,13.291 1.3447,18.782 -5.9546,18.956 -20.014,29.587 -39.312,34.103 5.6892,-4.8707 10.218,-10.394 11.659,-18.025 a 26.402,26.402 0 0 0 -4.5425,-20.956 26.76,26.76 0 0 0 -30.811,-9.3892 c -11.881,4.5111 -18.389,15.354 -17.216,28.683 1.0898,12.381 10.484,20.405 28.061,23.453 -2.627,1.3904 -4.6503,2.4144 -6.6299,3.5172 a 63.918,63.918 0 0 0 -20.544,17.868 c -1.7839,2.4084 -3.0104,2.6024 -5.727,0.94116 -35.338,-21.61 -37.609,-75.844 0.98226,-99.453 z m -26.449,133.53 c -5.6769,1.441 -11.178,3.5742 -16.981,5.4775 2.8385,-19.151 25.265,-36.788 44.23,-34.776 a 48.881,48.881 0 0 0 -9.242,25.893 c -6.302,1.1606 -12.241,1.9414 -18.007,3.405 z m 120.79,-186.98 c 5.6099,0.20612 11.23,0.12091 16.844,0.25378 a 29.052,29.052 0 0 1 4.1674,0.58069 40.607,40.607 0 0 1 -4.2357,5.4332 c -2.007,1.8701 -4.2745,3.6986 -7.1661,0.856 -0.6955,-0.68372 -2.3386,-0.52679 -3.5487,-0.54272 -5.5823,-0.07336 -11.172,-0.25177 -16.746,-0.04132 a 104.04,104.04 0 0 0 -14.425,1.473 c -0.89368,0.16046 -2.2299,3.1315 -1.8191,4.227 0.9693,2.5853 2.3833,5.4363 4.4779,7.0898 7.7403,6.11 15.972,11.596 23.748,17.664 7.556,5.8966 14.589,12.358 18.875,21.253 5.5843,11.59 5.747,23.743 3.3388,35.95 -4.0203,20.378 -14.333,37.261 -31.032,49.524 -6.7288,4.941 -15.06,7.7451 -22.767,11.295 -6.778,3.1225 -13.755,5.8115 -20.549,8.9008 -12.249,5.5695 -19.133,18.865 -17.108,32.688 1.8585,12.685 12.987,23.271 25.735,25.456 15.292,2.6216 31.071,-7.3163 34.812,-22.86 4.2067,-17.478 -5.2898,-33.083 -23.065,-37.813 -0.78271,-0.20831 -1.5684,-0.40552 -3.2012,-0.8269 4.7549,-2.1245 8.8614,-3.6381 12.653,-5.7244 q 9.9213,-5.4594 19.481,-11.562 c 1.8742,-1.199 2.8868,-1.1996 4.4852,0.18225 12.225,10.57 19.518,23.718 21.563,39.839 3.3845,26.684 -9.2471,51.198 -33.072,63.762 -36.86,19.439 -81.965,-2.6864 -90.106,-43.552 -6.9738,-35.003 17.73,-66.754 47.462,-72.884 12.787,-2.6364 24.48,-7.9596 33.57,-17.807 5.8652,-6.3541 8.7084,-11.806 9.6772,-14.266 a 39.565,39.565 0 0 0 2.7211,-14.469 33.867,33.867 0 0 0 -2.9654,-12.398 c -3.104,-7.075 -14.995,-18.33 -17.939,-20.704 l -28,-21.921 c -0.98761,-0.81256 -2.0994,-0.75366 -4.5079,-0.59045 -2.8611,0.19391 -10.175,0.59888 -13.331,-0.22815 2.553,-1.9321 9.5132,-4.7451 12.502,-7.007 -9.0734,-6.1297 -19.43,-3.9158 -28.941,-5.7461 2.1992,-4.0959 13.081,-10.39 19.27,-11.091 a 91.533,91.533 0 0 0 -1.6876,-10.281 c -0.37781,-1.3917 -1.9312,-2.7408 -3.2864,-3.5355 -3.286,-1.9267 -6.7694,-3.5167 -10.549,-5.4327 a 21.936,21.936 0 0 1 11.332,-3.5055 42.316,42.316 0 0 1 11.348,1.1056 c 6.7422,1.5405 12.124,0.53491 17.488,-4.048 -4.222,-1.7002 -8.4435,-3.2535 -12.538,-5.0907 a 123.04,123.04 0 0 1 -11.779,-6.1583 c 10.622,1.4755 20.896,5.4585 31.757,4.0034 q 0.1387,-0.74048 0.27728,-1.4809 c -8.1194,-1.8899 -16.239,-3.7798 -25.229,-5.8724 15.04,-1.3769 29.042,-1.604 42.301,4.8541 3.731,1.8173 7.6348,3.3215 11.211,5.3972 1.7443,1.0124 2.9186,3.0078 4.3496,4.5594 1.1366,1.2325 2.0495,2.8837 3.446,3.6264 5.3,2.8184 11.134,2.9291 17.078,2.7879 0.0444,-0.67694 0.0861,-1.3114 0.1308,-1.9933 5.9821,1.8693 12.715,8.7679 12.704,13.806 -9.6911,0 -19.374,-0.037 -29.056,0.05389 -1.0348,0.0097 -2.0626,0.76563 -3.0936,1.1754 0.97986,0.57067 1.9428,1.5994 2.9423,1.6362 z" /><path fill="#88171a" d="m 183.78526,26.906 a 1.4806,1.4806 0 0 0 -0.18927,2.3686 2.2326,2.2326 0 0 0 3.0724,0.8219 c 0.9328,-0.47052 1.8478,-0.97137 2.975,-1.5665 -0.9079,-0.775 -1.6362,-1.4148 -2.3857,-2.0324 -1.318,-1.086 -2.411,-0.40386 -3.4724,0.40833 z" /></svg>',
     amnezia: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M174.6 444.7c7.7-.6 18.2.3 17-12.5-5.1-1.9-10.6-3.8-15.4-6.1-.6-.3-1.3-.6-1.9-1-9.6 6.1-15.4 16.3-24.6 22.7-.3.6-1 1-1.3 1.6 1.6.3 3.5 1 5.4 1.6 7.4.4 13.8-5.3 20.8-6.3" fill="#fedaa5"/><path d="M0 388.4c.3.3.6.6 1 .3h.3v-2.9L0 387.1zm280.5-152.9c6.7-.3 13.4-.3 19.8 3.8 1 0 1.9-.3 2.6 0 16.3 10.2 7.7-7.7 7.7-8.6 0-2.9.3-5.4 1-7.7-2.2-4.2-4.2-8.3-5.8-12.5-4.2-11.5-7.7-23.3-11.5-34.9-4.2 9-8 18.2-11.2 27.8-.3.6-.6 1.3-1.3 1.9-2.2 2.6-6.7 2.6-10.9 1.9 2.6 5.4 4.8 10.9 6.7 16.6 1.6 3.7 2.6 7.9 2.9 11.7m28.2-90.2c-1.9 4.5-4.2 9-6.1 13.1 22.4 8.3 42.5 20.2 60.1 36.1 2.9 2.6 5.1 5.4 7.4 8.3 1.3 1.6 2.2 3.5 3.2 5.4 4.5.3 9.3 0 13.8-2.2 3.2-1.6 6.1-4.5 9-6.7 0 0-.3 0-.3-.3 5.4-7.7 12.8-14.7 16.6-22.7-2.6-1.9-5.1-3.8-8-5.4-2.6-1.6-3.8-4.5-2.6-7.4.3-.6.6-1.6 1.3-2.2 1-2.2.3-5.1-1.6-6.4-2.6-1.6-5.4-2.9-8.3-2.9-1.6 0-3.5-.3-4.8-1.6-8.6-7.7-16.3-15.7-24.9-22.4-12.2-9.6-24.6-18.6-37.1-27.5-4.5-3.2-9.9-4.5-15.7-4.5-4.8.3-9.6 0-14.1 0h-.6c1.9 5.1 4.5 9.9 5.1 15.4 1.2 12.2 12.7 22.7 7.6 33.9" fill="#fce8ec"/><path d="M127.6 472.5c-1.9 2.9-4.5 5.1-6.1 8.3-4.2 9-4.8-1.6-8-1.6h-3.2c-.6 2.6-1.3 5.4-1.6 8-.6 2.9-.6 6.1-1 9-.3 3.2 2.2 5.8 5.1 4.8 3.5-1.3 5.8-3.5 7.4-7 2.2-5.4 4.2-10.6 6.1-16-.3-1 1-3.5 1.3-5.5m328.2-251.4 1.6-1.6c14.1-12.8 30.4-21.7 47.7-29.4 2.2-1 4.5-2.2 6.7-3.2.3 0 .3-.6 0-.6h-.3c-9.6-1.3-18.2-.3-27.5 1.6-6.1 1.3-12.2 2.9-18.2 4.2-.3 2.2-1 4.8-1.9 7-2.7 7.6-5.2 15-8.1 22m-21.1 35.2c-2.2 3.5-4.2 7.7-6.7 11.2-3.2 4.5-7.7 8.3-15 8.6-2.9 0-6.4-2.6-9.3-2.2-.6 23.3-2.6 46.7-8.3 69.7-2.9 10.9-7 21.1-12.5 31.7-1.6 3.2-6.4 3.8-8.3 1-.3-.3-.3-.6-.6-1.3-6.1-13.1-12.2-25.9-17.3-39-.6-1.6-1-2.9-1.6-4.5l-4.8 4.8c-4.2 4.5-10.9 6.7-15.7 10.6-3.2 2.6-6.7 4.2-10.2 5.1 1.9 3.8 3.8 7.7 6.1 11.2 6.4 10.9 12.2 21.7 15.4 33.9 3.5 13.4 2.6 17-9.6 24-11.5 6.7-23.7 12.8-35.8 18.9-2.2 1.3-5.1 1.6-7.7 1.6-9.6.3-19.2 0-28.8 0-21.4.6-42.9.3-63.7-5.8-.6 13.4-12.8 19.8-21.4 24.6-1.3.6-2.2 1.3-2.9 1.9 2.6 1.3 4.8 2.6 7.4 3.5 1.3.6 2.6 1 3.8 1.3 5.4 1 10.9 1.3 16 2.2 16 2.6 31.7 6.1 47.7 8 16.6 1.9 33.3.6 49.3-5.4 14.4-5.4 29.1-10.6 43.5-15.7 7.4-2.6 15.4-3.5 23-3.5 1.9 0 3.8 1.3 4.8 3.2 1.3 2.2 2.9 3.5 6.7 5.1 1.3.6 2.2 1.6 2.9 2.6 1.6 3.8 3.5 7.7 5.1 11.5 4.2 8.6 9 17 17 22.7 1.3 1 2.9 1.6 4.8 2.2s4.2-.6 3.8-2.6c-1.3-10.9-2.2-21.4-4.5-32-2.9-12.8-6.1-25.6-7-39-.6-10.2 1.6-19.5 8.3-27.5 6.4-8 12.5-16 18.9-24 8-9.9 13.1-20.8 12.2-34.2-1-13.1-.6-25.9 3.5-38.7 2.9-8.6 5.4-17.3 11.5-24.6 3.8-4.8 6.4-10.2 7.4-16.3.3-2.9-1.9-5.1-4.8-5.1H444c-2.6 0-4.8-1.9-5.1-4.5v-.6c-.6 1-1.3 1.9-1.9 2.6-.7.6-1.7 1.9-2.3 2.8" fill="#f18928"/><path d="M97.9 250.9c2.2-.6 4.5-1 7-1.6.6-.3 1.3-.3 1.9-.6.3 0 .3 0 .6-.3 9.6-20.5 23.7-37.4 40-52.8 11.5-10.9 24-20.2 37.4-28.5 0-3.2.3-6.4 1.3-9.6 1.3-4.2 1.6-9 2.6-13.4 0-.6.3-1.3.3-1.9 0-.3 0-.6.3-1.3 3.2-10.2 5.1-20.5 6.1-30.7-14.1 4.2-27.8 8.6-42.2 12.5-4.8 1.3-7.7 3.8-10.2 8-5.4 9-11.5 17.6-17.6 26.2-1.3 1.9-2.9 3.2-4.5 4.8-1.3 1.3-3.5 1.3-4.8 0-1.6-1.6-4.5-1-5.4 1.3-1 2.6-1.9 5.1-3.2 7.4-2.2 3.8-3.2 9-7.4 10.6-1.9.6-3.8 1.6-4.8 3.5-6.7 14.4-13.4 28.5-20.2 42.5-4.2 10.2-8 19.5-11.2 29.1 9.3-.6 18.2-1.6 27.2-3.5 2.3-.4 4.5-1.1 6.8-1.7" fill="#80c9c1"/><path d="M221.3 218.3c-1.6 1.9-1.3 5.1-2.2 7.4.3 0 .3.3.6.3 1-2.6 1.6-5.4 2.6-8-.6-.4-1-.1-1 .3M189 142.4c-.3.6-.3 1.3-.6 1.9-1 4.5-1 9-2.6 13.4-1 3.2-1.3 6.4-1.3 9.6 1.3-.6 2.2-1.6 3.5-2.2 3.5-1.9 7-3.5 11.2-3.5 1.9 0 3.2 1.9 2.6 3.8-6.1 19.5-12.5 39-18.6 58.5 11.2-1.3 20.5-8.6 29.1-18.2l1-1c.6-.6 2.6-1.6 2.6-1.6 2.6 3.2 5.1 6.4 7.7 9.6 2.2-7 4.5-13.8 6.4-20.8 2.6-8 5.4-16 8.3-24 .6-1.6 1.3-3.5 2.2-4.8 1.9-2.9 4.8-2.9 6.7 0 8.3 14.7 17 29.1 24 44.5 4.2.6 8.6.6 10.9-1.9.3-.3.6-1 1-1.6 3.2-9.6 7-18.9 11.5-28.1-1.9-6.1-3.8-12.2-5.8-18.2v-.6l1-1c3.5.6 7.4 1 10.9 2.2.6.3 1.3.6 1.9.6 1.9-4.2 4.2-8.6 6.1-13.1 4.8-11.5-6.7-22.1-8-33.6-.6-5.4-3.2-10.6-5.4-15.7-11.8-.6-20.5-5.4-24.9-17-3.5-8.6-6.4-17.6-9.3-26.9-1-3.5-2.2-7-3.2-10.6-1 2.9-1 6.1-1.3 8.3-.3 6.4-4.5 9.6-6.1 14.7-.6-.3-1-.3-1.6-.3-5.1-.3-10.6 4.5-15.4 5.4-.3 2.6-.6 4.8-1 7.4-1.6 10.6-8.3 16-18.6 17.6-9.6 1.6-10.6 2.2-11.5 11.8 0 .6-1 1-1.6 1.3-1.9.6-3.8 1.3-5.8 1.9-1 10.2-2.6 20.8-6.1 30.7.5.9.1 1.2.1 1.5" fill="#95c7db"/><path d="M250.8 65.7c1.6-5.1 5.8-8.3 6.1-14.7 0-2.2.3-5.4 1.3-8.3-2.2-7-4.2-14.1-6.4-21.1-1-2.9-2.2-5.4-3.5-8s-4.5-3.8-6.7-1.6c-1.6 1.9-2.6 4.2-3.2 8-1 9-1.6 17.6-2.6 26.5-.6 8-1.3 16-2.2 24 4.8-1 10.2-5.8 15.4-5.4.8.3 1.1.6 1.8.6" fill="#87add4"/><path d="M409.7 205.5c-5.4 9-4.8 22.4-17 26.5-3.5 1.3-7 1.6-10.6 1.9-2.6.3-5.1.6-7.7 1-1 .3-1.6.3-2.6.6-12.8 3.5-20.2 12.8-30.1 19.2-2.9 1.9-6.4 2.6-9.6 3.8.6 11.5-2.9 22.4-8 32.3-1.9 3.5 1.6 9.6-1.9 11.8-.6.6-1.9 1-3.5 1-1.9 0-3.8.6-5.4 1 1.3 3.5 2.2 7 2.9 10.9 11.2-.6 21.4-3.8 30.7-9.3-1.9-6.1-3.8-12.2-5.8-17.9-1-2.6-1.3-5.1-1.6-7.7-1.3-7 0-9.6 6.4-13.1 11.5-6.7 23.7-11.2 36.5-14.4 5.8-1.6 11.8-2.2 17.9-3.5 1.3-.3 2.6 0 3.8 0 0 .6.3 1.3.3 1.9v2.9c2.2-7 6.4-13.4 14.4-19.8 13.4-10.2 23.7-23 28.8-38.1-5.4 1-10.2 0-14.7-3.5-2.6-1.9-5.4-4.2-7.7-6.1-.3-.3-1-.6-1.3-1-4.3 7.4-7.8 14.4-14.2 19.6" fill="#fedaa5"/><path d="M374.9 216.7c0 1.6-1.3 3.2-2.6 3.8-13.4 6.7-26.5 14.7-42.2 16.3-6.7.6-11.5-1.6-14.7-7-1.3-2.2-2.2-4.5-3.5-6.4-.6 2.2-1 4.8-1 7.7 0 1 8.6 18.9-7.7 8.6-.6-.3-1.6 0-2.6 0 10.6 6.4 20.8 13.1 31.3 19.5 3.2-1.3 6.7-1.9 9.6-3.8 9.9-6.1 17.3-15.7 30.1-19.2 1-.3 1.6-.3 2.6-.6 2.6-.6 5.1-1 7.7-1 3.5-.3 7-1 10.6-1.9 12.2-4.2 11.8-17.6 17-26.5l-.3.3c-3.8-1.9-8-3.8-11.8-5.8-.3-.3-.6-.3-1.3-.6-2.9 2.2-5.8 4.8-9 6.7-4.8 2.2-9.3 2.9-13.8 2.2.9 1.9 1.6 4.8 1.6 7.7" fill="#fff1cf"/><path d="M332 258.6c-10.6-6.4-20.8-13.1-31.3-19.5-6.1-4.2-12.8-3.8-19.8-3.8 0 .6.3 1.3.3 1.9 1 7-1.6 12.8-7.7 16.6-6.4 4.2-13.4 7.4-20.5 9.6.3 2.9.6 5.8 1 8.6.6 7 1.3 13.8 1.6 20.8 13.1-2.9 26.2-3.8 39.7-3.8 7 0 12.2 3.2 15.7 9.3 1 1.9 1.9 4.2 2.9 6.4 1.6-.6 3.5-1 5.4-1.3 1.6 0 2.6-.3 3.2-1 3.5-2.2.3-8.3 1.9-11.8 4.7-9.7 7.9-20.2 7.6-32" fill="#a29ea1"/><path d="M86.7 302.1c1.6 0 3.2.3 4.5.3h3.5c.6-8.6 1.6-17.3 3.5-25.6-13.4.3-26.9.6-40.3.3-1.9 8-3.5 16.3-4.5 24.6 11.2-.9 22.4-.6 33.3.4" fill="#797aaa"/><path d="M418 235.2c-8 6.1-12.2 12.8-14.4 19.8v18.6c2.9-.3 6.4 2.6 9.3 2.2 7.4-.3 11.5-3.8 15-8.3 2.6-3.5 4.5-7.4 6.7-11.2.6-1.3 1.6-2.2 2.6-3.5.6-.6 1.3-1.6 1.9-2.6 0-6.1 1.3-11.8 5.1-16.3 3.5-4.5 7.4-9 11.5-12.8 3.2-7 5.8-14.4 8-21.7.6-2.2 1.3-4.8 1.9-7-5.8 1.3-11.2 2.9-17 4.2-.6 0-1.3.3-1.6.3-5.3 15-15.5 28.1-29 38.3" fill="#f8b570"/><path d="M176.6 245.8c4.2.6 8 1.6 11.8 3.8 2.9.3 6.1 1 9 1.3 4.8 0 9.3.3 14.1.3 2.9-8.6 5.4-17.3 8.3-26.2-.3 0-.3-.3-.6-.3 1.3-2.2.6-5.4 2.2-7.4.3-.3.6-.3 1-.6.6-1.6 1-3.2 1.6-4.8-2.6-3.2-4.8-6.4-7.7-9.6 0 0-1.9 1-2.6 1.6l-1 1c-8.6 9.6-17.9 17-29.1 18.2-2.6 7.9-4.8 15.3-7 22.7" fill="#87add4"/><path d="M396.3 199.7c.3.3.6.3 1.3.6 3.8 1.9 8 3.8 11.8 5.8l.3-.3c6.4-5.1 9.9-12.2 13.4-19.5-3.5-3.2-6.7-6.4-10.2-9.3-3.8 8-11.2 15-16.6 22.7q0-.45 0 0" fill="#f8c9d1"/><path d="M2.6 388.4v-3.5l-1 1v2.9c.3-.1.6-.1 1-.4" fill="#9b8bc1"/><path d="M10.9 386.5c13.1-2.9 25.9-6.4 39-9 2.9-.6 5.4-.6 7.7-.3 2.2-1 4.2-2.2 6.1-3.5 10.9-9 23.7-10.9 36.8-11.2.3-3.2 2.6-5.8 5.1-8 7.4-6.4 16-8.6 25.6-9.6 3.2-.3 6.1 2.6 5.4 5.4 0 .6-.3 1.3-.3 1.6-1.3 4.2-2.2 8.3-3.5 12.8 3.8-1.9 8-3.2 12.8-1 7 3.5 15-.3 22.7 0 10.9-29.1 33.6-51.8 65.2-64.3-1-6.7-2.9-13.4-5.8-19.8-3.8-8.3-11.5-11.5-22.7-6.1-12.5 6.1-26.2 10.6-40 8-.3 1-.6 1.6-.6 2.6-.6 1.9-1.9 4.2-3.8 5.4-4.5 3.2-9 6.4-13.8 8.6-15.4 7.7-31 13.8-48 16.6-1.3.3-2.6.3-4.5.3 0-4.5.3-8.6.6-13.1h-3.5c-1.6 0-3.2 0-4.8-.3-10.9-1-22.1-1-32.9-.6-1.3 11.8-1.6 24-1 36.5 0 1.6-.6 3.5-1.6 4.8-5.4 5.4-10.9 10.9-16.6 15.7-9.6 8.3-19.8 16.3-29.4 24.3-1 .6-1.6 1.3-2.2 2.2v3.5c2.5-.2 5.1-.9 8-1.5" fill="#6e5ea6"/><path d="M238.3 297.6c5.4-1.9 11.2-3.5 17-4.5-.3-7-1-13.8-1.6-20.8-.3-2.9-.6-5.8-1-8.6-1.6.3-2.9 1-4.5 1.3-13.1 3.5-26.5 4.5-40 4.5-.6 0-1.3-.3-2.2-.3.3-1 .3-1.9.6-2.6 1.3-4.2 2.6-8.3 3.8-12.8-7-.6-12.5-1.6-13.4-2.9-2.9-.3-6.1-1-9-1.3-3.8-2.2-8-3.5-11.8-3.8-3.8 12.2-7.7 24-11.5 36.1 13.4 2.6 27.2-1.9 40-8 11.2-5.4 18.9-2.2 22.7 6.1 2.9 6.4 4.8 13.1 5.8 19.8 1.6-.9 3.5-1.6 5.1-2.2m-49.9-47.7c2.9.3 5.8 1 9 1.3-3.3-.3-6.1-1-9-1.3M124.1 405c5.8 1.6 11.8 1 17.3-2.6 6.4-4.2 13.1-8 20.2-10.6 1-9.9 3.2-19.2 6.4-28.1-7.7-.3-15.4 3.5-22.7 0-4.8-2.2-9-1-13.1 1-2.2 8-4.5 16-6.7 24-.3 1.3-1.3 2.6-2.6 2.9-2.6.6-4.8 0-7-1.3-9.3-6.1-13.8-15-15.7-25.6v-2.6c-13.1.3-25.6 2.2-36.8 11.2-1.6 1.3-3.8 2.6-5.8 3.5 4.8.6 9 2.9 12.2 8.6 5.1 9.3 12.8 17.3 20.5 24.6l2.6 2.6c6.9-7.6 18.7-11.1 31.2-7.6" fill="#797aaa"/><path d="M144.9 446.6c2.9-1.6 3.8-1 4.8 1.3 9-6.4 15-16.6 24.6-22.7-9-4.8-13.4-12.5-13.4-23.3 0-3.2.3-6.7.6-9.9-7 2.6-13.4 6.4-20.2 10.6-5.4 3.5-11.5 4.5-17.3 2.6-12.5-3.5-24.3 0-31 8 6.4 6.4 12.8 12.5 18.9 18.9 1 1 2.2 2.6 2.2 3.8 0 5.4.3 10.9 0 16.3 5.4 0 10.9-.3 16.6-.6 4.9-.5 9.7-2.4 14.2-5" fill="#a29ea1"/><path d="M350.6 335.3c1.6-1.6 2.9-3.2 4.5-4.8-2.9-8-5.4-15.7-8-23.7-9.3 5.4-19.5 8.6-30.7 9.3.3 1.6.3 3.5.3 5.4.3 10.6 3.2 20.5 7.7 29.7 3.5-1 7-2.6 10.6-5.4 4.7-3.8 11.4-6 15.6-10.5" fill="#f8b570"/><path d="M149.7 447.9c-1.3-2.2-2.2-2.9-4.8-1.3-4.5 2.6-9.3 4.5-14.1 4.8-5.4.3-10.9.3-16.6.6 0 3.2-.3 6.7-.6 9.9-.6 5.8-1.9 11.8-3.2 17.6h3.2c3.5 0 4.2 10.6 8 1.6 1.3-3.2 3.8-5.4 6.1-8.3.3-.3.6-.6 1-1.3 1-3.5 1.9-7 3.2-10.6 3.2-8.6 9-12.5 16.6-11.2.6-.8.9-1.5 1.2-1.8" fill="#b59259"/><path d="M200.2 435.1c-.6-.3-1.3-.3-1.9-.6-2.2-.6-4.5-1.3-6.7-2.2 1.3 12.8-9.3 11.8-17 12.5-7.4.6-13.4 6.7-20.8 6.4.3 0 .3 0 .6.3 7.4 3.2 14.4 7 21.4 10.6 1-.6 1.9-1.3 2.9-1.9 8.7-5.3 20.9-11.7 21.5-25.1m-72.6 37.4c-.6 2.2-1.6 4.5-1.3 6.1.6-1.3 1-2.9 1.6-4.2.3-1 .6-1.9 1-3.2-.3.4-1 .7-1.3 1.3" fill="#f8b570"/><path d="M98.5 276.1c1.6-7 3.5-13.8 6.1-20.5 1-2.6 1.9-4.8 3.2-7.4-.3 0-.3 0-.6.3-.6.3-1.3.3-1.9.6-2.6.6-4.8 1-7 1.6s-4.5 1-6.7 1.6c-9 1.9-17.9 2.9-27.2 3.5-2.2 6.7-4.2 13.8-5.8 20.5 12.7.5 26.2.5 39.9-.2" fill="#a29ea1"/><path d="M211.4 251.8c-4.8 0-9.3-.3-14.1-.3.6 1.3 6.4 2.2 13.4 2.9.1-1.3.4-1.9.7-2.6" fill="#7d89c1"/><path d="M197.3 251.2c-2.9-.3-5.8-1-9-1.3" fill="none"/></svg>'
   };
-  // AmneziaWG's mark is the one with no vector to inline: a flat multi-colour raster. Re-sampled to
-  // 96px (it renders at 26 CSS px, so this is still 2x on a 3x screen) and palette-quantised —
-  // 2.5 kB against the 44 kB original, which is why it can sit in the file at all.
   var AWG_PNG = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGAAAABgCAMAAADVRocKAAAA/1BMVEUAAABgmTNebZOHozPhjTk9VKe0e6recgFmnDGmrl5+fxZ2eHm0dq/ydxD+/QFWqVXvmEz7wzfDhapeljJcY5leljIA/wCPqDKqrVvnljK4ga7hjjq4cR46fzo9VKYCAvy0e6c9VKa0e6n/AAA7V6VjcYmFozLikTg+Pr1jcIywY2H3o1SGozP///80NH/ccQGorV/ccQD6f3qnrV3/AP8teXumpqZVqqr/f/96j2j//2p//wB/f//6wjnQxGF//38AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADgms7HAAAAQHRSTlMA+vv6+/v6+xb6AgMRCwID+/3+pBRZAR0NHv1iAwOcAWJkogEVnpugBFwDBmoBA1mhpAJhAQUEAwL2AgICU/8CdnWMowAACCtJREFUeNrVWol24sgOFWaJsbFxwJg9hLATSKezddLr///VSKUqu8pboHnvzBmd7owzgG7deyVV2TTAfy4c79/Fj5yS13yOqOTzHgzH8HQ27A/bdn7ovzt2288H8GsbKBbJBbuHP8zwFSm7L8K2pdgGJsc9jINxCcAUuhXbNSTwB5iqf1iv19Uk1utDX8BMKNdisn/inIvFsFYrA4igUulC20xvH6q5sV736R2TSfL2CYxrpRKBXalUbIiNxvT9gvQiauMh6T7ebIaLPV3ta+UMoF3RKCCOva6WBuXb4I9gQ4u5JwIIMClWiBggBXTBmU4BDuXpqxVC4BiC73vDWjmAzwA9NJuM7lc/jQRhDPcebBhq/wkAatTGeu1Wq+cg4LKHkkuhBw4DoEZ8cRbCZjyOxfoMoCf/axTlAUufuqzfB/xxOOhGG+GXDJsYoGsAYFvlvLu/zgXYYDFBsQkicZfzM8ChL9pi4LQd36eJR3+dge3HRWwClBQRtoFcekUBiGYFZ5A3Yx2y6rCupACGZX3mmADdPo264gFOgwTscQpgsS/bDvT0Nk3M8jnu2/gGb2N6UAZgJ/l7mN4/ZYtCycenUoggzm/D1DlxO/LvDRIlZeQ4dpLfPmPH82CiU/CLlmYnHp+Vn+rbKNR9UZH2NIX8sxgMdRewTj2veFBIAOcMgL0JUMt1IXK0/GJknx73Rh1d1a6uvn7xFiUC0cg+B2ACsoqukviSGhlRpBOoVCI4S6JNKj0BDFMnlp4BIPbNvHrJ9eYpnZ4AvJzNTAdon1Gkw0z+K8+UKE0AXW7npsL9xsnW330mPwL4uYO6V+qyA4d1FgDbQCbVAHK3+2QzQ4A8sX2/Wu3nFJHMDBqCSUAphAcK5UWeQgM6yvTpjJVi8EXk/Kou6Nq0wJULt5N5lNfLA8BNMqvRRObFwvHyAdRu3wXXiXolZWTTHtzPSvRV+urJq7REyYGoDYkb01yFCOBHIcDia67JakwQeVVP3SwDB8Qx4pCa5Qvl7QQ0E/LauMcAvUKXHT4JOVEK15Oye5Okjoaw0N/Si5tL+ZF12WcLSCMnr0oRwE8APBOgm6RUGmV6GbkxwCENoIposoCJzI/no+/mvRkfejVDMr3ch+cmHyXzATwx3iTA9S9fm6Z/BIBq3sipxJbr8R0em00G+GMO67sOKFEWksBv83AR6XWj2to2KfgwaDYZIYW8b4wajQ6IG2AFcH2tnSEjdePhpA7ZU7PbBzJ/1TgSHKHVwOjcQQspPMn8tetxsuM4JoCyOTXvvqMFzWaFy8jWFbodEcAtAhzZBMp//Qv6qT6LW2uq9Z3ex4/MoNl81ufdG1rAAHt4RzYyPzL4XgSQTI7IkIgAKH4/GgP1nSxojFrI4A3ZkP4Uv4oBECI7747sMYeW/50taDTIAZSrEVwzgp+YHANMzf2tp2s0EBY0mcUzrlVGC247ymP6ZSQA8I9WCGo/i//XVCG6ZpvR2p9/E0yiUWJBi+jcNTrMYKMfWyLH1Lyd3M9qAGLxPgsVabNUWIAKvcMLydVhBr4OMFWSTE1KxjgaSHsFQDuxPrYAGwJaI8lgo4+ieMWJ5tP0zj/gzIOIiQyUnC3uglEDl4+/oFwEULv+tejnbJlx2WRbjbvgUXndVu9sSQvI45djqyEYIMIw91ikdULPdIXnRPPZF0w+rJ3y340taMmC4ipK3V/E8y2KDM1iE1zYfQhl/oBvUYRHaXFLAby8vAiwDjoQQPpuOTLnm+pliDVyLQs+PmYEtSKAHXwzJ52rOoIoZJ8MJhSmiSnNUeO4kARCyrrCi1fYCQqsUUsbpe6RyQS1AC14yn8OErtgVz5GgvkTA8hluwrLCiHU+hjb7GnGWEENAbIPmDM78SiewVIhmXQmAVZCo1bSx3TZCQK6E8l7duqqw8SRM3Jx8ITBtJzUpaIK4abOaC59TACIIoIOZ8c/eU9EkgMXfu5FFUfjlV57ZYVY9y2aUJd6YXOpPkYCKL5ggARybjMdWUgftHEc1QBoiHVKhVZ8Dct6Xf72BjtBtCHMIHcFhfv7ReF9eJNX8y4BRrTOb7JwuDRnCCAohMJ8topW1JG3sUHRc8e2Q+kxbsk9CbAiA6RC5LBw5MYiDoS9sCypEJcnP6T1ip69q6x3t607tqBhvcWFuZLjYQtzAbDiV7gU0GsGCIKhV/TM640nI35iJC1GgN0sZIXqc3gQbyON6oTwU5hPCqE+qBDnH5c8kdrLZo8DV3ojJanXl6xQopGsXkFaKRSUPhRUfaPS47ItzBuKBddVfqlR3VrNVgpATojgk/xiU+0k6S1a6M1SELBuMDHHw4wBZPDbOyL/sOypKcWLHC7ys7x0jiW8yjfNwACwFIFg432Wn51uxB+tx5EQmC1FI6QpBCT/CfnFGTmbnwDI3u32J6j8BkBHDIjTHpO1ZN0bAORFKF5ezpVqukY4H+Dk7wC/gbtL52cvbjDqyQsJQCcYwhnfMaJK4W6VAlAJ079TdGB45vd/NNViKQojBriD879fDEOeCCchvP7F95c0EeYnUnAz30+eiLCtZ/xMtchF+dXM4RK6mc+xguqilOZ4nQCEf5sfZrO4peYPcgwt5YXE1raJSyhgG8+2GCHvaA/bh+V2qRiE7t8DEAUm4G7jQWfuCRcRQEXSe01CDke2dZkDFD9FL6BCbrbZ9QPeJQhIQdtrMgAhHC8CeCCbLbXdGwiudbEDvD2KbdnNGYg7cRZ7vRBAzItwljdywxVY7qUERCHNIcwH34VwOQDM/u//HCUslPl/INDF8Q9Q/LZ1gHSMggAAAABJRU5ErkJggg==";
   function svgUri(raw) { return "data:image/svg+xml," + encodeURIComponent(raw); }   // for an <img src>
   function svgNode(raw) {   // for the DOM — no innerHTML, so the strict CSP is satisfied
@@ -438,9 +367,6 @@
       windows: "https://download.wireguard.com/windows-client/wireguard-installer.exe", linux: "https://www.wireguard.com/install/" }   // Linux = per-distro
   };
   var WG_ORDER = { awg: ["amneziavpn", "amneziawg"], wg: ["amneziavpn", "amneziawg", "wireguard"] };
-  // Real Safari on iOS/iPadOS specifically — the ONLY browser that pops a modal "Safari cannot open the page because
-  // the address is invalid" when an unregistered custom scheme (e.g. vkturnproxy://) is fired. Chrome/Firefox/Edge on
-  // iOS fail silently, so they keep the auto-fire + fallback. Best-effort (Brave / SFSafariViewController can slip in).
   function isIOSSafari() {
     var ua = navigator.userAgent || "";
     var ios = /iPhone|iPad|iPod/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
@@ -468,10 +394,6 @@
              headerTitle: t(awg ? "getAwgClient" : "getWgClient"), wgItems: items };
   }
   var AMNEZIA_VPN = { name: "Amnezia VPN" };
-  // The MYSOREZ VK TURN Proxy app un-bundled its engine ("core") in v2.0.0 — the arm64 core binary the app imports.
-  // It's a UNIVERSAL LAUNCHER: it runs the SERVER FORK's own core, so the core to import is *that fork's*, not a fixed
-  // one. Resolve per-fork from the fork's repo owner (stable asset name → the LATEST release, no version pin). A
-  // MYSOREZ server needs MYSOREZ's core, a cacggghp server needs cacggghp's, etc. Fallback: cacggghp (the family root).
   var CORE_FALLBACK = "https://github.com/cacggghp/vk-turn-proxy/releases/latest/download/client-android-arm64";
   function coreUrlFor(forkId) {
     var o = (turnServer(forkId) || {}).owner;
@@ -495,10 +417,6 @@
     if (!/\/releases\/(?:latest\/)?download\/|\.(apk|ipa|exe|msi|deb|dmg|pkg|appimage|rpm|zip|tar(?:\.[a-z]+)?)(?:$|\?)/i.test(u)) return "";   // tagged (/releases/download/<tag>/) OR latest (/releases/latest/download/)
     return u.split(/[?#]/)[0].split("/").pop() || "";
   }
-  // Download a file by navigating to it in the SAME tab — no _blank, and crucially NO `download` attribute: on a
-  // cross-origin link Chrome ignores the attribute's name and saves the file as the redirected CDN URL's basename
-  // (a GUID). A plain same-tab navigation to an attachment URL lets the browser honour the server's
-  // Content-Disposition filename instead (GitHub / the WG installer CDN all send it).
   function triggerDownload(url) {
     var a = document.createElement("a"); a.href = url; a.rel = "noopener";
     document.body.appendChild(a); a.click();
@@ -530,9 +448,6 @@
     var parts = [os, fmt, arch].filter(Boolean);
     return parts.length ? parts.join(" · ") : String(name || "");
   }
-  // The "Get the app manually" control above the QR. When the resolved release exposes direct installer files for the
-  // visitor's OS it opens a BUBBLE — header = the downloads PAGE link ("Open GitHub (App) downloads page"), items = each
-  // latest-release file for THIS OS as a direct download. With no file list (store-only apps) it stays a plain link.
   function storeLabel(u) {
     return /testflight\.apple/.test(u) ? "TestFlight" : /apps\.apple/.test(u) ? "App Store" : /play\.google/.test(u) ? "Google Play" : "Install page";
   }
@@ -564,10 +479,6 @@
     wrap.appendChild(btn);
     return wrap;
   }
-  // A get-app panel opens UNDER its own link and closes on the next click that isn't in it. It used to be appended
-  // to the end of the column, which put it below whatever the overlay added after the link (the "copy the link
-  // again" row), so it read as a bubble stuck to the bottom of the page rather than a disclosure on the link.
-  // The link's own handler toggles, so the link is excluded here — otherwise this closes it and the click reopens it.
   function openDlPanel(dl, panel, close) {
     dl.insertAdjacentElement("afterend", panel);
     dl.classList.add("open");
@@ -578,17 +489,9 @@
     }
     setTimeout(function () { document.addEventListener("mousedown", onDown, true); }, 0);
   }
-  // Device/browser BACK while an instructions popover/overlay is open should just CLOSE it, not navigate away. Opening
-  // one pushes a single throwaway history entry; a Back press pops it → popstate → we close every hint. Closing by any
-  // OTHER means (×/Esc/backdrop/outside) pops that entry itself (disarmOverlayBack) so history stays balanced. Only one
-  // hint is open at a time, and a transition (choice → walkthrough) REUSES the one entry (arm is idempotent) — no churn.
   var _ovArmed = false;
   function closeAllHints() { clearFit(); closePasteHint(); closeLinkImportHint(); closeVktgzChoice(); closeVktgzHint(); closeCliHint(); closeConfigPicker(); }
   function _ovOnPop() { _ovArmed = false; window.removeEventListener("popstate", _ovOnPop); closeAllHints(); }
-  // This page owns its scroll position (the pager in portrait, the document in landscape) and the only history
-  // entries it ever pushes are the overlay ones. Leaving restoration on `auto` meant closing an overlay ran a
-  // history.back() whose scroll restore snapped the document back to wherever the entry was pushed — which
-  // silently undid the picker's jump in the landscape/desktop layout, where the jump IS the document scroll.
   try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (_) {}
   function armOverlayBack() {
     if (_ovArmed) return;
@@ -603,21 +506,12 @@
   // The single user-initiated dismiss for every hint: close whichever is open + drop the Back entry. (A transition
   // between hints uses the raw close* instead, so the entry carries over.) Only one is ever open, so closing all is safe.
   function dismissHints() { closeAllHints(); disarmOverlayBack(); }
-  // FIT-TO-SCREEN — every instruction card opens centered and is scaled AS A WHOLE to fill a comfortable share of the
-  // viewport: bigger on large screens, smaller on phones so it never scrolls or clips. Capped by CEIL so a huge monitor
-  // can't blow the text up, floored so it stays readable. Scaling the whole card (not per-element font tweaks) keeps ONE
-  // consistent type scale across every one of them. A ResizeObserver re-fits when the natural size changes (an image
-  // loads, a download panel expands — transform never affects the observed box, so there's no feedback loop); window
-  // resize re-fits on rotation.
   var _fitInner = null, _fitRO = null;
   function fitOverlay(inner) {
     if (!inner || !document.body.contains(inner)) return;
     inner.style.transform = "none";                                          // measure natural (unscaled) size
     var nw = inner.scrollWidth, nh = inner.scrollHeight;
     if (!nw || !nh) return;
-    // Usable box. The × is FIXED in the top-right corner (42px button at a 14px inset → it owns the top 56px),
-    // and the card is CENTRED, so what actually keeps the card clear of it is half-height ≤ (H-112)/2 — the old
-    // 36px margin didn't, and on a narrow phone the (longer) RU countdown ran straight through the ×.
     var CLOSE = 56;                                                          // 14px inset + 42px button
     var availW = window.innerWidth - 48,                                     // 48 = the overlay's own 24px padding
         availH = window.innerHeight - 2 * CLOSE;
@@ -647,12 +541,6 @@
     if (window.ResizeObserver) { _fitRO = new ResizeObserver(function () { fitOverlay(inner); }); try { _fitRO.observe(inner); } catch (_) {} }
   }
   window.addEventListener("resize", function () { if (_fitInner) fitOverlay(_fitInner); });
-  // Swipe UP **or** DOWN on a full-screen overlay dismisses it — whichever way the thumb already happens to be
-  // going. The card TRACKS THE FINGER the whole way and the backdrop fades with it, so the gesture is visibly
-  // reversible: let go short of the threshold and it springs back; past it, the card carries on off the edge it
-  // was heading for and the overlay closes behind it. (It used to be a downward flick only, decided on release,
-  // with nothing moving in between.) Horizontal drags are ignored — that's the pager's axis — and a drag that
-  // starts inside a scrollable list belongs to the list until the list runs out of scroll in that direction.
   function attachSwipeClose(ov, onClose, card) {
     var x0 = 0, y0 = 0, t0 = 0, dyNow = 0, own = false, axis = null, inner = null, scroller = null;
     function scrollerUnder(node) {
@@ -708,12 +596,7 @@
     }, { passive: true });
   }
 
-  // ── The landscape/desktop "Connections" button rides with the USERNAME ───────────────────────────────
-  // On a phone the button belongs to the page (on the chevron's line). On the wide layout the pages scroll as
-  // one document, so a per-page button would repeat down the whole page — there it lives once, beside the
-  // username, and follows it into the collapsed sticky bar for free because it sits in the same row.
-  // The slot is ZERO-WIDTH: the name has to stay centred on the VIEWPORT, so the button must contribute no
-  // width to the centring and simply overflow to the right of it.
+  // The landscape/desktop "Connections" button rides with the USERNAME
   function headerSwitch(onOpen) {
     var who = document.getElementById("who"); if (!who) return null;
     var row = (who.parentNode && who.parentNode.classList && who.parentNode.classList.contains("who-row"))
@@ -728,16 +611,7 @@
     b.onclick = onOpen; slot.appendChild(b);
     return b;
   }
-  // ── Jump picker — any config in two taps ────────────────────────────────────────────────────────────────
-  // The pager is a grid: up/down walks the peers, left/right walks that peer's deployments. Reaching the fifth
-  // proxy of the seventh device is a dozen swipes. This overlay collapses that to: tap the device, tap the
-  // connection, land — instantly, no animation, because a jump is a jump and watching fifteen screens fly past
-  // is exactly what the picker exists to avoid.
-  //
-  // A level with nothing to choose is never shown: one device ⇒ it opens straight on that device's connections,
-  // and a device with a single connection lands on the first tap. The rows are built from the CARD's own badge
-  // element (cloned) and the server name in the server's colour, so the picker names a config exactly the way
-  // the config names itself — no second vocabulary to learn.
+  // Jump picker — any config in two taps
   var _pickOv = null;
   function closeConfigPicker() {
     if (!_pickOv) return;
@@ -748,9 +622,6 @@
   function _pickKey(e) {
     if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); dismissHints(); }
   }
-  // peers: [{ title, dead, entries: [{ pi, ci, srv, color, badge }] }] · cur: {pi, ci} · jump(pi, ci)
-  // `extra` is the networks page, when this subscription has one: {pi, n}. It carries no config, so it is in no device's list —
-  // and nothing led to it, leaving the only way there a swipe past every config on the subscription.
   function openConfigPicker(peers, cur, jump, extra) {
     // Raw close, not dismissHints: this is a TRANSITION between overlays, so the Back entry has to carry over —
     // disarming here would queue a history.back() that lands on the entry armOverlayBack() pushes below.
@@ -922,9 +793,6 @@
     }, 0);
   }
 
-  // Note bubble — the text a marker in a cell's badge row stands for (the torrent magnet, the plain-mode turtle). A tap or click toggles it; on a
-  // pointer that hovers, hovering opens it and leaving closes it — unless a click pinned it. A press anywhere else, Escape,
-  // a resize or a scroll (a swipe to the next cell) closes it.
   var _noteBubble = null;
   var _canHover = window.matchMedia ? window.matchMedia("(hover: hover)") : null;   // asked at event time (a mouse plugged in)
   function closeNoteBubble() {
@@ -1017,9 +885,6 @@
   }
 
 
-  // WG/AWG Amnezia VPN on a desktop with no vpn:// handler (Windows/Linux): the link is already copied, so show a
-  // full-screen "paste it in" card (like the anton48 hint) — app icon, the three steps, and a "download the app" link
-  // that toggles a small AmneziaVPN-downloads bubble for this OS. No auto-dismiss: backdrop / Esc / × closes it.
   var _pasteHint = null;
   function closePasteHint() {
     if (!_pasteHint) return;
@@ -1092,11 +957,6 @@
     return b;
   }
 
-  // DESKTOP deep-link forks (WINGS V DeX `wingsv://`, and any future desktop GUI scheme): a browser can't hand a
-  // custom scheme to an app that hasn't registered it (macOS/Windows/Linux all dead-end silently), so firing it just
-  // errors or does nothing. Instead COPY the connection link + show the app's import steps — the DeX flow is literally
-  // "Add profile → From clipboard", which reads exactly what we just copied. Same full-screen card as the paste/WG-Turn
-  // hints: green "copied ✓✓", the app title, the steps, and a "download the app" toggle for this OS. Esc / × / backdrop closes.
   var _linkHint = null;
   function closeLinkImportHint() {
     if (!_linkHint) return;
@@ -1147,9 +1007,6 @@
     armOverlayBack();
   }
 
-  // MYSOREZ VK TURN Proxy — assemble in 3 steps. The app is a UI shell that needs a separate "core" binary + a VKTGZ
-  // profile. Start shows a 3-button screen (get the GUI app · get the core · assemble+connect); "assemble" copies the
-  // VKTGZ: string and shows the 10-step import walkthrough. Backdrop / Esc / × closes.
   var _vktgzChoice = null, _vktgzHint = null;
   function closeVktgzChoice() {
     if (!_vktgzChoice) return;
@@ -1162,9 +1019,6 @@
   function _mzKey(e) { if (e.key === "Escape") dismissHints(); }
   function _mzOutside(e) { if (_vktgzChoice && !_vktgzChoice.contains(e.target)) dismissHints(); }
   function _openUrl(url) { if (!url) return; if (urlFileName(url)) triggerDownload(url); else window.open(url, "_blank", "noopener"); }
-  // Re-copy control for the instruction cards. The payload was already copied on the button press that opened
-  // the card, but the clipboard is easy to lose (a stray copy, a denied permission, an app that ate the focus) —
-  // and if it's gone the steps below are unfollowable, with no way back except closing and starting over.
   function copyRow(label, get, toast) {
     var a = el("a", "ph-dl"); a.href = "#"; a.textContent = t(label);
     a.onclick = function (e) {
@@ -1412,15 +1266,6 @@
     (ICONS[name] || []).forEach(function (spec) { var e = document.createElementNS(NS, spec[0]); for (var k in spec[1]) e.setAttribute(k, spec[1][k]); svg.appendChild(e); });
     return svg;
   }
-  // The Connections glyph: four arrows radiating from one point, one per protocol family, each drawn in
-  // that family's OWN colour — the same palette the cards' protocol tags use. It says "several kinds of
-  // connection live behind this button" without needing a legend, and because the colours come from
-  // ifaceColor() a panel-side palette override reaches the icon too. Built by hand rather than added to
-  // ICONS because that table paints every glyph in one currentColor.
-  // The four arrows form two OPPOSING axes, and the pairing follows the families: wg opposite awg (the two
-  // WireGuard kinds), wdtt opposite csqtt (the two self-contained turn kinds) — so no two arrows of one
-  // family ever sit next to each other. Listed NW · NE · SE · SW, which is why the order reads wg, wdtt,
-  // awg, csqtt rather than the canonical one.
   var CONN_ARROWS = [
     ["wg",    "M10 10L3.4 3.4M3.4 8.6V3.4H8.6"],
     ["wdtt",  "M14 10L20.6 3.4M15.4 3.4H20.6V8.6"],
@@ -1471,25 +1316,13 @@
     if (label != null) { btn.title = label; btn.setAttribute("aria-label", label); }
   }
 
-  // The brand protocol marks (WireGuard / AmneziaWG / Turn), one cyan→blue family. Kept as full SVG so the
-  // gradient fills survive; parsed via DOMParser (no script — CSP-safe) and every gradient id is uniquified
-  // per instance so several copies on one page never share a <defs> id.
   var PROTO_SVG = {
     wg: '<svg viewBox="0 0 300 300" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="wg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1FC8D6"/><stop offset="1" stop-color="#2B7CD3"/></linearGradient></defs><path d="m 101.94526,94.697 c 30.017,-18.364 68.366,-7.1401 82.735,20.476 2.7233,5.2338 3.0694,13.291 1.3447,18.782 -5.9546,18.956 -20.014,29.587 -39.312,34.103 5.6892,-4.8707 10.218,-10.394 11.659,-18.025 a 26.402,26.402 0 0 0 -4.5425,-20.956 26.76,26.76 0 0 0 -30.811,-9.3892 c -11.881,4.5111 -18.389,15.354 -17.216,28.683 1.0898,12.381 10.484,20.405 28.061,23.453 -2.627,1.3904 -4.6503,2.4144 -6.6299,3.5172 a 63.918,63.918 0 0 0 -20.544,17.868 c -1.7839,2.4084 -3.0104,2.6024 -5.727,0.94116 -35.338,-21.61 -37.609,-75.844 0.98226,-99.453 z m -26.449,133.53 c -5.6769,1.441 -11.178,3.5742 -16.981,5.4775 2.8385,-19.151 25.265,-36.788 44.23,-34.776 a 48.881,48.881 0 0 0 -9.242,25.893 c -6.302,1.1606 -12.241,1.9414 -18.007,3.405 z m 120.79,-186.98 c 5.6099,0.20612 11.23,0.12091 16.844,0.25378 a 29.052,29.052 0 0 1 4.1674,0.58069 40.607,40.607 0 0 1 -4.2357,5.4332 c -2.007,1.8701 -4.2745,3.6986 -7.1661,0.856 -0.6955,-0.68372 -2.3386,-0.52679 -3.5487,-0.54272 -5.5823,-0.07336 -11.172,-0.25177 -16.746,-0.04132 a 104.04,104.04 0 0 0 -14.425,1.473 c -0.89368,0.16046 -2.2299,3.1315 -1.8191,4.227 0.9693,2.5853 2.3833,5.4363 4.4779,7.0898 7.7403,6.11 15.972,11.596 23.748,17.664 7.556,5.8966 14.589,12.358 18.875,21.253 5.5843,11.59 5.747,23.743 3.3388,35.95 -4.0203,20.378 -14.333,37.261 -31.032,49.524 -6.7288,4.941 -15.06,7.7451 -22.767,11.295 -6.778,3.1225 -13.755,5.8115 -20.549,8.9008 -12.249,5.5695 -19.133,18.865 -17.108,32.688 1.8585,12.685 12.987,23.271 25.735,25.456 15.292,2.6216 31.071,-7.3163 34.812,-22.86 4.2067,-17.478 -5.2898,-33.083 -23.065,-37.813 -0.78271,-0.20831 -1.5684,-0.40552 -3.2012,-0.8269 4.7549,-2.1245 8.8614,-3.6381 12.653,-5.7244 q 9.9213,-5.4594 19.481,-11.562 c 1.8742,-1.199 2.8868,-1.1996 4.4852,0.18225 12.225,10.57 19.518,23.718 21.563,39.839 3.3845,26.684 -9.2471,51.198 -33.072,63.762 -36.86,19.439 -81.965,-2.6864 -90.106,-43.552 -6.9738,-35.003 17.73,-66.754 47.462,-72.884 12.787,-2.6364 24.48,-7.9596 33.57,-17.807 5.8652,-6.3541 8.7084,-11.806 9.6772,-14.266 a 39.565,39.565 0 0 0 2.7211,-14.469 33.867,33.867 0 0 0 -2.9654,-12.398 c -3.104,-7.075 -14.995,-18.33 -17.939,-20.704 l -28,-21.921 c -0.98761,-0.81256 -2.0994,-0.75366 -4.5079,-0.59045 -2.8611,0.19391 -10.175,0.59888 -13.331,-0.22815 2.553,-1.9321 9.5132,-4.7451 12.502,-7.007 -9.0734,-6.1297 -19.43,-3.9158 -28.941,-5.7461 2.1992,-4.0959 13.081,-10.39 19.27,-11.091 a 91.533,91.533 0 0 0 -1.6876,-10.281 c -0.37781,-1.3917 -1.9312,-2.7408 -3.2864,-3.5355 -3.286,-1.9267 -6.7694,-3.5167 -10.549,-5.4327 a 21.936,21.936 0 0 1 11.332,-3.5055 42.316,42.316 0 0 1 11.348,1.1056 c 6.7422,1.5405 12.124,0.53491 17.488,-4.048 -4.222,-1.7002 -8.4435,-3.2535 -12.538,-5.0907 a 123.04,123.04 0 0 1 -11.779,-6.1583 c 10.622,1.4755 20.896,5.4585 31.757,4.0034 q 0.1387,-0.74048 0.27728,-1.4809 c -8.1194,-1.8899 -16.239,-3.7798 -25.229,-5.8724 15.04,-1.3769 29.042,-1.604 42.301,4.8541 3.731,1.8173 7.6348,3.3215 11.211,5.3972 1.7443,1.0124 2.9186,3.0078 4.3496,4.5594 1.1366,1.2325 2.0495,2.8837 3.446,3.6264 5.3,2.8184 11.134,2.9291 17.078,2.7879 0.0444,-0.67694 0.0861,-1.3114 0.1308,-1.9933 5.9821,1.8693 12.715,8.7679 12.704,13.806 -9.6911,0 -19.374,-0.037 -29.056,0.05389 -1.0348,0.0097 -2.0626,0.76563 -3.0936,1.1754 0.97986,0.57067 1.9428,1.5994 2.9423,1.6362 z" fill="url(#wg)" fill-rule="evenodd"/><path d="m 183.78526,26.906 a 1.4806,1.4806 0 0 0 -0.18927,2.3686 2.2326,2.2326 0 0 0 3.0724,0.8219 c 0.9328,-0.47052 1.8478,-0.97137 2.975,-1.5665 -0.9079,-0.775 -1.6362,-1.4148 -2.3857,-2.0324 -1.318,-1.086 -2.411,-0.40386 -3.4724,0.40833 z" fill="#2B7CD3" opacity=".55"/></svg>',
     awg: '<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="av" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="512" y2="512"><stop offset="0" stop-color="#1FC8D6"/><stop offset="1" stop-color="#2B7CD3"/></linearGradient></defs><path d="M174.6 444.7c7.7-.6 18.2.3 17-12.5-5.1-1.9-10.6-3.8-15.4-6.1-.6-.3-1.3-.6-1.9-1-9.6 6.1-15.4 16.3-24.6 22.7-.3.6-1 1-1.3 1.6 1.6.3 3.5 1 5.4 1.6 7.4.4 13.8-5.3 20.8-6.3 M0 388.4c.3.3.6.6 1 .3h.3v-2.9L0 387.1zm280.5-152.9c6.7-.3 13.4-.3 19.8 3.8 1 0 1.9-.3 2.6 0 16.3 10.2 7.7-7.7 7.7-8.6 0-2.9.3-5.4 1-7.7-2.2-4.2-4.2-8.3-5.8-12.5-4.2-11.5-7.7-23.3-11.5-34.9-4.2 9-8 18.2-11.2 27.8-.3.6-.6 1.3-1.3 1.9-2.2 2.6-6.7 2.6-10.9 1.9 2.6 5.4 4.8 10.9 6.7 16.6 1.6 3.7 2.6 7.9 2.9 11.7m28.2-90.2c-1.9 4.5-4.2 9-6.1 13.1 22.4 8.3 42.5 20.2 60.1 36.1 2.9 2.6 5.1 5.4 7.4 8.3 1.3 1.6 2.2 3.5 3.2 5.4 4.5.3 9.3 0 13.8-2.2 3.2-1.6 6.1-4.5 9-6.7 0 0-.3 0-.3-.3 5.4-7.7 12.8-14.7 16.6-22.7-2.6-1.9-5.1-3.8-8-5.4-2.6-1.6-3.8-4.5-2.6-7.4.3-.6.6-1.6 1.3-2.2 1-2.2.3-5.1-1.6-6.4-2.6-1.6-5.4-2.9-8.3-2.9-1.6 0-3.5-.3-4.8-1.6-8.6-7.7-16.3-15.7-24.9-22.4-12.2-9.6-24.6-18.6-37.1-27.5-4.5-3.2-9.9-4.5-15.7-4.5-4.8.3-9.6 0-14.1 0h-.6c1.9 5.1 4.5 9.9 5.1 15.4 1.2 12.2 12.7 22.7 7.6 33.9 M127.6 472.5c-1.9 2.9-4.5 5.1-6.1 8.3-4.2 9-4.8-1.6-8-1.6h-3.2c-.6 2.6-1.3 5.4-1.6 8-.6 2.9-.6 6.1-1 9-.3 3.2 2.2 5.8 5.1 4.8 3.5-1.3 5.8-3.5 7.4-7 2.2-5.4 4.2-10.6 6.1-16-.3-1 1-3.5 1.3-5.5m328.2-251.4 1.6-1.6c14.1-12.8 30.4-21.7 47.7-29.4 2.2-1 4.5-2.2 6.7-3.2.3 0 .3-.6 0-.6h-.3c-9.6-1.3-18.2-.3-27.5 1.6-6.1 1.3-12.2 2.9-18.2 4.2-.3 2.2-1 4.8-1.9 7-2.7 7.6-5.2 15-8.1 22m-21.1 35.2c-2.2 3.5-4.2 7.7-6.7 11.2-3.2 4.5-7.7 8.3-15 8.6-2.9 0-6.4-2.6-9.3-2.2-.6 23.3-2.6 46.7-8.3 69.7-2.9 10.9-7 21.1-12.5 31.7-1.6 3.2-6.4 3.8-8.3 1-.3-.3-.3-.6-.6-1.3-6.1-13.1-12.2-25.9-17.3-39-.6-1.6-1-2.9-1.6-4.5l-4.8 4.8c-4.2 4.5-10.9 6.7-15.7 10.6-3.2 2.6-6.7 4.2-10.2 5.1 1.9 3.8 3.8 7.7 6.1 11.2 6.4 10.9 12.2 21.7 15.4 33.9 3.5 13.4 2.6 17-9.6 24-11.5 6.7-23.7 12.8-35.8 18.9-2.2 1.3-5.1 1.6-7.7 1.6-9.6.3-19.2 0-28.8 0-21.4.6-42.9.3-63.7-5.8-.6 13.4-12.8 19.8-21.4 24.6-1.3.6-2.2 1.3-2.9 1.9 2.6 1.3 4.8 2.6 7.4 3.5 1.3.6 2.6 1 3.8 1.3 5.4 1 10.9 1.3 16 2.2 16 2.6 31.7 6.1 47.7 8 16.6 1.9 33.3.6 49.3-5.4 14.4-5.4 29.1-10.6 43.5-15.7 7.4-2.6 15.4-3.5 23-3.5 1.9 0 3.8 1.3 4.8 3.2 1.3 2.2 2.9 3.5 6.7 5.1 1.3.6 2.2 1.6 2.9 2.6 1.6 3.8 3.5 7.7 5.1 11.5 4.2 8.6 9 17 17 22.7 1.3 1 2.9 1.6 4.8 2.2s4.2-.6 3.8-2.6c-1.3-10.9-2.2-21.4-4.5-32-2.9-12.8-6.1-25.6-7-39-.6-10.2 1.6-19.5 8.3-27.5 6.4-8 12.5-16 18.9-24 8-9.9 13.1-20.8 12.2-34.2-1-13.1-.6-25.9 3.5-38.7 2.9-8.6 5.4-17.3 11.5-24.6 3.8-4.8 6.4-10.2 7.4-16.3.3-2.9-1.9-5.1-4.8-5.1H444c-2.6 0-4.8-1.9-5.1-4.5v-.6c-.6 1-1.3 1.9-1.9 2.6-.7.6-1.7 1.9-2.3 2.8 M97.9 250.9c2.2-.6 4.5-1 7-1.6.6-.3 1.3-.3 1.9-.6.3 0 .3 0 .6-.3 9.6-20.5 23.7-37.4 40-52.8 11.5-10.9 24-20.2 37.4-28.5 0-3.2.3-6.4 1.3-9.6 1.3-4.2 1.6-9 2.6-13.4 0-.6.3-1.3.3-1.9 0-.3 0-.6.3-1.3 3.2-10.2 5.1-20.5 6.1-30.7-14.1 4.2-27.8 8.6-42.2 12.5-4.8 1.3-7.7 3.8-10.2 8-5.4 9-11.5 17.6-17.6 26.2-1.3 1.9-2.9 3.2-4.5 4.8-1.3 1.3-3.5 1.3-4.8 0-1.6-1.6-4.5-1-5.4 1.3-1 2.6-1.9 5.1-3.2 7.4-2.2 3.8-3.2 9-7.4 10.6-1.9.6-3.8 1.6-4.8 3.5-6.7 14.4-13.4 28.5-20.2 42.5-4.2 10.2-8 19.5-11.2 29.1 9.3-.6 18.2-1.6 27.2-3.5 2.3-.4 4.5-1.1 6.8-1.7 M221.3 218.3c-1.6 1.9-1.3 5.1-2.2 7.4.3 0 .3.3.6.3 1-2.6 1.6-5.4 2.6-8-.6-.4-1-.1-1 .3M189 142.4c-.3.6-.3 1.3-.6 1.9-1 4.5-1 9-2.6 13.4-1 3.2-1.3 6.4-1.3 9.6 1.3-.6 2.2-1.6 3.5-2.2 3.5-1.9 7-3.5 11.2-3.5 1.9 0 3.2 1.9 2.6 3.8-6.1 19.5-12.5 39-18.6 58.5 11.2-1.3 20.5-8.6 29.1-18.2l1-1c.6-.6 2.6-1.6 2.6-1.6 2.6 3.2 5.1 6.4 7.7 9.6 2.2-7 4.5-13.8 6.4-20.8 2.6-8 5.4-16 8.3-24 .6-1.6 1.3-3.5 2.2-4.8 1.9-2.9 4.8-2.9 6.7 0 8.3 14.7 17 29.1 24 44.5 4.2.6 8.6.6 10.9-1.9.3-.3.6-1 1-1.6 3.2-9.6 7-18.9 11.5-28.1-1.9-6.1-3.8-12.2-5.8-18.2v-.6l1-1c3.5.6 7.4 1 10.9 2.2.6.3 1.3.6 1.9.6 1.9-4.2 4.2-8.6 6.1-13.1 4.8-11.5-6.7-22.1-8-33.6-.6-5.4-3.2-10.6-5.4-15.7-11.8-.6-20.5-5.4-24.9-17-3.5-8.6-6.4-17.6-9.3-26.9-1-3.5-2.2-7-3.2-10.6-1 2.9-1 6.1-1.3 8.3-.3 6.4-4.5 9.6-6.1 14.7-.6-.3-1-.3-1.6-.3-5.1-.3-10.6 4.5-15.4 5.4-.3 2.6-.6 4.8-1 7.4-1.6 10.6-8.3 16-18.6 17.6-9.6 1.6-10.6 2.2-11.5 11.8 0 .6-1 1-1.6 1.3-1.9.6-3.8 1.3-5.8 1.9-1 10.2-2.6 20.8-6.1 30.7.5.9.1 1.2.1 1.5 M250.8 65.7c1.6-5.1 5.8-8.3 6.1-14.7 0-2.2.3-5.4 1.3-8.3-2.2-7-4.2-14.1-6.4-21.1-1-2.9-2.2-5.4-3.5-8s-4.5-3.8-6.7-1.6c-1.6 1.9-2.6 4.2-3.2 8-1 9-1.6 17.6-2.6 26.5-.6 8-1.3 16-2.2 24 4.8-1 10.2-5.8 15.4-5.4.8.3 1.1.6 1.8.6 M409.7 205.5c-5.4 9-4.8 22.4-17 26.5-3.5 1.3-7 1.6-10.6 1.9-2.6.3-5.1.6-7.7 1-1 .3-1.6.3-2.6.6-12.8 3.5-20.2 12.8-30.1 19.2-2.9 1.9-6.4 2.6-9.6 3.8.6 11.5-2.9 22.4-8 32.3-1.9 3.5 1.6 9.6-1.9 11.8-.6.6-1.9 1-3.5 1-1.9 0-3.8.6-5.4 1 1.3 3.5 2.2 7 2.9 10.9 11.2-.6 21.4-3.8 30.7-9.3-1.9-6.1-3.8-12.2-5.8-17.9-1-2.6-1.3-5.1-1.6-7.7-1.3-7 0-9.6 6.4-13.1 11.5-6.7 23.7-11.2 36.5-14.4 5.8-1.6 11.8-2.2 17.9-3.5 1.3-.3 2.6 0 3.8 0 0 .6.3 1.3.3 1.9v2.9c2.2-7 6.4-13.4 14.4-19.8 13.4-10.2 23.7-23 28.8-38.1-5.4 1-10.2 0-14.7-3.5-2.6-1.9-5.4-4.2-7.7-6.1-.3-.3-1-.6-1.3-1-4.3 7.4-7.8 14.4-14.2 19.6 M374.9 216.7c0 1.6-1.3 3.2-2.6 3.8-13.4 6.7-26.5 14.7-42.2 16.3-6.7.6-11.5-1.6-14.7-7-1.3-2.2-2.2-4.5-3.5-6.4-.6 2.2-1 4.8-1 7.7 0 1 8.6 18.9-7.7 8.6-.6-.3-1.6 0-2.6 0 10.6 6.4 20.8 13.1 31.3 19.5 3.2-1.3 6.7-1.9 9.6-3.8 9.9-6.1 17.3-15.7 30.1-19.2 1-.3 1.6-.3 2.6-.6 2.6-.6 5.1-1 7.7-1 3.5-.3 7-1 10.6-1.9 12.2-4.2 11.8-17.6 17-26.5l-.3.3c-3.8-1.9-8-3.8-11.8-5.8-.3-.3-.6-.3-1.3-.6-2.9 2.2-5.8 4.8-9 6.7-4.8 2.2-9.3 2.9-13.8 2.2.9 1.9 1.6 4.8 1.6 7.7 M332 258.6c-10.6-6.4-20.8-13.1-31.3-19.5-6.1-4.2-12.8-3.8-19.8-3.8 0 .6.3 1.3.3 1.9 1 7-1.6 12.8-7.7 16.6-6.4 4.2-13.4 7.4-20.5 9.6.3 2.9.6 5.8 1 8.6.6 7 1.3 13.8 1.6 20.8 13.1-2.9 26.2-3.8 39.7-3.8 7 0 12.2 3.2 15.7 9.3 1 1.9 1.9 4.2 2.9 6.4 1.6-.6 3.5-1 5.4-1.3 1.6 0 2.6-.3 3.2-1 3.5-2.2.3-8.3 1.9-11.8 4.7-9.7 7.9-20.2 7.6-32 M86.7 302.1c1.6 0 3.2.3 4.5.3h3.5c.6-8.6 1.6-17.3 3.5-25.6-13.4.3-26.9.6-40.3.3-1.9 8-3.5 16.3-4.5 24.6 11.2-.9 22.4-.6 33.3.4 M418 235.2c-8 6.1-12.2 12.8-14.4 19.8v18.6c2.9-.3 6.4 2.6 9.3 2.2 7.4-.3 11.5-3.8 15-8.3 2.6-3.5 4.5-7.4 6.7-11.2.6-1.3 1.6-2.2 2.6-3.5.6-.6 1.3-1.6 1.9-2.6 0-6.1 1.3-11.8 5.1-16.3 3.5-4.5 7.4-9 11.5-12.8 3.2-7 5.8-14.4 8-21.7.6-2.2 1.3-4.8 1.9-7-5.8 1.3-11.2 2.9-17 4.2-.6 0-1.3.3-1.6.3-5.3 15-15.5 28.1-29 38.3 M176.6 245.8c4.2.6 8 1.6 11.8 3.8 2.9.3 6.1 1 9 1.3 4.8 0 9.3.3 14.1.3 2.9-8.6 5.4-17.3 8.3-26.2-.3 0-.3-.3-.6-.3 1.3-2.2.6-5.4 2.2-7.4.3-.3.6-.3 1-.6.6-1.6 1-3.2 1.6-4.8-2.6-3.2-4.8-6.4-7.7-9.6 0 0-1.9 1-2.6 1.6l-1 1c-8.6 9.6-17.9 17-29.1 18.2-2.6 7.9-4.8 15.3-7 22.7 M396.3 199.7c.3.3.6.3 1.3.6 3.8 1.9 8 3.8 11.8 5.8l.3-.3c6.4-5.1 9.9-12.2 13.4-19.5-3.5-3.2-6.7-6.4-10.2-9.3-3.8 8-11.2 15-16.6 22.7q0-.45 0 0 M2.6 388.4v-3.5l-1 1v2.9c.3-.1.6-.1 1-.4 M10.9 386.5c13.1-2.9 25.9-6.4 39-9 2.9-.6 5.4-.6 7.7-.3 2.2-1 4.2-2.2 6.1-3.5 10.9-9 23.7-10.9 36.8-11.2.3-3.2 2.6-5.8 5.1-8 7.4-6.4 16-8.6 25.6-9.6 3.2-.3 6.1 2.6 5.4 5.4 0 .6-.3 1.3-.3 1.6-1.3 4.2-2.2 8.3-3.5 12.8 3.8-1.9 8-3.2 12.8-1 7 3.5 15-.3 22.7 0 10.9-29.1 33.6-51.8 65.2-64.3-1-6.7-2.9-13.4-5.8-19.8-3.8-8.3-11.5-11.5-22.7-6.1-12.5 6.1-26.2 10.6-40 8-.3 1-.6 1.6-.6 2.6-.6 1.9-1.9 4.2-3.8 5.4-4.5 3.2-9 6.4-13.8 8.6-15.4 7.7-31 13.8-48 16.6-1.3.3-2.6.3-4.5.3 0-4.5.3-8.6.6-13.1h-3.5c-1.6 0-3.2 0-4.8-.3-10.9-1-22.1-1-32.9-.6-1.3 11.8-1.6 24-1 36.5 0 1.6-.6 3.5-1.6 4.8-5.4 5.4-10.9 10.9-16.6 15.7-9.6 8.3-19.8 16.3-29.4 24.3-1 .6-1.6 1.3-2.2 2.2v3.5c2.5-.2 5.1-.9 8-1.5 M238.3 297.6c5.4-1.9 11.2-3.5 17-4.5-.3-7-1-13.8-1.6-20.8-.3-2.9-.6-5.8-1-8.6-1.6.3-2.9 1-4.5 1.3-13.1 3.5-26.5 4.5-40 4.5-.6 0-1.3-.3-2.2-.3.3-1 .3-1.9.6-2.6 1.3-4.2 2.6-8.3 3.8-12.8-7-.6-12.5-1.6-13.4-2.9-2.9-.3-6.1-1-9-1.3-3.8-2.2-8-3.5-11.8-3.8-3.8 12.2-7.7 24-11.5 36.1 13.4 2.6 27.2-1.9 40-8 11.2-5.4 18.9-2.2 22.7 6.1 2.9 6.4 4.8 13.1 5.8 19.8 1.6-.9 3.5-1.6 5.1-2.2m-49.9-47.7c2.9.3 5.8 1 9 1.3-3.3-.3-6.1-1-9-1.3M124.1 405c5.8 1.6 11.8 1 17.3-2.6 6.4-4.2 13.1-8 20.2-10.6 1-9.9 3.2-19.2 6.4-28.1-7.7-.3-15.4 3.5-22.7 0-4.8-2.2-9-1-13.1 1-2.2 8-4.5 16-6.7 24-.3 1.3-1.3 2.6-2.6 2.9-2.6.6-4.8 0-7-1.3-9.3-6.1-13.8-15-15.7-25.6v-2.6c-13.1.3-25.6 2.2-36.8 11.2-1.6 1.3-3.8 2.6-5.8 3.5 4.8.6 9 2.9 12.2 8.6 5.1 9.3 12.8 17.3 20.5 24.6l2.6 2.6c6.9-7.6 18.7-11.1 31.2-7.6 M144.9 446.6c2.9-1.6 3.8-1 4.8 1.3 9-6.4 15-16.6 24.6-22.7-9-4.8-13.4-12.5-13.4-23.3 0-3.2.3-6.7.6-9.9-7 2.6-13.4 6.4-20.2 10.6-5.4 3.5-11.5 4.5-17.3 2.6-12.5-3.5-24.3 0-31 8 6.4 6.4 12.8 12.5 18.9 18.9 1 1 2.2 2.6 2.2 3.8 0 5.4.3 10.9 0 16.3 5.4 0 10.9-.3 16.6-.6 4.9-.5 9.7-2.4 14.2-5 M350.6 335.3c1.6-1.6 2.9-3.2 4.5-4.8-2.9-8-5.4-15.7-8-23.7-9.3 5.4-19.5 8.6-30.7 9.3.3 1.6.3 3.5.3 5.4.3 10.6 3.2 20.5 7.7 29.7 3.5-1 7-2.6 10.6-5.4 4.7-3.8 11.4-6 15.6-10.5 M149.7 447.9c-1.3-2.2-2.2-2.9-4.8-1.3-4.5 2.6-9.3 4.5-14.1 4.8-5.4.3-10.9.3-16.6.6 0 3.2-.3 6.7-.6 9.9-.6 5.8-1.9 11.8-3.2 17.6h3.2c3.5 0 4.2 10.6 8 1.6 1.3-3.2 3.8-5.4 6.1-8.3.3-.3.6-.6 1-1.3 1-3.5 1.9-7 3.2-10.6 3.2-8.6 9-12.5 16.6-11.2.6-.8.9-1.5 1.2-1.8 M200.2 435.1c-.6-.3-1.3-.3-1.9-.6-2.2-.6-4.5-1.3-6.7-2.2 1.3 12.8-9.3 11.8-17 12.5-7.4.6-13.4 6.7-20.8 6.4.3 0 .3 0 .6.3 7.4 3.2 14.4 7 21.4 10.6 1-.6 1.9-1.3 2.9-1.9 8.7-5.3 20.9-11.7 21.5-25.1m-72.6 37.4c-.6 2.2-1.6 4.5-1.3 6.1.6-1.3 1-2.9 1.6-4.2.3-1 .6-1.9 1-3.2-.3.4-1 .7-1.3 1.3 M98.5 276.1c1.6-7 3.5-13.8 6.1-20.5 1-2.6 1.9-4.8 3.2-7.4-.3 0-.3 0-.6.3-.6.3-1.3.3-1.9.6-2.6.6-4.8 1-7 1.6s-4.5 1-6.7 1.6c-9 1.9-17.9 2.9-27.2 3.5-2.2 6.7-4.2 13.8-5.8 20.5 12.7.5 26.2.5 39.9-.2 M211.4 251.8c-4.8 0-9.3-.3-14.1-.3.6 1.3 6.4 2.2 13.4 2.9.1-1.3.4-1.9.7-2.6" fill="url(#av)"/></svg>',
     turn: '<svg viewBox="1.5 1.6 21 20.8" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="g1" gradientUnits="userSpaceOnUse" x1="2" y1="4" x2="22" y2="20"><stop offset="0" stop-color="#1FC8D6"/><stop offset="1" stop-color="#2B7CD3"/></linearGradient></defs><path d="M16.7 5.2 A8.7 8.7 0 1 0 16.7 18.8" fill="none" stroke="url(#g1)" stroke-width="1.6" stroke-linecap="round"/><path d="M14.44 18.98 L12.94 21.57" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M12.32 19.66 L15.06 20.88" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M7.87 19.12 L4.91 19.64" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M5.98 17.94 L6.8 20.82" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M3.53 14.17 L1.24 12.25" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M3.22 11.97 L1.55 14.45" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M4.53 7.68 L4.53 4.68" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M6.03 6.02 L3.04 6.34" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M10.15 4.27 L12.45 2.34" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M12.38 4.35 L10.22 2.26" fill="none" stroke="url(#g1)" stroke-width="0.95" stroke-linecap="round"/><path d="M11 9.7 V12.4" fill="none" stroke="url(#g1)" stroke-width="1.35" stroke-linecap="round"/><path d="M11 12.4 L8.1 14.4" fill="none" stroke="url(#g1)" stroke-width="1.35" stroke-linecap="round"/><path d="M11 12.4 L13.9 14.4" fill="none" stroke="url(#g1)" stroke-width="1.35" stroke-linecap="round"/><circle cx="11" cy="7.7" r="2.0" fill="none" stroke="url(#g1)" stroke-width="1.35"/><circle cx="7.5" cy="15.4" r="1.5" fill="none" stroke="url(#g1)" stroke-width="1.35"/><circle cx="14.5" cy="15.4" r="1.5" fill="none" stroke="url(#g1)" stroke-width="1.35"/><path d="M17.5 9.9 H20.4" fill="none" stroke="url(#g1)" stroke-width="1.25" stroke-linecap="round"/><path d="M17.5 11.7 H21.4" fill="none" stroke="url(#g1)" stroke-width="1.25" stroke-linecap="round"/><path d="M17.5 13.5 H20.4" fill="none" stroke="url(#g1)" stroke-width="1.25" stroke-linecap="round"/></svg>'
   };
   var _protoN = 0;
-  // ── Row icons for the jump picker ───────────────────────────────────────────────────────
-  // Full-colour BRAND marks, not the flat brand-tinted set the protocol TABS use: those are 62px buttons
-  // whose selected/unselected state is carried by colour, so they have to stay tintable. A picker row is a
-  // 28px glance, and the real logos are what make it placeable without reading.
-  // wg/awg are the vendor marks from BRAND_SVG above; turn has no vendor logo, so it's ours — recoloured off the
-  // flat cyan into three tones: the ring + its ticks, lighter speed lines, and an inner node in currentColor
-  // so it reads near-white on the dark theme and deep indigo on the light one (a fixed white would vanish),
-  // The spikes and the speed lines are both tokens (--turn-spike / --turn-dash), so each theme gets its
-  // OWN palette rather than one palette adjusted for contrast: black spikes + red lines on the light
-  // ground, red spikes + cyan lines on the dark one.
+  // Row icons for the jump picker
   var ROW_ICON_SVG = { wg: BRAND_SVG.wireguard, awg: BRAND_SVG.amnezia };
   var TURN_ROW_SVG = '<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M16.7 5.2 A8.7 8.7 0 1 0 16.7 18.8" fill="none" stroke="#7C7FF0" stroke-width="1.7" stroke-linecap="round"/><path d="M14.28 19.12 L13.1 21.43" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M12.53 19.68 L14.85 20.86" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M7.66 19.09 L5.12 19.67" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M6.1 18.11 L6.68 20.64" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M3.42 13.99 L1.35 12.43" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M3.17 12.17 L1.6 14.25" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M4.6 7.48 L4.47 4.88" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M5.83 6.11 L3.24 6.25" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M10.35 4.19 L12.25 2.42" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M12.19 4.26 L10.42 2.35" fill="none" style="stroke:var(--turn-spike)" stroke="#000" stroke-width="1.05" stroke-linecap="round"/><path d="M11 9.7 V12.4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><path d="M11 12.4 L8.1 14.4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><path d="M11 12.4 L13.9 14.4" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round"/><circle cx="11" cy="7.7" r="2.0" fill="none" stroke="currentColor" stroke-width="1.35"/><circle cx="7.5" cy="15.4" r="1.5" fill="none" stroke="currentColor" stroke-width="1.35"/><circle cx="14.5" cy="15.4" r="1.5" fill="none" stroke="currentColor" stroke-width="1.35"/><path d="M18.4 10.6 H21.6" fill="none" style="stroke:var(--turn-dash)" stroke="#EF4444" stroke-width="1.25" stroke-linecap="round"/><path d="M18.4 12.4 H22.7" fill="none" style="stroke:var(--turn-dash)" stroke="#EF4444" stroke-width="1.25" stroke-linecap="round"/><path d="M18.4 14.2 H21.6" fill="none" style="stroke:var(--turn-dash)" stroke="#EF4444" stroke-width="1.25" stroke-linecap="round"/></svg>';
   function rowIcon(mode) {
@@ -1504,11 +1337,6 @@
     return svgNode(raw);
   }
 
-  // Shrink a config/link <pre> so it fits its box in BOTH axes without scrolling — down to a legible floor
-  // (past which overflow:auto lets it scroll). A ceiling keeps it from looking oversized on big/tablet screens.
-  // box = a single .cfgtext OR a .textwrap wrapping one/two config blocks (config + sidecar client-command). Shrink
-  // EVERY block's font in lockstep until the whole box fits VERTICALLY (all lines show); over-wide lines scroll
-  // horizontally (thin bar) — never vertically.
   function fitText(box) {
     if (box.querySelector && box.querySelector(".qrbox")) return;   // QR view: the QR is fixed and the command keeps its normal font
     var pres = (box.classList && box.classList.contains("cfgtext") && !box.classList.contains("cmdtext")) ? [box]
@@ -1531,11 +1359,6 @@
     }
   }
 
-  // ── brand theme — follow the panel's per-mode accent colour (drives the logo, tabs, buttons, favicon) ──
-  // FORK/IFACE default colours mirror the panel's TURN_FORKS / IFACE_COLOR_DEFAULTS so the sub's fork tags and
-  // WG/AWG tabs match the admin view; the panel's per-fork / per-protocol OVERRIDES ride in the served data.
-  // Fallback fork colours for an older panel with no catalog in the bundle; the catalog server's `color` is
-  // authoritative when present (and the admin's turn_fork_colors override rides on top of either — THEME.forkOv).
   var FORK_COLORS_FALLBACK = {
     "cacggghp": { dark: "#5FB0E0", light: "#2C7EC0" }, "WINGS-N": { dark: "#C98BE0", light: "#9B4FC7" },
     "samosvalishe": { dark: "#E0A85F", light: "#C07A1E" }, "Moroka8": { dark: "#E07A9A", light: "#C24468" },
@@ -1605,11 +1428,6 @@
     var pager = document.querySelector("#peers .pager");
     if (!pager) return null;
     var pages = pager.children; if (!pages.length) return null;
-    // Which page the reader is on is ALREADY decided, correctly, by the pager's own curIndex(): it knows the
-    // PAGER scrolls in portrait but the WINDOW scrolls on desktop/landscape. This carried a copy of the
-    // portrait half only — and on desktop the pager's own top sits far ABOVE the viewport once you scroll, so
-    // page 0's bottom already cleared it and the loop matched 0 every single time. A lang or theme toggle
-    // therefore threw the reader from wherever they were back to the first card.
     var pi = pager._cur ? pager._cur() : pages.length - 1;
     var pg = pages[pi], sub = (pg && pg._pos) ? pg._pos() : { cell: 0, view: null };
     return { page: pi, cell: sub.cell, view: sub.view };
@@ -1689,9 +1507,6 @@
     var update = function () {
       var landscape = window.matchMedia && window.matchMedia("(orientation: landscape)").matches;
       var y = window.scrollY || document.documentElement.scrollTop || 0;
-      // Hysteresis: engage past 90px, release below 40px. Collapsing the header flips .bar to position:fixed and
-      // changes document height; a single hard threshold let that height change re-cross the line and oscillate
-      // (Firefox jumped back up). The dead-band + overflow-anchor:none (CSS) keep it stable.
       if (!landscape) { document.body.classList.remove("scrolled"); return; }
       var on = document.body.classList.contains("scrolled");
       if (!on && y > 90) document.body.classList.add("scrolled");
@@ -1794,10 +1609,6 @@
     document.body.appendChild(ov);
   }
 
-  // ── ONE server deployment as a full-viewport cell: a big centred QR (default) or the config/link text,
-  //    toggled IN PLACE. Returns { el, ctrl }. ctrl drives the peer's fixed bottom bar (toggle/copy/download)
-  //    so the currently-swiped cell's actions live in one steady spot. A turn artifact may resolve async
-  //    (wingsv:// needs zlib) — the cell shows "Generating…" then fills. ──
   function makeCell(userName, peer, it, mode, secret, vkLink, reason, multi) {
     var tgt = it.tgt, cell = el("div", "scell");
     var node = el("div", "scell-node");
@@ -1836,10 +1647,6 @@
       }, function () { if (btn) { btn.textContent = t("copyFailed"); setTimeout(function () { btn.textContent = restore; }, 1400); } });
     };
 
-    // the sidecar client-command block — shown UNDER the config OR under the QR (the QR only replaces the WG/AWG
-    // config). Under the QR it carries no "CLIENT COMMAND" label and keeps the normal config font (not shrunk).
-    // a small copy affordance overlaid on a text box; getText() supplies the payload when tapped; `bubbleIn` (a
-    // position:relative wrapper) gets a centred "Copied to clipboard" bubble on success.
     function copyBtn(cls, getText, bubbleIn) {
       var b = iconBtn(cls, "copy", t("copyConfig"));
       b.onclick = function (e) { if (e) e.stopPropagation();
@@ -1923,10 +1730,6 @@
 
     if (mode === "turn") {
       if (it.csqtt) {
-        // A csqtt peer, rendered as a cell IN the Turn group (csqtt is a raw-TUN VK-turn-family server). Keyless:
-        // the panel mints the access password, csqtt mints the client address on connect, so the csqtt://connect
-        // link carries only the password + node host + UDP port; the VK hashes (peer.vk_hash + the user's VK call
-        // links) are the TURN credential. One app (CSQTT), which scans the QR.
         var cd = it.csqtt, cfc = ifaceColor("csqtt");
         // raw VK inputs → csqttArtifact combines/strips/dedupes them (same one place the operator app uses)
         var cga = turnGetApp("csqtt", cd.version, false, cd.line);   // the operator's per-OS default csqtt client (CSQTT) → download / Start (this server's release)
@@ -1934,9 +1737,6 @@
         // it reads a csqtt:// one too, but keeps only the first VK call link of it.
         var cart = SWGTurn.csqttArtifact({ host: cd.endpoint_host, port: cd.port, password: cd.password,
           vk_hash: cd.vk_hash, vk_links: (_lastData && _lastData.vk_links) || [] }, cga && cga.enc, cd.line);   // 2.5 → the sealed link + a QR
-        // Badge "<fork> · <app>", + " by <author>" only when the client is CROSS-AUTHOR (author !== fork) — same
-        // guard the WDTT/turn cells use. csqtt is a single self-contained fork whose one client (CSQTT) is by the
-        // same author (amurcanov), so today it collapses to "amurcanov · CSQTT"; the guard stays for future clients.
         var csfork = forkLabel(cd.fork || "csqtt");   // the catalog's name (amurcanov), never a copy of it here
         var cffork = forkColor("csqtt");   // the csqtt FORK colour (catalog key "csqtt"), distinct from the iface colour cfc
         var cAppName = (cga && (cga.productName || cga.app)) || "CSQTT";
@@ -1990,17 +1790,11 @@
         if (cart.text != null) capply(cart.text);
         else { draw(); Promise.resolve().then(cart.buildAsync).then(capply).catch(function (e) { ctrl.ready = false; stage.innerHTML = ""; stage.appendChild(el("div", "cfg-fail", (e && e.message) || t("cantGen"))); if (ctrl.notify) ctrl.notify(); }); }
       } else if (it.wdtt) {
-        // A WDTT peer, rendered as a cell IN the Turn group (WDTT is a VK-TURN-family server). It's keyless: the
-        // server owns its WireGuard + mints the client keypair via GETCONF, so the link carries only the WRAP
-        // password + VK link + endpoint. Per-OS client: iOS → anton48 VK TURN Proxy (WRAP-A), else → WDTT app / PWDTT.
         var wd = it.wdtt, wfork = wd.fork || "amurcanov", wfc = forkColor(wfork);
         var wclients = ((_lastData && _lastData.turn_catalog) || {}).clients || {};
         var wga = turnGetApp(wfork, wd.version);   // the operator's per-OS default client for THIS fork → encoder + app name + download (this server's release)
         var wasClient = (wga && wga.enc) ? wga.enc : ((subOs() === "ios") ? "anton48" : "wdtt");
         var wclientQR = !!(wga && wclients[wga.cid] && wclients[wga.cid].qr);   // only some clients scan a QR; the rest import a pasted link
-        // SETTINGS SPLIT: qWDTT is the one WDTT-family app whose link carries a client knob (`workers`), so the
-        // admin's saved value for (fork, qWDTT, this visitor's OS) rides along. Blank stays blank — the encoder
-        // omits the parameter and the app uses its own default. No other family encoder reads client values.
         var wcs = (wasClient === "qwdtt") ? (turnClientCS(wfork, wasClient) || {}) : {};
         var wWorkers = String(wcs.workers == null ? "" : wcs.workers).trim();
         var wart = SWGTurn.wdttArtifact({ password: wd.password, endpoint_host: wd.endpoint_host, dtls_port: wd.dtls_port,
@@ -2032,9 +1826,6 @@
           wvkw.appendChild(el("div", "scell-vkwarn-d", t("vkMissing").replace("{app}", t("theApp"))));
           cell.appendChild(wvkw);
         }
-        // "Get the app" direct-download row + Start-button installer — SAME as the turn cells (line ~1633). WDTT is a
-        // turn-family fork, so it gets the identical get-app dropdown (logo/name → releases page · ⬇ → direct file for
-        // this OS) and Start-button behaviour (open the app via the deep-link below, or fetch its installer).
         if (wga) { ctrl.dlAppUrl = wga.file; ctrl.dlAppFile = wga.fileName; ctrl.dlAppName = wga.app; ctrl.dlAppPage = wga.page; node.appendChild(getAppRow(wga)); }
         // RAW-IP mode: this server accepts it, but no WDTT app can read the port from a link yet — so state the
         // number and the two settings that switch it on. Speed is the reason to bother; the trade is named.
@@ -2042,9 +1833,6 @@
           var wraw = el("div", "scell-raw");
           wraw.appendChild(el("div", "scell-raw-t", t("rawT")));
           wraw.appendChild(el("div", "scell-raw-d", t("rawD").replace("{port}", wd.raw_port)));
-          // In a block the portrait layout measures — appended to the cell it sat outside it: under the down chevron on a phone,
-          // above the badges on a desktop. Under the VK-missing warning when there is one (the warning is the fix the link
-          // needs; this is an option), else last in the header.
           (wvkw || node).appendChild(wraw);
         }
         ctrl.cliApp = false; ctrl.vktgz = false;   // WDTT clients are apps, never a CLI/VKTGZ flow
@@ -2053,9 +1841,6 @@
         ctrl.payload = wart.text; ctrl.ready = true; ctrl.ext = wart.ext || "txt";
         ctrl.isLink = !!wart.uri; ctrl.hasQR = !!(wart.qr && wclientQR); ctrl.cmd = null;   // QR only when the resolved client actually scans one
         ctrl.wrapCfg = !!wart.uri;
-        // Start opens the app ONLY when this app+OS declares `autostart` in the catalog (registers a BROWSABLE URL
-        // scheme: wdttplus / xxcipher / VK TURN Proxy iOS). No autostart (amurcanov / qWDTT / PWDTT) → noAutoFire: Start
-        // COPIES the link + shows the import steps (like the other turn cells), never a dead-scheme fire or a bare download.
         if (wart.uri) { ctrl.openUri = wart.text; ctrl.noAutoFire = !(wga && wga.autostart); ctrl.instructions = (wga && wga.instructions) || ""; }
         ctrl.view = (wart.qr && wclientQR) ? "qr" : "text";
         draw();
@@ -2063,15 +1848,8 @@
       var tp = it.tp, forkId = SWGTurn.fork(tp.service);
       var fc = forkColor(forkId);                                               // the panel's colour for this fork
       var ga = turnGetApp(forkId, tp.version, it.tgt.type === "awg");   // resolves the client for the VISITOR'S OS (also drives the get-app row / Start button below) — this proxy's release
-      // Encode the artifact for the app we actually RESOLVED for this OS (its encoder), not the fork's NATIVE app — so
-      // the config always matches the app shown. A Moroka8 relay reached via anton48's VK TURN Proxy on iOS must get the
-      // vkturnproxy:// deeplink, NOT a sidecar CLI command that GUI can't run; on desktop the same fork resolves to the
-      // CLI and gets the ./client command. A cross-fork pairing (enc's home fork ≠ relay fork) is coloured by app, below.
       var asClient = (ga && ga.enc) ? ga.enc : null;
       var art = conf ? SWGTurn.artifact(conf, tp, vkLink, turnClientCS(forkId, asClient), (_lastData && _lastData.vk_links), asClient) : null;   // SETTINGS SPLIT: the RESOLVED client's saved values (asClient) + all VK links. _lastData (NOT `data` — makeCell isn't nested in render()) is the current payload, set at render() entry.
-      // App name shown = the OS-resolved client's name (the OS-specific product name — desktop "WINGS DeX" vs Android
-      // "WINGS V" — else that client's name, e.g. the CLI on desktop); only when NO client ships for this OS does it
-      // fall back to the encoder's app name. Keeps the badge in step with the OS-correct download (never a wrong-OS app).
       var appName = (ga && (ga.productName || ga.app)) || (art && art.app);
       // app badge: a branded/resolved app name → "{fork} · {app}"; otherwise just "{fork} app". Every fork now resolves
       // to a client for the visitor's OS (cacggghp → VK TURN Proxy on mobile, CLI on desktop), so there's no "no app" case.
@@ -2099,9 +1877,6 @@
         if (ga && ga.author && ga.author !== forkId) tag.appendChild(tagBy(ga.author));   // app author (e.g. luminescq / SpaceNeuroX)
       }
       srvRow.appendChild(tag);
-      // role + interface next to the badge: multi → "Primary/Backup WG"; single → "WG". Primary/single = iface colour, backup = grey.
-      // The interface word is its OWN span (and the whole role is marked when that's all it says) so the jump
-      // picker can drop it: there, the row already leads with the protocol icon and the fork name.
       var ifaceUp = (tgt.type === "awg") ? "AWG" : "WG";
       var rl = tgt.primary || "";
       var isBackup = multi && rl === "backup";
@@ -2113,17 +1888,10 @@
       // Plain (unobfuscated) → the fork's normal transport, which VK throttles: mark it slow with a brand-coloured turtle.
       // A tap opens the same bubble as the torrent magnet (operator, 2026-10-21) — a title alone never showed on a phone.
       if (turnCellPlain(forkId, it.tgt.type === "awg")) srvRow.appendChild(noteMarker("scell-slow", TURTLE_SVG, t("slowMark"), t("slowPlain")));
-      // AXIS-3: "Get the app" install link under the badge — for a first-time user who doesn't have the client app
-      // yet. Shown only when the fork's client has a published app link (CLI sidecar forks have none). Complements
-      // the bar's "Open in app": open if you have it, get it if you don't (never branch on install-state — can't detect).
       if (ga) { ctrl.dlAppUrl = ga.file; ctrl.dlAppFile = ga.fileName; ctrl.dlAppName = ga.app; ctrl.dlAppPage = ga.page; node.appendChild(getAppRow(ga)); }   // Start button → the DIRECT installer file; the text link (getAppRow) → the releases page
       ctrl.vktgz = !!(ga && ga.cid === "mysorez" && art && art.enc === "vktgz");   // MYSOREZ VK TURN Proxy app importing a VKTGZ: profile → the 3-button assemble flow
       ctrl.cliApp = !!(ga && ga.cid === "sidecar");   // the CLI (sidecar) client → copy the OS command + file-run steps
       ctrl.forkId = forkId;
-      // The WG/AWG .conf the MYSOREZ user imports into a SEPARATE WireGuard client must dial the LOCAL turn core
-      // (127.0.0.1:9000 — the VKTGZ profile's -listen), NOT the real server, exactly like the sidecar config. The
-      // other clients don't need this: sidecar already rewrites it (artifact.text), WINGS/freeturn embed the local
-      // endpoint inside their own import link, and anton48 is an integrated app that keeps the real Endpoint.
       ctrl.wgConf = (ctrl.vktgz && conf) ? conf.replace(/^([ \t]*Endpoint[ \t]*=).*$/m, "$1 127.0.0.1:9000") : conf;
       if (!conf) { draw(); return { el: cell, ctrl: ctrl }; }
       // VK-link notice (freeturn/samosvalishe forks): lives in the cell, positioned by syncVHints BETWEEN the
@@ -2172,9 +1940,6 @@
     } else {
       if (wga) { ctrl.dlAppUrl = wga.file; ctrl.dlAppFile = wga.fileName; ctrl.dlAppName = wga.app; }   // Start-button download-fallback (WG/AWG client app)
       if (conf) { ctrl.payload = conf; ctrl.ready = true; ctrl.hasQR = true; ctrl.ext = "conf"; ctrl.view = "qr"; }
-      // "Open in Amnezia VPN" — build the vpn:// deep link (base64url(qCompress(.conf))) async off the same config, then
-      // refresh the bar. Amnezia imports the WG/AWG .conf (AWG obfuscation included). Offered on ALL platforms now (the
-      // Start button deep-links it like a turn fork; Safari-iOS gets the same ask-on-tap + its own `vpn` installed-flag).
       if (conf) {
         ctrl.app = AMNEZIA_VPN.name; ctrl.dlAppName = AMNEZIA_VPN.name;   // the Start button opens/gets Amnezia VPN → the ask reads "Open/Get Amnezia VPN"
         Promise.resolve().then(function () { return SWGTurn.amneziaVpn(conf); })
@@ -2188,17 +1953,7 @@
 
   var hint = function (cls, dir) { var s = el("span", cls); s.setAttribute("aria-hidden", "true"); s.appendChild(chevronEl(dir)); return s; };
 
-  // ── ONE (peer, protocol) as a full-viewport page: title · a horizontal swipe row of the peer's deployment
-  //    cells (servers for WG/AWG, forks for TURN) · the fixed icon action bar (acts on the visible cell). The
-  //    vertical pager stacks these grouped by protocol, so up/down walks peer→peer and left/right walks a
-  //    peer's deployments. Returns null if this peer has no deployment in `mode`. ──
   var _relayoutRail = null;   // render() points this at its alignRail so a page's layout pass can re-centre the icon rail
-  // A BLOCKED or EXPIRED peer still takes a slot in the carousel, but instead of QR/config/buttons it shows the peer
-  // name + a centred BLOCKED / EXPIRED word + the same text as the whole-sub screen — so the holder sees WHY this one
-  // config stopped working. One page per dead peer (no protocol split, no deployment arrows, no action bar).
-  // Networks this user's devices reach beyond the internet — the office LAN behind a colleague's router, shared with them
-  // (docs/NETWORKS-PLAN.md §18). The server lists only what a node reports routing. One page after the configs, walked like
-  // any other; it has no config, so no picker entry, and every other page's Connections picker leads here.
   function networksPage(nets) {
     var page = el("section", "ppage");
     page.setAttribute("data-mode", "nets");
@@ -2221,10 +1976,6 @@
     box.appendChild(el("p", "netbox-note", t("netsHowTo")));
     box.appendChild(el("p", "netbox-note", t("netsNames")));
     stage.appendChild(box); cell.appendChild(stage); srow.appendChild(cell); page.appendChild(srow);
-    // No up/down chevrons: their fixed offsets from the centre are sized for a QR, and this list is taller — the up one sat
-    // on the first network (seen in the real page). render() skips a page without them.
-    // No Connections button either (operator, 2026-09-17): the phone layout has no per-page Connections buttons — a page's title
-    // opens the picker, and here the heading does. The wide layout keeps its one button in the header.
     return page;
   }
   function deadPeerPage(row) {
@@ -2244,10 +1995,6 @@
     stage.appendChild(box); cell.appendChild(stage); srow.appendChild(cell); page.appendChild(srow);
     // up/down peer-nav hints so the carousel still walks past this page (render hides the ends)
     page.appendChild(hint("vhint vhint-u", "u")); page.appendChild(hint("vhint vhint-d", "d"));
-    // No Connections button (operator, 2026-09-17): the phone layout has none per page — the device's name above opens the
-    // picker, and the wide layout keeps its one button in the header.
-    // A blocked/expired device still gets a picker entry — reaching it is how the holder finds out WHY that
-    // one config stopped working. Its "badge" is the state word, in place of a protocol tag.
     page._pick = { row: row, dead: true, title: peer.title || t("peer"),
                    cells: [{ srv: "", kind: "",
                              badge: el("span", "scell-tag cp-dead", expired ? t("subExpiredWord") : t("subBlockedWord")) }] };
@@ -2257,26 +2004,16 @@
     var peer = row.peer, secret = row.secret, items = [];
     if (mode === "turn") {
       orderedTargets(peer.targets).forEach(function (tt) {
-        // WDTT peer → a cell in the Turn group (a client ships for every OS: anton48/iOS, WDTT app/Android,
-        // PWDTT/desktop). Unlike a turn-proxy the WDTT cell has an encoder FALLBACK, so a missing app never hides
-        // it — but "don't offer on this OS" is a decision, not a missing app, and must hide it like any other.
         if (tt.type === "wdtt") {
           var wfk = ((tt.wdtt || {}).fork) || "amurcanov";
           if ((((_lastData && _lastData.turn_client_default) || {})[wfk] || {})[subOs()] === "none") return;
           items.push({ tgt: tt, wdtt: tt.wdtt || {} }); return;
         }
         if (tt.type === "csqtt") {   // csqtt peer → a cell in the Turn group (raw-TUN VK-turn server)
-          // No csqtt client for the visitor's OS → no cell, the turn-proxy rule below. Unlike WDTT (a client ships for
-          // every OS, so its encoder fallback is honest) a csqtt link on macOS named an app that does not exist there —
-          // "amurcanov · CSQTT", a link and nothing to open it with. turnGetApp also answers "none" (the operator's
-          // "don't offer on this OS") with nothing, so that choice keeps hiding it too.
           if (!turnGetApp("csqtt", (tt.csqtt || {}).version, false, (tt.csqtt || {}).line)) return;
           items.push({ tgt: tt, csqtt: tt.csqtt || {} }); return;
         }
         var seen = {}, tps = [], isAwg = (tt.type === "awg");
-        // Keyed on the PROXY, not its fork. Two samosvalishe relays fronting one interface are two servers the
-        // reader picks between — different port, different obfuscation key — and keying the dedupe on the fork
-        // published only whichever came first, silently. The fork still decides the app and the filters below.
         (tt.turn || []).forEach(function (tp) { var f = SWGTurn.fork(tp.service), k = tp.service || tp.listen;
           if (seen[k]) return;
           if (isAwg && turnWgOnly(f)) return;   // a WireGuard-only fork can't front this AmneziaWG interface
@@ -2297,20 +2034,12 @@
     var page = el("section", "ppage");
     page.setAttribute("data-mode", mode);
     var head = el("div", "ppage-head");
-    // The title is a ROW, not one run of text: the device name is the only part allowed to truncate, so the
-    // server name stays readable however long the device is called. The row's `gap` supplies the space between
-    // them — a trailing space inside a flex item is trimmed, which is why the two used to run together.
     var titleEl = el("span", "ppage-title");
     var nameEl = el("span", "ppage-name", peer.title || t("peer"));
     var srvEl = el("span", "ppage-srv");   // "· edge-1" in the server colour — updated per deployment by syncBar
     titleEl.appendChild(nameEl); titleEl.appendChild(srvEl);
     titleEl.setAttribute("data-pick", "");   // the device name doubles as the jump picker's trigger (render wires it)
     head.appendChild(titleEl);
-    // No floating "Connections" pill here any more — the action bar carries that button now, in a fixed slot
-    // beside the ones it belongs with. (The blocked/expired page still has its own: it renders no action bar,
-    // so the pill is the only way off a dead end there.)
-    // deployment nav row (only when >1 deployment): the dots flanked by left/right hint arrows — the LEFT/RIGHT
-    // SWIPE walks the deployments; the arrows are graphical hints (non-interactive), each fading at its end.
     var dotEls = [], sL, sR;
     if (items.length > 1) {
       var navrow = el("div", "navrow");
@@ -2329,9 +2058,6 @@
     var multi = Object.keys(_deps).length > 1;
     var ctrls = items.map(function (it) {
       var cc = makeCell(userName, peer, it, mode, secret, vkLink, reason, multi);
-      // Torrents may leave by this deployment (swg-sub sets p2p only then): a magnet at the end of the badge row, where the
-      // plain-mode turtle sits, and the one client setting that gets them full speed through the tunnel in its bubble
-      // (operator, 2026-10-21: an icon, not a line — the line took room from the config on a crowded cell).
       var srv = it.tgt.p2p && cc.el.querySelector(".scell-srv");
       // Where the node forwards the device's own port (swg-sub's p2p_port, Part C) the bubble opens with it: the one number
       // the user must type into the client, then how, then the speed setting.
@@ -2379,11 +2105,6 @@
     // Keep the up/down hints an IDENTICAL gap from the visible content box, whatever its size — so a taller
     // config (e.g. AWG with the full S1–I5 ranges) pushes them out exactly as the QR does. Measured live.
     var VH_GAP = 16, VH_GAP_CFG = 8;   // arrow↔box gap — normal for a QR, tighter for a config (arrows hug it)
-    // One layout pass for the vertical stack around the content box (QR / config / turn link):
-    //   [ name block ] — G — [ up arrow ] — VH_GAP — [ content ] — VH_GAP — [ down arrow ] — G — [ buttons ]
-    // The content stays centred; the up/down arrows keep a fixed gap off its edges (so a big config pushes them
-    // out); and the name block (peer title + server name) is placed so the gap above the up-arrow EQUALS the gap
-    // below the down-arrow — everything reflows as the box grows/shrinks. Skipped in the landscape/desktop flow.
     function syncVHints() {
       var cellEl = srow.children[curIdx] || srow.children[0];
       var stage = cellEl && cellEl.querySelector(".scell-stage");
@@ -2415,11 +2136,6 @@
         return;
       }
 
-      // Portrait: distribute EVERY content line evenly between the two screen edges. Each visible line — up-arrow,
-      // peer+server title, deployment dots, app tag, VK notice, the config/QR box, the client command — gets the SAME
-      // gap G above and below (incl. the outer margins to the edges). Two pairs stay intentionally tight: the VK
-      // notice's own two lines, and the command's label+box. G is solved from the room left after the fixed-height
-      // lines; the config box is the one element that resizes (font-fit) so the whole column fits.
       var node = cellEl.querySelector(".scell-node");
       var vk = cellEl.querySelector(".scell-vk");
       var hasVk = vk && getComputedStyle(vk).display !== "none";
@@ -2504,10 +2220,6 @@
         sL.style.top = midY + "px"; sR.style.top = midY + "px";
       }
     }
-    // Lay out EVERY deployment cell of this page — not just the current — so swiping to a sibling reveals an
-    // already-placed card instead of one that slides in at paddingTop:0 and then jumps into position. syncVHints
-    // targets srow.children[curIdx], so walk curIdx over all cells (their vertical math is horizontal-scroll-invariant),
-    // then finish on the real current so the shared page chrome (arrows, head) ends up correct. A handful of cells.
     function layoutAll() {
       if (ctrls.length <= 1) { syncVHints(); return; }
       var save = curIdx;
@@ -2572,9 +2284,6 @@
       }
       (navigator.clipboard ? navigator.clipboard.writeText(content) : Promise.reject()).then(function () { flashIcon(shareB, "share", t("share")); }, function () {});
     };
-    // START: try the app deep-link; if the app opens the page goes hidden (→ cancel). If it's STILL visible after a
-    // beat, nothing handled the scheme → the app isn't installed → download it (apk/exe/deb). No deep-link → download
-    // straight away. No app link either → the .conf itself. (There's no reliable "is app installed" API — this is it.)
     function startDownload(c) {
       var os = subOs();
       if (c.dlAppUrl && c.dlAppFile) triggerDownload(c.dlAppUrl);                 // direct installer → same-tab attachment download (real name, not a GUID)
@@ -2585,15 +2294,7 @@
     // Per-app "this app is installed" flag, keyed by the scheme (e.g. vkturnproxy). Set once the user deliberately
     // opens the app (or an auto-fire is detected as opened) so Safari-on-iOS skips the ask next time.
     function hasAppKey(c) { return "swgsub-hasapp-" + (String(c.openUri || "").split("://")[0] || "app"); }
-    // Fire the deep-link with NO store fallback — for a DELIBERATE "Open" or a remembered-installed app. Firing a
-    // fallback here is what loaded TestFlight BEHIND the app in in-app browsers (Telegram) that don't fire the
-    // visibility/blur events we'd use to cancel it. If the app doesn't open, a quick re-tap recovers (below).
     function fireScheme(c) {
-      // Straight to the app. anton48's iOS build used to import a config ONLY from Settings → Import, so this
-      // showed a screenshot of that screen and held the open back 5s behind a countdown so the user could read it.
-      // v1.0-build350 imports from the main screen, so the whole detour is gone — for BOTH ways in: the remembered
-      // "app is installed" path (the centre button opens it directly) and the deliberate "Open the app" button of
-      // the two-button ask shown when the app has never been opened. Both call here, so both open immediately.
       _schemeFiredAt[hasAppKey(c)] = Date.now();
       try { window.location.href = c.openUri; } catch (_) {}
     }
@@ -2611,9 +2312,6 @@
         startDownload(c);                       // …and get the app
       }, 1000);
     }
-    // WG/AWG Amnezia VPN (vpn://) OFF Android: no browser scheme exists (iOS/Mac/Win/Linux all import a .vpn file or a
-    // PASTED vpn:// string). So copy the link (to paste into the app) + open the app — the App Store on iOS AND macOS
-    // (AmneziaVPN is one universal App Store app; Apple-Silicon Macs run it), the downloads page on Windows/Linux.
     function startCopyOpen(c) {
       if (navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {});   // initiate copy in the gesture
       var os = subOs();
@@ -2631,10 +2329,6 @@
       }
       if (c.noAutoFire) { if (navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {}); showLinkImportHint(c); return; }   // WDTT app with no URL scheme (amurcanov/qWDTT/PWDTT) → copy the link + import steps, never fire a dead scheme
       if (/^vpn:/i.test(c.openUri) && subOs() !== "android") { startCopyOpen(c); return; }   // Amnezia VPN off Android → copy the link + get the app
-      // DESKTOP (macOS/Windows/Linux): firing a custom app scheme dead-ends — the browser can't hand `wingsv://` etc. to
-      // an app that hasn't registered the scheme, so the auto-fire below would silently fail (or error) and drop the
-      // link. Instead COPY the connection link + show the app's import steps (WINGS V DeX: Add profile → From clipboard,
-      // which reads exactly this). Mobile keeps the deep-link auto-fire.
       var _dos = subOs();
       if (_dos === "macos" || _dos === "windows" || _dos === "linux") {
         if (navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {});
@@ -2644,9 +2338,6 @@
       // copy the primary VK link so the user can paste it, THEN fire the scheme (below) as usual.
       if (c.vkPrimary) { if (navigator.clipboard) navigator.clipboard.writeText(c.vkPrimary).catch(function () {}); showToast(t("vkCopied")); }
       else if (c.copyOnOpen && navigator.clipboard) navigator.clipboard.writeText(c.openUri).catch(function () {});   // csqtt: the link survives an install detour
-      // Safari-on-iOS (+ in-app webviews it can't be told apart from): firing an unregistered scheme pops an
-      // un-suppressable "address is invalid" modal, so ASK — Open (deliberate) fires the scheme with NO fallback,
-      // Get goes to the store. Every OTHER browser fails silently → keep the clean auto-fire + fallback.
       if (isIOSSafari() && c.dlAppUrl) {
         var key = hasAppKey(c);
         var open = function () { _lsSet(key, "1"); fireScheme(c); };          // "Open": remember + open, NO TestFlight fallback
@@ -2672,17 +2363,9 @@
     }
     try { new ResizeObserver(scheduleVH).observe(srow); } catch (_) {}   // viewport / rotation → re-measure the hint gap
     setTimeout(syncBar, 0);
-    // What the jump picker needs from this page: the roster row (peer IDENTITY — a peer owns one page per
-    // protocol, and the picker groups them back together by it) and, per deployment, the card's OWN badge line
-    // plus the server name/colour. Cloning the badge keeps the picker's wording identical to the card's.
     page._pick = { row: row, dead: false, title: peer.title || t("peer"),
                    cells: ctrls.map(function (c, i) {
                      var cellEl = srow.children[i], it = items[i];
-                     // The device list's dots carry each connection's OWN colour, so a glance at a device tells
-                     // you what it can connect with. Anything with a fork — turn-proxies, wdtt, csqtt — uses the
-                     // panel's colour for THAT fork (`ctrl.forkId` is already resolved per cell), which is the
-                     // same colour its name is printed in one level down. A plain wg/awg deployment has no fork,
-                     // so it falls back to its interface colour.
                      return { srv: c.srvName,
                               kind: c.forkId ? forkColor(c.forkId)
                                              : ifaceColor((it && it.tgt && it.tgt.type) || mode),
@@ -2716,9 +2399,6 @@
     var who = document.getElementById("who");
     who.textContent = data.user && data.user.name ? data.user.name : "";
     fitBrand();                                      // RU control may have just shown/hidden — re-check logo↔controls fit
-    // BLOCKED / EXPIRED user: logo (header brand) + username (header "who") stay; the body is a single centered
-    // status word (BLOCKED / EXPIRED) under the name, then the explanatory text — no peers, tabs, or QRs.
-    // Blocked is reversible from the panel (unblock); expired clears when the admin extends the date.
     if (data.disabled) {
       document.getElementById("peers").hidden = true;
       showState(t("subBlockedWord"), t("subDisabledSub"), "blocked");
@@ -2764,9 +2444,6 @@
       var groups = ["wg", "awg", "turn"].filter(function (m) { return has[m]; });
       if (!groups.length && !deadRows.length) { showState(t("noConfigs"), t("noConfigsSub")); return; }
 
-      // ONE flat vertical pager through EVERY config, grouped by protocol: all WG, then all AWG, then all Turn.
-      // The mode buttons don't switch views — each JUMPS to the first page of its group; the group whose page is
-      // in view is highlighted and its button disabled (you're already there).
       var bar = el("div", "modebar"), pager = el("div", "pager"), btns = {}, firstOf = {};
       var pinMode = null, pinTimer = 0;
       // keep the per-protocol mtab-* modifier: it carries each icon's size/baseline tweak, and rebuilding
@@ -2778,9 +2455,6 @@
           if (pg) { if (!firstOf[mode]) firstOf[mode] = pg; pager.appendChild(pg); }
         });
       });
-      // A group is decided from the deployments, but a page from what can be OFFERED on this OS: a csqtt-only Turn group on
-      // macOS, or a turn proxy whose fork has no client here, builds no page. Its tab would then jump to nothing, so the tabs
-      // are the groups that produced a page.
       groups = groups.filter(function (m) { return firstOf[m]; });
       groups.forEach(function (mode) {
         var b = el("button", "modetab mtab-" + mode); b.type = "button"; b.title = t(mode); b.setAttribute("aria-label", t(mode));
@@ -2815,10 +2489,6 @@
         if (d) d.style.display = (pages.length > 1 && i < pages.length - 1) ? "" : "none";
       });
 
-      // ── Jump-picker index: every config on this subscription, grouped back together by PEER. One peer owns a
-      //    page per protocol and a cell per deployment inside it, so its configs are scattered down the pager —
-      //    group by the roster row (identity, not title: two devices may share a name), then order devices A–Z
-      //    with the blocked/expired ones last, the way the pager itself is ordered. ──
       var pickPeers = [];
       pages.forEach(function (pg, pi) {
         var pk = pg._pick; if (!pk) return;
@@ -2845,9 +2515,6 @@
         var pi = curIndex(), pg = pages[pi];
         return { pi: pi, ci: ((pg && pg._pos) ? pg._pos() : { cell: 0 }).cell };
       }
-      // Every page carries two triggers for the picker: the device NAME (the thing you'd instinctively tap) and
-      // the labelled "Switch" button on the chevron line (the thing you'd look for). Both are offered only when
-      // there IS something to pick — a subscription with a single config needs no index.
       var openPicker = function () {
         openConfigPicker(pickPeers, curPick(), jumpTo, netsIdx >= 0 ? { pi: netsIdx, n: (data.networks || []).length } : null);
       };
@@ -2871,11 +2538,6 @@
         });
       }
 
-      // Highlight + disable the button for the protocol group whose page is at the top. Viewport-relative rects
-      // so it works whether the PAGER scrolls (phone) or the WINDOW does (desktop).
-      // Sit the fixed left rail so its vertical centre lines up with the QR/config box of the page in view — not
-      // the viewport centre (the header pushes the QR below it). All pages share a layout, so the current one's
-      // box is representative; re-run on scroll/resize since a QR↔config toggle can change the box height.
       function alignRail() { /* icon row is static now — nothing to reposition */ }
       _relayoutRail = alignRail;   // let a page's layout pass (QR↔config toggle, fit, swipe) re-centre the rail
       function syncGroup() {
@@ -2938,26 +2600,12 @@
       requestAnimationFrame(syncGroup);   // re-sync once laid out
       setTimeout(alignRail, 120);         // catch the QR's async first paint
 
-      // ── VERTICAL paging (phone) is NATIVE scroll-snap, exactly like the horizontal deployment rail. Both axes
-      //    are `scroll-snap-type: mandatory` + `scroll-snap-stop: always`, so the content tracks the finger live
-      //    and a fling still lands exactly ONE peer / ONE deployment on. This used to be a JS takeover that
-      //    preventDefault()ed the vertical axis and stepped a peer on touchend past a distance/velocity
-      //    threshold — one peer per gesture, but nothing moved under the finger and a soft swipe did nothing at
-      //    all. `scroll-snap-stop: always` gives the same one-per-gesture guarantee for free (measured: it held
-      //    to one card across every velocity from a slow drag to a 3-frame fling), so the takeover is gone and
-      //    the two axes now behave identically. WHEEL is still stepped by hand below — a wheel/trackpad emits a
-      //    long burst of small deltas that snap alone chains straight through. ──
       var scrollableUnder = function (node) {   // a config-text box that itself needs scrolling — let it, don't page
         for (var n = node; n && n !== pager; n = n.parentNode) {
           if (n.classList && n.classList.contains("cfgtext") && n.scrollHeight > n.clientHeight + 2) return true;
         }
         return false;
       };
-      // Whether the PAGER is the scroll container is decided per EVENT, not once here: at this point in render
-      // the whole panel is still `hidden`, and a display:none box reports overflow "visible" — so a one-shot test
-      // read the wrong answer and never attached the handler at all (it only came alive after a theme/lang
-      // rebuild, which re-renders with the panel visible). Re-testing per event also survives a rotation, which
-      // flips the answer long after render. Landscape/desktop scrolls the WINDOW → leave the wheel native.
       var wAcc = 0, wT = 0, hAcc = 0, hT = 0;
       // Firefox reports wheel deltas in LINES (deltaMode 1) or PAGES (2), not pixels like Chrome — so the raw
       // deltas are tiny and never reach the 120px step threshold, blocking scroll entirely. Normalise to pixels.
@@ -2983,10 +2631,6 @@
     });
   }
 
-  // The header defaults to a CENTRED logo below the fixed top-right controls. On narrow screens / wide default
-  // fonts (Android) the centred wordmark collides with those controls; we can't know that from width alone, so
-  // measure it in the centred state and — only then — add body.logo-inline (CSS then moves the logo LEFT onto
-  // the controls' line). Re-checked on resize / orientation / language-toggle (RU shows/hides, changing the gap).
   function fitBrand() {
     document.body.classList.remove("logo-inline");                 // always measure the DEFAULT centred layout
     var brand = document.querySelector(".brand"), ctl = document.querySelector(".topctl");
@@ -3027,9 +2671,6 @@
         });
       })
       .catch(function (e) {
-        // Surface the REAL cause: this catch wraps importKey + fetch + render, so a render throw (not just a
-        // network drop) landed here too and used to masquerade as "check your connection". Log it, and show the
-        // message so the page tells the truth (a genuine fetch reject still reads sensibly, e.g. "Failed to fetch").
         try { console.error("swgSub: could not load subscription —", e); } catch (_) {}
         showState(t("err"), (e && e.message) ? String(e.message).slice(0, 300) : t("errNet"));
       });

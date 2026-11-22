@@ -1,9 +1,4 @@
 #!/usr/bin/env bash
-# Build the userspace AmneziaWG datapath (amnezia-vpn/amneziawg-go) that every bare-metal node keeps as awg-quick's
-# fallback when the kernel module is missing (docs/AWG-DATAPATH-RESILIENCE-PLAN.md D1). UNPATCHED upstream at a pinned
-# commit. Usage: ./build.sh [out]   Env: GOARCH (amd64 | arm64)
-# Reproducible: this commit + this exact Go toolchain + these flags give the sha256s pinned in lib/common.sh
-# (AWG_GO_SHA256_amd64 / _arm64), so the published release asset can be rebuilt and compared byte for byte.
 set -euo pipefail
 UPSTREAM_REPO="https://github.com/amnezia-vpn/amneziawg-go"
 UPSTREAM_SHA="b5928efb6ca19f0153958460c3d141f04abc5c2e"   # tag v3.1.20260828 → release amneziawg-go-3.1.20260828

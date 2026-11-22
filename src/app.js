@@ -1,14 +1,3 @@
-/* swg-panel — single-page operator console.
-   Buildless Preact + htm (vendored ESM, no build step). The data model is
-   User → Peer → Target: a User is identity only; a Peer is one credential
-   (pubkey+psk) deployed to one or more Targets, where a target is one
-   (node, iface, ip). Peers are managed from the Users angle and from the Peers
-   (by-node) angle; unassigned peers carry no user.
-
-   Live polling re-renders the active screen every few seconds; Preact diffs the
-   tree, so open inputs/editors are preserved without the old manual update()
-   regions. */
-
 import { h, render, Fragment, options } from "preact";
 import { useState, useEffect, useRef, useMemo, useCallback } from "preact/hooks";
 import htm from "htm";
@@ -65,17 +54,11 @@ import {
 } from "./js/screen-settings.js";
 import { LogOverlay, openLogOverlay } from "./js/journal.js";   // the header's Logs button: nothing loads until it is clicked
 
-// A phone: no field takes the focus by itself, so no keyboard comes up as a sheet or a form opens (operator, 2026-10-29) — the
-// fields that ask for it with `autofocus` (node settings, a rename, a type-to-confirm…) lose the ask before Preact sets it;
-// the Sheet's own first-field focus is skipped the same way (ui.js). A tap on a field still focuses it.
 if (isMobile()) {
   const prev = options.vnode;
   options.vnode = v => { const p = v.props; if (typeof v.type === "string" && p && p.autofocus) delete p.autofocus; if (prev) prev(v); };
 }
 
-// Fill the Store's callback slots (see js/store.js). These live above the Store in the module graph, so it
-// cannot import them — it calls back into them instead. Each assignment moves into the owning module as the
-// split proceeds; all targets are hoisted function declarations, so wiring them here is safe.
 Object.assign(storeHooks, {
   themeColors: () => applyThemeColors(),
   forkColors: () => applyForkColors(),
@@ -139,13 +122,7 @@ const ROUTES = [
   { re: /^\/panel\/settings$/, fn: PanelSettingsScreen, tab: "panel-settings" },
 ];
 
-// ─── "previous panel address" ribbon ──────────────────────────────────────────
-// A browser tab can sit on an OLD panel address (a host/port from before an Access & TLS change). During the
-// migration grace it still serves; after, it 52x / refuses. Either way it isn't an error — just an old address
-// drifting away. We compare where THIS tab is loaded against the panel's CONFIRMED canonical address (from
-// /api/state, `panel_public_url` — advances only on confirm, so it never flashes mid-change) and, when they
-// differ, show a persistent, calm (amber, not alarm-red) ribbon naming the current address so it's never
-// mistaken for a fault. The initiating tab's richer red countdown ribbon, when present, takes precedence.
+// "previous panel address" ribbon
 function _effPort(scheme, port) { return String(port || (scheme === "https" ? "443" : "80")); }
 function _parseAddr(rawUrl) {
   const raw = (rawUrl || "").trim(); if (!raw) return null;
@@ -157,19 +134,7 @@ function _parseAddr(rawUrl) {
 function oldAddrCurrent() {   // → the current canonical addr {host,scheme,port,base,label} if THIS tab is on a different one, else null
   const c = _parseAddr(Store.panelPublicUrl); if (!c) return null;
   const scheme = location.protocol.replace(":", "");
-  // ⚠️ `/panel/index.html` IS `/panel/`. The mount base never includes a file name, so comparing it against
-  // the raw pathname made the SPA's own entry file read as a DIFFERENT address: open the panel at
-  // `https://host:2087/index.html` — a bookmark, a hand-typed URL, a proxy that does not rewrite — and the
-  // ribbon announced "You're on a previous panel address", offering to send the operator to the address
-  // they were already on. Observed on swgt while loading `/index.html?cb=…`. Drop the entry file before
-  // comparing; a real subpath mount ("/swg") is unaffected because it has no file name to strip.
   const hereBase = location.pathname.replace(/\/index\.html?$/i, "/").replace(/\/+$/, "");
-  // ⚠️ THE CONSOLE ADDRESS IS NOT A STALE ONE. With private access on, the panel's public url is
-  // deliberately NOT where the console lives — that address answers node routes and 404s these pages —
-  // so a tab on the console differs from `panelPublicUrl` by design, on every load, for as long as the
-  // feature is on. Left to the plain comparison the ribbon fires permanently and its "Go to the current
-  // address" button sends the operator to a 404. Measured on a declarative host, where the console is
-  // the only way in at all.
   const _acc = (Store.panelSettings || {}).access || {};
   const _cw = _acc.console_wired || null;
   const _cport = String((_cw && _cw.port) || ((_acc.console || {}).mode === "own" ? (_acc.console || {}).port : "") || "");
@@ -181,21 +146,8 @@ function oldAddrCurrent() {   // → the current canonical addr {host,scheme,por
 // An installed app (the manifest's start_url) keeps the address it was installed from for good: after a move it can only be
 // installed again from the new one, so the ribbon says so there (docs/MOBILE-PLAN.md hook 6).
 const standalone = () => { try { return matchMedia("(display-mode: standalone)").matches; } catch (_) { return false; } };
-// The ONE address-migration ribbon — global, on every screen, server-driven so it survives navigation + reload.
-// Shows a live countdown while a confirmed migration is still gracing out (panel_migrate_until), then falls back to
-// "you're on a previous address" until this tab moves to the current one.
 function OldAddrRibbon() {
   useStore();
-  // PURE model — we SHOW REALITY, we don't predict it: the ribbon appears iff THIS tab's actual address differs
-  // from the panel's BLESSED (confirmed) address. `oldAddrCurrent()` compares window.location to the server's
-  // CONFIRMED url, which advances ONLY on a real confirm (never on a bare Save). Consequences, all for free:
-  //   • editing + Save (not yet confirmed) → blessed unchanged → a tab on it shows nothing (the confirm/revert
-  //     card owns that screen); no ribbon+confirm collision, no screen special-casing.
-  //   • confirm succeeds → blessed advances → the just-opened new tab matches (no ribbon); OTHER tabs on the old
-  //     address now differ → ribbon.
-  //   • confirm fails / can't validate (CF/nginx/unreachable) → blessed never moved → the new tab differs from
-  //     blessed and points back home; the panel is exactly where it was.
-  // No countdown, no "will stop working" — those were guesses about the future; the browser already knows the truth.
   const c = oldAddrCurrent();
   const ref = useRef(null);
   useEffect(() => {
@@ -204,9 +156,6 @@ function OldAddrRibbon() {
     return () => document.body.classList.remove("has-oldaddr");
   });
   if (!c) return null;
-  // "Cancel the move" is ORTHOGONAL to visibility — it never decides whether the ribbon shows. It appears only while
-  // the panel still allows an instant undo (a panel-controlled move whose old address is still served); the server
-  // clears that the moment the grace ends. Clicking it moves blessed back → this tab matches again → ribbon vanishes.
   const canRevert = Store.panelMigrateRevertable && Store.panelMigratePrev;
   const revertMove = async () => {
     const r = await api.post("/api/access/cancel", Store.panelMigratePrev).catch(() => null);
@@ -246,10 +195,6 @@ function App() {
   // in case the first poll already landed a critical issue before mount. Later polls re-check via Store.apply.
   useEffect(() => { setAppReady(true); maybeAlertServices(); return () => setAppReady(false); }, []);
 
-  // Access & TLS confirm handshake: the confirm itself fires at BOOT (maybeConfirmApply), before anything
-  // auth-gated, because a domain change lands on a host our cookie doesn't cover — App wouldn't even mount.
-  // Here we only report the OUTCOME once App is up: success (we reloaded, carrying our login onto this address)
-  // or failure (confirm didn't match a pending change).
   useEffect(() => {
     let ok = false, fail = null, console_ok = false;
     try {
@@ -272,10 +217,6 @@ function App() {
         body=${((fail && fail !== "1" && fail) || T("The confirmation didn’t match a pending change.")) + T(" The panel kept its current address.")}/>`);
     }, 0);
   }, []);
-  // Docker restart-safe change, step 3 (reachability commit) — GLOBAL so it fires on ANY screen, not only when the
-  // Access & TLS card is open. The new container came up "awaiting reachability"; this browser reaching /api/state
-  // here IS the proof the new address answers through the proxy (nodes dial the same url the same way), so commit —
-  // which clears the marker and stands the server's auto-revert timer down. A guard ref makes it fire once per nonce.
   const committedNonce = useRef("");
   useEffect(() => {
     const a = Store.dockerAwaiting;
@@ -291,10 +232,6 @@ function App() {
       setHash(nh); clearModalStack(); window.scrollTo(0, 0);
     };
     window.addEventListener("hashchange", onHash);
-    // Esc/Enter inside dialogs are owned by <Sheet> (with its dirty-guard); nothing global here.
-    // A MOUSE click on an icon button / nav tab shouldn't leave a lingering focus ring (it persists
-    // after a modal closes, then any keypress like Shift re-shows it). Suppressing the focus on
-    // mousedown keeps the click working while keyboard Tab still focuses (and shows the ring).
     const onMD = e => { const el = e.target && e.target.closest && e.target.closest(".iconbtn, #tabs a"); if (el) e.preventDefault(); };
     document.addEventListener("mousedown", onMD, true);
     return () => { window.removeEventListener("hashchange", onHash); document.removeEventListener("mousedown", onMD, true); };
@@ -319,15 +256,8 @@ function App() {
       if (seenPanelVer && seenPanelVer !== v.panel) noteHostUpdateDone(seenPanelVer, v.panel);
       setSeenPanelVer(v.panel);
     }
-    // Pop the "Panel updated — reload" prompt only once the host lifecycle has FINISHED (host_proc no longer
-    // in-progress). On a master the panel restarts after its own phase while the node phase is still running, so
-    // firing on the version bump alone would show "updated" once now and again when host_proc lands its terminal —
-    // i.e. twice on the header. Holding it until host_proc settles makes that a single "updated".
     if (pendingUpdateDone && !inProc(Store.hostProc)) { const _u = takePendingUpdateDone(); openUpdateDone(_u[0], _u[1]); }
     if (el && v.panel) {        // panel version + info icon → the changelog hover bubble (reuses the update-bubble look)
-      // aria-label, not title — the icon carries no text of its own so AT still needs a name, but the
-      // changelog bubble is what a sighted hover gets and a native tooltip would just cover it. Same
-      // reinstatement reason as the turn badge: this innerHTML is rewritten on every poll.
       el.innerHTML = `<span class="appver-wrap"><b>${esc(v.panel)}</b><span class="appver-info" aria-label="${esc(T("Changelog"))}">${INFO_SVG}</span></span>`;
       if (!el._verWired) { el._verWired = true; versionHoverBubble(el); }   // wire once — #appver persists across polls
     }
@@ -349,18 +279,10 @@ function App() {
     }
     const slot = $("#updslot");
     if (slot) {
-      // a host lifecycle status (re-install / update) OWNS the slot — in-progress, then its terminal
-      // (success ~5s auto-clears, aborted/failed until ×) — so it never shows alongside the update-check
-      // T("up to date")/button. With no lifecycle status, the slot is the normal update widget.
       let body;
       const _hl = esc((hostUpdRepairing && ({ updating: T("repairing"), updated: T("repaired"), "update-failed": T("repair failed") }[Store.hostProc]))
                       || procLabel(Store.hostProc) || "");   // a Fix/re-run reads as "repairing…" / "repaired", not "updating"
       const _healN = serviceIssues().filter(i => i.fix !== false).length;   // self-healable issues (not Secure Boot's: no update enrols a key) (missing/broken swg units + AmneziaWG datapath) → the updater repairs them
-      // ⚠️ THE CHECK BUTTON IS "Check status", NOT "check for updates" — it calls checkUpdate() AND
-      // Store.poll(), so it re-reads service issues as well as the version, and it toasts about the
-      // repairable ones. It was the LAST branch of this chain, so it vanished the moment the panel went
-      // outdated — a state that lasts days — leaving no on-demand refresh anywhere in the product exactly
-      // when an operator most wants one. It now rides ALONGSIDE the steady-state badges.
       const _checkBtn = `<button class="iconbtn lg" id="upd-check" title="${esc(T("Check status"))}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v4h-4"/></svg></button>`;
       if (inProc(Store.hostProc)) body = `<span class="hostproc-tag ${procInClass(Store.hostProc)}">${UPD_SPIN_SVG} ${_hl}</span>`;
       else if (procSuccess(Store.hostProc)) body = `<span class="hostproc-tag ok">${CHECK_SVG} ${_hl}</span>`;   // green, auto-clears (no ×)
@@ -374,23 +296,9 @@ function App() {
       else if (_healN > 0) body = `<button class="livepill updpill fixpill" id="host-fix" data-n="${_healN}">${WARN_SVG} ${esc(fixLabel(_healN))}</button>`;
       else if (Store.updFlash && Date.now() < Store.updFlash) body = `<button class="livepill upd-uptodate" id="host-repair" title="${esc(T("This panel is on the latest version"))}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> ${esc(T("up to date"))}</button>`;
       else body = _checkBtn;
-      // Steady = a badge you can act on. NOT the in-flight tags (updating / checking / proc): re-polling
-      // there is meaningless or already happening, and the header would flicker spinner↔button. Derived
-      // from what the chain PRODUCED, so the chain stays one untouched if/else-if run.
       if (/id="host-(upd|fix|repair)"/.test(body)) body += _checkBtn;
-      // Turn-family updates are a DIFFERENT AXIS from this box's health, so they ride BESIDE the chain rather
-      // than inside it. Ranked above "fix" they would hide a broken unit behind a version bump; ranked below
-      // they would vanish for the days a panel sits outdated — the same disappearing act the check button's
-      // comment above records. Suppressed only while a host lifecycle/check is in flight, where the header is
-      // already busy and a second badge would just add noise.
-      // Counts FORKS, not (fork, node) rows: an operator thinks "csqtt has an update", not "csqtt-on-A and
-      // csqtt-on-B have updates", and the same grouping drives the bubble — so badge count == lines listed.
       const _turnN = new Set((Store.turnUpdates || []).map(r => r.fork)).size;
       const _turnBadge = (_turnN && !/hostproc-tag|upd-busy/.test(body))
-        // No `title=`: the hover bubble below IS this badge's caption, and it names the forks, the nodes and
-        // the versions rather than restating the label. A native tooltip would surface a second later, on top
-        // of it, saying less. (parkTitles in hostHoverBubble enforces that generally; the header rewrites this
-        // element every poll, so the attribute must not be here to be reinstated mid-hover.)
         ? `<button class="livepill updpill turnpill" id="turn-upd" data-n="${_turnN}">${esc(plural(_turnN, "update"))}</button>` : "";
       // Left of the check button in BOTH layouts: the badges read as a row of things that are true, and the
       // check is the verb that refreshes them — a verb belongs at the end of the row, not between two facts.
@@ -435,12 +343,6 @@ let _loginShown = false;
 // Two-factor (TOTP / Google Authenticator) card for Settings → Authentication.
 function require401() { showLogin(); throw new Error("unauthorized"); }   // i18n-keys: a control-flow sentinel, never displayed
 function showLogin() { if (_loginShown) return; _loginShown = true; document.body.classList.add("loggedout"); try { render(h(LoginScreen), viewEl); } catch (_) {} }
-// Shown right after signing in when the panel password was reset with `swg-passwd` and the new password doesn't
-// open the vault. swg-passwd runs on the box, where the encryption key doesn't exist, so it can't re-wrap the
-// vault — but it destroys NOTHING: every stored config, QR, subscription link and escrowed server key is intact.
-// Either the OLD panel password or the encryption key gets us back in, and the vault is then re-wrapped under
-// `panelPw` — which only exists here, before the post-login reload, hence asking on this screen.
-// Skippable: the vault stays locked and the usual unlock prompt appears on the next action that needs it.
 function VaultRelinkCard({ panelPw, onDone }) {
   const [pw, setPw] = useState(""); const [busy, setBusy] = useState(false); const [err, setErr] = useState("");
   const ref = useRef(null);
@@ -450,10 +352,6 @@ function VaultRelinkCard({ panelPw, onDone }) {
     if (!pw || busy) return;
     setBusy(true); setErr("");
     try {
-      // One field takes both: an encryption key is recognisable on sight (base64 of 32 bytes), so try it that way
-      // first and fall back to treating the input as the old password (a password of that exact shape is possible,
-      // if unlikely). When both fail, report the error for whichever the input actually looked like — telling
-      // someone who pasted a key that their "password" was wrong sends them looking in the wrong place.
       if (looksLikeVaultKey(pw)) {
         try { await subUnlockWithKey(pw); }
         catch (keyErr) { try { await subUnlock(pw); } catch (_) { throw keyErr; } }
@@ -478,10 +376,6 @@ function LoginScreen() {
   const [u, setU] = useState(""); const [p, setP] = useState(""); const [err, setErr] = useState(""); const [busy, setBusy] = useState(false);
   const [twofa, setTwofa] = useState(false); const [code, setCode] = useState("");
   const [relink, setRelink] = useState(null);   // set to the NEW panel password when the vault needs reconnecting first
-  // The `autofocus` attribute is inert here: showLogin() renders this form long after page load, and a
-  // browser only honours autofocus for elements present when the document flushes its autofocus candidates
-  // (Preact doesn't special-case it either). Focus explicitly — on mount, and again when the 2FA step
-  // replaces the form, so the code can be typed without reaching for the mouse.
   const focusRef = useRef(null);
   useEffect(() => { if (!isMobile() && focusRef.current) focusRef.current.focus(); }, [twofa]);   // a phone: no keyboard until a tap
   const submit = async e => {
@@ -491,12 +385,6 @@ function LoginScreen() {
     try {
       const r = await api.login({ username: u, password: p, code: twofa ? code.trim() : undefined });
       if (r && r.ok) {
-        // Convenience cache: auto-unlock config encryption with the login password (survives the reload via
-        // sessionStorage). If there is NO vault yet — a fresh install — create one under this same password, so encryption is
-        // simply on from the start: the operator never has to go and set it up by hand before their first peer,
-        // and signing in both creates AND unlocks it (subVaultCreate caches the key too). Strictly gated on "no
-        // vault exists": subUnlock also throws on a WRONG password, and creating there would mint a new key over
-        // an existing wrap and orphan every stored config.
         let unlocked = true;
         try { await subUnlock(p); } catch (_) {
           unlocked = false;
@@ -510,10 +398,6 @@ function LoginScreen() {
             }
           } catch (_) {}
         }
-        // swg-passwd changed the panel password on the box, where the vault key isn't reachable, so the vault
-        // could not follow it. Nothing was destroyed — if this password somehow still opens the vault just
-        // re-wrap and move on; otherwise hand the operator the
-        // re-connect prompt, where the OLD panel password or the encryption key gets us back in.
         if (r.data && r.data.vault_reset) {
           if (unlocked) { try { await subRewrap(p); sessionStorage.setItem("__vault_reconnected", "1"); } catch (_) {} }
           else { setRelink(p); setBusy(false); return; }   // ask HERE — after the reload the new password is gone, and the re-wrap needs it
@@ -550,10 +434,6 @@ function LoginScreen() {
     `}
   </form></div>`;
 }
-// ───────────────────────── the phone's More sheet (docs/MOBILE-PLAN.md hook 1) ─────────────────────────
-// The header actions that carry no status, one tap away. The status badges stay in #updslot (the strip under the app bar), its
-// one renderer: nothing here repeats them. The version line carries the host updater's branch when it is not main, with the
-// sentence the desktop shows in #appref's tooltip, because a phone has no hover.
 function setUiMode(m) { try { localStorage.setItem("swg-ui", m); } catch (_) {} location.reload(); }
 const LOGOUT_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><path d="M15 17l5-5-5-5M20 12H9M11 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h5"/></svg>`;
 const DESKTOP_SVG = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="3" y="5" width="18" height="12" rx="2"/><path d="M8 21h8M12 17v4"/></svg>`;
@@ -603,22 +483,8 @@ function doLogout() {
 // ───────────────────────── boot ─────────────────────────
 const viewEl = $("#view");
 viewEl.innerHTML = `<div class="loading"><span class="spin"></span>${T("connecting…")}</div>`;
-// Access & TLS confirm: if we landed here with ?__apply=<nonce>, confirm it BEFORE anything auth-gated. The
-// confirm is authorized by the nonce (not a session) and carries our login onto this address, so it MUST run
-// even when we're not logged in here — a domain change lands on a host our cookie doesn't cover, which would
-// otherwise 401 Store.init() → login screen → App (and its confirm handler) never mounts. On success we reload
-// to pick up the fresh session cookie; the "confirmed" note shows after, in App (the `__apply_ok` branch).
 async function maybeConfirmApply() {
-  // ?__applyurl=<nonce> — a reverse-proxy DOMAIN/URL swap confirm: we were opened on the NEW url, so this request
-  // arrives THROUGH the proxy on the new host, which is the panel's proof the proxy routes it here. ?__apply=<nonce>
-  // is the direct/rebind confirm (new listener). Both are nonce-authorized (not a session) and carry our login onto
-  // this address, so they MUST run before anything auth-gated (a domain change lands where our cookie doesn't cover).
   const mu = /[?&]__applyurl=([A-Za-z0-9]+)/.exec(location.search);
-  // ?__applyconsole=<nonce> — the OPERATOR CONSOLE moving to its own address. We were opened on the new
-  // console listener, and arriving here at all is the panel's proof the operator can reach it — which is
-  // why the panel's own address only drops to a node-only door once this lands. Same nonce authorization
-  // and the same reason it must run pre-auth, only more so: the console door is a different ORIGIN, so a
-  // session cookie provably cannot reach it and we would otherwise stare at a login while the timer ran out.
   const mc = /[?&]__applyconsole=([A-Za-z0-9]+)/.exec(location.search);
   const m = mu || mc || /[?&]__apply=([A-Za-z0-9]+)/.exec(location.search);
   if (!m) return false;
@@ -632,12 +498,6 @@ async function maybeConfirmApply() {
   try { sessionStorage.setItem("__apply_fail", srvText(r) || "1"); } catch (_) {}   // shown by App once it mounts (if we're authed here)
   return false;
 }
-/* The app bar is STATIC markup in index.html — it paints before any module runs, which is the point (the
-   chrome is up while the SPA boots). So it can't call T(); it is translated here instead, once, right after
-   loadLang() and before the first render.
-
-   Keyed on data-tab and on the element id, never on the label text: the tab's identity is `data-tab`, which
-   is also what marks it active, and a text match would quietly stop finding it the moment it's translated. */
 function paintChrome() {
   const tab = { overview: T("nav|Overview"), connections: T("nav|Live"), users: T("nav|Users"),
                 nodes: T("nav|Nodes"), peers: T("nav|Peers") };
@@ -658,11 +518,6 @@ function paintChrome() {
 (async () => {
   await loadLang();         // before the first render: T() is synchronous, and a late catalog would paint English then flip
   paintChrome();            // the static app bar, which loaded before any of this
-  // INSECURE CONTEXT. Web Crypto is exposed only over https:// (or http on localhost/127.0.0.1); anywhere
-  // else `crypto.subtle` is undefined and peer creation, the Encryption Vault and every config/QR fail with
-  // a bare TypeError that reads as a panel bug. Warn, do NOT block: unlike swgSub — whose whole purpose is
-  // decrypting configs, so it stops dead — the panel's nodes, traffic and health views work fine without it,
-  // and an operator watching a fleet over a LAN address should keep them.
   if (!cryptoReady()) {
     const b = document.createElement("div");
     b.className = "insecure-banner";
@@ -679,9 +534,6 @@ function paintChrome() {
   try { if (sessionStorage.getItem("__apply_ok")) setPendingSection("access"); } catch (_) {}
   render(h(App), viewEl);
   if (isMobile()) { attachTitleTaps(); attachOutsideTapGuard(); attachSwipePeek(); attachTypingHold(); attachBubbleSwipe(); attachToastSwipe(); attachBackCloses(); attachViewportVars(); }   // a phone: a title= on a tap (hook 5); a tap outside a list only closes it
-  // Tell the boot guard in index.html that the SPA is up. Set AFTER the first render, so it means
-  // "something is on screen", not merely "this file parsed" — a module that loads and then throws
-  // mid-boot must still count as a failure.
   window.__swgBooted = true;
   try { if (sessionStorage.getItem("__vault_reconnected")) { sessionStorage.removeItem("__vault_reconnected"); setTimeout(() => toast(T("Encryption Vault reconnected."), "ok"), 400); } } catch (_) {}
   try { if (sessionStorage.getItem("__vault_show_key")) { sessionStorage.removeItem("__vault_show_key"); setTimeout(() => openModal(html`<${VaultKeySheet}/>`), 500); } } catch (_) {}

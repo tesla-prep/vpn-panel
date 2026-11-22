@@ -44,9 +44,6 @@ PUBKEY_RE = re.compile(r"^[A-Za-z0-9+/]{43}=$")
 ENDPOINT_RE = re.compile(r"^(\[[0-9A-Fa-f:.]{2,45}\]|[A-Za-z0-9](?:[A-Za-z0-9.-]{0,252})):[0-9]{1,5}$")
 AWG_KEYS  = ["Jc", "Jmin", "Jmax", "S1", "S2", "S3", "S4",
              "H1", "H2", "H3", "H4", "I1", "I2", "I3", "I4", "I5",
-             # AmneziaWG 3.x (docs/AWG3-PLAN.md §7.1). DisableCookies is never written, but KNOWN, so an edit drops one an
-             # onboarded interface brought. Twins: swg-noded, swg-panel-server, js/crypto.js, sub.js, turn-artifacts.js
-             # (tests/cross_language_twins_selftest.py [3]).
              "HeaderProtectionKey", "RandomTrailers", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout",
              "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts", "DisableCookies"]
 AWG3_KEYS = AWG_KEYS[AWG_KEYS.index("HeaderProtectionKey"):]
@@ -446,11 +443,6 @@ def op_add_peer(cfg, req):
     if any(p["public_key"] == pub for p in peers):
         raise AgentError("peer_exists", "a peer with this public key already exists")
 
-    # IP is always explicit; validate in-subnet, not the server, not taken — EXCEPT a default-route peer
-    # (0.0.0.0/0 or ::/0). That's a mesh/cascade peer carrying arbitrary destinations into the link: it dials
-    # out (endpoint) and its AllowedIPs is intentionally the whole internet, not an address in the link /31.
-    # (op_set_peer_allowed flips an existing peer to /0; this lets the very FIRST add already carry /0 — needed
-    # when the iface is rebuilt, e.g. after a reboot, while the cascade is already active.)
     members = [c.strip() for c in allowed.split(",") if c.strip()]
     if not members or not all("/" in m for m in members):
         raise AgentError("bad_request", "allowed_ips must be CIDR(s), e.g. 10.0.0.5/32")
@@ -458,10 +450,6 @@ def op_add_peer(cfg, req):
     # A default-route member (0.0.0.0/0 or ::/0) marks a mesh/cascade peer that carries arbitrary destinations
     # into the link — exempt from the in-subnet address checks (it dials out; its AllowedIPs is the whole internet).
     if not any(m in ("0.0.0.0/0", "::/0") for m in members):
-        # Validate the peer's TUNNEL address: the member whose host IP is INSIDE the interface subnet. A peer may
-        # legitimately also carry routed subnets outside the link's range (e.g. a LAN behind it), so check the
-        # in-subnet member specifically rather than blindly the first CIDR — and reject if NONE is in-subnet
-        # (that's the record mismatch the panel flags as "broken"; the node refuses it too, as defence in depth).
         in_sub = []
         for m in members:
             _ip = m.split("/")[0]
@@ -733,10 +721,6 @@ def op_set_iface(cfg, req):
         set_listen_port_in_conf(ic["conf"], port)                        # persist ALWAYS — applies on next bring-up
         out["listen_port"] = port
     if req.get("mtu") is not None:
-        # The link MTU. Unlike a port change this is NOT disruptive: `ip link set mtu` retunes the live
-        # interface without dropping a single peer or forcing a re-dial, so an MTU correction converges
-        # silently. Persist regardless of whether the live set worked — the interface may be DOWN, and
-        # wg/awg-quick reads MTU from the conf on the next bring-up.
         try:
             mtu = int(req.get("mtu"))
         except (TypeError, ValueError):
@@ -749,14 +733,6 @@ def op_set_iface(cfg, req):
         out["mtu"] = mtu
     awg = req.get("awg_params")
     if isinstance(awg, dict) and awg and (ic.get("cmd") or [""])[0] != "awg":
-        # ⚠️ Obfuscation belongs to AmneziaWG ONLY — the same gate create-iface states ("only genuine
-        # AmneziaWG gets obfuscation params"), which this path never had. Writing S/H/I lines into a PLAIN
-        # WireGuard conf fails in a way nothing reports: the live `wg set … jc 4` errors and is suppressed,
-        # so the datapath is untouched, but the lines land in the FILE — after which the node reports them,
-        # the panel blesses them into its record, and the interface reads as AmneziaWG everywhere in the UI
-        # while the wire stays plain WG. Measured on `msk-main/wg0`, taken over from a plain-WG container:
-        # it wore an AWG badge for a device `awg show` cannot see. Skip, and SAY so rather than 500-ing —
-        # the rest of the request (MTU, listen port) is legitimate and must still apply.
         out["awg_params_skipped"] = "not an AmneziaWG interface"
         awg = None
     if isinstance(awg, dict) and awg:
@@ -786,18 +762,7 @@ def op_set_iface(cfg, req):
     return out
 
 
-# ── egress rules: the up/down hooks a managed interface's conf carries ───────────────────────────
-# One rule, two shapes: the up REAPS THEN ADDS (so the chain ends with exactly one copy however many
-# were there), the down reaps. Both loops are BOUNDED — a `-D` that reports success without deleting
-# would wedge a tear-down for ever.
-#
-# ⚠️ Deliberately NOT `-C … || -A …`, which is the obvious way to write an idempotent add and is
-# WRONG here. Measured on a NixOS node, iptables 1.8.11 (nf_tables): `-C FORWARD -i zzz999 -o ens3
-# -j ACCEPT` returns 0 — for an interface that exists nowhere on the box — as does `-i zzz999 -o
-# zzz998`, while `-i zzz999 -j DROP` and a port check correctly return 1. A two-interface ACCEPT
-# check matches on shape, not on the names. A guard that says "already there" about a rule that is
-# not there SKIPS it, and the interface silently comes up without its forward rules. Delete-then-add
-# needs no such judgement: it converges from any starting state.
+# egress rules: the up/down hooks a managed interface's conf carries
 _IPT_REAP_TRIES = 8
 
 def _ipt_reap(table, rule):
@@ -811,14 +776,6 @@ def _ipt_set(table, rule):
     return _ipt_reap(table, rule) + f"; iptables {t}-A {rule} || true"
 
 
-# ⚠️ EACH INTERFACE'S OWN MASQUERADE. It used to be `-s <net> -o <wan> -j MASQUERADE` and nothing else, so two interfaces
-# on ONE subnet wrote ONE rule text — and since every down reaps every copy of its text, whichever went down second took
-# the other's rule with it. A node's transfer home does exactly that: the panel re-creates the mesh link under a new
-# name on the same /31, the new link comes up, the old one goes — and the new link was left with no NAT on either end,
-# for good (mesh links get no baseline from swg-noded). A rename done up-then-down, or a subnet reused while the old
-# interface is still up, is the same collision. The rule now names its interface (wg-quick puts the name for %i), so a
-# down takes its own rule and nobody else's. Existing interfaces move over with op_tag_nat_hooks. lib/common.sh's
-# nat_hook_up / nat_hook_down print the same text (tests/nat_hooks_selftest.py holds them together).
 NAT_TAG = "swg-nat:"
 
 
@@ -909,23 +866,12 @@ def _ensure_tool(tool):
         raise AgentError("no_tool", "AmneziaWG is only half-installed on this node: awg is present but "
                          "awg-quick is missing. Re-run the swgPanel node installer — it builds both from "
                          "source — then this interface creates itself on the next sync.")
-    # A DOCKER node gets its tools from the swg-node image, which fails its own build unless awg, awg-quick
-    # and amneziawg-go are all present — so this should be unreachable there. If it ever is, "re-run the
-    # installer" is the wrong instruction: nothing on the host owns those binaries. Pull the image instead.
-    # "Re-run the installer" is the wrong instruction where the installation is declared elsewhere:
-    # there is no installer to re-run, and one that ran would be invisible to the next rebuild. ⚠️ THIS
-    # TEST GOES FIRST, above the container one: a declaratively managed node that happens to run in a
-    # container is both, and "docker compose pull" is the half of that it cannot act on.
-    # Fixed sentence with nothing interpolated, like its sibling above, so the panel can translate it.
     if _declarative():
         raise AgentError("no_tool", "AmneziaWG tools are not installed on this node, and this node's "
                          "installation is managed declaratively — re-running an installer would not "
                          "survive its next rebuild. Add the AmneziaWG tools to the system configuration "
                          "that declares this node and rebuild it, then this interface creates itself on "
                          "the next sync.")
-    # A DOCKER node gets its tools from the swg-node image, which fails its own build unless awg, awg-quick
-    # and amneziawg-go are all present — so this should be unreachable there. If it ever is, "re-run the
-    # installer" is the wrong instruction: nothing on the host owns those binaries. Pull the image instead.
     if _IN_CONTAINER:
         raise AgentError("no_tool", "AmneziaWG tools are missing from this node's container image. Update the "
                          "node (docker compose pull && docker compose up -d) so it runs a current swg-node "
@@ -1021,26 +967,10 @@ def _units_persist():
             os.unlink(probe)
             _UNIT_PERSIST["v"] = True
         except OSError as e:
-            # ⚠️ EROFS is the ONLY failure that means "this host's units are declared elsewhere".
-            # EACCES means we are not privileged — a different problem with a different fix, and an
-            # operator told to go edit their configuration.nix over it would be sent somewhere with
-            # nothing to find. ENOENT (no such directory, e.g. inside a container) is not it either.
-            # Anything but EROFS keeps today's behaviour: try, and let it fail harmlessly.
             _UNIT_PERSIST["v"] = getattr(e, "errno", None) != errno.EROFS
     return _UNIT_PERSIST["v"]
 
 
-# The <tool>-quick@ TEMPLATE unit — the thing `systemctl enable awg-quick@<iface>` instantiates. It is not
-# ours: it ships with the tools (wireguard-tools carries wg-quick@.service on every distro, amneziawg-tools
-# carries awg-quick@.service upstream). We write it in exactly one case, and only when the host has none at
-# all: awg tools built from source by an installer that passed WITH_SYSTEMDUNITS=no. That flag is gone from
-# lib/common.sh, but the fix cannot reach a box whose tools are ALREADY installed — ensure_awg_datapath
-# returns early when awg + awg-quick + the module are present, so the build is never re-run there.
-#
-# Deliberately NOT a copy of upstream's unit: its ExecReload is
-#     /bin/bash -c 'exec awg syncconf %i <(exec awg-quick strip %i)'
-# which needs bash for process substitution. Nothing asks these units to reload — every change goes through
-# the agent's own ops — so the dependency buys nothing and a minimal box may not have bash at all.
 _QUICK_UNIT_MARK = "# Written by swgPanel"
 _QUICK_UNIT = """\
 {mark}: {tool}-quick@.service was missing on this host, so no {tool} interface could survive a
@@ -1163,12 +1093,6 @@ def _iface_unit(action, tool, iface):
     nothing on the box can start it. Measured on a Debian node: three consecutive reboots, the
     interface down each time, 392 log lines about it, and no signal anywhere an operator looks.
     So: ensure the template first, and RETURN what happened instead of dropping it."""
-    # No systemctl at all — a node CONTAINER (python:3.12-slim carries /etc/systemd/system but no
-    # systemd) — is the same answer as a read-only unit directory, not a failure: units are simply not
-    # how this host starts interfaces, node-entrypoint.sh is. Testing the DIRECTORY alone is not enough,
-    # because that image HAS the directory and it is writable, so the probe says "units persist here"
-    # and we would write a template into a container that can never read it, then report False for a
-    # host that is working exactly as designed.
     if not _units_persist() or not shutil.which("systemctl"):
         return None
     if action == "enable" and not _ensure_quick_unit(tool):
@@ -1180,29 +1104,9 @@ def _iface_unit(action, tool, iface):
         return False
 
 
-# bash reports a failed execve as `<script>: line <n>: <path>: <reason>` — the tool never STARTED, so
-# nothing it would have said about ports, subnets or device types can be true.
-#
-# ⚠️ BOTH SPELLINGS, because both mean the same thing here. EPERM ("Operation not permitted") is the
-# no_new_privs transition denial this project caused and has now removed; EACCES ("Permission denied")
-# is what a policy that simply has no exec rule for the binary returns, and what a noexec mount returns
-# — SELinux and fapolicyd land there, and the general arm below names them, so matching only EPERM left
-# that advice permanently unreachable and dropped those hosts back onto "port/subnet may be in use".
-# Safe to widen here specifically: `<tool>-quick` redirects only to file descriptors and /dev/null, so
-# a failed REDIRECT — which bash reports in this same shape — cannot occur inside it.
-#
-# The English spelling is not luck: `<tool>-quick` does `export LC_ALL=C` on its ninth line, before it
-# runs anything, so every message below it is C-locale whatever the host is set to. Keep that in mind
-# before matching on any other stderr text here.
 _EXEC_DENIED_RE = re.compile(
     r"(?:^|\n)[^\n]*: line \d+: (\S+): (?:Operation not permitted|Permission denied)")
 
-# The OTHER refusal: the tool really did run, and the kernel turned down the operation it asked for.
-# A different fault with a different fix, which is why the pattern above is anchored tightly enough to
-# leave it alone — and it became the LIKELIER of the two the moment this project stopped setting
-# NoNewPrivileges on the node daemon, because the tools now genuinely execute under whatever policy
-# confines them instead of being refused at the door. Left to the generic message, it would arrive as
-# "port/subnet may be in use" — the exact lie this whole block exists to stop telling.
 _NETLINK_DENIED_RE = re.compile(r"RTNETLINK answers: Operation not permitted")
 
 _AA_PROFILES = "/sys/kernel/security/apparmor/profiles"
@@ -1246,9 +1150,6 @@ def _aa_enforced_tools():
     return sorted(out)
 
 
-# The AppArmor arm's declarative twin, hoisted because TWO paths reach it: a declared host whose
-# policy confines the tools (caught above the container test, since a declared container is both),
-# and the host-policy branch further down.
 _AA_DECLARATIVE = ("this node could not execute the tools that bring an interface up: AppArmor refused to "
                    "start them, so the bring-up never began. This is not a port or subnet conflict. A "
                    "confined program may not switch into its child profile while the calling service runs "
@@ -1278,10 +1179,6 @@ def _denied_error(msg):
     inside it. Host policy is diagnosed last — only where host policy can be changed."""
     if _EXEC_DENIED_RE.search(msg or ""):
         aa = _aa_enforced_tools()
-        # ⚠️ ORDER IS THE WHOLE POINT. A declaratively managed node that runs in a container is BOTH, and
-        # only one of the two answers can be acted on there — so that test goes above the container one.
-        # Below it container still beats host policy: `aa-complain` on the host is not something a
-        # process inside a container can reach.
         if _declarative():
             if aa:
                 return AgentError("no_exec", _AA_DECLARATIVE)
@@ -1305,13 +1202,6 @@ def _denied_error(msg):
                               "[NET_ADMIN]) and recreate it (docker compose up -d), then this interface "
                               "creates itself on the next sync.")
         if aa:
-            # ⚠️ THE ADVICE HAS TO SURVIVE THE HOST. `aa-complain` is a command, and on a host whose
-            # policy and units are declared elsewhere a command is a change that does not stick — the
-            # same reason _ensure_tool and the no_module branch each carry a declarative twin. It is
-            # also the only arm that prescribes rather than diagnoses, which is why only it needs one.
-            # And it names the restart on purpose: nix/modules/node.nix sets restartIfChanged to
-            # restartOnRebuild, which defaults to FALSE (a restart bounces every client), so a rebuild
-            # alone leaves the OLD unit running and the operator with no sign that it did.
             return AgentError("no_exec",
                               "this node could not execute the tools that bring an interface up: AppArmor "
                               "refused to start them, so the bring-up never began. This is not a port or "
@@ -1335,15 +1225,6 @@ def _denied_error(msg):
                           "the first, and  dmesg | grep -i \'denied\'  for the second — one of them names "
                           "it. Once the tools run again, this interface creates itself on the next sync.")
     if _NETLINK_DENIED_RE.search(msg or ""):
-        # ⚠️ THE SAME THREE ARMS, IN THE SAME ORDER, AND FOR THE SAME REASON as the exec case above.
-        # This one used to be a single sentence that named the container fix AND the host fix and no
-        # configuration at all — so a declaratively managed node was told to edit a docker-compose.yml
-        # it does not have and run `docker compose up -d`, which is the one instruction that cannot
-        # stick there. It was the only arm in this function without a declarative branch, and by the
-        # docstring above _NETLINK_DENIED_RE it is the arm that became the LIKELIER of the two the
-        # moment this project stopped setting NoNewPrivileges: the tools now genuinely execute under
-        # whatever policy confines them, so being turned down mid-operation is the realistic outcome.
-        # The message most likely to fire was the one that never asked what the host could act on.
         if _declarative():
             return AgentError("no_priv",
                               "the interface tools ran on this node, but the kernel refused the "
@@ -1401,11 +1282,6 @@ def op_create_iface(cfg, req):
         raise AgentError("bad_request", "listen_port must be a number")
     mtu = str(req.get("mtu") or "1280")
     _ensure_tool(tool)                          # install wg/awg tools if this node doesn't have them yet
-    # On a container node ONLY /etc/amnezia/amneziawg is a bind-mount that outlives a container recreate;
-    # /etc/wireguard is container-local. A plain-WG conf written there is destroyed by the next update while the
-    # interface itself survives in the host netns — so the node comes back to a live device it has no conf for,
-    # classifies it as somebody else's (adoption candidate), stops reporting it, and the panel shows the
-    # interface as missing. AmneziaWG never hit this because its directory IS the mount.
     conf_dir = "/etc/amnezia/amneziawg" if (tool == "awg" or _IN_CONTAINER) else "/etc/wireguard"
     conf = os.path.join(conf_dir, iface + ".conf")
     if os.path.exists(conf):
@@ -1428,24 +1304,7 @@ def op_create_iface(cfg, req):
     else:
         addr = f"{net.network_address + 1}/{net.prefixlen}"
     wan = _wan_iface()
-    # NAT is BEST-EFFORT (each step `|| true`) so the interface still comes up where iptables/nat
-    # isn't available (e.g. some containers) — matching node-entrypoint.sh's non-fatal NAT. A failed
-    # rule just means clients won't egress until NAT is sorted; it never blocks bring-up.
-    # ONE COPY, NOT ONE MORE. iptables appends without checking and wg-quick's
-    # PostDown deletes exactly one copy, so every bring-up that was not preceded by a matching
-    # tear-down — a container stopped, a bare↔docker convert, an `ip link del`, a crash — left a
-    # permanent extra copy, and a later delete could never clear more than one of them. Measured on a
-    # 45-day-old node: twelve MASQUERADE rules, for subnets whose interfaces were long gone, beside a
-    # box that had exactly one interface. Reaping on the way UP as well as down means a bring-up
-    # converges the chain from any state — including the pile an install made before this fix.
     up, down = _nat_hooks(net, wan)       # its OWN tagged MASQUERADE — see _nat_hooks
-    # ⚠️ The conf SAYS WHICH PROTOCOL IT IS. Everything else that could answer is circumstantial: the
-    # directory is not (a container writes every conf to the AmneziaWG one, so a plain-WireGuard conf
-    # that has been through one comes back as `awg` and the panel re-badges it), and the content is not
-    # either — an AmneziaWG conf with no obfuscation set is byte-identical in shape to a WireGuard one,
-    # which is exactly the case that cannot be guessed. A comment line travels with the file, through a
-    # move, a convert, a run-model switch or a manual copy between boxes, and both wg-quick and
-    # awg-quick ignore it. Same shape as #swg:onboarded.
     body = (f"#swg:cmd {tool}\n"
             f"[Interface]\nPrivateKey = {priv}\nAddress = {addr}\nListenPort = {port}\nMTU = {mtu}\n"
             f"PostUp = {up}\nPostDown = {down}\n")
@@ -1456,18 +1315,6 @@ def op_create_iface(cfg, req):
         # recreated interface won't speak the clients' handshake. A brand-new create gets fresh random params.
         supp = req.get("awg_params") if isinstance(req.get("awg_params"), dict) else None
         supp = {k: str(supp[k]) for k in AWG_KEYS if supp and str(supp.get(k, "")) != ""} if supp else None
-        # A supplied set may be PARTIAL: the panel sends only the fields an operator filled into the defaults and
-        # leaves the rest to us. Generate the full set first and overlay what arrived, or a blank field would
-        # vanish from the conf altogether — an awg interface with no S/H is not obfuscated at all.
-        #
-        # …but ONLY the caller knows which kind of set it sent. A TAKE-OVER reads somebody else's conf and passes
-        # back exactly the keys it found, which for a server built by an older AmneziaWG is Jc/Jmin/Jmax/S1/S2/H1–H4
-        # and nothing else. Filling the rest from _awg_obfuscation() then hands the interface S3/S4 and our fixed
-        # I1–I5 — junk the clients baked into their configs know nothing about. The handshake still completes (it
-        # rides on the keys that DID match), so the server looks healthy and every existing client silently stops
-        # passing data. `awg_params_exact` says "this set is the whole truth": write those keys and invent none.
-        # …and "the whole truth" that holds no key at all is a mistake, never a request for a random set: an AmneziaWG
-        # interface with no parameters is what plain WireGuard is (the panel refuses to make one — this is the backstop).
         if req.get("awg_params_exact") and not supp:
             raise AgentError("awg_empty_exact", "an AmneziaWG interface needs at least one AmneziaWG parameter — create a "
                                                 "WireGuard interface instead")
@@ -1486,11 +1333,6 @@ def op_create_iface(cfg, req):
         else:
             body += _awg_obfuscation("2.0")  # legacy panel request with no profile attached
     write_conf_atomic(conf, body)
-    # `wg-quick up <name>` resolves the name against /etc/wireguard and NOWHERE else, so moving the file to the
-    # mount would break the bring-up it is supposed to enable. Link the name back into that directory: every
-    # by-name call (up here, down/restart later, and wg-quick's own `wg setconf`) keeps working, while the file
-    # that must survive a container recreate sits on the volume. The link is container-local and disposable —
-    # after a recreate it is gone, the conf is not, and the node re-adopts the live interface from it.
     link = ""
     if conf_dir != "/etc/wireguard" and tool != "awg":
         link = os.path.join("/etc/wireguard", iface + ".conf")
@@ -1512,25 +1354,12 @@ def op_create_iface(cfg, req):
             with contextlib.suppress(Exception):
                 os.unlink(link)
         msg = str(e)
-        # FIRST, before any pattern that reads the tools' own output: a tool that could not be EXECUTED
-        # printed none of that output, and every branch below would be guessing at a command that never
-        # ran. The refused-by-the-kernel case is classified here too, for the same reason in reverse —
-        # it DID run, and what it says has nothing to do with ports or subnets either.
         _denied = _denied_error(msg)
         if _denied:
             raise _denied
-        # "Unknown device type" / "Protocol not supported" == the kernel datapath module isn't loadable (the awg
-        # DKMS module never built against this kernel, or a kernel upgrade left it stale). The agent is sandboxed
-        # (can't apt-install), so translate the cryptic failure into the exact fix instead of blaming the port.
         if "Unknown device type" in msg or "Protocol not supported" in msg:
             kr = os.uname().release
             mod = "amneziawg" if tool == "awg" else "wireguard"
-            # Same signal as _ensure_tool: where we cannot write a unit, the host's packages are
-            # declared somewhere else and an apt-get line is an instruction that cannot stick. The
-            # module has to come from the SAME kernel package set as the running kernel, which is
-            # the whole difficulty on such a host, so say that rather than a command that will not
-            # apply. This message interpolates (kernel release), so it is not catalogue-translated
-            # either way and adds no i18n key.
             if _declarative():
                 raise AgentError("no_module",
                                  f"the {mod} kernel module isn't built or loaded on this node (kernel {kr}), "
@@ -1550,20 +1379,12 @@ def op_create_iface(cfg, req):
                              f"on this node (kernel {kr}) — its DKMS module needs matching linux-headers. Run on the "
                              f"node:  {how}  — then the interface creates automatically on the next sync. "
                              f"(Re-running the node installer, or swg-update, does this for you.)")
-        # "already exists" == a DEVICE of that name is already on the box — nothing to do with the port or the
-        # subnet, which is what the generic message below blames and what sends the operator hunting the wrong
-        # thing. It happens when an interface outlived the config that owned it (a convert, a manual `ip link
-        # add`, a half-removed install): the device is still up, usually still holding its ORIGINAL key, so
-        # adopting it keeps every existing client working while creating over it cannot.
         if "already exists" in msg.lower():
             raise AgentError("name_taken",
                              f"an interface named {iface} already exists on this node, so it can't be created. "
                              f"It isn't managed here — adopt it instead (that keeps its current key, so its "
                              f"peers keep working), or remove the device first if you really want a new one.")
         raise AgentError("up_failed", f"{tool}-quick up {iface} failed (port/subnet may be in use): {e}")
-    # `unit_enabled`: True it took, False it did not (nothing will start this after a reboot), None the
-    # host declares its units elsewhere and its own bootstrap brings interfaces up. Reported rather than
-    # dropped — see _iface_unit. Nothing consumes it yet; it exists so a caller CAN know.
     _unit = _iface_unit("enable", tool, iface)
     return {"iface": iface, "public_key": pub, "address": addr, "conf": conf, "cmd": cmd,
             "listen_port": port, "unit_enabled": _unit}
@@ -1680,9 +1501,6 @@ def op_delete_iface(cfg, req):
         conf_text = read_conf(ic["conf"])          # read BEFORE the down — the reap needs the rules it wrote
     with contextlib.suppress(Exception):
         run([tool + "-quick", "down", _quick_target(ic, iface)])
-    # ⚠️ THE DOWN IS BEST-EFFORT, THE DELETE IS NOT. A bring-down that failed for any reason left the device up with
-    # its peers while everything below forgot it — nothing reconciles an interface the node no longer manages, so a
-    # deleted interface kept admitting its devices. Whatever the cause, the device goes.
     if os.path.exists(os.path.join(_SYS_NET, iface)):
         with contextlib.suppress(Exception):
             run(["ip", "link", "delete", "dev", iface])
@@ -1749,9 +1567,6 @@ def op_restart_iface(cfg, req):
     try:
         _quick_up(tool, iface, target)
     except Exception as e:
-        # Same classification as op_create_iface: Restart is the button the panel offers for a failed
-        # bring-up, so this is the path an operator hitting the refusal takes NEXT. Leaving the raw dump
-        # here would put the cause back out of reach one click after we named it.
         _denied = _denied_error(str(e))
         if _denied:
             raise _denied
@@ -1911,10 +1726,6 @@ def op_reload_awg_module(cfg, req):
             ok_tools = False
         if not ok_tools:
             raise AgentError("tools_old", "the awg tools predate AmneziaWG %s and could not configure the new module" % gd)
-    # ⚠️ NOTHING TO FALL BACK ON, NO UNLOAD. Nothing here knows the new module loads before the old one is out (Secure Boot
-    # refusing its key, a build that does not match this kernel): awg-quick then brings every interface up on amneziawg-go
-    # — or on nothing, and every AmneziaWG interface and mesh link stayed down until someone acted (1.8.9 qualification
-    # HE-4, on a VM: 106 s, indefinitely without the rig).
     if not _awg_fallback():
         raise AgentError("no_fallback", "no amneziawg-go to fall back on if the new module would not load")
     ns_busy = _awg_devs_elsewhere()

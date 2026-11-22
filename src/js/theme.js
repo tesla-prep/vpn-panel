@@ -1,11 +1,3 @@
-/* theme.js — light/dark resolution and colour maths.
- *
- * LAYER 0 (see docs/APP-JS-SPLIT-PLAN.md). A LEAF: reads localStorage and matchMedia, nothing else.
- * store.js imports it (Store.nodeColor resolves a per-mode colour), which is why only the STORE-FREE
- * half of the theme lives here. The appliers that read Store or paint the document — ifaceColor,
- * themeColor, applyThemeColors, applyThemeMode, applyForkColors, applyFavicon — stay a layer up.
- */
-
 export const IFACE_COLOR_DEFAULTS = { wg: { dark: "#3FD89A", light: "#0E9E63" }, awg: { dark: "#1FC8D6", light: "#0E9BB0" }, awg3: { dark: "#4481FF", light: "#1D3FD6" }, wdtt: { dark: "#81B512", light: "#5EAF0E" }, csqtt: { dark: "#F97316", light: "#E5620C" } };
 export const NODE_COLOR_DEFAULT = { dark: "#5f7569", light: "#4A5C52" };   // fallback node colour when unset (per mode)
 export const NODE_CREATE_DEFAULT = { dark: "#34d399", light: "#12A46B" };  // a fresh node's starting colour
@@ -43,9 +35,6 @@ export function hslToHex(h, s, l) {
   const seg = Math.floor(h * 6) % 6, r = [c, x, 0, 0, x, c][seg], g = [x, c, c, x, 0, 0][seg], b = [0, 0, x, c, c, x][seg];
   return "#" + [r, g, b].map(v => Math.round((v + m) * 255).toString(16).padStart(2, "0")).join("");
 }
-// keep the theme accent legible against the active background by clamping LIGHTNESS in HSL (hue + saturation kept,
-// so it stays a vivid darker/lighter shade of the SAME colour, not a washed grey). Only genuinely-out-of-band
-// picks are moved; the picker snaps to this value too, so what you pick is what you see (WYSIWYG).
 export function clampBrand(hex, light) {
   if (!/^#[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test(String(hex))) return hex;
   let [h, s, l] = hexToHsl(hex);

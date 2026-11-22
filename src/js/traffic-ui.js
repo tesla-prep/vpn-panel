@@ -1,11 +1,3 @@
-/* traffic-ui.js — what the operator sees of the traffic totals (docs/TRAFFIC-HISTORY-PLAN.md P2): the window control the
- * Peers and Users grids and both views share, the ranged Total cell and its bubble, and the volume chart.
- * The data is traffic.js's; the sheets that host the chart (the peer and user views) live in sheets-crud.js.
- *
- * ⚠️ EVERY FIGURE GOES THROUGH dlul(). xferCell() takes figures already oriented to Settings → Throughput perspective —
- * it does not orient them itself, unlike rateCell() — so a ranged total handed to it raw would read upside down for an
- * operator who counts from the peers' side.
- */
 import { fmtBytes } from "./util.js";
 import { T, locale } from "./i18n.js";
 import { Store, useStore, bus } from "./store.js";
@@ -35,10 +27,7 @@ function panelDate(ts, withTime) {
 }
 const pair = (rx, tx) => { const [d, u] = dlul(rx, tx); return "↓ " + fmtBytes(d) + "  ↑ " + fmtBytes(u); };
 
-// ── the window control ──────────────────────────────────────────────────────────────────────────────────────────
-// All time · Day · Week · Month · Custom — ONE window for the Peers, Users and Groups grids (trafficView); the peer, user and
-// group windows keep their own (trafficModalView, no All time). Day, Week and Month are whole days of the panel's zone
-// (today, the last 7, the last 30); Custom opens two date fields (DateWindow), capped at the panel's today.
+// the window control
 const RANGE_ROWS = [["all", "clock"], ["today", "daycal"], ["7d", "weekcal"], ["30d", "monthcal"]];
 const rangeName = r => ({ all: T("All time"), today: T("range|Day"), "7d": T("range|Week"), "30d": T("range|Month") })[r];
 const setRange = patch => { Object.assign(trafficView, patch); bus.emit(); };   // every grid re-reads it
@@ -58,9 +47,6 @@ export function TrafficRange({ view }) {
   </span>`;
 }
 
-// The same window as the Overview's floating rail, for the Peers, Users and Groups screens: icons pinned to the right edge
-// that slide their names out on hover. Rendered at <body> (Portal) — a fixed child of the screen's entering transform would
-// ride it into place.
 export function TrafficRail() {
   useStore();
   const v = trafficView, today = panelToday();
@@ -77,9 +63,6 @@ export function TrafficRail() {
   </div></div><//>`;
 }
 
-// A rail's Custom row and its bubble — ONE look for the Overview's rail and the grids' (TrafficRail): the heading every
-// bubble uses, the two dates, Apply beneath. `label`: the window in force, shown on the row once Custom is on. The caller
-// keys it on the window in force, so an Apply closes it. `min`: the first day it may start on (the Overview's charts).
 export function RailCustom({ on, label, from, to, min, max, onApply }) {
   const name = on && label ? label : T("range|Custom");
   const trig = html`<span class=${"railmenu-b" + (on ? " on" : "")} role="button" tabindex="0" title=${name}>
@@ -90,21 +73,9 @@ export function RailCustom({ on, label, from, to, min, max, onApply }) {
   <//>`;
 }
 
-// Two date fields for a custom window of the panel's days — the grids' (above) and the Overview's (P3).
-// ⚠️ THE DATES ARE A DRAFT until Apply — never the window in force. Written straight into it as they were typed, every
-// keystroke of a year (0002, 0020, 0202, 2026) was a fetch cached for good, and a start after the end made every grid ask
-// for a window the panel refuses. customWindow() judges the draft (a gated pure function); `min` is the first day the
-// window may start on (none for the grids — the ledger answers any day). `pending`: the dates shown are a proposal, not the
-// window in force (the Overview's rail before Custom is chosen) — Apply is offered for them as they stand.
 export function DateWindow({ from, to, min, max, onApply, pending, check }) {
   const [draft, setDraft] = useState(null);   // null: showing the window in force
   const dr = draft || { from, to };
-  // The dates choose a window to look at: they never make a sheet "unsaved" (data-nodirty) and a sheet never lands its first
-  // focus on one (data-noautofocus) — focused on open, the month was selected before anything was clicked.
-  // A click anywhere on the field opens the calendar — not only its little icon — and selects nothing: the press would focus
-  // one part of the date (the year, highlighted) before the calendar opened. Held on mousedown, so the mouse never focuses
-  // it; the keyboard still tabs in and types. A browser without showPicker (it also throws on a disabled field) keeps the
-  // native behaviour.
   const pick = e => { if (e.button !== 0 || typeof e.currentTarget.showPicker !== "function") return;
     e.preventDefault(); try { e.currentTarget.showPicker(); } catch (_) { e.currentTarget.focus(); } };
   const date = k => html`<input type="date" class="datein" value=${dr[k]} min=${min || "1970-01-01"} max=${max}
@@ -122,9 +93,7 @@ export function DateWindow({ from, to, min, max, onApply, pending, check }) {
       ? T("The charts go back to {v1}.", { v1: trafficRangeLabel({ range: "custom", from: min, to: min }) }) : T("The start is after the end.")}</span>` : null}<//>`;
 }
 
-// ── the ranged Total cell ───────────────────────────────────────────────────────────────────────────────────────
-// `a` is the aggregate (peerTraffic / userTraffic); `ctx` is what the caller knows about the row (ungrouped, filtered, a
-// user's own list, the live wire counter — O2) — turned into sentences only inside the bubble, when it opens.
+// the ranged Total cell
 export function TrafficCell({ a, e, ctx, user }) {
   if (e && e.off) return html`<span class="faint" title=${T("Traffic totals are off — Settings → Display says why.")}>—</span>`;
   if (!e || !e.data) return html`<span class="faint">…</span>`;
@@ -156,9 +125,6 @@ function TrafficBubble({ a, rx, tx, ctx, user }) {
   <//>`;
 }
 
-// A peer's cell. `owner` = inside that user's own list (what the device carried while it was theirs); `ungrouped` = a row
-// per deployment (O10: every row repeats the peer's total); `filtered` = a grouped row under a node or interface filter;
-// `wire` = this deployment's live counter and its interface (the old Total's meaning, kept here — O2).
 export function PeerTrafficCell({ pid, owner, ungrouped, filtered, wire, iface }) {
   return html`<${TrafficCell} a=${peerTraffic(pid, owner)} e=${trafficTotals()} ctx=${{ owner, ungrouped, filtered, wire, iface }}/>`;
 }
@@ -172,9 +138,7 @@ export function goneDevices(uid, d) {
   return n;
 }
 
-// ── the volume chart ────────────────────────────────────────────────────────────────────────────────────────────
-// A column per bucket over the whole window (volumeColumns): ↓ below, ↑ stacked on it with a 2px gap, both in the
-// throughput colours; the scale is the tallest column's. Hover names the column and both figures.
+// the volume chart
 export function VolumeBars({ series, h }) {
   const [hov, setHov] = useState(null); const wref = useRef(null);
   h = h || 84;
@@ -198,9 +162,6 @@ export function VolumeBars({ series, h }) {
   </div>`;
 }
 
-// The traffic block of the peer, user and group windows: the window control, the window's figures, the chart. `by` is "peer",
-// "user" or "group". The figures are the totals' (a group's: its members' added up, as its grid row adds them); the chart
-// is the series'.
 export function TrafficBlock({ by, id }) {
   useStore();
   const mv = trafficModalView;

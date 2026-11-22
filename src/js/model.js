@@ -1,23 +1,8 @@
-/* model.js — what the roster and the node snapshots MEAN.
- *
- * LAYER 1 (see docs/APP-JS-SPLIT-PLAN.md). Imports util + store; nothing above it.
- *
- * This is the interface TAXONOMY's one home, and that matters more than its size suggests. An
- * interface's kind is partly NAME-SNIFFED (isWdttIface is a filename regex mirroring the node's
- * _WDTT_IFACE_RE) and several of the checks are NEGATIVE — ifaceMatch's "*wg" means "not awg and not
- * wdtt". So a new kind whose name does not match the pattern falls SILENTLY into the WireGuard bucket
- * instead of erroring. The coming TUN-only WDTT is exactly that case: add the kind here, once, and every
- * dropdown, filter, badge and peer-create dispatch follows. See docs/APP-JS-SPLIT-PLAN.md §5.
- */
-
 import { isWdttIface, isCsqttIface, isSelfContainedIface, portOf } from "./util.js";
 import { Store } from "./store.js";
 import { T } from "./i18n.js";
 import { portsClean, portsToks, portsSpans } from "./rulerows.js";   // the port rules' grammar — the never-cut list reads it too
 
-// Для классификации используем данные узла, сохранённую конфигурацию и в последнюю очередь имя.
-// Raw-интерфейс хранится полем экземпляра и тоже считается входным интерфейсом.
-// Предикаты принимают конфигурацию, чтобы не искать узел повторно при обходе списка.
 export const wdttCfgClaims = (cfg, iface) =>
   !!(cfg || {})[iface] || Object.values(cfg || {}).some(c => c && c.raw_iface === iface);
 // The csqtt twin, deliberately written out rather than left inline: csqtt has no second device today, and the
@@ -29,34 +14,18 @@ export function wdttOn(node, iface) {
   if (((Store.stats[node] || {}).wdtt || []).some(w => w && (w.iface === iface || w.raw_iface === iface))) return true;
   return wdttCfgClaims(((Store.nodes || []).find(x => x.id === node) || {}).wdtt_cfg, iface);
 }
-// The csqtt sibling of wdttOn, and for the same reason: ASK THE NODE before guessing from the name. Without
-// it `kindOf` fell from an explicit `type` straight to `/^csqtt\d{1,4}$/`, so an ADOPTED instance — whose name
-// the operator or the foreign install chose, not us (`csqttx`, `csqfbm`) — matched nothing, was not in
-// `describe` either (csqtt owns its own raw TUN and has no wg/awg conf), and came back classified as plain
-// WireGuard anywhere no roster target supplied the type. WDTT never had that hole because it had wdttOn.
 export function csqttOn(node, iface) {
   if (!node || !iface) return false;
   if (((Store.stats[node] || {}).csqtt || []).some(c => c && c.iface === iface)) return true;
   return csqttCfgClaims(((Store.nodes || []).find(x => x.id === node) || {}).csqtt_cfg, iface);
 }
-// ── NAME → kind, asked of the FLEET ───────────────────────────────────────────────────────────────
-// Several call sites (dropdown groups, interface filters, NIC lists) hold only an interface NAME — no node,
-// no roster target — and so could only ever ask the two regexes "is it called wdtt<N> / csqtt<N>?". That
-// question stopped being the same as "what kind is it?" the moment adoption started taking foreign servers
-// under their own names (`wdttx`, `csqfbm2`), and creation may now choose a name too. So ask the fleet: scan
-// every node's live readback and the panel's own instance config for an interface by that name, and fall back
-// to the pattern only for a name nothing in the fleet claims. Cheap — the maps are small and already in memory.
+// NAME → kind, asked of the FLEET
 export function scKindByName(name) {
   if (!name) return null;
   for (const nid of Object.keys(Store.stats || {})) {
     if (wdttOn(nid, name)) return "wdtt";
     if (csqttOn(nid, name)) return "csqtt";
   }
-  // ⚠️ SHARE THE PREDICATE, don't re-implement it. This loop used to inline `(n.wdtt_cfg || {})[name]` — a
-  // second copy of the test wdttOn owns — so teaching wdttOn about a RAW instance's second device fixed the
-  // node that is REPORTING and left the DOWN one still offering `wdttraw2`. Caught only by running both
-  // paths; the two must answer one question with one piece of code, or the answer depends on whether a node
-  // has synced. Asked of the record we already hold, not via wdttOn(n.id, …) — see the note on the helpers.
   for (const n of (Store.nodes || [])) {
     if (wdttCfgClaims(n.wdtt_cfg, name)) return "wdtt";
     if (csqttCfgClaims(n.csqtt_cfg, name)) return "csqtt";
@@ -74,22 +43,11 @@ export function kindOf(node, iface, type) {
   if (type === "wdtt" || wdttOn(node, iface) || isWdttIface(iface)) return "wdtt";
   if (type === "csqtt" || csqttOn(node, iface) || isCsqttIface(iface)) return "csqtt";   // raw-TUN self-contained kind (not in describe; keyed by the live set, then name/type)
   const m = (Store.describe[node] || {})[iface];
-  // The TOOL the node reports wins. "Carries obfuscation params" is a fact about the conf FILE, and the two
-  // can disagree: `msk-main/wg0`, taken over from a plain-WG container, picked up S/H/I lines from an
-  // ungated set-iface and wore an AWG badge for a device `awg show` cannot see. A node too old to report
-  // `tool` omits it, and those keep the old inference.
   if (m && (m.tool === "wg" || m.tool === "awg")) return m.tool;
   if (m) return (m.awg_params && Object.keys(m.awg_params).length) ? "awg" : "wg";
   return (String(type || "wg").toLowerCase() === "awg") ? "awg" : "wg";
 }
-// ── the AmneziaWG GENERATION of an interface (docs/AWG3-PLAN.md §7.1, §7.7) ─────────────────────────
-// No mode field: an AWG dict holding a HeaderProtectionKey is 3.1, one without is 2.0. The dict the panel serves in
-// `describe` is the RECORD's for the 3.x keys, so a key a node still reports after a switch back does not count.
-// ONE question, asked here, for every badge, sheet and window — never a second copy of the test at a call site.
 export const awgDict3 = a => !!(a && String(a.HeaderProtectionKey || "").trim());
-// Why the panel would refuse to make this interface 3.1 (its perr, from /api/state), or null. An interface on the userspace
-// fallback has its own answer (`awg31_no_us`) — judged by that fallback, not by the module — and it wins; every other one takes
-// the node's (`awg31_no`), which is also the create form's. Never the rule re-derived here.
 export function awg31No(nrec, iface) {
   const us = (nrec || {}).awg31_no_us;
   return (us && Object.prototype.hasOwnProperty.call(us, iface)) ? us[iface] : ((nrec || {}).awg31_no || null);
@@ -98,33 +56,15 @@ export function awgGen(node, iface) {
   const m = (Store.describe[node] || {})[iface], a = m && m.awg_params;
   return (a && Object.keys(a).length) ? (awgDict3(a) ? "3.1" : "2.0") : null;
 }
-// What every AWG badge of an interface adds when it is 3.1 (D-colour): the `.awg3` colour and a tooltip, so colour is not
-// the only carrier. A 2.0 interface gets "" and {} — no class, and no title ATTRIBUTE, spread in with `...${}`: Preact writes
-// `title=${null}` as title="", which is not nothing — an empty title hides the tooltip of the element around the badge. For the
-// same reason the 3.1 badge carries its own `key`: a switch back remounts it instead of leaving the cleared title="" behind.
 export const tip3 = (on, id) => on ? { title: T("AmneziaWG 3.1"), key: "awg3" + (id ? ":" + id : "") } : {};
 export const awg3Cls = (node, iface) => awgGen(node, iface) === "3.1" ? " awg3" : "";
 export const awg3Tip = (node, iface) => tip3(awgGen(node, iface) === "3.1", node + "|" + iface);   // keyed by the interface: badges in a list are siblings
-// A switch the node has not applied yet — the version the panel's record (what configs render) asks for, when the node still
-// reports the other one; null when nothing is in flight. `awg_reported` exists only where the panel holds a record. Compared
-// by generation, never key by key, so a 2.0 interface whose node lags on some 2.0 value never reads as a switch.
 export function awgGenPending(node, iface) {   // (the tag that says so: awgSwitchTag in ui.js)
   const m = (Store.describe[node] || {})[iface];
   if (!m || !m.awg_reported || !m.awg_params) return null;
   const want = awgDict3(m.awg_params);
   return want === awgDict3(m.awg_reported) ? null : (want ? "3.1" : "2.0");
 }
-/* ── how a node was DEPLOYED, and what OWNS that installation ──────────────────────────────────
-   Two different facts, and a NixOS host running our image answers BOTH: it is a container for every
-   behavioural purpose (`kind`) and its installation belongs to its configuration (`platform`).
-   Rendering only one of them is what made the old label wrong.
-
-   Through a MAP, never the two-way ternary this replaces: `kind === "docker" ? docker : bare-metal`
-   printed "bare-metal" for every value it did not recognise, so a run model this panel has never
-   heard of read as a confident lie. Unknown now renders the raw value, which is at least true.
-
-   Built on each call, not at import: modules load before loadLang() resolves, so a T() evaluated at
-   module scope freezes in English whatever the catalog says. */
 export const kindLabel = (kind, runtime) => (kind === "docker" && runtime === "podman")
   ? T("kind|podman")
   : (({ docker: T("kind|docker"), baremetal: T("kind|bare-metal") })[kind] || kind || "");
@@ -139,17 +79,10 @@ const PLATFORM_NAMES = {
   linuxmint: "Linux Mint", pop: "Pop!_OS", kali: "Kali", amzn: "Amazon Linux", ol: "Oracle Linux",
   freebsd: "FreeBSD", openwrt: "OpenWrt", talos: "Talos",
 };
-// Distribution names are proper nouns — "Ubuntu" is spelt the same in every language — so this is a display
-// map, not a translation, and anything unknown renders as the node reported it (capitalised) rather than
-// vanishing. Same rule the NixOS-only version of this followed; it just has company now.
 export const platformLabel = p => PLATFORM_NAMES[p] || (p ? p.charAt(0).toUpperCase() + p.slice(1) : "");
 
 export const iTypeOf = (node, iface) => kindOf(node, iface, null);   // by (node, iface) — the TargetPicker's one-kind lock + peer-create dispatch key off it
 export const targetType = t => t ? kindOf(t.node, t.iface, t.type) : "wg";   // by roster TARGET — every protocol tag/colour uses this
-// Ports the torrent filter never cuts (S11c). The built-in list — twinned with the panel's P2P_PORTOK_DEFAULT and the
-// node's _P2P_PORTOK (a gate compares the three). `portokRead` reads what the operator typed by the port rules' own grammar
-// (`portsClean`, gated on tests/ports_vectors.json, as the panel stores it): `list` canonical, `bad` the entries it cannot
-// take, `tooMany` past the token limit, `ports` how many ports from 1024 up it covers — below that nothing is ever cut.
 export const P2P_PORTOK_DEFAULT = ["1194", "3478-3481", "4500", "5222-5223", "5349", "8801-8810", "19302-19309", "27000-27200", "51820"];
 export const PORTOK_WIDE = 1000;   // more ports than this: encrypted torrents get through on a real share of the range
 export function portokRead(text) {
@@ -165,12 +98,6 @@ export const portokSame = (a, b) => (a || []).join(",") === (b || []).join(",");
 // Can this device be marked a router (S11b)? Only through a wg/awg deployment — a router runs WireGuard / AmneziaWG, and a
 // keyless one (WDTT / csqtt) is an app on one device. A device already marked keeps the switch, so it can be turned off.
 export const routerCapable = p => !!p && (p.router === true || (p.targets || []).some(t => ["wg", "awg"].includes(targetType(t))));
-// The port a CLIENT dials for an adoption candidate. For wg/awg that is the interface's own listen port; for a
-// running WDTT server it is NOT — the fork's DTLS listener is what clients dial, and the candidate's listen_port
-// is the tunnel's own internal WG port, which nothing outside ever connects to. Reporting that as "Listen" put a
-// port on the card that no client uses, contradicting both the adopt sheet (which labels the two separately) and
-// the card the same interface becomes once adopted. The node's DORMANT rows already report it this way; this is
-// the running case catching up. Same distinction the Users-vs-Peers row on that card already makes.
 export const candDialPort = cd => {
   const l = ((cd || {}).wdtt || {}).listen;
   const p = l ? Number(String(l).split(":").pop()) : 0;
@@ -183,10 +110,6 @@ export function ifaceIsAwg(iface) {
 }
 // interface-filter dropdown values: "" / "*" = all · "*awg" / "*wg" / "*wdtt" = all of one type · else an exact name.
 export const ifaceIsAll = v => !v || v === "*" || v === "*awg" || v === "*wg" || v === "*wdtt" || v === "*csqtt";   // an aggregate (multi-iface) filter value
-// Does an interface pass the filter value? Pass the roster TARGET as `t` wherever there is one (every caller
-// has one): its `type` is authoritative, so a wdtt/csqtt deployment on an operator-named interface is filtered
-// as its real kind instead of falling through the negative "*wg" test into the WireGuard bucket. Without a
-// target this asks the fleet by name (scKindByName), which is still far better than the bare pattern.
 export function ifaceMatch(iface, filter, t) {
   if (!filter || filter === "*") return true;
   const sc = t ? (kind => kind === "wdtt" || kind === "csqtt" ? kind : null)(targetType(t)) : scKindByName(iface);
@@ -209,57 +132,23 @@ export function turnProxiesFor(node, iface) {
 // trust any live state then, so cross-reference badges grey out (don't claim "active" on a node gone dark).
 export function nodeStale(node) { return Store.recon.nodeStatus[node] !== "live"; }
 
-// ONE verdict for a node, read by the list row and by its own page — they used to compute it differently and could
-// therefore contradict each other: the row took the server's `status` (a fixed 30 s against the panel's receipt
-// time) while the page took recon (the operator's stale window, Settings → Display). Whether the node has EVER
-// synced stays the server's fact — "dangling" is what makes a row say "awaiting enroll" — and whether it is live
-// NOW is recon's, so the tunable window governs both. No recon entry (no snapshot at all) → the server's verdict.
-//
-// ⚠️ NOT FOR A GATE ON WHAT THE SERVER WILL DO. This answers "should the console treat this node as live", which
-// is the operator's window. Where the question is instead "what will the panel decide when it acts" — the Migrate
-// door, whose plan supersedes the old box only when `node_seen` is inside the server's own fixed NODE_OFFLINE —
-// read `n.status`, or a widened window makes the UI promise something the server then does not do.
 export function nodeStatusOf(n) {
   const st = (n || {}).status || "dangling";
   const live = Store.recon.nodeStatus[(n || {}).id];
   return (live && (st === "online" || st === "offline")) ? (live === "live" ? "online" : "offline") : st;
 }
 
-// When the PANEL last heard from a node, on the panel's clock — the one reading every age label about a node is
-// measured from, so a card's "x ago" can never contradict the live tag beside it. Number.isFinite, not a null
-// check: a non-numeric `last_seen` would make `panelNowS() - it` NaN, and seen(NaN) renders "NaNd ago" while the
-// tag itself correctly fell back (caught in review). `generated_at` is the fallback for a panel too old to send
-// `last_seen` — the same order reconcile.js uses for the verdict.
 export function lastHeard(nrec, snap) {
   const ls = (nrec || {}).last_seen;
   return Number.isFinite(ls) ? ls : ((snap || {}).generated_at || null);
 }
 
-// Is THIS deployment's client resolving over encrypted DNS (DoT/DoH) right now? The node records the source
-// address of every such attempt in a self-expiring nft set, so a hit means "currently", not "once did".
-//
-// Why it matters enough to take the peer's status pill: Force-DNS classifies by WATCHING plain DNS, so a peer
-// the node cannot observe is never matched against a category — its traffic leaves by the local exit whatever
-// the routing rules say. The node deliberately no longer BLOCKS it for that (dropping DoT black-holed every
-// lookup and killed such clients outright), which makes saying so the entire remedy. It is a property of the
-// PEER, not of the node, which is why it reads here and not in the node's health roll-up.
 export function peerUncategorised(t) {
   const ip = String((t && t.ip) || "").split("/")[0];
-  // Store.nodes, NOT Store.node(): the latter reads Store.fleet, which is a deliberately slim
-  // {id,name,color,transport} projection — `doh_peers` is not in it, so this silently answered
-  // "no" for every peer and the badge could never appear anywhere. Full records live on Store.nodes.
   const nrec = (Store.nodes || []).find(n => n.id === t.node) || {};
-  // PRESENCE, not the count. The value is an attempt counter and the entry self-expires, so being in the map
-  // at all is the signal — `!!map[ip]` would read a zero-count entry as "not on encrypted DNS", which is the
-  // one case where the node is telling us the opposite.
   return !!ip && Object.prototype.hasOwnProperty.call(nrec.doh_peers || {}, ip);
 }
 export function ifaceNotUp(node, ifn) { const s = (((Store.stats[node] || {}).interfaces) || {})[ifn] || {}; return !!s.down || !!s.stopped; }  // down OR stopped → grey chips
-// A turn-proxy's health, for EVERY surface that shows one — read through these two and nowhere else.
-// ⚠️ `running` alone is not health: a crash-looping unit reads `active` whenever it is caught between crashes,
-// so the proxy card rendered green beside a node card saying "crash-looping", the two built from one snapshot.
-// The loop is the node's own verdict (swg-noded `_attach_turn_running`: `flapping` = restarts in the episode,
-// `flapping_for` = seconds it has gone on); a proxy stopped from the panel is not looping, whatever it did.
 export function turnLooping(tp) { return !!(tp && tp.flapping && !tp.stopped); }
 export function turnDown(tp) { return !!tp && (tp.running === false || turnLooping(tp)); }
 // How long a loop has gone on, in whole minutes rounded UP — a loop caught in its first seconds reads "1 min", never
@@ -273,24 +162,9 @@ export function ghostIface(node, iface) {
   const g = (nr.ghost_ifaces || {})[iface];
   if (g) return { cold: true, ripe: !!g.ripe, problemMs: g.problemMs || 0, subnet: null, reach: g.reach || null };   // a cold record can still hold a chosen level (§11.2 review R6)
   const mi = (nr.missing_ifaces || {})[iface];
-  // ⚠️ CARRY THE WHOLE SAVED CONFIG, NOT JUST THE SUBNET. A WARM ghost is an interface the panel still has
-  // `_lastcfg` for — subnet, listen port, MTU and, decisively, its AmneziaWG parameters. Rebuilt here from a
-  // key list that named only `subnet`, everything else was dropped, and the recreate sheet then INFERRED the
-  // protocol from a peer's target type. An interface with no peers has nothing to infer from, so it silently
-  // came back as plain WireGuard on a suggested port. Measured on hel-fresh after a vault reset: `awg0` was
-  // AmneziaWG on port 443 with nine obfuscation parameters, and the sheet offered WireGuard on 51821.
-  // The badge renderer in iface.js already reads `missIf.awg_params` for exactly this question — two readers
-  // of one fact, and only one of them was right.
-  // ⚠️ AND THE PANEL-OWNED SETTINGS TOO, not only the ones the node reports. Anything the sheet cannot be
-  // seeded with, it posts the PANEL-WIDE DEFAULT for — which is a value, not a blank, and create writes it.
-  // Measured against the real endpoint: a recreate turned a hostname endpoint into a raw IP, the operator's
-  // resolvers into 1.1.1.1 and keepalive 15 into 25, none of it shown on screen. Same shape as the MTU.
   if (mi && !mi.key_source) return { cold: false, ripe: !!mi.ripe, problemMs: mi.problemMs || 0,
                                      subnet: mi.subnet || null, listen_port: mi.listen_port || 0,
                                      mtu: mi.mtu || 0, awg_params: mi.awg_params || null,
-                                     // ⚠️ PASSED THROUGH, NOT DEFAULTED. `dns: []` and `keepalive: 0` are
-                                     // both things an operator can mean; `|| 0` / `|| null` would erase the
-                                     // difference between "off" and "never set" before the sheet sees it.
                                      endpoint_host: mi.endpoint_host || "",
                                      dns: Array.isArray(mi.dns) ? mi.dns : null,
                                      keepalive: typeof mi.keepalive === "number" ? mi.keepalive : null,
@@ -303,11 +177,7 @@ export function ghostPeers(node, iface) {
   return (Store.recon.peers || []).filter(p => (p.targets || []).some(t => t.node === node && t.iface === iface));
 }
 
-// ── suggestions: the next free port, interface name and subnet ───────────────────────────────────
-// suggest the next listen port for a NEW interface ("iface") or turn-proxy ("turn") on a node: the highest
-// existing port OF THAT KIND + 1 (or the base default if none), skipping any port already used by either.
-// client-optimistic interfaces still being created on a node → [{name, subnet, port, type}]. Suggestions
-// fold these in so a 2nd "Load new interface" before the 1st is live picks the NEXT free name/subnet/port.
+// suggestions: the next free port, interface name and subnet
 export function pendingIf(node) {
   const pfx = node + "|", out = [];
   for (const k of Object.keys(Store.ifaceNew)) if (k.startsWith(pfx)) { const e = Store.ifaceNew[k]; out.push({ name: k.slice(pfx.length), subnet: e.subnet || "", port: e.port || "", type: e.type }); }
@@ -318,10 +188,6 @@ export function pendingTurnPorts(node) {   // listen ports of turn-proxies still
   for (const k of Object.keys(Store.turnNew)) if (k.startsWith(pfx)) { const p = Number(portOf(Store.turnNew[k].listen)); if (p) out.push(p); }
   return out;
 }
-// Ports claimed by WDTT instances the PANEL already wants but the node has not reported yet (wdtt_cfg = the desired
-// set, filled the instant a create/edit is accepted; snap.wdtt only appears once the server is actually running).
-// Each claims TWO: the DTLS listen port and the internal wg-port. Without these, a suggestion made moments after
-// creating one hands out a port that instance is about to take, and the save then fails on a collision.
 export function pendingWdttPorts(node) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const out = [];
@@ -356,40 +222,16 @@ export function suggestPort(node, kind, extra) {
   const csqttPorts = (snap.csqtt || []).map(c => c ? Number(String(c.listen || "").split(":").pop()) : 0).filter(Boolean);
   const used = new Set([...ifacePorts, ...turnPorts, ...wdttPorts, ...pendingWdttPorts(node), ...csqttPorts, ...pendingCsqttPorts(node), ...dialinPorts(node).map(x => x[1]), ...(extra || []).map(Number).filter(Boolean)]);   // extra = ports picked in-modal, not yet applied
   const mine = kind === "turn" ? turnPorts : ifacePorts;
-  // Never hand out the UPSTREAM DEFAULTS. An unmanaged WDTT server binds 56000 (DTLS) + 56001 (internal WG) out
-  // of the box and a stock WireGuard 51820, so suggesting one walks straight into a collision with something the
-  // panel does not manage — and, in WDTT's case, may not even be able to see. Same rule as the name suggestion:
-  // the SUGGESTION avoids them, the field stays free to type.
-  // 56003 joins them for a different reason: it is the qWDTT app's HARD-CODED default RAW-IP port. The app only
-  // dials another one when its "Manual ports" switch is on, so keeping 56003 free fleet-wide is what makes
-  // "turn RAW on" a one-click change instead of a per-user instruction. (See _wdtt_alloc_raw_subnet / the RAW
-  // field's hint — the panel prefers 56003 for RAW and says so when it can't get it.)
   const reserved = new Set([51820, 56000, 56001, 56003]);
-  // ⚠️ AND THE SYSTEM MESH BAND, WHICH THE SERVER REFUSES OUTRIGHT ("port N is in the reserved system mesh
-  // range"). It was missing from both halves below, and the two failures compound on exactly the node an
-  // operator meets first. A freshly-enrolled node's ONLY interfaces are its mesh links, so `mine` is the
-  // mesh ports, the seed is one above the highest of them — inside the band — and the sheet pre-filled a
-  // port that Create then rejected. Found on hel-flux during 1.8.5 qualification: a brand-new interface
-  // offered :10002 and answered "port 10002 is in the reserved system mesh range (9999–10098)".
-  // Read off the same settings the server validates against, so moving the band moves both readers.
   const _rsv = (Store.panelSettings || {}).reserved || {};
   const _mBase = Number(_rsv.mesh_port_base) || 9999, _mSpan = Number(_rsv.port_span) || 100;
   const inMesh = q => q >= _mBase && q < _mBase + _mSpan;
-  // …and a MESH LINK IS NOT A USER INTERFACE, so it does not get a vote on where the next one starts. With
-  // the band merely skipped, a fresh node's first suggestion would be the first port ABOVE the band — an
-  // arbitrary number that depends on how many nodes it is meshed with. Seeding off user interfaces only
-  // makes a fresh node suggest the documented default, the same as a node with no interfaces at all.
   const mineUser = mine.filter(q => !inMesh(q));
   let p = mineUser.length ? Math.max(...mineUser) + 1 : (kind === "turn" ? 56002 : 51821);
   // …and the devices' incoming torrent ports (P2P_PORT_POOL), which the server refuses for a new listener too.
   while ((used.has(p) || reserved.has(p) || inMesh(p) || (p >= 20000 && p <= 29999)) && p < 65535) p++;
   return p;
 }
-// Client-side port-collision check (mirrors the server's _node_ports). Returns a human label of whatever
-// already occupies `port` on this node, or null if the port is free. `own` = ports this instance already
-// holds, so editing it doesn't flag its own port. Lets port fields validate live, before the optimistic
-// save closes the modal (else a clash only surfaces as a node-side "FAILED TO APPLY" after the fact).
-// The UDP ports this node's dial-in exits listen on, [[exit, port]] — the server counts them in _node_ports (LISTEN-EXIT §2.3).
 const dialinPorts = node => (((Store.nodes || []).find(n => n.id === node) || {}).exits || [])
   .filter(x => x && x.provider === "profile" && x.profile && x.profile.listen_port && !x.profile.endpoint)
   .map(x => [x, Number(x.profile.listen_port)]);
@@ -428,9 +270,6 @@ export function portHolder(node, port, own) {
   }
   return null;
 }
-// Validate a port field LIVE (as typed): a human message if empty-but-required is NOT flagged (blank returns null so
-// the field isn't red before you type), a non-number, out-of-range, or a collision with another port on this node;
-// `own` = ports this iface/proxy already holds (so editing it doesn't flag its own). Drives the inline error + Save gate.
 export function portErrMsg(node, port, own) {
   const s = String(port == null ? "" : port).trim();
   if (!s) return null;                                   // empty handled by the field's own required-check, not here
@@ -450,11 +289,6 @@ export function suggestIface(node, proto) {
   while (names.includes(base + i)) i++;
   return base + i;
 }
-// next free 10.X.0.0/24 tunnel subnet: highest used second octet + 1 (default 10.8) (mirrors install-node.sh next_free_subnet)
-// Interface subnets must be UNIQUE across the whole fleet — the mesh routes by subnet, so two nodes on the same
-// subnet make return routing ambiguous (a cascaded client's traffic can't be told from the other node's identical
-// subnet → black-holed). These helpers collect every user subnet (wg/awg from describe + WDTT wg_addr) so the
-// create form suggests a free one and rejects a duplicate. cidr math is done inline (no ipaddress in the browser).
 export function cidrNet(cidr) {
   const parts = String(cidr || "").split("/"); const pfx = parseInt(parts[1], 10);
   const oct = String(parts[0]).split(".").map(n => parseInt(n, 10));
@@ -497,9 +331,6 @@ export function subnetFleetConflict(subnet, skipNode, skipIface) {
   for (const s of fleetSubnets(skipNode, skipIface)) if (subnetsOverlap(subnet, s.subnet)) return s;
   return null;
 }
-// The server's own address inside a subnet = the first host (network + 1), keeping the prefix. Used for WDTT,
-// whose -wg-addr flag wants the SERVER address (10.8.0.1/24) while the form takes the SUBNET (10.8.0.0/24) — same
-// as wg/awg, where the node also puts the server on .1. Idempotent for a value already on .1.
 export function subnetServerAddr(subnet) {
   const c = cidrNet(subnet); if (!c) return subnet;
   const ip = (c.net + 1) >>> 0;
@@ -523,9 +354,6 @@ export function nextWdttName(node) {
                         ...Object.keys(Store.describe[node] || {}),
                         ...Object.keys(nrec.missing_ifaces || {}), ...Object.keys(nrec.ghost_ifaces || {}),
                         ...(nrec.iface_candidates || []).map(c => c && c.name)].filter(Boolean));
-  // Numbering starts at 1, never 0 — matching suggestIface (wg1/awg1). wdtt0 in particular is the name every
-  // UNPATCHED upstream WDTT compiles in, so suggesting it walks straight into a collision with a foreign server
-  // the panel may not even be able to see yet. Only the SUGGESTION avoids it; the field stays free to type.
   for (let i = 1; i < 1000; i++) if (!used.has("wdtt" + i)) return "wdtt" + i;
   return "wdtt1";
 }
@@ -536,9 +364,6 @@ export function nextCsqttName(node) {
                         ...((Store.stats[node] || {}).csqtt || []).map(c => c && c.iface),
                         ...Object.keys(nrec.wdtt_cfg || {}),
                         ...((Store.stats[node] || {}).wdtt || []).map(w => w && w.iface),
-                        // FOREIGN csqtt servers the node found. Same lesson nextWdttName spells out for wdtt0,
-                        // and it bites harder here: upstream csqtt hardcodes `csqtt1`, which is precisely the
-                        // name this loop suggests first. Proposing it walks onto a live third party's TUN.
                         ...(nrec.csqtt_candidates || []).map(c => c && c.iface),
                         ...Object.keys(Store.describe[node] || {}),
                         ...Object.keys(nrec.missing_ifaces || {}), ...Object.keys(nrec.ghost_ifaces || {}),
@@ -547,10 +372,6 @@ export function nextCsqttName(node) {
   return "csqtt1";
 }
 
-// Why a name can't be a NEW self-contained instance on this node, or "". Mirrors the server's
-// turn_iface_name_error. Creation used to demand `wdtt<N>` / `csqtt<N>`; that pattern was never the node's
-// requirement (adoption has always taken foreign names as found) and the panel no longer reads kind off the
-// name, so an operator may name their own servers. These are the checks the pattern was standing in for.
 export function turnIfaceNameError(node, name, kind) {
   const nm = String(name || "").trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,14}$/.test(nm))
@@ -564,10 +385,7 @@ export function turnIfaceNameError(node, name, kind) {
   return "";
 }
 
-// ── what a peer publishes to its subscription ────────────────────────────────────────────────────
-// A peer's configs come from up to five SOURCES: its own kind per deployment (wg / awg / wdtt / csqtt)
-// plus "turn" when a proxy fronts one of its wg/awg interfaces. `sub_hide` (roster) names the sources
-// the operator keeps OFF the subscription page — the deployment itself is untouched, only publishing is.
+// what a peer publishes to its subscription
 export const SUB_SOURCES = ["wg", "awg", "wdtt", "csqtt", "turn"];
 export function peerSubSources(peer) {
   const out = [];
@@ -582,13 +400,5 @@ export function peerSubSources(peer) {
 export const subHidden = peer => ((peer && peer.sub_hide) || []).filter(s => SUB_SOURCES.includes(s));
 export const subHides = (peer, src) => subHidden(peer).includes(src);
 
-// A deployment's traffic counters in ONE shape, whatever kind it is. A wg/awg target reads them off the wire
-// (`observed`); a keyless one (WDTT / csqtt) has no wire peer, so the node derives the same four numbers from
-// its per-password byte counters (`kwXfer`). Every rate/total cell goes through here — a peer's numbers should
-// not depend on which kind of server it lives on. Deliberately NOT merged into `observed`: that record also
-// means "there is a WireGuard peer here" (handshake age, endpoint, faulty detection), which stays false.
 export const tgtXfer = t => (t && (t.observed || t.kwXfer)) || null;
-// "Online" for a deployment. wg/awg = the wire handshake age. A keyless server has no handshake, so its
-// liveness IS a byte delta over the last poll — the honest age for that is "just now" while it's flowing,
-// and unknown otherwise (nothing remembers when a keyless peer was last seen).
 export const tgtSeenAge = t => (t && t.observed) ? t.observed.handshake_age : ((t && t.kwXfer && t.online) ? 0 : null);

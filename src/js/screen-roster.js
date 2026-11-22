@@ -1,11 +1,3 @@
-/* screen-roster.js — Peers, Users, Live and the activity history.
- *
- * LAYER 11 (see docs/APP-JS-SPLIT-PLAN.md). Four screens in one module because they are four views of
- * ONE thing: the same peers, through different lenses. They render the same PeerGrid, filter through the
- * same views.js state and sort with the same comparators — which is exactly the coupling the graph showed
- * (63 and 41 references between them) before views.js and grids.js gave that shared half a home.
- */
-
 import {
   ago, seen, tkey, isPrimaryTarget, isMobile,
 } from "./util.js";
@@ -50,9 +42,6 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-// The roster lists' pager — Peers, Users, Groups: rows per page, where you are, Prev / Next with the scroll back to the list.
-// ONE copy, so a fix to paging lands on every list. Shown once a list is longer than the smallest page (20), so "Rows per page"
-// stays reachable after choosing a larger size.
 function RowsPager({ total, page, pageSize, onPage, onSize }) {
   if (total <= 20) return null;
   const pages = Math.max(1, Math.ceil(total / pageSize));
@@ -97,9 +86,6 @@ export function PeersScreen() {
     const ts = p.targets.filter(t => (node === "*" || t.node === node) && ifaceMatch(t.iface, iface, t));
     if (!ts.length) continue;
     if (!grouped) { for (const t of ts) rows.push({ p, t }); continue; }
-    // The peer's PRIMARY deployment represents it — that is the one its subscription leads with, so the
-    // grouped row says the same thing the user's own page does. Falling back to an online one keeps the
-    // row informative when the primary happens to be down.
     const rep = ts.find(t => isPrimaryTarget(p.targets, t)) || ts.find(t => t.online) || ts[0];
     rows.push({ p, t: rep });
   }
@@ -108,10 +94,6 @@ export function PeersScreen() {
   rows = sortPeerRows(rows, peersView.sort, peersView.dir, "peers|" + node + "|" + iface);
   if (q) rows = rows.filter(({ p, t }) => searchMatch((p.title || "") + " " + (p.name || "") + " " + (t.ip || "") + " " + Store.nodeName(t.node) + " " + t.iface, q));
   if (peersView.status) {
-    // Filter on the DEPLOYMENT status (t.status) — the same value the row badge shows — so the filter never
-    // returns rows whose badge reads something else (the "select Partial, see Ready rows" confusion). Two
-    // peer-level exceptions that aren't a single deployment's state: `unassigned` (no owner), and `partial`
-    // (a redundancy gap) → surface the MISSING side (the dangling/broken deployments) of partial peers.
     const f = peersView.status;
     rows = rows.filter(({ p, t }) =>
       f === "unassigned" ? p.unassigned
@@ -262,11 +244,7 @@ export function ActivityHistoryScreen() {
   </div>`;
 }
 
-// ═════════════════════════ SCREEN: LIVE (Peers / Users monitor) ═════════════════════════
-// Read-only over the enriched snapshot. A Peers↔Users toggle switches between the shared PeerGrid (in `live`
-// mode — dot status, endpoint column, no controls) and the shared UserRow list (also `live`). Node/interface
-// dropdowns + a global search + an Online filter narrow both. State lives in module scope so the 5s poll
-// never loses it; Preact keeps scroll + updates cells in place.
+// SCREEN: LIVE (Peers / Users monitor)
 
 export function ConnectionsScreen() {
   useStore();
@@ -371,9 +349,6 @@ function nodesOfPeers(peers) {
   return Object.keys(nm).map(nid => ({ node: nid, ifaces: Object.values(nm[nid]).sort((a, b) => a.iface.localeCompare(b.iface)) }))
     .sort((a, b) => Store.byNode(a.node, b.node));
 }
-// A phone has no Nodes column and no hover: on the row's second line, two counts with their icons (nodes, interfaces), whose
-// tap opens a sheet with each node's interfaces and peer counts, each a way to its page (operator, 2026-10-29: two lines, no
-// long text)
 function nodesTap(srvNodes, title) {
   if (!isMobile() || !srvNodes.length) return null;
   const nif = srvNodes.reduce((a, n) => a + n.ifaces.length, 0);
@@ -410,14 +385,8 @@ function nodesChip(srvNodes) {
   </span>`;
 }
 
-// A peer's configs as a modal: one QR/download card per target (reuses TargetCard).
-// One peer's QR cards on a SINGLE line — up to 3 per view, paged with ‹ › when the peer has more
-// (never wraps to a second row). The card cards are passed in already built.
 export function UserRow({ user, live, onlineOnly, q, nested }) {
   const [, force] = useState(0);
-  // While searching, matching users auto-expand (unless the operator explicitly collapsed one). If the user
-  // matched only via some of their PEERS (not their own name/tag/note), the expanded grid shows just those
-  // matching peers — a matching child pulls in its parent, siblings stay hidden. An identity match shows all peers.
   const searching = !!q;
   const idMatch = userIdentityMatchesQ(user, q);
   const expanded = searching ? (usersView.expanded[user.id] !== false) : !!usersView.expanded[user.id];
@@ -468,10 +437,6 @@ export function UserRow({ user, live, onlineOnly, q, nested }) {
   </div>`;
 }
 
-// ═════════════════════════ USERS → GROUPS (docs/GROUPS-PLAN.md G11) ═════════════════════════
-// The Users screen's two views sit behind a pair of icons (Users · Groups). On the users list the Users icon gives way to a
-// Groups filter — the list narrowed to one group's members — so the pair reads [filter][Groups] there and [Users][Groups] on
-// the groups grid.
 function ModeIcons({ users, force }) {
   const set = m => { usersView.mode = m; force(x => x + 1); };
   const groupsMode = usersView.mode === "groups";
@@ -495,9 +460,6 @@ function GroupsHeader({ sort, dir, onSort }) {
   </div>`;
 }
 
-// One group: a users-list row of its own (members and how many are online · the nodes their devices are on · networks shared
-// with it · its members' rate and ranged traffic added together) that opens onto its members as full user rows, paged like a user's devices.
-// While searching, a group found through a MEMBER opens on its own and lists only the members that matched.
 function GroupRow({ g, st, q }) {
   const [, force] = useState(0);
   const searching = !!q;
@@ -557,9 +519,6 @@ function GroupRow({ g, st, q }) {
   </div>`;
 }
 
-// Node · interface · Online — the filters the users list and the groups grid share (usersView), so switching views keeps them.
-// A user passes when they have a device on that node/interface and, with Online on, one online now; a group passes when any
-// member does, and opens on just those members. `reset` is the caller's: its own page goes back to 1.
 const memberPasses = u => userOnNodeIface(u, usersView.node, usersView.iface) && (!usersView.online || u.onlineCount > 0);
 const filtersOn = () => !!(usersView.node || usersView.iface || usersView.online);
 function RosterFilters({ reset }) {
@@ -629,10 +588,6 @@ export function UsersScreen() {
   // node/iface filter the user LIST (has a peer there); each expanded row still shows ALL of that user's peers
   // freeze the order over the FULL list, then filter — so searching/clearing never reshuffles the frozen rows
   const users = sortUsers(allUsers, usersView.sort, usersView.dir, "users").filter(u => (!inGroup || inGroup.has(u.id)) && userMatchesQ(u, q) && memberPasses(u));
-  // The toolbar search filters the USER list only. The unassigned grid is deliberately NOT filtered by it:
-  // the whole point of searching for a user here is to then assign an unassigned peer to them, and filtering
-  // both by the same term hid every peer whose title didn't happen to match the user's name. The grid has its
-  // own search box (unassignedView.q, applied inside EmbeddedPeers) for filtering the peers themselves.
   const unassigned = Store.unassignedPeers();
 
   const pageSize = usersView.pageSize || 20;

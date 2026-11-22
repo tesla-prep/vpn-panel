@@ -1,42 +1,3 @@
-/* rulerows.js — the rule list the panel stores ⇄ the rows the operator edits.
- *
- * LAYER 1 (see docs/APP-JS-SPLIT-PLAN.md). Imports only ./classify.js. No Store, no i18n, no DOM — this is
- * the shape change and nothing else, so it can be checked against the panel without a browser.
- *
- * WHY A ROW IS NOT A RULE. A stored rule is one category to one destination, which is what the node
- * consumes and what cascade_plan already emits per (subnet, category). But "send these fifteen services to
- * Germany" is one decision, and making the operator author it fifteen times — fifteen dropdowns, fifteen
- * destinations to keep in step — is the complaint this whole change exists to answer. So the UI works in
- * ROWS: many things, one exit. A row lowers to the rules the node already understands, and rules read back
- * as rows, and the panel, the protocol and swg-noded never learn a second shape.
- *
- * See docs/ROUTING-RULE-BUILDER-PLAN.md §5 (storage) and §7.3 (why not `categories: []`).
- *
- * THE INVARIANTS, each of which is a bug that would otherwise be found in production:
- *
- *  - A row groups a MAXIMAL RUN OF CONSECUTIVE rules with the same (action, node, enabled). Consecutive,
- *    because rule order is what the node's chain reads: pulling two same-destination rules together across
- *    a third would silently reorder the third. (Row order is NOT what decides an overlap between two rules
- *    — the engines answer that by specificity, plan §10.4x — but it is still the order the chain is built
- *    in, so it still decides ties between rules naming the same target, and it is all Kernel-SNI has.)
- *  - `enabled` is part of the key. A row saves one flag for all its rules, so two rules that disagree
- *    about it were never one row.
- *  - The catch-all (`category:"all"`) is not a row at all. It has its own control, it is always last, and
- *    grouping it would let it drift up the list — which is the one rule whose position IS its meaning.
- *  - A legacy `tld` rule is its own row, LOCKED, and is re-emitted byte-for-byte. It carries `tlds` that
- *    nothing else in this file understands; folding it into a neighbour would drop them on the next save.
- *    It also breaks a run rather than being merged through, for the same ordering reason as above.
- *  - Every typed target in a row becomes ONE custom rule, not one each. `custom_cat_id` gives an identical
- *    target bundle a shared nft set; splitting them would multiply sets, chain rules and dnsmasq
- *    directives on the node for no gain.
- *
- * AN `AS<n>` TOKEN IS KEPT, and comes back as one badge. It used not to be: the panel resolved it to that
- * AS's prefixes at save time and dropped the token, so reopening a rule showed the prefixes rather than the
- * AS, re-saving stored them literally, and nothing ever re-resolved them again. Badges made that visible
- * where the old textarea hid it in a comma list, and it is now fixed on the panel side — the tokens live in
- * `asns` beside `domains`/`cidrs` and resolve at plan time. This file just has to read that third array.
- */
-
 import { classify, classifyAll, patternTier } from "./classify.js";
 import { idnHost } from "./idn.js";
 
@@ -45,38 +6,19 @@ export const newGid = () => "rg" + (++_gidSeq);
 
 const isCatchAll = r => r && r.category === "all";
 const isLegacy = r => !!(r && (r.match || r.tlds));          // a `tld` rule: shaped differently, kept verbatim
-// The grouping key. `enabled` is in it because a row saves one flag for all its rules, so two rules that
-// disagree about it were never one row. Joined on "|": an action is an enum, a node is a hex id, and the
-// flag is 0 or 1 — none of them can contain one.
-// ⚠️ THE DESTINATION'S IDENTITY, WHOLE. `dev` rules name an exit, and if the key ignored it, two rules
-// pointing at DIFFERENT exits would group into one row, be re-emitted with the first row's exit, and the
-// second exit would be silently gone on the next save — §5.8's collapse, in the shape P5 introduces.
-// ⚠️ …AND WHOM IT IS FOR. Two runs with different selections must never merge, or the second is re-emitted with the
-// first one's people (ROUTING-PEERS-MESH-PLAN T13). Appended only when a rule has one, so every other key is unchanged.
 const rowKey = r => [r.action || "exit",
                      r.action === "exit" ? (r.node || "") : r.action === "dev" ? (r.exit_id || "") : "",
                      ruleOn(r) ? 1 : 0].join("|") + (r.who ? "|" + JSON.stringify(canonWho(r.who)) : "")
-                     // …AND ITS AUDIENCE, on a node's default list (D9): a rule for this node's own clients and one for traffic
-                     // cascaded in are two rows, or the second is re-emitted with the first one's audience (T13). Appended only
-                     // when a rule has one, so every other key is unchanged.
                      + (r.aud ? "|aud:" + r.aud : "")
                      // …AND ITS PORTS (B.6): a rule for UDP 19302-19309 and one for every port are two rows, or the second is
                      // re-emitted with the first one's ports. Appended only when a rule has them.
                      + ptKey(r);
 
-/* PER-PERSON RULES (ROUTING-PEERS-MESH-PLAN §4.2). A rule with `who` applies only to the users, groups and devices it names,
-   on its own interface. It is STORED `enabled: false`, so every older reader skips it — a released panel would otherwise
-   route it for the whole subnet — and its real switch is `who.on`. A row reads that switch as its `enabled` and carries the
-   selection as `who`; `rowsToRules` writes the guarded shape back. The panel's `rule_on` is the same test. */
 /* PORTS (NEVER-BLOCK-AND-PORT-RULES-PLAN B.2) take the guard one step further: a rule with `ports` is stored with `enabled` AND
    `who.on` false — a released panel reads `who.on` — and its switch is `ports.on`. The panel's `rule_on` reads them in this order. */
 const ruleOn = r => r && r.ports && typeof r.ports === "object" ? r.ports.on === true
   : r && r.who && typeof r.who === "object" ? r.who.on === true : !!r && r.enabled !== false;
 
-/* ── PORTS: the grammar, shared with the panel's `ports_clean` (both gated on tests/ports_vectors.json) ──
-   `proto` tcp | udp | both; `list` ports and ranges separated by commas or spaces, an en dash read as a hyphen. Canonical:
-   sorted, overlapping and adjacent ranges merged, joined by "," ("443,8000-8100"). Empty = every port of `proto`; `both` with
-   none is not a port rule. → {proto, list} or {bad: "proto"|"list"|"too_many"|"empty"}. */
 export const PORTS_MAX_TOKENS = 32;
 /** The grammar's tokens — commas or spaces between, an en dash read as a hyphen (the panel's `_ports_toks`). One tokenizer for
  *  portsClean and for naming what a list could not take (the never-cut ports field). */
@@ -103,9 +45,6 @@ export function portsClean(proto, raw) {
   }
   return { proto, list: out.map(([a, b]) => a === b ? String(a) : a + "-" + b).join(",") };
 }
-/** A stored rule's or a row's ports — `{proto, list}` as stored, without the switch — or null. A value that does not read is
- *  returned as it is, never dropped: its rule stays a port rule (the chip says it applies nowhere) and is saved back unchanged,
- *  which the panel keeps — read as "no ports", the next save would store it for every port. */
 export const portsOf = r => r && r.ports && typeof r.ports === "object" ? (({ on, ...p }) => p)(r.ports) : null;
 const ptKey = r => { const p = portsOf(r); return p ? "|pt:" + p.proto + ":" + p.list : ""; };
 /** (proto, [[a, b]…]) of a port spec, or null when it does not read. */
@@ -129,27 +68,9 @@ export const portsReach = (p, pr, n) => !p || ((p.proto === "both" || p.proto ==
 const whoList = v => Array.isArray(v) ? v.filter(x => typeof x === "string") : [];   // a stored shape the panel names nobody with
 export const canonWho = w => ({ users: [...new Set(whoList(w && w.users))].sort(), groups: [...new Set(whoList(w && w.groups))].sort(),
                                 peers: [...new Set(whoList(w && w.peers))].sort() });
-/** Does row `a` reach every device row `b` reaches? A row for everyone reaches all of them; a per-person row only a row
- *  for the same selection. Only then can `a`'s badge make the same badge in `b` unreachable, or `a` take hosts from `b`
- *  for everyone `b` is for. */
 export const rowCovers = (a, b) => (!(a && a.aud) || a.aud === (b && b.aud))   // an audience reaches only itself (D9); none reaches both
   && (!(a && a.who) || (!!(b && b.who) && JSON.stringify(canonWho(a.who)) === JSON.stringify(canonWho(b.who))));
 
-/** The row lints, per row: `dupes` — badges an earlier row that reaches the same devices already sends somewhere (they can
- *  never fire); `takenBy` — this row's hosts a more specific badge below takes, for everyone this row is for; `takenFew` — the
- *  same, where this row is for everyone and the rule below for chosen people only, so it takes them for those people alone
- *  (the node keeps them on this row for everyone else). Two different selections are not compared: which people they share
- *  is the panel's to resolve, and a warning about an overlap that may not exist is worse than none. `destOf` is the caller's
- *  destination key: two rules sending the same hosts to the same place are not worth a word. */
-/*  PORTS (B.6) narrow a row, and the lints follow the node's own decisions about one (the S5 lesson: emulate the engine):
- *  · a DUPLICATE is the same badge with the same ports;
- *  · a port row below a row to elsewhere that reaches its devices never fires when that row takes its badge's hosts on every
- *    one of its ports first — the same badge (first match; except the port-less row of the SAME category and people, which the
- *    panel moves below it, B.3), or a broader name whose shadow takes them (the node's coverage, `_ports_cover`: on a name
- *    engine a narrower port rule covers a broader one only on ports holding all of its, so equal ports win in either order).
- *    On Hybrid SNI a Block above takes no learned address and a name below on other ports still fires. Listed in `dupes`;
- *  · a port row TAKES the hosts of a port row above only on ports that hold all of its (`takenBy`); never a port-less row's.
- *  `opts.mode` is the node's engine; `opts.isName(b)` whether a badge matches by site name (a list's kind is the caller's). */
 export function rowLints(rows, destOf, opts = {}) {
   const mode = opts.mode || "", shadowEng = mode === "sni" || mode === "forcedns";
   const isName = opts.isName || (b => b.t === "list" || (b.kind !== "ip" && b.kind !== "asn"));
@@ -193,9 +114,6 @@ export function rowLints(rows, destOf, opts = {}) {
   });
 }
 
-/** The badges one stored rule contributes.
- *  {t:"list", id}                  — a curated preset, a provider-catalog category, or a custom list
- *  {t:"target", raw, kind, value}  — something the operator typed, read back through the shared grammar */
 function badgesOf(rule) {
   if (rule.category !== "custom") return [{ t: "list", id: rule.category }];
   // A fresh edit carries `targets`; a stored rule carries the split arrays. Read whichever is there — the
@@ -212,13 +130,6 @@ export function rulesToRows(rules) {
   let catchAll = null;
   for (const rule of (rules || [])) {
     if (!rule || typeof rule !== "object") continue;
-    // last-match semantics live in its own control. THE FIRST THAT IS ON — the one the node runs whenever it can lower: the
-    // plan skips a switched-off catch-all and lowers the rest in list order, and the node's first match makes the first
-    // that lowered win (`_lower`; `derive_default_exit` reads the same one). A later one routes only when an earlier one
-    // cannot lower (a node that is gone or not linked). A list holds more than one only from the API or an old list — a
-    // typed `list:all` is refused on every path (readToken here, knownListId in routing.js for the box's Enter and the
-    // dropdown) — and every save through here (this editor; the node's Settings, which
-    // re-sends its list through normRules) keeps only the one shown, as it kept only the last one before.
     if (isCatchAll(rule)) { if (!catchAll && ruleOn(rule)) catchAll = rule; continue; }
     if (isLegacy(rule)) {                                    // opaque here, and must not be merged THROUGH
       rows.push({ _gid: newGid(), enabled: rule.enabled !== false, action: rule.action || "exit",
@@ -266,33 +177,10 @@ export function rowsToRules(rows, catchAll) {
   return out;
 }
 
-/** Badges compared the way the datapath sees them — a list by its id, a target by what it MEANS rather
- *  than how it was typed (`*.google.com` and `google.com` are the same rule). Used by the round-trip gate
- *  and by the duplicate check in a row. */
 export const badgeIdentity = b => b.t === "list" ? "list:" + b.id : "target:" + b.kind + ":" + b.value;
 
-/** ── THE TEXT FORM OF A BADGE ──────────────────────────────────────────────────────────────────────────
- *  A rule is copied, pasted and backed up as text, so EVERY badge needs one — including a list, which has no
- *  address to write. It gets the identity string the panel already uses for it, `badgeIdentity`:
- *  `list:youtube`, `list:metacubex:youtube`, `list:<custom id>`. Nothing had to be invented, and the round
- *  trip is exact by construction because the text IS the identity.
- *
- *  `list:` cannot collide with a target: a hostname cannot contain a colon, and the one target kind that can
- *  (`AS:13335`) is matched by the classifier's own AS pattern, never by this prefix.
- *
- *  IT LIVES HERE, not in routing.js, because it is a FORMAT rather than a screen — operators keep it in
- *  files and paste it between panels. This module imports no preact, so `.campaign/textform-audit.mjs` can
- *  prove `text → badge → text` is the identity in node, which is the one property clicking cannot establish.
- *  Documented for operators in docs/ROUTING-TEXT-FORM.md; changing the prefix breaks files people have kept.
- */
 export const badgeText = b => b.t === "list" ? badgeIdentity(b) : idnHost(b.raw);
 
-/** One token → `{b}` (a badge) or `{bad, why}`. Shared by the textarea, the paste path and the box, so all
- *  three agree about what `list:` means rather than each growing its own reading.
- *
- *  POLICY IS INJECTED, never baked in. `allowKind` is which kinds this node's ENGINE can run; `knownList` is
- *  which list ids this PANEL can vouch for. Both are live state and neither belongs in a grammar — and
- *  defaulting them to permissive is what lets a gate exercise the grammar on its own terms. */
 export function readToken(tok, opts) {
   const allowKind = (opts && opts.allowKind) || (() => true);
   const knownList = (opts && opts.knownList) || (() => true);
@@ -309,36 +197,8 @@ export function readToken(tok, opts) {
   return { b: { t: "target", raw: t, kind: c.kind, value: c.value } };
 }
 
-/** Does `broad` claim EVERY hostname `narrow` claims? — the test behind the "a more specific rule below
- *  wins these hosts" lint. Answers only where containment is PROVABLE from the two operands, and returns
- *  false everywhere else: a missed warning is invisible, an invented one sends the operator to rewrite a
- *  rule that was already right. Fail-safe is the whole design here, not caution for its own sake.
- *
- *  WHY THIS EXISTS. The routing screen used to print "first match wins" over rows the operator can drag,
- *  and for an overlap that is not what happens: swg-sni answers by SPECIFICITY (the kind ladder, then the
- *  longest operand), and dnsmasq does the same on Force-DNS — measured, plan §10.4x. The label now says so.
- *  But specificity is not visible in a list the way row order is, so where the two DISAGREE the row says it.
- *
- *  THE HOST SET EACH KIND CLAIMS, which is what the table below is reasoning about — taken from swg-sni's
- *  `_match`, not from the classifier, because the node is what actually routes:
- *      site V / zone V   H === V or H ends with "." + V      (a whole-label suffix; zone is the 1-label case,
- *                                                             and both are the same set, so both read as `sfx`)
- *      first V           H === V or H starts with V + "."
- *      any V             some LABEL of H is exactly V
- *      starts/ends/      H starts with / ends with / contains V — BYTES, no label boundary at all
- *        contains V
- *
- *  Every rule below is a one-line proof over those sets. The ones deliberately NOT here are the pairs where
- *  containment does not hold in general — `sfx` under `starts` (a host `sub.V` need not start with S even
- *  when V does), anything under `first`, `first` under `ends` — and they return false with the rest. */
 const _SFX = { site: 1, zone: 1 };                  // one host set, two kinds — see above
 export function badgeCovers(broad, narrow) {
-  // A list's members are resolved on the panel and are not known here. BELT-AND-BRACES, and deliberately
-  // kept as such: a list badge carries neither `kind` nor `value`, so it would already fall out at the
-  // empty-operand check below or at the switch's default. No test input can tell this line from its
-  // absence — `.campaign/covers-audit.mjs` says so rather than pretending a case covers it — and it stays
-  // because it is the only line that states the REASON. Deleting it would leave list-safety resting on two
-  // accidents of shape instead of one rule.
   if (broad.t === "list" || narrow.t === "list") return false;
   if (badgeIdentity(broad) === badgeIdentity(narrow)) return false; // identical is the DUPLICATE lint, not this one
   const B = String(broad.value || ""), N = String(narrow.value || "");
@@ -366,48 +226,9 @@ export const rowHasBadge = (row, badge) =>
   (row.badges || []).some(b => badgeIdentity(b) === badgeIdentity(badge));
 
 
-/* ── WHAT A LIST BADGE RESOLVES TO ────────────────────────────────────────────────────────────────────
- *
- * A list badge is one badge with no `kind`, and these answer what is inside it. They live HERE, not in
- * routing.js, for one reason: routing.js imports preact, so nothing in it can be checked without a browser
- * — and both defects this pair has had were "the count walked past the patterns", which is what a gate
- * catches and a reading does not. Gated by .campaign/listbudget-audit.mjs, against the panel's own reader.
- *
- * The Store lookup stays in routing.js and is passed IN. Same shape as `readToken`'s `knownList` above:
- * this layer knows the grammar, the caller knows the roster.
- */
-
-// A list's targets as the operator typed them. `asns` is the third array (§6.10, widened to lists): an AS
-// token is STORED as a token and resolved at plan time, so leaving it out here would show a list that is
-// routing an AS as though it held nothing but the domains beside it.
-/* ⚠️ `patterns` BELONGS IN THIS JOIN. It is the read half of the round trip: the editor seeds its field
-   from here and saves that text back, so a kind missing here is silently deleted the first time anyone
-   opens a list and presses Save — exactly the freeze §6.10 removed for AS tokens, in a new kind. */
 export const customTargets = l => (typeof l === "string") ? l
   : (l && (l.targets ?? [...(l.domains || []), ...(l.cidrs || []), ...(l.asns || []), ...(l.patterns || [])].join(", "))) || "";
 
-/* What a list's contents ROUTE: host names, IP/AS nets, patterns — plus `t2`, how many of the patterns are
-   Tier 2, which TIER2_CAP bounds. One pass, because the picker's greying, the size line, the catalog row's
-   samples and the budget all want a slice of the same walk; buckets hold the operator's own tokens, so a
-   sample reads back as typed. Invalid tokens are counted nowhere — the field reports those separately.
-
-   THE CLASSIFIER DECIDES, and nothing here re-derives it. Each of these callers used to carry a grammar of
-   its own, and they had already drifted apart (see the note where they stood in routing.js).
-
-   DEDUPE BY WHAT IT MEANS, NOT BY WHAT WAS TYPED, because the panel stores one entry per canonical value:
-   `google.com` and `*.google.com` are ONE host, so are `яндекс.рф` and its punycode, so are `1.2.3.4` and
-   `1.2.3.4/32`. Counting raw tokens described the typing rather than the list. By KIND too — `*abc*` and
-   `abc*` share the operand `abc` and are two different rules. Checked against _clean_targets, not assumed. */
-/* MEMOISED ON THE RECORD, VALIDATED ON ITS CONTENT. `customCaps` is asked once per list badge per render —
-   by the badge itself, and (since the collapsed summary learned to count what cannot run) while the rules
-   section is CLOSED, which is the default view and re-renders on every keystroke in any field of the sheet.
-   Measured before adding this: 281 µs for one 500-entry list, 2.8 ms for ten of them, per keystroke.
-
-   The key is the RECORD, so entries die with the poll that replaced them and nothing has to be invalidated
-   by hand; `raw` is re-derived and compared, so a record mutated in place misses rather than answers from a
-   stale cache. That compare is a join and a string equality against a classify pass over every token — the
-   whole point. Records arriving as a plain string (the editor's live text) are not cached: a WeakMap cannot
-   hold one, and it changes on every keystroke anyway, so there would be nothing to hit. */
 const _bucketMemo = new WeakMap();
 export function listBuckets(l) {
   const raw = customTargets(l);
@@ -434,29 +255,14 @@ function _bucketsOf(raw) {
   return { host, ip, pat, t2 };
 }
 
-/* Which TIERS a list can match in, for the picker's greying. A pattern is HOST-tier exactly like a domain,
-   so a list holding only `*.ru` reporting {host:false} would read as "matches nothing anywhere" on the
-   engines that in fact run it. */
 export function customCaps(l) {
   const b = listBuckets(l);
   return { host: b.host.length + b.pat.length > 0, ip: b.ip.length > 0 };
 }
 
-// §12.1's Tier-2 budget, and the number Phase 3 deferred: Tier 2 is the only cost in the node's matcher
-// that grows with how many there are, and Phase 3's engine bounded it by something else entirely
-// (`_XTS_CAP`, a chain length). This is the number measured for the LINEAR SCAN, which is Phase 4's engine.
-//
-// PER INTERFACE, NOT PER ROW: the node scans one flat list across every rule the interface carries, so a
-// per-row budget would bound nothing — ten rows of ninety-nine is nine hundred and ninety comparisons per
-// connection. The node holds its own total (`_SNI_TIER2_MAX`, ten times this) because an API client can
-// post what the field refused; this is where a person is told, at the moment they type, which is the only
-// place a limit is worth anything.
 export const TIER2_CAP = 100;
 
 /** How many Tier-2 operands a list holds. Takes the RECORD — the caller does the roster lookup. */
-/* A list is ONE badge with no `kind`, so counting badges saw none of these: a list of 500 substrings
-   walked past the panel's cap and met the NODE's instead, which truncates and reports rather than
-   refusing at the field. Lists could not hold patterns when this was written; now they can. */
 export const listTier2 = list => listBuckets(list).t2;
 
 /** Every Tier-2 operand an interface's rows will ship — the thing TIER2_CAP bounds.
@@ -465,14 +271,6 @@ export const tier2Count = (rows, lookupList) => (rows || []).reduce((n, r) =>
   n + (r.badges || []).reduce((m, b) => m + (b.t === "list" ? listTier2(lookupList ? lookupList(b.id) : null)
                                            : (b.t === "target" && patternTier(b.kind) === 2 ? 1 : 0)), 0), 0);
 
-/** THE ROWS FOR A DRAFT RULE LIST, keeping the rows already held where they ARE that draft (a node's default list in
- *  Settings — ROUTING-PEERS-MESH-PLAN §7.3). A row carries what the rules cannot (a badge still being typed, `_draft`), so
- *  rebuilding it from the rules loses that; this rebuilds only when it must:
- *    · `held` as it is, when it lowers to exactly `rules`;
- *    · `held` with the server's exit prune applied (a row or catch-all leaving by an exit not in `live` becomes Direct,
- *      `exit_id` dropped, as `prune_exit_refs` does), when THAT lowers to `rules` — an exit removed while editing;
- *    · otherwise rows rebuilt from `rules`.
- *  Returns {rows, catchAll}; the very `held` object when nothing changed, so a caller can tell. */
 export function adoptRows(held, rules, live) {
   const same = h => JSON.stringify(rowsToRules(h.rows, h.catchAll)) === JSON.stringify(rules || []);
   if (held && same(held)) return held;

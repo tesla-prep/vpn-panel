@@ -1,19 +1,3 @@
-/* journal.js — Settings → Logs, the live viewer (docs/LOGS-PLAN.md §3, §5, §23).
- * Named journal.js, not logview.js: EasyPrivacy (uBlock Origin, AdGuard, Brave) blocks any "/logview.js", and one
- * blocked module leaves the whole panel blank (1.8.9). Gate: tests/served_names_selftest.py.
- *
- * LAYER 10: a leaf screen part that only Settings renders. Pick servers (the Panel first) and sources (grouped, a
- * three-state box per group), and see ONE stream, merged and sorted by each line's own time on the panel's clock (a node
- * whose clock is off is corrected, and its chip says by how much). Nothing is pulled from any node until someone asks:
- * Settings → Logs streams only after "Start live log"; the header button and the deep links ask by being clicked. Then the
- * viewer opens a request on the panel and renews it with every poll (1.5 s, only while this tab is visible); the panel
- * asks the nodes through their sync reply, and they stop by themselves ~20 s after the polls stop.
- *
- * Its state is module-level (LV), not component state: the 5 s Store poll re-renders Settings, and a viewer that lost
- * its lines, its facets or its scroll on every re-render would be useless. 5 000 lines at most, rendered as a window —
- * blocks of 64 lines, only those near the viewport in the DOM, their heights measured (Wrap makes rows uneven).
- */
-
 import { T, plural, fmtNum, locale } from "./i18n.js";
 import { Store, api, useStore } from "./store.js";
 import { Ic, Popover, Portal, usePopup } from "./ui.js";
@@ -54,9 +38,6 @@ const LV = {
 const _subs = new Set();
 const bump = () => { LV.ver++; _subs.forEach(f => f(LV.ver)); };
 const STORE_KEY = "swg-logview";
-// A choice remembered before mesh links were a source of their own (v1) meant them by `iface:`: `iface:*` covered them and
-// `iface:swg_…` named one. Rewritten once, so nothing that was coming stops coming — and no choice is left that no list
-// shows and nothing can untick.
 const migrate = src => [...new Set(src.flatMap(x => x === "iface:*" ? ["iface:*", "mesh:*"] : x.startsWith("iface:swg_") ? ["mesh:" + x.slice(6)] : [x]))];
 try { const s = JSON.parse(localStorage.getItem(STORE_KEY) || "null"); if (s && Array.isArray(s.nodes) && Array.isArray(s.src)) Object.assign(LV, { nodes: s.nodes, src: s.v === 2 ? s.src : migrate(s.src), wrap: !!s.wrap }); } catch (_) { /* private mode */ }
 // A deep link's servers and sources are a pending filter (LOGS-PLAN §5): the operator's own choice is kept here while it is up —
@@ -157,12 +138,6 @@ function closeReq() {
 }
 function onVisibility() { if (document.hidden) closeReq(); else tick(); }   // hidden: the nodes stop now, not in 20 s
 
-// ── what the source pickers offer: built from what the panel already knows (the node records' last reports) ─────────
-// Four lists, by where an operator looks rather than by how the code is built: the Panel's own services; everything of
-// swg on a node (its service, routing, relays, the mesh links to other nodes, the firewall and kernel); the turn
-// proxies by kind; the client interfaces. A list's whole-group choice is a WILDCARD (`relay:*`, `mesh:*`, `turn:*`,
-// `iface:*`) — each node maps it to what it has, so "all" stays one source at 200 nodes and includes what a node starts
-// later. Turn kinds are brands, the same in every language.
 const TURN_KINDS = [["vk", "VK TURN"], ["wdtt", "WDTT"], ["csqtt", "csqtt"]];
 const MESH_PRE = "swg_";
 
@@ -422,10 +397,6 @@ function Hi({ text, q }) {
 
 // a line's source as the stream shows it: a mesh link by the node at its other end, not by its generated name
 let _shown = { d: null, m: new Map() };
-// a VK turn proxy by its fork's name and port ("hack-diaz:51823"), not the id in its service name; a WDTT / csqtt
-// interface (no catalog fork before its port) stays as it is
-// (a WDTT / csqtt interface named "<fork>-<n>" is no VK proxy: only a turn-kind fork maps; legacy "main" is cacggghp, as
-// turnFork says; memoised per catalog — the stream re-renders thousands of lines every poll)
 let _vk = { c: null, m: new Map() };
 const vkShown = n => {
   if (_vk.c !== Store.turnCatalog) _vk = { c: Store.turnCatalog, m: new Map() };
@@ -512,10 +483,6 @@ function download(lines) {
   downloadConf(head.concat(body).join("\n") + "\n", "swg-logs-" + d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + "-" + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()), "log");
 }
 
-// ── a time range, downloaded as one file (docs/LOGS-PLAN.md §3, §5, §26) ─────────────────────────────────────────────
-// The viewer's servers, sources and level chips, over a range: the panel asks each server, merges what comes back by time
-// into one file and keeps it RANGE_KEEP_MIN after each download. The browser saves it from a plain link (a 50 MB Blob is
-// what this avoids). RG is module-level for the same reason LV is: the 5 s Store poll re-renders Settings.
 const RANGE_SPAN = { "15m": 900, "1h": 3600, "24h": 86400, "7d": 604800 };
 const RANGE_KEEP_MIN = 10;
 const RG = { open: false, preset: "1h", from: "", to: "", redact: true, id: null, v: null, err: "", busy: false, timer: null,
@@ -663,9 +630,6 @@ function RangePanel() {
   </div>`;
 }
 
-// ── full screen: the header's Logs button, the deep links and the card's full-screen icon ─────────────────────────────
-// The same viewer over any screen, mounted in the app shell only while it is up — the viewer polls only while mounted, so
-// no request leaves before. Exit (or Esc) unmounts it, which closes its request at once, and gives the focus back.
 let _back = null;
 // card: opened from the Settings card's icon — Exit only leaves full screen (the card streams on); else Exit stops it
 const showOverlay = card => { if (!LV.overlay) _back = document.activeElement; LV.overlay = LV.live = true; LV.card = card; bump(); };

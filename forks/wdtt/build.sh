@@ -1,13 +1,4 @@
 #!/usr/bin/env bash
-# Build our patched WDTT server (amurcanov/proxy-turn-vk-android) for swg-panel.
-#
-# WDTT ships no release binaries, so — like the turn-proxy forks — we build from a
-# PINNED upstream commit and apply our patch (wdtt-swgpanel.patch), then host the
-# result in our own binary mirror. The patch is intentionally small and touches
-# only 4 files; see README.md for what it adds and why.
-#
-# Usage:  ./build.sh [output-path]           (default: ./wdtt-server)
-# Env:    GOARCH=amd64|arm64  (default: host)   — apply the same arch gate as turn.
 set -euo pipefail
 
 UPSTREAM_REPO="https://github.com/amurcanov/proxy-turn-vk-android"
