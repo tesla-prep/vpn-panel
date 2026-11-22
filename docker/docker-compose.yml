@@ -1,22 +1,5 @@
-# swg-panel — Docker. Copy .env.example to .env and fill it, then pick a profile:
-#
-#   Panel + local node:     docker compose --profile master up -d
-#   Panel only:             docker compose --profile host up -d
-#   Node only:              docker compose --profile node up -d
-#
-# The profiles match the installer's roles (master / host / node). install-docker.sh
-# exposes two entry points (`docker host` / `docker node`) and asks the role in Step 1 —
-# the `master` role brings up the master profile AND auto-enrolls the local node (no manual
-# NODE_TOKEN). By hand: create each node in the panel's Nodes screen to get its NODE_TOKEN.
-# Nodes reach the panel over OUTBOUND HTTPS. For master, set PANEL_URL=https://swg-panel:8443
-# (the panel's service name on the compose network). (`host-node` is kept as an alias of
-# `master` for older installs.)
-# Docker's json-file driver defaults to UNLIMITED. A container that spins and logs per iteration fills the host
-# disk with nothing else wrong: a csqtt a user had installed by hand next to the panel wrote 9.6G of one repeating
-# `[WARN] I/O errors` line and took the box down that way. 10m x 3 caps each service at 30MB. Applies on container
-# RECREATE, which `compose up -d` (and update.sh) already does. The turn-proxy and relay containers swg-noded creates
-# itself get their own cap — a share of the node's log budget (Settings → Logs), no log at all at logging Off
-# (docker_log_opts).
+# Профили установки описаны в ../docs/operations.md.
+# Ограничиваем размер журналов контейнеров, чтобы не заполнить диск хоста.
 x-logging: &logging
   driver: json-file
   options:

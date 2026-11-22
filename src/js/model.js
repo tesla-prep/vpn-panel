@@ -15,29 +15,9 @@ import { Store } from "./store.js";
 import { T } from "./i18n.js";
 import { portsClean, portsToks, portsSpans } from "./rulerows.js";   // the port rules' grammar — the never-cut list reads it too
 
-// ── interface / target taxonomy ──────────────────────────────────────────────────────────────────
-// wg vs awg for an interface. A single peer/key can't span both protocols, so the target pickers hide the other
-// kind once one is chosen (enforced wherever peers get interfaces — peers module, users module, …).
-// THE ONE interface/target-kind classifier — "wg" | "awg" | "wdtt". WDTT wins on the authoritative target `type`
-// or its iface NAME (a WDTT interface is never in `describe`). Otherwise the LIVE interface meta is authoritative
-// for awg-vs-wg, falling back to the stored target.type only when the node isn't reporting the interface. Every
-// badge/count/dispatch keys off this (via iTypeOf / targetType) so a WDTT target can never be mislabelled WG.
-// The node's ACTUAL WDTT interfaces: its live readback first, then the panel's own config so a node that is
-// down still classifies correctly. The name pattern below is only a last-resort fallback — adoption accepts an
-// operator-chosen name (wdttreal0), which the generated-name regex rejects, and such a target was then dropped
-// into the WG list and tagged "wg". Peer-create dispatches on this, so it minted the wrong kind of peer too.
-// ⚠️ A RAW instance owns TWO devices, and only one of them is the record's key. qWDTT/ildarmaga with raw on
-// run a second TUN (`raw_iface`, e.g. `wdttraw2`) beside the wg one, and it is a FIELD of the instance, not
-// another entry — so every "is this name one of ours?" check that only looked at keys said no. That is how
-// `wdttraw2` reached the egress picker as `Direct — wdttraw2`: a client INGRESS tunnel offered as an exit NIC,
-// which installs `-o wdttraw2` MASQUERADE in place of the working `-o eth0` one. The rule can never match
-// (internet-bound traffic routes out eth0), so the interface keeps its handshake and silently loses its NAT.
-// Both readbacks carry the field (`stats[].wdtt[].raw_iface`, `nodes[].wdtt_cfg[].raw_iface`), so ask both.
-//
-// The two predicates below take a CONFIG MAP, not a node id, so that the callers who already hold the node
-// record can ask without a lookup — `scKindByName` loops over every node, and routing an id back through a
-// `.find` there turned a flat cost into a quadratic one (measured: 0.02 ms → 0.46 ms per render at 60 nodes,
-// for no behaviour change at all). One grammar, asked at whichever level the caller is already standing on.
+// Для классификации используем данные узла, сохранённую конфигурацию и в последнюю очередь имя.
+// Raw-интерфейс хранится полем экземпляра и тоже считается входным интерфейсом.
+// Предикаты принимают конфигурацию, чтобы не искать узел повторно при обходе списка.
 export const wdttCfgClaims = (cfg, iface) =>
   !!(cfg || {})[iface] || Object.values(cfg || {}).some(c => c && c.raw_iface === iface);
 // The csqtt twin, deliberately written out rather than left inline: csqtt has no second device today, and the

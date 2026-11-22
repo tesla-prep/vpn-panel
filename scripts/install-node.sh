@@ -1,18 +1,5 @@
 #!/usr/bin/env bash
-# install-node.sh — set up a swg-panel NODE (entry server).
-#
-# Installs the agent + the swg-noded daemon and points it at your panel. The node
-# makes ONLY outbound HTTPS to the panel: every few seconds it posts its snapshot
-# and receives its desired peer set, then reconciles locally. No inbound access,
-# no SSH keys, no rsync, no queue.
-#
-# First add the node in the panel's "Nodes" screen — it hands you a one-time key
-# and the exact command to run here, e.g.:
-#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" \
-#     -- node -key SECURE_NODE_KEY -host https://panel.example.net
-#
-# Fill CONFIG to run unattended, or be prompted. Run as root. --dry-run renders
-# files under ./dryrun and executes nothing.
+# Установка узла с systemd. Порядок регистрации описан в docs/operations.md.
 set -euo pipefail
 
 # ───────────────────────── CONFIG (blank = ask) ─────────────────────────
@@ -23,18 +10,7 @@ ENDPOINT_IP="${ENDPOINT_IP:-}"         # public IP/host clients dial for THIS no
 MANAGE_IFACES="${MANAGE_IFACES:-}"     # e.g. "awg0"  (blank = manage all detected)
 ADOPTED_IFACES="${ADOPTED_IFACES:-}"   # interfaces migrated in by convert.sh — shown as "already on this node", not orphan/docker
 ADOPTED_ENDPOINTS="${ADOPTED_ENDPOINTS:-}"   # "name=host,…" convert.sh hands over: the endpoint each migrated interface's clients already dial
-# No terminal: debconf has nobody to ask and says so four lines per package — quiet it (a value already set stays).
-# ⚠️ ONLY THE TERMINAL'S FOREGROUND CAN READ IT. Under `curl … | sudo bash`, sudo-rs (Ubuntu 26.04's sudo) runs the
-# script in the BACKGROUND of its own terminal: /dev/tty still opens, and the first read STOPS the process (SIGTTIN) with
-# nothing on screen — the installer "hung at the TLS question" (client report 2026-10-06; sudo-rs issue #1263). So every
-# question reads SWG_TTY: /dev/tty while this process group is the terminal's foreground, /dev/null otherwise (an EOF,
-# which each question already answers with its no-terminal default) — no terminal at all, or the background under sudo-rs.
-# ⚠️ NOT UNDER CLASSIC SUDO. It backgrounds the script the same way (≥ 1.9.13 with use_pty: Ubuntu 24.04, Debian 12/13) but
-# brings it to the foreground at that first read, so `curl … | sudo bash` asked its questions there, as in 1.8.8 — taking
-# every background start as unreadable took them all away (1.8.9 qualification IN-2). Which sudo it is: the first sudo up
-# the chain, by its binary's path (sudo-rs, cargo), else by its --version. No sudo above (a job the operator put in the
-# background): the terminal, as ever. /proc/<pid>/stat after the command name: state ppid pgrp session tty_nr tpgid.
-# Without /proc: as before.
+# sudo-rs может оставить скрипт в фоне. В этой группе процессов чтение /dev/tty вызовет SIGTTIN.
 _swg_tty_fg(){ local s f p e i IFS=' '; { read -r s </proc/$$/stat; } 2>/dev/null || return 0; read -ra f <<< "${s##*) }"
   [ "${f[2]:-}" = "${f[5]:-}" ] && return 0; [ "${f[5]:-0}" -gt 0 ] 2>/dev/null || return 1
   for i in 1 2 3 4; do p="${f[1]:-0}"; [ "$p" -gt 1 ] 2>/dev/null || return 0; e="$(readlink "/proc/$p/exe" 2>/dev/null)" || e=""

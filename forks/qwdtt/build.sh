@@ -1,16 +1,5 @@
 #!/usr/bin/env bash
-# Build our patched qWDTT server (SpaceNeuroX/proxy-turn-vk-android) for swg-panel.
-#
-# qWDTT is a WDTT fork whose server was rewritten into ONE flat `server.go` at the
-# repo root (upstream WDTT keeps db/net/types/main under app/src/main/assets/linux-server),
-# so it needs its own patch — the amurcanov one does not apply. Same model though:
-# upstream ships no server binary, we build from a PINNED COMMIT and host the result.
-#
-# ⚠️ PIN A COMMIT, NEVER A TAG: qWDTT's v1.3.8 / v1.3.9 / v1.4.0 / v1.4.0-beta tags all
-# still point at the July commit 2dd5d37f, long behind master.
-#
-# Usage:  ./build.sh [output-path]           (default: ./qwdtt-server)
-# Env:    GOARCH=amd64|arm64  (default: host)   — same arch gate as turn.
+# Сборка qWDTT из зафиксированного коммита. См. README.md.
 set -euo pipefail
 
 UPSTREAM_REPO="https://github.com/SpaceNeuroX/proxy-turn-vk-android"

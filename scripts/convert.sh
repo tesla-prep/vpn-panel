@@ -1,29 +1,7 @@
 #!/usr/bin/env bash
-# convert.sh [--check] <from-method> <to-method> <role>
-#   Migrate a swg deployment between docker and bare-metal, preserving settings / identity / interfaces.
-#   Driven by bootstrap.sh's cross-method conflict prompt; can also be run by hand.
-#
-#   --check          only run the port/interface pre-flight (prints clashes, exits non-zero if any)
-#   from/to          docker | baremetal
-#   role             node | host | master
-#
-# Status: all four directions are automated — node and panel, each way (docker ↔ bare-metal), plus master
-# (panel + co-located node) as a unit. A reverse-proxy panel converts to docker plain-HTTP-behind-proxy
-# (TLS=none + loopback binds) and back; identity/roster/nodes/cert/interfaces/turn-proxies are preserved.
-# NOTE: bare→docker reads the panel URL/base/TLS from /etc/swg-panel/install.conf — keep that file current
-# (an Access address-migration must update it, or the convert will resurrect the pre-migration address).
+# Перенос установки между Docker и systemd. См. docs/operations.md.
 set -euo pipefail
-# ⚠️ ONLY THE TERMINAL'S FOREGROUND CAN READ IT. Under `curl … | sudo bash`, sudo-rs (Ubuntu 26.04's sudo) runs the
-# script in the BACKGROUND of its own terminal: /dev/tty still opens, and the first read STOPS the process (SIGTTIN) with
-# nothing on screen — the installer "hung at the TLS question" (client report 2026-10-06; sudo-rs issue #1263). So every
-# question reads SWG_TTY: /dev/tty while this process group is the terminal's foreground, /dev/null otherwise (an EOF,
-# which each question already answers with its no-terminal default) — no terminal at all, or the background under sudo-rs.
-# ⚠️ NOT UNDER CLASSIC SUDO. It backgrounds the script the same way (≥ 1.9.13 with use_pty: Ubuntu 24.04, Debian 12/13) but
-# brings it to the foreground at that first read, so `curl … | sudo bash` asked its questions there, as in 1.8.8 — taking
-# every background start as unreadable took them all away (1.8.9 qualification IN-2). Which sudo it is: the first sudo up
-# the chain, by its binary's path (sudo-rs, cargo), else by its --version. No sudo above (a job the operator put in the
-# background): the terminal, as ever. /proc/<pid>/stat after the command name: state ppid pgrp session tty_nr tpgid.
-# Without /proc: as before.
+# sudo-rs может оставить скрипт в фоне. В этой группе процессов чтение /dev/tty вызовет SIGTTIN.
 _swg_tty_fg(){ local s f p e i IFS=' '; { read -r s </proc/$$/stat; } 2>/dev/null || return 0; read -ra f <<< "${s##*) }"
   [ "${f[2]:-}" = "${f[5]:-}" ] && return 0; [ "${f[5]:-0}" -gt 0 ] 2>/dev/null || return 1
   for i in 1 2 3 4; do p="${f[1]:-0}"; [ "$p" -gt 1 ] 2>/dev/null || return 0; e="$(readlink "/proc/$p/exe" 2>/dev/null)" || e=""
@@ -239,29 +217,8 @@ _norm_role(){ case "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" in
 _USAGE="usage: convert.sh [--check] <docker|baremetal> <docker|baremetal> <node|host|master>"
 FROM="$(_norm_method "${1:-}")"; TO="$(_norm_method "${2:-}")"; ROLE="$(_norm_role "${3:-}")"
 [ -n "$FROM" ] && [ -n "$TO" ] && [ -n "$ROLE" ] || die "$_USAGE"
-# ⚠️ REFUSE WHAT WE DO NOT UNDERSTAND, and refuse `--dry-run` LOUDLY. This read $1 $2 $3 and dropped
-# everything after them, so `convert.sh baremetal docker node --dry-run` printed the conversion banner and
-# then CONVERTED — the one flag every sibling script honours, silently ignored by the one script whose work
-# cannot be undone. It is not a typo an operator has to invent, either: `bootstrap.sh` collects unrecognised
-# flags into `PASS` and hands them straight here (both convert call sites), and its `run_script` sets
-# `_keep_tmp=1` the moment it sees `--dry-run` — so the front door prints "dry-run preview kept at …" about
-# a conversion that has already happened.
-#
-# The answer is a refusal, not an implementation. A convert tears the old method down before the new one is
-# up; rendering that under a $PREFIX the way the installers do would be a second, unexercised code path
-# through the most destructive script here, which is a worse trade than one clear sentence. `--check` is the
-# rehearsal this script actually has, so name it.
-# ⚠️ ARGUMENTS FIRST, ROOT SECOND. Both are refusals and neither needs the other, but answering "run as
-# root" to a command that is ALSO misspelled costs two round trips for one mistake — and it hides the more
-# important of the two sentences behind a `sudo`. Parsing is pure string work; nothing has been touched yet.
-# ⚠️ AND `-y` IS NOT AN UNKNOWN FLAG, IT IS THE FRONT DOOR'S. `bootstrap.sh` puts every flag it does not
-# recognise into `PASS` and hands it to BOTH convert call sites, and `-y`/`--yes` is the documented
-# unattended form of `update.sh` and `uninstall.sh` — so `bootstrap.sh node -y` on a box that has the other
-# method installed reached here and died at argument parsing, after the operator had already answered the
-# menu and the "proceed with the conversion" confirm. It used to be dropped in silence; refusing every
-# unrecognised word turned that into a failed conversion for a flag the front door itself forwards.
-# Accepted, and nothing more: this script asks no question of its own (the turn-proxy transfer questions belonged to
-# a second migration path nothing called — removed, 1.8.9 qualification IN-5; the installers it runs ask theirs).
+# Проверяем аргументы до проверки root. Для предварительной проверки поддерживается --check.
+# --dry-run отклоняется. -y/--yes принимается для совместимости с bootstrap.sh.
 for _x in "${@:4}"; do case "$_x" in
   -y|--yes) ;;
   --dry-run) die "convert.sh has no dry run — a conversion cannot be rehearsed by rendering files, because it takes the old method down before the new one is up. Use $(b "convert.sh --check $FROM $TO $ROLE") for the port/interface pre-flight." ;;

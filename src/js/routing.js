@@ -1986,36 +1986,8 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     setPage(0); setAct(-1);
     return rest;                                           // "" when everything landed — edit() needs to know
   };
-  // Clicking a typed badge returns it to the field AS THE BADGE READS, not as it is stored. Those are the
-  // same string for almost everything, and were not for an IDN name: a `site` is stored canonical, so
-  // clicking `яндекс.рф` put `xn--d1acpjx3f.xn--p1ai` in the box — the operator's own name, handed back in a
-  // form they did not write and cannot edit. (Patterns keep the written form, which is why the zone badges
-  // beside it came back correctly and hid this.)
-  //
-  // idnHost on the RAW, not targetLabel on the value: raw carries the syntax that produced the kind, and a
-  // zone's label (`.ru`) does not classify back to a zone. Decoding whole labels leaves `*`, `/` and every
-  // ASCII token untouched, and what comes back re-reads to the same kind and value — so committing it again
-  // stores exactly what was there before.
-  //
-  // ONE THING IN THE BOX AT A TIME. This used to APPEND the clicked badge to whatever the box already held,
-  // so clicking three badges in a row merged three separate rules into one run of text — `*google* *.ru
-  // google.com`, a single string where the operator had clicked three things, with the foot then counting
-  // "2 entries · 2 names" about a box they never typed into. Clicking a badge means "edit THIS one", so
-  // anything already in the box goes back to being badges first, in the same gesture.
-  //
-  // If part of the box CANNOT become a badge — an unreadable token, or Tier-2 over §12.1's budget — the
-  // clicked badge is left exactly where it is and the leftovers keep the box. Pulling it in on top of them
-  // would be the same merge again, one step later; refusing says which token is in the way, and a second
-  // click opens the badge once the box is clear.
-  // ⚠️ THE BADGE STAYS IN THE ROW WHILE IT IS EDITED. It used to be removed the instant you clicked it,
-  // leaving it alive only as text inside this component — a second, invisible half of the rule that every
-  // other path had to know about. Two paths did not: `toText` built its draft from `badges` and destroyed
-  // it, and SAVING THE SHEET mid-edit dropped it silently, because the parent had already been told it was
-  // gone. Both were measured, not theorised.
-  //
-  // Keeping it means there is nothing to restore: Escape just clears the box, `toText` reads the row and
-  // sees everything, a save mid-edit keeps the original, and clicking along a row no longer reorders it —
-  // which is what the "put an untouched badge back in its own slot" branch existed to undo.
+  // Декодируем исходную запись для редактирования, сохраняя синтаксис шаблонов.
+  // Исходное значение остаётся в правиле до подтверждения правки, чтобы сохранение его не потеряло.
   const edit = i => { const b = badges[i]; if (b.t !== "target") return;
     if (editing && editing.b === b) { if (inRef.current) inRef.current.focus(); return; }
     if (commitTyped()) return;              // something in the box could not land — fix that before moving on
@@ -3708,28 +3680,9 @@ export function exitHealth(x, node) {
   // through to the tests below exactly as before.
   if (l.no_traffic) return { state: "stalled", tone: "warn", icon: "warn", dot: "down",
     why: said(exitStalledSay(ex)) };
-  // ⚠️ UP IS NOT WORKING. This returned "ok" the moment the device existed, whatever was at the other end —
-  // so a pasted AmneziaWG profile brought up as plain WireGuard was drawn GREEN while carrying nothing: the
-  // interface was up, and up was the whole question. A handshake is the first fact that is only true if the
-  // far side agreed — right keys, reachable endpoint, matching obfuscation.
-  //
-  // `=== 0` and not falsy: 0 means the node asked and the answer was NEVER, while `undefined` is a node too
-  // old to say and must keep the old reading rather than turn every exit on the fleet amber.
-  // ⚠️ A SECOND FACT FROM THE SAME PASS, because `handshake` alone has a value that means two things. The
-  // node computes an age as `now - timestamp`, so for one whole second after every rekey that age IS 0 —
-  // the same 0 that means NEVER. Fixed in the node (the age now floors at 1), but a node is allowed to be
-  // older than its panel here, and on an older one this drew a fault on every healthy exit in turn, about
-  // once every two minutes each. The trace settles it: it is a request that crossed this tunnel in the
-  // same pass, and traffic cannot have crossed a peer that never answered. This only ever silences a false
-  // alarm — an exit that really has never handshaken has no trace either, and still warns below.
-  // ⚠️ AND THE ADVICE HAS TO MATCH WHAT THE OPERATOR ACTUALLY TYPED. Both sentences below tell them to
-  // "check the endpoint and the keys" — true of a PASTED profile, and false of a WARP account, where the
-  // panel registered the account and the node holds the key: there is no endpoint and no key on that
-  // screen to check, so the one instruction the row gives cannot be followed. Measured on nixos: a WARP
-  // exit sending 520 KiB and receiving 0 B, with `tcpdump -ni any "udp port 2408"` showing 12 packets Out
-  // and 0 In, while ICMP to the same address answered in 13 ms and the WARP API answered over HTTPS —
-  // a network that drops WARP's datapath and nothing else. The same code on msk-main handshakes fine
-  // (over IPv6). Nothing on that node was misconfigured and nothing on that screen could have fixed it.
+  // Работающий туннель подтверждает рукопожатие или успешное прохождение проверки через него.
+  // Ноль означает отсутствие рукопожатия. У старых узлов ноль также может быть возрастом свежего рукопожатия.
+  // Отсутствующее поле сохраняет прежнее поведение. Подсказка зависит от вида настроенного выхода.
   if (l.handshake === 0 && !(l.trace || {}).ip) return { state: "nohandshake", tone: "warn", icon: "warn", dot: "down",
     why: said((ex.provider || "warp") === "warp"
       ? T("The tunnel is up, but Cloudflare never answered it. Nothing here is yours to correct — the keys and the endpoint are the panel's own. Networks that block WARP look exactly like this, so try a pasted profile instead, or put this exit on another node.")

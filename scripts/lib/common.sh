@@ -21,31 +21,9 @@ stage_docker_context(){
     cp -a "$repo/docker/entrypoint.sh" "$repo/docker/node-entrypoint.sh" "$repo/docker/swg-netctl-docker" "$dest/docker/"
 }
 
-# ── these installers must REFUSE on a declaratively managed host ────────────────────────────────
-# WHY: on NixOS `bootstrap.sh` APPEARS to work. `/` is writable and `nixos-rebuild` never touches
-# /opt, so `mkdir -p /opt/swg-noded && cp` succeeds; the run then fails somewhere later on PATH or a
-# package manager, leaving a half-install the host's own tooling cannot see, cannot update and will
-# not remove on `nixos-rebuild`. That is strictly worse than failing at the front door, and it is
-# the reason this guard exists rather than a nicer error message deeper in.
-#
-# Two signals, in this order and for different reasons:
-#   1. NixOS BY NAME (`/etc/NIXOS`, or `ID=nixos` in os-release) — so the refusal can point at the
-#      module the operator should be writing instead of describing a symptom.
-#   2. a READ-ONLY `/etc/systemd/system` — the general "something else owns this host's services"
-#      case, and the condition that actually breaks these scripts. `[ -w ]` is NOT enough: for root
-#      it reports the mode bits and ignores a read-only mount, so probe with a real write. The
-#      `( : > f )` SUBSHELL matters — `{ : > f; }` exits the whole script under dash.
-#
-# uninstall.sh carries its own copy of the write probe on purpose: it does not source this file, and
-# its question is narrower ("can I write units at all", asked so a failed `systemctl disable` cannot
-# lead to deleting /opt while the services keep running). Keep the two in step by intent, not by
-# sharing — that script's guard is about destruction, this one about installation.
-#
-# ⚠️ This one does NOT lean on the sourcing script's `die`, unlike the rest of this file. Four of the
-# five scripts source this file BEFORE they define `die` (measured: install-host 61 vs 99, node 37 vs
-# 76, update 59 vs 91, convert 17 vs 34) — so a guard that called it would die with "die: command not
-# found" on precisely the host it exists to protect, and nowhere else. It prints and exits itself,
-# and uses `die` only when one is already defined.
+# Отклоняем установку на NixOS и при недоступном для записи каталоге служб.
+# Проверяем реальную запись в дочерней оболочке: для root тест -w не учитывает read-only mount.
+# При подключении библиотеки функция die может ещё отсутствовать.
 declarative_host(){                  # 0 = managed declaratively; sets DECLARATIVE_KIND=nixos|declarative
   DECLARATIVE_KIND=""
   # ⚠️ anchored at BOTH ends: '^ID="?nixos"?' alone also matches `ID=nixosaurus`. Caught by the probe,
@@ -2858,34 +2836,8 @@ ensure_awg_userspace(){ # last rung: the userspace datapath, so AWG works even w
   return 0
 }
 
-# ── MANAGE_IFACES: normalise it, then refuse a name this box does not have ────────────────────────────
-# ⚠️ ONE READER, BECAUSE THERE ARE TWO INSTALLERS. install-node.sh and install-host.sh each have their own
-# `choose_ifaces`, their own `detect_wg` and their own copy of the same "unknown name → fall through to the
-# wg default" fallback. The guard was written into ONE of them, so `MANAGE_IFACES=none bootstrap node`
-# refused while `MANAGE_IFACES=none bootstrap master` — the more common first install — went on writing
-#     "none": {"cmd": ["wg"], "conf": "/etc/wireguard/none.conf"}
-# into config.json and the node reported `reconcile: … errors=['none: cannot read interface']` on EVERY
-# pass, for ever, under a green install summary. Fixing a twin and not its sibling is how the sibling gets
-# found in production. [[csqtt-wdtt-presence-parity]]
-#
-# Two jobs, both here so they cannot drift apart again:
-#   1. Normalise. `MANAGE_IFACES=" "` — a trailing space out of a copy-paste — is non-empty, takes the
-#      "explicit list" branch, and puts a blank entry in SELECTED; every later loop then indexes IF_* with
-#      an empty subscript and the install dies at `IF_CMD: bad array subscript` mid-Step 1.
-#   2. Validate against what the box HAS. `detect_wg` has already walked every conventional wg/awg
-#      location and (in install-node) rebuilt confs for running interfaces that had none, so a name absent
-#      from IF_CMD names nothing here. Refused rather than dropped: this is an explicit statement of
-#      intent, and quietly managing fewer interfaces than asked is the other half of the same lie.
-#      Only reachable unattended — the interactive path picks from a list.
-#
-# ⚠️ IT WRITES $MANAGE_IFACES; IT DOES NOT ECHO IT. The obvious shape —
-# `MANAGE_IFACES="$(manage_ifaces_resolve "$MANAGE_IFACES")"` — puts the whole function inside a COMMAND
-# SUBSTITUTION, which is a subshell, so `die`'s `exit 1` kills the subshell and nothing else: the parent
-# assigns the empty string and carries on as if MANAGE_IFACES had been blank all along. The refusal would
-# have printed its message and then let the install do the very thing it refused. Assign a global from the
-# CURRENT shell instead, where `die` means what it says. [[installer-convert-session-2026-06]]
-#
-# Call AFTER detect_wg. Sets MANAGE_IFACES to the normalised value, or `die`s (the caller's `die`).
+# Оба установщика вызывают проверку после detect_wg. Отсутствующее имя прерывает установку.
+# MANAGE_IFACES меняется в текущей оболочке, чтобы die завершил именно установщик.
 manage_ifaces_resolve(){
   local _raw="${MANAGE_IFACES:-}" _n _have="" ; local -a _bad=()
   _raw="$(printf '%s' "$_raw" | tr -s ', ' ',' | sed 's/^,//; s/,$//')"

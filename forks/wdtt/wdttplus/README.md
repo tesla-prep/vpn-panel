@@ -1,137 +1,21 @@
-# WDTT server — WDTT Plus fork (swg-panel patched build)
+# Сборка WDTT Plus
 
-Upstream: https://github.com/Ivan4537/WDTT-Plus — the admin / Telegram-bot / WARP-exit fork of WDTT. The server is
-the Go package at the repo root; same `wdtt://` wire, WRAP / GETCONF / DTLS protocol as the rest of the WDTT family.
-swg-panel is the control plane: the bot, the admin socket and every node-side service reachable from inside the
-tunnel are off under our flags.
-
-## Pin and label
-
-| | |
-|---|---|
-| upstream commit | `d450e132d2477a80d7079282c200ac3fb97ad0ae` (tag `v20`, 2026-09-30) |
-| our build label | **20-1**: 20 plus this patch, unchanged in what it does from 18-2. Published as `wdtt-wdttplus-20-1` (2026-10-30; amd64 `29d9b791…`, arm64 `0448de1e…`, Go 1.27.1) and rig-proven on the published amd64 bytes. `wdtt-wdttplus-18-2` (v18 `b3935b94`; amd64 `dffd34f7…`, arm64 `b51ceb51…`) stays as its rollback target; the store format is the same both ways. |
-| note | `wdttServerVersion` is `"20"` at this tag, so `--version` prints `20` (18-2 printed `17`) |
-
-Tags move; the commit is the pin. Earlier pins: v18 `b3935b94`, v15 `3038b8dd`. The patch was regenerated against v20
-with `git diff`. It applies with no fuzz.
-
-Upstream's head is past v20 (`f706ccd3`, 2026-10-11), but nothing after the tag touches the server: those commits are
-the WARP interface manager (an installer-side script) and the app. So the tag is the pin.
-
-### What v19–v20 changed on the server, and the v20 app against 18-2
-
-- **A new uplink transport.** The server adds `# WDTT_TRANSPORTS=uplink2` to the GETCONF reply, and a client that
-  sees it opens its workers with `WDTT_UPLINK2` (framed, loss-adaptive uplink, `pathprobe/`) instead of `WDTT_MUX1`.
-  Every connect is still WG + DTLS + WRAP.
-- **The v20 app still works with 18-2.** It always runs in `auto` (`TransportMode.kt`), and `auto` picks `uplink2`
-  only when the authenticated GETCONF advertises it (`go_client/transport_modes.go`). Against 18-2, which advertises
-  nothing, it falls back to `WDTT_MUX1`, which 18 serves. The changelog says the same ("Приложение и сервер
-  сохраняют совместимость с предыдущими версиями"). `compatibility-contract.env` (`WDTT_SERVER_VERSION="20"`) binds
-  only the app's own SSH deploy (`deploy.sh` refuses a mismatched binary it installs itself), which never runs
-  against a panel-managed node. Proven on the rig below with the real v20 client.
-- **No new in-tunnel request makes the node act.** `-no-panel` still refuses the same five (`WDTT_UPDATE1`,
-  `WDTT_UPDATE_APK1`, `WDTT_HTTPS_POST1`, `WDTT_DEPLOY1`, `WDTT_DEPLOY_CHUNK1`). The refusal sits right before
-  upstream's own handlers, after the uplink unwrap. Where exactly does not change what it catches: an unwrapped uplink
-  payload that is not a WireGuard packet ends the session, so a request always arrives unframed (a build with the refusal
-  moved before the unwrap refused them too). The rig sends the four requests the client has commands for —
-  `WDTT_DEPLOY_CHUNK1` only follows a `WDTT_DEPLOY1` start, which is refused first. `WDTT_TRANSPORT_METRICS` is only an environment switch for the server's
-  own log.
-- Tests: upstream's 90 server tests plus ours pass on 18-2, its 92 on 20-1 (Go 1.25.14 and 1.27.1), and its `go_client`
-  tests on both (Go 1.27.1: the client needs Go ≥ 1.26).
-
-## Build
+Скрипт [build.sh](build.sh) получает зафиксированный коммит, применяет патч из этого каталога
+и собирает статический бинарник для Linux. Нужны Git и Go версии, указанной в `go.mod` исходников.
 
 ```bash
-./build.sh                 # → ./wdtt-server (static, CGO_ENABLED=0)
-GOARCH=arm64 ./build.sh
+bash build.sh
+GOARCH=arm64 bash build.sh ./server-arm64
 ```
 
-Needs Go ≥ 1.25 (upstream `go.mod`: `go 1.25.0`). The published builds use Go 1.27.1 (`golang:1.27.1-bookworm`; `go version` on
-the 18-2 and 20-1 binaries says so). The build is reproducible: one image gives the same binary from a fresh clone as from a
-local tree.
+`-iface`, `-wg-addr` и `-mtu` настраивают интерфейс отдельного экземпляра. При `-no-nat`
+за NAT и параметры сети отвечает узел. `-desired` указывает на список паролей от панели.
+Сервер перечитывает его при запуске, по `SIGHUP` и при изменении файла. Привязки устройств
+и счётчики остаются в серверном хранилище. Пароль владельца передаётся через `-password`.
 
-## What the patch adds (`wdtt-wdttplus.patch`, `server.go` only)
+Выпуск `20-1` основан на теге `v20`. При откате на `18-2` формат хранилища сохраняется.
+В режиме `-fixed-config` сервер сохраняет адрес и ключ при миграции привязки, если запись не
+используется другим паролем или владельцем. При `-no-panel` отключаются административные
+компоненты и запросы, которые заставляют сервер загружать данные или отправлять их от имени клиента.
 
-| change | effect |
-|---|---|
-| `-iface`, `-wg-addr`, `-mtu` | interface name, subnet and MTU become flags, so several instances can run on one node. Stock defaults are kept. The address pool follows `-wg-addr`. |
-| `-no-nat` | the node owns NAT, forwarding and sysctls, so the server skips `setupFullConeNAT` and `enableBBR` |
-| `-fixed-config` | one keypair and one address per password, on any device (the device key is `pw:<password>`) |
-| `-desired <file>` | the panel owns the password set. It is reconciled on boot, on SIGHUP and when the file's mtime changes. A password that is gone or deactivated loses its WireGuard peer and device, and its WRAP key, which cuts the live session. Expiry belongs to the panel, so the expiry janitor is off. |
-| reconcile skips owner devices | devices of the node-owned `-password` (listed in the admin profile) are never reaped. Before this, every unrelated roster change cut the owner's session. |
-| reconcile logs `saveDB()` failures | persistence is strict since v17. A failed save now logs `[DESIRED] … база не сохранена` instead of being ignored. |
-| reconcile clears a stale device binding | under `-fixed-config`, GETCONF presents `pw:<password>` and binds it. A password already bound to a client's own device ID (a store from before `-fixed-config`, or adopted from a stock server) was refused with `device_mismatch` on **every** device, that one included. Reconcile now moves such a binding onto `pw:<password>` (18-2), and the old device row goes with it, keeping its address and keys. The only exception is a row the owner or another password still names: then the binding is cleared, the next GETCONF gets a fresh address, and the old row is reaped. Either way the old device is marked unbound in the binding history, as every other unbind path does, and a moved binding is recorded as active on its key. A binding to a `pw:` row is only cleared: that row is another password's fixed-config device. Who holds a row is counted before anything moves, so two passwords sharing one never depend on map order (`migrateFixedBindingsLocked`, test `TestMigrateFixedBindingsKeepsTheAddressAndNeverTakesASharedRow`). |
-| `-no-panel` | no admin socket, no Telegram bot. In-tunnel requests that make the **node** act for a client are answered with an error frame and never run: `WDTT_UPDATE1` (GitHub release metadata), `WDTT_UPDATE_APK1` (APK download of up to 200 MB), `WDTT_HTTPS_POST1` (a POST to any public HTTPS host) and `WDTT_DEPLOY1` / `WDTT_DEPLOY_CHUNK1` (the admin relay). Without the flag, upstream behaviour is unchanged. |
-
-The v17+ backup scheduler is left in place. It does nothing unless a backup policy is enabled, and only the admin socket
-or the bot can enable one, both of which are off under `-no-panel`.
-
-The node runs it as (`swg-noded` `_wdtt_unit_text` / `_wdtt_argv`):
-
-```bash
-wdtt-server -iface wdtt0 -wg-addr 10.66.66.1/24 -listen 0.0.0.0:56000 -wg-port 56001 -config-dir <dir> \
-  -desired <dir>/desired.json -no-nat -password <owner> -max-passwords <n> -fixed-config -no-panel
-```
-
-## Validation: 20-1 (rigs, 2026-10-30)
-
-On the published amd64 bytes (`29d9b791…`), with the published 18-2 (`dffd34f7…`) as the control. Each check also
-ran against 20-1 with one defect planted, which it must fail.
-
-| rig | check | 18-2 | 20-1 | planted defect → result |
-|---|---|---|---|---|
-| `keyless-wdttplus.sh`, qWDTT client | T1 reach, T2 spoof 0, T4 same address, T5 unrelated change | pass | pass | — |
-| | T7 owner device kept | pass | pass | owner reaped → **owner 0/3** |
-| | T3 revoke: live cut 0/3, reconnect refused | pass | pass | no reload → **3/3, config served**; password never removed → **3/3, config served** |
-| `keyless-wdttplus.sh`, the real v20 client | T1–T7, T3 | pass (`WDTT_MUX1`) | pass (`uplink2` advertised) | — |
-| `keyless-wdttplus.sh gate`, the real v20 client | `UPDATE_METADATA`, `OPAQUE_HTTPS_POST`, `UPDATE_APK`, `DEPLOY_SAFE` | all `ERR … (-no-panel)`, 0 DNS | the same | refusal switched off → **20 DNS queries, `DEPLOY_SAFE` OK** |
-| `two-device-wdttplus.sh` | P1 one password, device A / B / A | 30/30 each, same address | the same | — |
-| | P2 a store bound to `phone-old` | both at .7, binding moved | the same | no migration → **refused on both** |
-
-The v20 client against 18-2 is the compatibility answer: 18-2 does not know `WDTT_UPLINK2`, so the session can only have
-come up on `WDTT_MUX1`, and every check passed. Kernel WireGuard backend in every run; host firewall and links unchanged.
-
-## Validation (rig, 2026-09-14)
-
-Everything runs in network namespaces: client ↔ local pion TURN ↔ server. The real client needs no VK; the host
-firewall was unchanged. Control = v15 + the previous patch; fixed = this build. The server picked the **kernel**
-WireGuard backend in both.
-
-| test | v15 control | 18 fixed |
-|---|---|---|
-| T1 reach from the assigned address | 3/3 | 3/3 |
-| T2 spoofed source, packets at the server interface | 0 | 0 |
-| T3 revoke: live session / reconnect | cut 0/3 / refused | cut 0/3 / refused |
-| T4 same address after reconnect from another device id | same | same |
-| T5 unrelated roster change: session and address kept | 3/3, same | 3/3, same |
-| T7 owner device after an unrelated reconcile | **reaped, 0/3** | kept, 3/3 |
-
-The fixed build also passes T1–T5 and T7 with the real v18 client, which uses the `WDTT_MUX1` relay path.
-
-In-tunnel requests, sent by the real v18 client over a **generated** password's tunnel. The control is the same v18
-build with the refusal switched off.
-
-| request | v18, refusal off | 18 fixed |
-|---|---|---|
-| `WDTT_UPDATE1`, `WDTT_HTTPS_POST1`, `WDTT_UPDATE_APK1` | the node resolves and fetches (20 DNS queries from the node in 15 s) | `ERR отключено на этом сервере (-no-panel)`, 0 DNS, 0 HTTPS |
-| `WDTT_DEPLOY1` `list` (owner password in the payload) | **OK**: the admin listing is returned | `ERR отключено на этом сервере (-no-panel)` |
-
-## Validation: one config on several devices (rig on the published 18-2 asset, 2026-09-25)
-
-`.campaign/rigs/two-device-wdttplus.sh`: two device namespaces ↔ local pion TURN ↔ server with the node's argv, real
-unpatched qWDTT client in WG mode. The control is 18.
-
-| test | 18 | 18-2 |
-|---|---|---|
-| P1 device A, then (A vanished) device B, then A again, same password | same address, 30/30 each | same address, 30/30 each |
-| P2 the server's own store, with the password and its row moved to `phone-old` at .7: device A / device B | **refused on both** (`пароль привязан к другому устройству`) | both connect at .7 (the old row, keys kept), 30/30; binding moved to `pw:<password>` |
-| keyless T1–T5, T7: reach, spoof, revoke cut + reconnect refused, stable address, unrelated change, owner device kept | pass | pass: 3/3 reach, spoof 0, revoke 0/3 + refused, same address, owner 3/3 |
-
-⚠️ **The address is kept only while the old row still exists.** That covers a store adopted from a stock server, or
-one written without `-desired`. A node that has already run 18 with `-desired` is different: 18's own reconcile reaped
-every row keyed by a client's device ID on its first pass, because such a key names no password. The binding was left
-pointing at a row that no longer exists. 18-2 clears that binding, the user is no longer refused, and the next connect
-gets a fresh address. Nothing can bring back a row that is already gone.
-
-The host firewall and links were unchanged by either run.
+Лицензия, исходники и версии сборок перечислены в [уведомлениях о сторонних компонентах](../../../docs/THIRD-PARTY.md).

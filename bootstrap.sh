@@ -1,44 +1,9 @@
 #!/usr/bin/env bash
-# bootstrap.sh — fetch swg-panel from GitHub and run the right installer.
-#
-#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)"
-#       → interactive: pick installation method (bare-metal/docker) + role (master/host/node).
-#   sudo bash -c "$(curl …)" -- -key NODE_KEY -host https://PANEL   → add a node (a key implies node; asks method).
-#   sudo bash -c "$(curl …)" -- docker host                         → explicit method + role (skips the prompts).
-#   sudo bash -c "$(curl …)" -- update                              → update an install in place.
-#   sudo bash -c "$(curl …)" -- uninstall                           → guided removal.
-#   (Not `curl … | sudo bash -s …`: sudo-rs, Ubuntu 26.04's sudo, runs a piped script in the background of the terminal,
-#   and its first question freezes it — see _swg_tty_fg below. Already root: drop the `sudo`.)
-#
-# Method (bare-metal | docker) × Role (master | host | node) — each is asked only if not already
-# given. A bare role word (host/master/node) means bare-metal; prefix `docker` for the docker path.
-#
-#   -key|-token <tok>   node enrollment token   (-> NODE_TOKEN; implies role=node)
-#   -host|-url  <url>   panel URL (https://…)    (-> PANEL_URL)
-#   -name       <name>  node name               (-> NODE_NAME)
-#   -endpoint   <ip>    public endpoint IP       (-> ENDPOINT_IP)
-#   -method <bare-metal|docker>   -role <master|host|node>
-#   convert|keep|abort  (or -on-conflict <…>, env SWG_ON_CONFLICT) — the answer when the box already holds the
-#                       OTHER method's install: convert it, keep + re-install it as it is, or stop. Unattended runs.
-#
-# Override the source with SWG_REPO / SWG_REF (branch or tag). Anything else is passed through.
-
-# ⚠️ THE WHOLE SCRIPT IS ONE BRACE GROUP, closed on the last line. bash parses a group completely before it runs any of
-# it, so a download cut off mid-way — `bash -c "$(curl …)"` or `curl … | bash`, either way — is a syntax error that runs
-# NOTHING, instead of the first half of an installer.
+# Выбор способа установки и роли. Параметры описаны в docs/operations.md.
+# Bash разбирает всю группу до выполнения, поэтому оборванная загрузка не начнёт установку.
 {
 set -euo pipefail
-# ⚠️ ONLY THE TERMINAL'S FOREGROUND CAN READ IT. Under `curl … | sudo bash`, sudo-rs (Ubuntu 26.04's sudo) runs the
-# script in the BACKGROUND of its own terminal: /dev/tty still opens, and the first read STOPS the process (SIGTTIN) with
-# nothing on screen — the installer "hung at the TLS question" (client report 2026-10-06; sudo-rs issue #1263). So every
-# question reads SWG_TTY: /dev/tty while this process group is the terminal's foreground, /dev/null otherwise (an EOF,
-# which each question already answers with its no-terminal default) — no terminal at all, or the background under sudo-rs.
-# ⚠️ NOT UNDER CLASSIC SUDO. It backgrounds the script the same way (≥ 1.9.13 with use_pty: Ubuntu 24.04, Debian 12/13) but
-# brings it to the foreground at that first read, so `curl … | sudo bash` asked its questions there, as in 1.8.8 — taking
-# every background start as unreadable took them all away (1.8.9 qualification IN-2). Which sudo it is: the first sudo up
-# the chain, by its binary's path (sudo-rs, cargo), else by its --version. No sudo above (a job the operator put in the
-# background): the terminal, as ever. /proc/<pid>/stat after the command name: state ppid pgrp session tty_nr tpgid.
-# Without /proc: as before.
+# sudo-rs может оставить скрипт в фоне. В этой группе процессов чтение /dev/tty вызовет SIGTTIN.
 _swg_tty_fg(){ local s f p e i IFS=' '; { read -r s </proc/$$/stat; } 2>/dev/null || return 0; read -ra f <<< "${s##*) }"
   [ "${f[2]:-}" = "${f[5]:-}" ] && return 0; [ "${f[5]:-0}" -gt 0 ] 2>/dev/null || return 1
   for i in 1 2 3 4; do p="${f[1]:-0}"; [ "$p" -gt 1 ] 2>/dev/null || return 0; e="$(readlink "/proc/$p/exe" 2>/dev/null)" || e=""
@@ -332,28 +297,7 @@ run_script(){   # run_script <script> [args…] — dispatch as a child, so the 
 }
 TMP="$(mktemp -d)"; trap '_cleanup_tmp' EXIT
 info "fetching $REPO @ $REF"
-# ⚠️ GIT MUST NOT ASK FOR A PASSWORD, AND MUST NOT BE THE ONLY WAY IN. `git clone` answers a repo it
-# cannot read with an interactive "Username for 'https://github.com':", and it reads /dev/tty directly —
-# so it prompts even here, piped from curl, and the install simply stops at a login it does not need
-# (this repo is public). Seen in the field on a box whose github.com was unreachable while
-# raw.githubusercontent.com — which had served THIS script seconds earlier — was fine.
-#
-# Two changes, both small. GIT_TERMINAL_PROMPT=0 makes that case FAIL instead of hang. And the tarball
-# is now a fallback for git FAILING, not merely for git being ABSENT: the old shape reached it only
-# when git was missing, which is the one situation that box was not in. Nothing downstream reads .git
-# and there is no .gitattributes, so the archive is the same tree by another road.
-#
-# ⚠️ AND THE COMMONEST CAUSE IS NOT AN UNREACHABLE GITHUB — IT IS HTTP/2. On Ubuntu 22.04 (git 2.34 +
-# libcurl3-gnutls 7.81 + nghttp2 1.43) GitHub answers git's smart-HTTP POST /git-upload-pack with
-# `HTTP/2 401 … www-authenticate: Basic`, on a PUBLIC repo that the preceding GET /info/refs just served
-# 200. git then asks for a username and the install stops. Reproduced on svo-im: `ls-remote` fails by
-# default and succeeds verbatim under `-c http.version=HTTP/1.1`; Ubuntu 24.04 (git 2.43 / nghttp2 1.59)
-# is unaffected. Reported from the field, where 2 of 5 nodes could not update until forced to HTTP/1.1.
-#
-# So retry once over HTTP/1.1 before giving up on git. Order matters: HTTP/2 stays the fast path, the
-# retry rescues exactly the affected boxes, and the tarball remains the last resort. Diagnosing this as
-# "GitHub unreachable" and going straight to the tarball works, but silently costs every 22.04 node the
-# git path for ever — and hides a defect that is one flag from fixed.
+# При сбое проверяем Git через HTTP/1.1, затем пробуем архив. Git запускается без запроса пароля.
 _fetched=""
 _archive_name="${REPO##*/}"
 _archive_name="${_archive_name%.git}"

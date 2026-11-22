@@ -1379,49 +1379,9 @@ def _pid_alive(pid):
         return True                       # no readable /proc → fall back to the signal's answer, never "dead"
 
 
-# ── Reaping what nothing else will ────────────────────────────────────────────────────────────
-# On bare metal PID 1 is init and orphans are its problem. In a container PID 1 is THIS daemon, and a helper
-# that daemonises leaves children we never spawned and therefore never wait on.
-#
-# ⚠️ dnsmasq's double-fork is the SMALL half, and naming only it undersells the leak. **dnsmasq forks one
-# child per TCP DNS query.** Restart it — which every nftset change must, the directives are read only at
-# startup — and every one of those children is orphaned onto us at once. Reproduced on the svo-im docker
-# node 2026-09-08: 12 concurrent TCP queries held open, one `kill` of the parent, **13 zombies**, all
-# re-parented to pid 1 and none ever reaped. That is the shape of the burst this was first written for —
-# 16 dnsmasq entries whose start times spanned four seconds, which read like sixteen restarts and was one
-# restart over four seconds of DNS load. The dispatch calls `_ensure_smart_dnsmasq` once per pass and the
-# passes are 5s apart, so sixteen restarts in four seconds was never possible; the count tracks QUERIES.
-# `_pid_alive` stops the pid-file lying about the parent, this stops the children accumulating.
-#
-# Deliberately NOT a SIGCHLD handler or a bare `waitpid(-1)`: another thread may be inside `run()` waiting on
-# its own child, and stealing that status makes `subprocess` report returncode 0 for a command that FAILED —
-# `Popen._internal_poll` maps the resulting ECHILD to `returncode = 0`, so the wrong answer is "it succeeded".
-# So we only reap a zombie we have watched sit there across `_ZOMBIE_GRACE`, which makes "still defunct" mean
-# "nobody is coming for it" without needing to know whose child it is.
-#
-# TWO WINDOWS CAN MAKE A ZOMBIE SOMEBODY ELSE'S, and they are answered separately because tying one number
-# to both is how the number goes stale:
-#
-#   run()          a child is normally defunct for microseconds before `communicate()` collects it, but a
-#                  command that forks and lets a GRANDCHILD hold the stdout pipe leaves it defunct for the
-#                  whole read — up to that call's `timeout`, and those run to 320s here (the turn-binary
-#                  downloads). Answered EXACTLY, by `_RUN_INFLIGHT`: while any run() is waiting, this reaps
-#                  nothing at all. No number to keep in step with eleven call sites, and nothing to re-check
-#                  when a twelfth is added with a longer timeout.
-#                  ⚠️ An earlier version of this comment set the grace from "run() caps at 20s". That was
-#                  false — the ceiling was 320 — and the gate that now checks the counter is here because a
-#                  premise nobody re-reads is a premise that rots.
-#   tracked Popen  swg-sni / wdtt / csqtt are polled once per reconcile pass. THAT window is small and stable
-#                  (5s), which is what the grace is for. One dropped from its map and never polled again is
-#                  exactly what this reaper exists to collect; nothing reads those exit codes, only
-#                  `poll() is None`, so losing a code we never look at costs nothing.
-#
-# `_reap_orphans` runs at the TOP of the sync loop, where the main thread holds no run() of its own, so only
-# a BACKGROUND run() can defer a pass — and the next pass tries again. Measured from the two loops that have
-# one: `_mesh_probe_loop` spends ~4s per mesh leg (`ping -c 20 -i 0.2`) once every MESH_PROBE_EVERY_S=60, and
-# `_dturn_bg_loop` sleeps 30s between reconciles. Three legs is ~28% of passes deferred, so 0.28^N over N
-# passes — a zombie is collected within a few passes, and starvation needs a background loop that never
-# sleeps. If one is ever added, this is the note that says why that would matter.
+# В контейнере PID 1 собирает осиротевших потомков, в том числе TCP-обработчики dnsmasq.
+# Если активен run(), сбор откладывается, иначе subprocess может потерять код завершения.
+# Для управляемых через Popen процессов выдерживаем паузу, чтобы их успел опросить обычный цикл.
 _ZOMBIE_SEEN = {}                 # pid -> time.monotonic() when we first saw it defunct
 _ZOMBIE_GRACE = 30.0              # > the reconcile interval a tracked Popen is polled on, with margin
 
@@ -1974,28 +1934,8 @@ def load_turn_proxies():
                 t["installing"] = True
     return tp
 
-# A unit that panics and is restarted by systemd reads `active` whenever it is caught between crashes, so
-# `is-active` alone can call a crash loop healthy — measured in the field 2026-09-16, where a proxy bound to
-# an address the box no longer had logged 262 panics against 272 starts in 90 minutes while every panel
-# surface read green.
-#
-# ⚠️ So the verdict is an EPISODE, never a window. Our units back off — `RestartSec=3 RestartSteps=8
-# RestartMaxDelaySec=300`, so on systemd ≥254 the gaps run 3,5,9,17,30,53,95,169 and then 300s for as long
-# as the loop lasts. The first shape of this check asked "how many restarts inside one 20s window?": a real
-# loop answered 6 in the first window and then 0,0,0,0,1, so it spoke for the first twenty seconds and was
-# silent for the hour after — it reported the one moment nobody is watching. An episode opens on the first
-# restart seen, is REPORTED once it holds TURN_FLAP_MIN of them, and ends only when:
-#   · TURN_FLAP_QUIET seconds pass with no restart at all — three of the longest gaps, so the tail of a live
-#     loop can never look quiet, while a proxy that crashes once a day never accumulates: each crash sits
-#     alone inside its own quiet period;
-#   · this node restarts the unit itself — an edit, a key rotation, Restart, a reinstall (_turn_loop_forget);
-#   · NRestarts goes DOWN — systemd flushes it on a stop, or on a restart issued while the unit is up;
-#   · the proxy is stopped from the panel — a stopped service is not looping, whatever it did before.
-# NOT a cumulative total: NRestarts only resets on a manual start, so a box that looped last week and then
-# recovered by itself would otherwise read as looping for ever. The first reading after a noded start is a
-# baseline and never a verdict, for the same reason.
-# A unit systemd has given up on (StartLimitBurst) stops climbing, reads `running: False`, and is reported
-# as looping until its quiet period ends — true, and more use to an operator than "not running" alone.
+# Учитываем серию перезапусков, даже когда systemd временно показывает active между сбоями.
+# Первое чтение NRestarts задаёт базу. Серия завершается при долгой паузе, сбросе счётчика или явной операции со службой.
 TURN_FLAP_MIN = 3
 TURN_FLAP_QUIET = 900
 # "I could not look" — host_sh cannot reach the host (rc=126, empty stdout), or systemd is too busy to answer

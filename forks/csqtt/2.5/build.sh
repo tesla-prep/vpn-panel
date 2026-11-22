@@ -1,12 +1,5 @@
 #!/usr/bin/env bash
-# Build the swg-panel csqtt 2.5.3 server (line 2.5): forks/csqtt/build.sh with the 2.5 repository, pin and patch. 2.5.3 is
-# built on the community repository Afteroid/csqttr (its `main` carries the swg-panel integration); the patch is our
-# version label on top. If that repository is gone, it builds the same source from our csqtt-2.5.3 release's archive
-# (sha256-checked).
-#
-# Usage:  bash forks/csqtt/2.5/build.sh <out-dir> [amd64|arm64]     (default arch: amd64)
-# Needs:  what forks/csqtt/build.sh needs (rustup 1.97.1 + zig + cargo-zigbuild) and curl for the fallback.
-# csqtt is PolyForm-Noncommercial-1.0.0 — build only for non-commercial use.
+# Сборка csqtt ветки 2.5. См. ../README.md.
 set -euo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 CSQTT_REPO="https://github.com/Afteroid/csqttr.git" \

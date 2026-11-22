@@ -1,19 +1,5 @@
 #!/usr/bin/env bash
-# update.sh — update an existing swg-panel install in place, from the latest GitHub code.
-#
-#   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)" -- update
-#
-# bootstrap.sh fetches the latest repo and runs this from it. It AUTO-DETECTS which
-# components are installed — covering every shape (bare-metal host / master / node,
-# docker host / master / node) — compares each one's installed version against the
-# fetched one, and for any with an upgrade available PROMPTS whether to upgrade or skip.
-# Config + state are preserved (fleet.json, users.json, nodes.json, auth, certs, .env).
-#
-# Flags:  --dry-run       show what it would do, change nothing
-#         -y|--yes        upgrade everything available without prompting
-#         -f|--force      re-apply even components already on the latest version
-#         --no-components  swg only (panel/noded/agent + swg images) — skip ALL third-party: wg/awg datapath,
-#                          docker engine AND turn-proxy servers (this is what the one-click panel update uses)
+# Локальное обновление установленных компонентов. См. docs/operations.md.
 set -euo pipefail
 
 DRYRUN=false; ASSUME_YES=false; FORCE=false; NO_COMPONENTS=false; NODE_ONLY=false
@@ -25,19 +11,7 @@ esac; done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="$(dirname "$SCRIPT_DIR")"
 SRC="$REPO/src"
-# No terminal (the one-click update, an unattended run): debconf has nobody to ask and says so four lines per package
-# it touches. A value already set is left as it is. Same line as install-host.sh / install-node.sh.
-# ⚠️ ONLY THE TERMINAL'S FOREGROUND CAN READ IT. Under `curl … | sudo bash`, sudo-rs (Ubuntu 26.04's sudo) runs the
-# script in the BACKGROUND of its own terminal: /dev/tty still opens, and the first read STOPS the process (SIGTTIN) with
-# nothing on screen — the installer "hung at the TLS question" (client report 2026-10-06; sudo-rs issue #1263). So every
-# question reads SWG_TTY: /dev/tty while this process group is the terminal's foreground, /dev/null otherwise (an EOF,
-# which each question already answers with its no-terminal default) — no terminal at all, or the background under sudo-rs.
-# ⚠️ NOT UNDER CLASSIC SUDO. It backgrounds the script the same way (≥ 1.9.13 with use_pty: Ubuntu 24.04, Debian 12/13) but
-# brings it to the foreground at that first read, so `curl … | sudo bash` asked its questions there, as in 1.8.8 — taking
-# every background start as unreadable took them all away (1.8.9 qualification IN-2). Which sudo it is: the first sudo up
-# the chain, by its binary's path (sudo-rs, cargo), else by its --version. No sudo above (a job the operator put in the
-# background): the terminal, as ever. /proc/<pid>/stat after the command name: state ppid pgrp session tty_nr tpgid.
-# Without /proc: as before.
+# sudo-rs может оставить скрипт в фоне. В этой группе процессов чтение /dev/tty вызовет SIGTTIN.
 _swg_tty_fg(){ local s f p e i IFS=' '; { read -r s </proc/$$/stat; } 2>/dev/null || return 0; read -ra f <<< "${s##*) }"
   [ "${f[2]:-}" = "${f[5]:-}" ] && return 0; [ "${f[5]:-0}" -gt 0 ] 2>/dev/null || return 1
   for i in 1 2 3 4; do p="${f[1]:-0}"; [ "$p" -gt 1 ] 2>/dev/null || return 0; e="$(readlink "/proc/$p/exe" 2>/dev/null)" || e=""

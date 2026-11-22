@@ -1,15 +1,5 @@
 #!/bin/sh
-# swg-node entrypoint: bring up one or more userspace AmneziaWG interfaces, then run
-# the HTTPS sync daemon. The panel manages peers declaratively; this box only needs
-# its own server interface(s). Interfaces come from one of three sources:
-#
-#   1. mounted confs — every /etc/swg-node/*.conf (or CONF_SRC) is managed as-is
-#      (the way to ship full AmneziaWG obfuscation; one file per interface);
-#   2. NODE_IFACES spec — "name:port:address[:proto]" entries, comma-separated, each
-#      generated (AmneziaWG 3.1 on capable hosts, ":wg" for plain WireGuard);
-#   3. single fallback — NODE_IFACE / NODE_LISTEN_PORT / NODE_ADDRESS (back-compat).
-#
-# Publish each interface's UDP ListenPort in compose for the panel/clients to reach it.
+# Загрузка интерфейсов и запуск узла. Настройки описаны в docs/operations.md.
 set -eu
 log(){ printf '\033[0;36m[swg-node]\033[0m %s\n' "$*"; }
 

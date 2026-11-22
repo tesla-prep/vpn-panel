@@ -1,126 +1,130 @@
-# Third-party software
+# Стороннее программное обеспечение
 
-· Русский: [THIRD-PARTY.ru.md](THIRD-PARTY.ru.md)
+Сам swgPanel распространяется под MIT (см. [LICENSE](../LICENSE)). При этом он **собирает, поставляет и запускает**
+программы, написанные другими людьми, под их собственными лицензиями. Здесь сказано, что именно, под какой
+лицензией и где исходники — в одном месте, чтобы это можно было проверить, не читая скрипты сборки.
 
-swgPanel itself is MIT (see [LICENSE](../LICENSE)). It also **builds, ships and runs** software written by other
-people, under their own licences. This file says exactly what, under which licence, and where the source is —
-in one place, so you can check it without reading the build scripts.
+Два пункта касаются того, что можете делать **вы**, а не только мы:
 
-Two things here affect what **you** may do, not just us:
+- **csqtt — только для некоммерческого использования.** Коммерческая эксплуатация сервера csqtt требует
+  отдельной письменной лицензии от его автора. См. [csqtt](#csqtt-noncommercial) ниже.
+- **Большинство форков WDTT — GPL-3.0.** Вы вправе использовать, изучать, изменять и распространять их, а
+  исходники к каждому публикуемому нами бинарнику указаны ниже.
 
-- **csqtt is noncommercial-only.** Running a csqtt server commercially needs a separate written licence from
-  its author. See [csqtt](#csqtt-noncommercial) below.
-- **Most WDTT forks are GPL-3.0.** You are free to use, study, modify and redistribute them, and the source for
-  every binary we publish is linked below.
+> Названия и идентификаторы лицензий, ссылки на репозитории и текст уведомлений намеренно оставлены на языке
+> оригинала. Условия использования определяются оригинальными текстами лицензий правообладателей.
 
 ---
 
-## Server binaries we publish
+## Серверные бинарники, которые публикуем мы
 
-The panel and nodes never download an unknown binary: each fork's server is built by us from a **pinned upstream
-commit** with a **small patch** that lets the panel own the peer set, and published as a GitHub release. The
-recipe and the patch are in this repository, so any release can be reproduced and diffed against upstream.
+Панель и ноды никогда не скачивают неизвестный бинарник: сервер каждого форка собирается нами из
+**зафиксированного коммита** апстрима с **небольшим патчем**, который позволяет панели владеть списком пиров, и
+публикуется как GitHub release. Рецепт сборки и патч лежат в этом репозитории, поэтому любой релиз можно
+воспроизвести и сравнить с апстримом.
 
-| Server | Upstream | Licence | Pinned commit | Our patch + recipe | Release |
+| Сервер | Апстрим | Лицензия | Зафиксированный коммит | Наш патч и рецепт | Релиз |
 |---|---|---|---|---|---|
-| WDTT (original) | [amurcanov/proxy-turn-vk-android](https://github.com/amurcanov/proxy-turn-vk-android) | **GPL-3.0** | `51057cc` (v1.2.4) | [`forks/wdtt/`](../forks/wdtt/) | `wdtt-amurcanov-1.2.4-3` |
+| WDTT (оригинал) | [amurcanov/proxy-turn-vk-android](https://github.com/amurcanov/proxy-turn-vk-android) | **GPL-3.0** | `51057cc` (v1.2.4) | [`forks/wdtt/`](../forks/wdtt/) | `wdtt-amurcanov-1.2.4-3` |
 | WDTT — ildarmaga | [ildarmaga/wdtt](https://github.com/ildarmaga/wdtt) | **GPL-3.0** ‡ | `ef697994` (v1.5.0 ‡) | [`forks/wdtt/ildarmaga/`](../forks/wdtt/ildarmaga/) | `wdtt-ildarmaga-1.5.0-4` |
 | WDTT-Plus | [Ivan4537/WDTT-Plus](https://github.com/Ivan4537/WDTT-Plus) | **GPL-3.0** | `d450e132` (v20) | [`forks/wdtt/wdttplus/`](../forks/wdtt/wdttplus/) | `wdtt-wdttplus-20-1` |
 | qWDTT — SpaceNeuroX | [SpaceNeuroX/proxy-turn-vk-android](https://github.com/SpaceNeuroX/proxy-turn-vk-android) | **GPL-3.0** | `a296c57e` (v1.4.4) | [`forks/qwdtt/`](../forks/qwdtt/) | `wdtt-qwdtt-1.4.4-2` |
 | csqtt | [amurcanov/csqtt](https://github.com/amurcanov/csqtt) | **PolyForm Noncommercial 1.0.0** | `446293aa` (v2.1.9) | [`forks/csqtt/`](../forks/csqtt/) | `csqtt-2.1.9-4` |
-| csqtt 2.5 | [Afteroid/csqttr](https://github.com/Afteroid/csqttr) (amurcanov's csqtt 2.5) | **PolyForm Noncommercial 1.0.0** | `001caa4` | [`forks/csqtt/`](../forks/csqtt/) | `csqtt-2.5.3` ¶ |
-| csqtt Android app 2.5 (our build of amurcanov's app) | [Afteroid/csqttr](https://github.com/Afteroid/csqttr) `app/` | **PolyForm Noncommercial 1.0.0** | `001caa4` | in the release: `csqtt-app-2.5.3.patch`, `Dockerfile.android`, `build-apk.sh` | `csqtt-app-2.5.3` ¶ |
-| csqtt Android app 2.1.9 (amurcanov's APKs, unmodified) | [amurcanov/csqtt](https://github.com/amurcanov/csqtt) v2.1.9 | **PolyForm Noncommercial 1.0.0** | v2.1.9 | — (a mirror: his signed APKs, digests checked) | `csqtt-app-2.1.9` ¶ |
-| amneziawg-go (userspace AmneziaWG datapath — bare-metal nodes' fallback) | [amnezia-vpn/amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) | MIT | `b5928efb` (v3.1.20260828) § | [`forks/amneziawg-go/`](../forks/amneziawg-go/) | `amneziawg-go-3.1.20260828` § |
+| csqtt 2.5 | [Afteroid/csqttr](https://github.com/Afteroid/csqttr) (csqtt 2.5 от amurcanov) | **PolyForm Noncommercial 1.0.0** | `001caa4` | [`forks/csqtt/`](../forks/csqtt/) | `csqtt-2.5.3` ¶ |
+| Приложение csqtt 2.5 для Android (наша сборка приложения amurcanov) | [Afteroid/csqttr](https://github.com/Afteroid/csqttr) `app/` | **PolyForm Noncommercial 1.0.0** | `001caa4` | в релизе: `csqtt-app-2.5.3.patch`, `Dockerfile.android`, `build-apk.sh` | `csqtt-app-2.5.3` ¶ |
+| Приложение csqtt 2.1.9 для Android (APK amurcanov без изменений) | [amurcanov/csqtt](https://github.com/amurcanov/csqtt) v2.1.9 | **PolyForm Noncommercial 1.0.0** | v2.1.9 | — (зеркало: его подписанные APK, хэши сверены) | `csqtt-app-2.1.9` ¶ |
+| amneziawg-go (датапас AmneziaWG в пользовательском пространстве — запасной вариант bare-metal-нод) | [amnezia-vpn/amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) | MIT | `b5928efb` (v3.1.20260828) § | [`forks/amneziawg-go/`](../forks/amneziawg-go/) | `amneziawg-go-3.1.20260828` § |
 
-Each row names the newest release; older builds of a fork stay published as rollback targets. The XXcipherX WDTT
-server, hidden in the panel since 1.8.9, is no longer offered: we published its builds until 2026-10-14, and their
-recipe and patch stay in [`forks/wdtt/xxcipherx/`](../forks/wdtt/xxcipherx/).
+В каждой строке указан самый новый релиз; более старые сборки форка остаются опубликованными для отката. Сервер WDTT
+XXcipherX, скрытый в панели с 1.8.9, больше не предлагается: мы публиковали его сборки до 2026-10-14, а их рецепт и патч
+остаются в [`forks/wdtt/xxcipherx/`](../forks/wdtt/xxcipherx/).
 
-§ **amneziawg-go is not a patched fork.** It is built from upstream unchanged: the recipe only pins the commit, the Go
-toolchain (go1.27.1) and the build flags, so the binary reproduces byte for byte against the sha256 every installer
-verifies (pinned in `lib/common.sh`). Bare-metal nodes install it as the userspace datapath `awg-quick` falls back to
-when the kernel module is missing.
+§ **amneziawg-go — не пропатченный форк.** Он собирается из апстрима без изменений: рецепт лишь фиксирует коммит,
+инструментарий Go (go1.27.1) и флаги сборки, поэтому бинарник воспроизводится байт в байт — с тем же sha256, который
+проверяет каждый установщик (зафиксирован в `lib/common.sh`). Bare-metal-ноды ставят его как путь данных в
+пользовательском пространстве, на который `awg-quick` переключается, когда нет модуля ядра.
 
-‡ **ildarmaga: two things this table cannot say in a cell.** The repository's `LICENSE` is the full text of
-the **GNU GPL v3**, with a copyright header for the WDTT server/panel and the bundled PWDTT client binaries
-prepended to it. GitHub's own detector reports the repository as "Other" / `NOASSERTION`, because that header
-stops the file matching the GPL template byte-for-byte — but the grant it carries is the standard one, so the
-binary we publish is a GPL binary and the source offer below covers it. Separately, the version in brackets is
-not a distinguishing identifier: upstream's tags `v1.5.2` through `v1.5.40` **all point at commit `ef697994`**,
-whose own message is "docs: changelog for v1.5.0". The commit is what pins our build, so from `1.5.0-3` on we label
-the release by that source; the earlier `1.5.40` releases were built from the same commit.
+‡ **ildarmaga: две вещи, которые не помещаются в ячейку.** Файл `LICENSE` в репозитории — это полный текст
+**GNU GPL v3**, перед которым добавлена шапка с копирайтом на сервер/панель WDTT и на вложенные бинарники
+клиента PWDTT. Собственный детектор GitHub показывает репозиторий как «Other» / `NOASSERTION` именно из-за этой
+шапки: файл перестаёт побайтово совпадать с шаблоном GPL — но сама лицензия в нём стандартная, поэтому
+публикуемый нами бинарник является GPL-бинарником, и предложение исходного кода ниже распространяется и на него.
+Отдельно: версия в скобках не является различающим идентификатором — теги апстрима с `v1.5.2` по `v1.5.40`
+**все указывают на коммит `ef697994`**, в сообщении которого написано «docs: changelog for v1.5.0». Сборку
+фиксирует именно коммит, поэтому начиная с `1.5.0-3` мы называем релиз по этому исходнику; прежние релизы `1.5.40`
+собраны из того же коммита.
 
-¶ **csqtt 2.5.1** is our build of amurcanov's published 2.5.0 (`d02da9b`), server and Android app, released "as is"
-by him with his support ended. The server carries the swg-panel integration and the downlink half of a speed fix (a
-small-UDP pin that held bulk QUIC traffic on one relay stream); the app carries the uplink half, its own app ID
-(`net.sanityprotocol.csqtt`) and our signature. The server's release holds its exact source archive, from which both
-binaries rebuild bit for bit (the patch is in that release; `forks/csqtt/build.sh` builds it with
-`CSQTT_PIN=d02da9b…` and `CSQTT_PATCH=` that patch, as `forks/csqtt/2.5/build.sh` did before 2.5.3). The 2.5.1 app's recipe is not in
-this repository: its release holds the patch against `d02da9b`, `Dockerfile.android` and `build-apk.sh`.
-`csqtt-app-2.1.9` mirrors his 2.1.9 app for 2.1 servers, so subscription pages do not depend on his repository. The
-earlier `csqtt-2.5.0` build (his pre-release source; a GitHub release 2026-10-16…20, never in a panel release) was
-withdrawn. **csqtt 2.5.3**, the 2.5 server the panel runs since 1.8.11, is amurcanov's 2.5 server as the community
-repository Afteroid/csqttr carries it at `001caa4` (its `main`, with the swg-panel integration merged) plus our version
-label — `forks/csqtt/2.5/csqtt-swgpanel-2.5.3.patch`, built by `forks/csqtt/2.5/build.sh`; its release holds the source
-archive. 2.5.1-2 stays on offer for a rollback. The Android app subscription pages hand out for 2.5 is `csqtt-app-2.5.3`,
-built the same way on `001caa4` (its branch: SanityProtocol/csqttr `release-2.5.3`); its release holds the patch
-against `001caa4`, `Dockerfile.android` and `build-apk.sh`.
+¶ **csqtt 2.5.1** — наша сборка опубликованного amurcanov 2.5.0 (`d02da9b`), сервер и приложение для Android; автор
+выпустил 2.5.0 «как есть» и завершил поддержку. В сервере — интеграция swg-panel и серверная половина исправления
+скорости (закрепление мелкого UDP держало массовый QUIC-трафик на одном стриме ретранслятора); в приложении — клиентская
+половина, свой ID (`net.sanityprotocol.csqtt`) и наша подпись. В релизе сервера лежит точный архив исходников, из
+которого оба бинарника собираются бит в бит (патч лежит в том же релизе; `forks/csqtt/build.sh` собирает его с
+`CSQTT_PIN=d02da9b…` и `CSQTT_PATCH=` с этим патчем, как `forks/csqtt/2.5/build.sh` до 2.5.3). Рецепта приложения 2.5.1 нет в этом
+репозитории: в его релизе лежат патч к `d02da9b`, `Dockerfile.android` и `build-apk.sh`.
+`csqtt-app-2.1.9` — зеркало его приложения 2.1.9 для серверов 2.1, чтобы страницы подписки не зависели от его
+репозитория. Прежняя сборка `csqtt-2.5.0` (из его предрелизных исходников; релиз на GitHub 16–20.10.2026, ни в один выпуск
+панели не входила) отозвана. **csqtt 2.5.3** — сервер 2.5, который панель запускает с 1.8.11: сервер 2.5 от amurcanov в
+общем репозитории Afteroid/csqttr на `001caa4` (его `main`, с влитой интеграцией swg-panel) и наша метка версии —
+`forks/csqtt/2.5/csqtt-swgpanel-2.5.3.patch`, сборка `forks/csqtt/2.5/build.sh`; архив исходников лежит в его релизе.
+2.5.1-2 остаётся в списке для отката. Приложение для Android, которое страницы подписки выдают для 2.5, —
+`csqtt-app-2.5.3`, собранное так же на `001caa4` (его ветка: SanityProtocol/csqttr `release-2.5.3`); в его релизе лежат
+патч к `001caa4`, `Dockerfile.android` и `build-apk.sh`.
 
-### Source for the GPL binaries
+### Исходники к бинарникам под GPL
 
-For every GPL-licensed binary above, the Corresponding Source is:
+Для каждого перечисленного выше бинарника под GPL соответствующий исходный код — это:
 
-1. the **upstream repository at the pinned commit** in the table, plus
-2. our **patch and build script**, in the linked directory of this repository.
+1. **репозиторий апстрима на зафиксированном коммите** из таблицы, плюс
+2. наш **патч и скрипт сборки** в указанном каталоге этого репозитория.
 
-`build.sh` in each directory clones that exact commit, applies that exact patch, and produces the published
-binary — nothing else is added. Those directories are the source offer for the binaries we distribute, which is
-why they stay in the repository rather than living only on a build machine.
+`build.sh` в каждом каталоге клонирует именно этот коммит, применяет именно этот патч и производит
+опубликованный бинарник — больше ничего не добавляется. Эти каталоги и есть предложение исходного кода к
+распространяемым нами бинарникам, поэтому они хранятся в репозитории, а не только на сборочной машине.
 
-### <a id="csqtt-noncommercial"></a>csqtt is noncommercial
+### <a id="csqtt-noncommercial"></a>csqtt — только некоммерческое использование
 
-csqtt is published by its author under the **PolyForm Noncommercial License 1.0.0**, whose notice reads:
+csqtt публикуется его автором под **PolyForm Noncommercial License 1.0.0**, уведомление которой гласит:
 
 > Copyright 2026 amurcanov. Commercial use of CSQTT requires a separate written license from the licensor.
 
-That restriction travels with the software: it applies to our build too, and therefore to you. Use csqtt for
-personal or other noncommercial purposes, or obtain a commercial licence from the author. Every other server
-kind the panel supports (WireGuard, AmneziaWG, the turn-proxies, the WDTT forks) is free of that restriction.
+Это ограничение следует за программой: оно распространяется и на нашу сборку, а значит и на вас. Используйте
+csqtt в личных или иных некоммерческих целях либо получите коммерческую лицензию у автора. Все остальные виды
+серверов, которые поддерживает панель (WireGuard, AmneziaWG, turn-прокси, форки WDTT), этого ограничения не
+несут.
 
 ---
 
-## Bundled in the Docker images
+## Что входит в Docker-образы
 
-Our images on GHCR contain third-party programs compiled at build time:
+Наши образы на GHCR содержат сторонние программы, скомпилированные во время сборки:
 
-| Image | Component | Licence | Source |
+| Образ | Компонент | Лицензия | Исходники |
 |---|---|---|---|
-| `swg-node` | amneziawg-go (userspace datapath) | MIT | [amnezia-vpn/amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) |
+| `swg-node` | amneziawg-go (датапас в пользовательском пространстве) | MIT | [amnezia-vpn/amneziawg-go](https://github.com/amnezia-vpn/amneziawg-go) |
 | `swg-node` | amneziawg-tools (`awg`, `awg-quick`) | **GPL-2.0** | [amnezia-vpn/amneziawg-tools](https://github.com/amnezia-vpn/amneziawg-tools) |
-| `swg-panel` | acme.sh (TLS issuance/renewal) | **GPL-3.0** | [acmesh-official/acme.sh](https://github.com/acmesh-official/acme.sh) |
+| `swg-panel` | acme.sh (выпуск и продление TLS) | **GPL-3.0** | [acmesh-official/acme.sh](https://github.com/acmesh-official/acme.sh) |
 
-Each is built from its upstream default branch, unmodified — see [`Dockerfile.node`](../docker/Dockerfile.node) and
-[`Dockerfile`](../docker/Dockerfile) for the exact steps. Because we make no changes to them, upstream is the complete
-Corresponding Source.
-
----
-
-## Turn-proxy forks
-
-The turn-proxy forks are **not** built or redistributed by us. A node downloads each fork's own release binary
-directly from its author's GitHub releases, so those projects distribute their own work and their licences apply
-between you and them. They are credited in the READMEs. The panel shows which fork each proxy runs.
-The forks hidden in the panel since 1.8.9 — cacggghp, MYSOREZ and Moroka8 — are no longer offered; a node that still
-runs one keeps it.
+Каждый собирается из ветки по умолчанию своего апстрима, без изменений — точные шаги см. в
+[`Dockerfile.node`](../docker/Dockerfile.node) и [`Dockerfile`](../docker/Dockerfile). Поскольку мы их не меняем, полным
+соответствующим исходным кодом является апстрим.
 
 ---
 
-## Vendored in the browser app
+## Форки turn-прокси
 
-The SPA has no build step, so these ship as files in this repository and are served as-is:
+Форки turn-прокси мы **не** собираем и **не** распространяем. Нода скачивает релизный бинарник каждого форка
+напрямую из GitHub releases его автора, поэтому эти проекты распространяют свою работу сами, и их лицензии
+действуют между вами и ними. Они указаны в README. Панель показывает, какой форк работает в каждом прокси.
+Форки, скрытые в панели с 1.8.9, — cacggghp, MYSOREZ и Moroka8 — больше не предлагаются; нода, которая ещё запускает
+такой форк, сохраняет его.
 
-| Component | Licence | Source |
+---
+
+## Встроено в браузерное приложение
+
+У SPA нет шага сборки, поэтому эти файлы лежат в репозитории и отдаются как есть:
+
+| Компонент | Лицензия | Исходники |
 |---|---|---|
 | Preact + hooks | MIT | [preactjs/preact](https://github.com/preactjs/preact) |
 | htm | Apache-2.0 | [developit/htm](https://github.com/developit/htm) |
@@ -129,5 +133,5 @@ The SPA has no build step, so these ship as files in this repository and are ser
 
 ---
 
-If anything here is wrong or out of date — a licence we have misread, or a component we have missed — please
-open an issue. Getting this right matters more to us than getting it short.
+Если здесь что-то неверно или устарело — лицензия, которую мы прочитали неправильно, или компонент, который мы
+упустили, — пожалуйста, откройте issue. Нам важнее, чтобы этот файл был точным, чем коротким.

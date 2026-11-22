@@ -1,2393 +1,2501 @@
-# Changelog
+# История изменений
 
-All notable user-facing changes to **swgPanel**. This file starts at `1.3.11-beta`;
-earlier releases predate the changelog — see the git history. · Русский: [CHANGELOG.ru.md](CHANGELOG.ru.md)
+Все заметные пользователю изменения в **swgPanel**. Файл начинается с версии `1.3.11-beta`;
+более ранние выпуски предшествуют этому журналу — смотрите историю git.
 
 ## [1.13.0-beta]
 
-### Changed
+### Изменено
 
-- Moved sources to `src/`, deployment scripts to `scripts/`, Docker files to `docker/`, and guides to `docs/`. Existing install and update URLs and the deployed Docker and systemd paths stay compatible. Manual image builds now use `docker build -f docker/Dockerfile .` or `docker/Dockerfile.node`.
+- Исходники перенесены в `src/`, скрипты развёртывания в `scripts/`, файлы Docker в `docker/`, руководства в `docs/`. URL установки и обновления и пути существующих установок Docker и systemd сохранены. При ручной сборке укажите `docker build -f docker/Dockerfile .` или `docker/Dockerfile.node`.
 
-### Removed
+### Удалено
 
-- Removed the repository self-tests and their fixtures.
+- Удалены репозиторные тесты и их фикстуры.
 
 ## [1.12.0-beta]
 
-### Removed
+### Удалено
 
-- Removed the NixOS flake, modules, deployment instructions and CI. New panel and node installations use Docker or systemd.
+- Удалены флейк, модули, инструкции установки и CI для NixOS. Панель и новые ноды устанавливаются через Docker или systemd.
 
 ## [1.11.0-beta]
 
-### Changed
+### Изменено
 
-- The standalone installers and update commands use tesla-prep/vpn-panel. Docker updates move the shipped image references to the tesla-prep GHCR packages after the new images are downloaded. Existing local builds and custom registries keep their image references.
+- Одиночные скрипты `install.sh` и `update.sh` скачивают исходники из tesla-prep/vpn-panel. Обновление Docker переключает штатные ссылки Compose на пакеты GHCR tesla-prep после скачивания образов. Локальные сборки и сторонние реестры сохраняют свои ссылки.
 
 ## [1.10.1-beta]
 
-### Security
+### Безопасность
 
-- The panel, installers and browser use system cryptographic randomness for the generated `Jc` and shared `S1–S4` values in new AmneziaWG 3.1 profiles.
-- Downgrading an interface to 2.0 and creating a mesh link that falls back to 2.0 replace the protected 3.1 preset's standard header IDs with disjoint 2.0 ranges. Reinstall the client configs after switching an interface's version.
+- При генерации профилей AmneziaWG 3.1 панель, установщики и браузер выбирают `Jc` и общее значение `S1–S4` с помощью системного криптографического генератора случайных чисел.
+- При смене версии интерфейса на 2.0 и при автоматическом выборе 2.0 для нового межнодового туннеля стандартные заголовки защищённого профиля 3.1 заменяются непересекающимися диапазонами 2.0. После смены версии интерфейса клиентам нужно импортировать обновлённые конфиги.
 
 ## [1.10.0-beta]
 
-### Changed
+### Изменено
 
-- New VPN interfaces, mesh links, dial-in exits and installer-generated interfaces default to AmneziaWG 3.1 on compatible nodes. Protocol choices and the obfuscation settings of existing interfaces are preserved.
-- Generated 3.1 profiles use a fresh 32-byte header key, equal `S1–S4` values, `H1–H4` set to `1–4`, random trailers, and `ContentPaddingAddition = 2-10`. Generated profiles leave `I1–I5` blank and keep cookie protection enabled. The default mesh MTU is now 1280. `mesh_mtu` in `fleet.json` overrides it.
+- AmneziaWG 3.1 стал версией по умолчанию для новых VPN-интерфейсов, межнодовых туннелей, выходов с входящим подключением и интерфейсов, создаваемых установщиками на совместимых нодах. Существующие интерфейсы сохраняют протокол и параметры обфускации.
+- Генератор профилей 3.1 создаёт отдельный 32-байтный ключ защиты заголовков, выбирает одинаковые `S1–S4`, задаёт `H1–H4` от `1` до `4`, включает случайные хвосты и задаёт `ContentPaddingAddition = 2-10`. Сигнатуры `I1–I5` настраиваются отдельно. Защита Cookie Reply включена. MTU межнодовых туннелей по умолчанию теперь 1280. Параметр `mesh_mtu` в `fleet.json` имеет приоритет.
 
 ## [1.9.0-beta]
 
-### Added
+### Добавлено
 
-- **Static SOCKS5 exit per user.** Add and test the proxy under Settings → WARP & exits on the exit server, then select it in the user's edit form. All of the user's WireGuard and AmneziaWG devices use that proxy for IPv4 traffic forwarded to the selected server. If the proxy is unavailable, this traffic is blocked on the exit server. Update the panel and exit server to use the assignment.
+- **Статический SOCKS5-выход для пользователя.** Добавьте и проверьте прокси в разделе «Настройки → ВАРП и выходы» на выходной ноде и выберите его в карточке пользователя. Все устройства пользователя с WireGuard или AmneziaWG используют этот прокси для IPv4-трафика, направленного на выбранную ноду. При недоступности прокси этот трафик блокируется на выходной ноде. Для назначения обновите панель и выходную ноду.
 
 ## [1.8.11-beta] — 2026-11-01
 
-### Added
+### Добавлено
 
-- **A panel built for your phone.** On a phone the panel opens in its own layout: a tab bar at the bottom, lists as
-  cards, windows that slide up and close with a swipe down or the phone's Back, a row's actions behind a swipe left (or
-  its ⋮), filters and sorting in a Filters sheet, and a full-screen search for routing rules. More → Desktop view
-  switches back to the full layout, and the panel can be added to the home screen as an app.
-- **Dial-in exits: leave through an upstream that cannot be reached.** A home router behind NAT dials the server
-  instead. Under Settings → WARP & exits ("Add a dial-in exit") the panel makes both sides — WireGuard, AmneziaWG 2.0
-  or 3.1 — on a free port of 42821–42899 drawn at random (or a port and MTU you type), and shows the router's config
-  once, whole, with a QR, Download and Copy, and steps per router (Keenetic, OpenWrt, other Linux) with their commands
-  to copy. The AmneziaWG parameters sit in an accordion under the protocol and stay editable on the exit's sheet;
-  Regenerate gives both sides new keys and keeps the port and address. You can also paste the server side of a config
-  you made. The server's users reach the internet through it, never the home network behind it: the router's LAN, its
-  admin page and its tunnel address are cut on the node, and the Linux router steps let the node's traffic out to the
-  internet only. When the panel keeps encrypted configs, the router config is kept with them and the QR button on the
-  exit's row shows it again. The row says when the router has not connected, or connects but passes no traffic, and
-  that the tunnel is recovering once it carries again. Needs the 1.8.11 node.
-- **SOCKS5 exits.** A SOCKS5 proxy can be an exit: paste it as host:port:user:password (or the other forms providers
-  show), test it from the node before saving, and use it like any other exit. The node runs a pinned tunnel program for
-  it, resolves names through the proxy, and refuses UDP at once when the proxy does not carry it. Needs the 1.8.11 node.
-- **Exits you run yourself are health-checked.** A device exit (your own tun2socks, sing-box or WireGuard client) is
-  checked like a WARP exit: when it stays up but carries nothing, its traffic falls back to the node's own IP — or is
-  held when its kill-switch is on — and moves back once it carries again; the exit's row says so. Network cards are not
-  checked.
-- **The shared VK call-link pool checks its links with VK.** Every 6 hours (a switch, on by default) or on "Check all",
-  the panel asks VK about each live link, one a second; a link VK says no longer exists is marked dead and its users
-  move to another link, and a row's Check asks about any one link. The pool has no 64-link limit any more, and a VK link
-  can be entered as its bare hash — in the pool, a user's QR window and their Manage sheet. The "no live links left"
-  note now tells the truth: users lose their pool links and new users get none until a working link is added.
-- **Torrents / P2P: each interface picks its own way.** Under "Each interface decides", every interface, WDTT and
-  csqtt server picks Block, Allow (not checked), Allow only out the server's own address, or Route through one of the
-  node's exits or another node — instead of an on/off switch. A route that cannot be used blocks those torrents, and
-  the node card names the interfaces whose route is down; a SOCKS5 exit without UDP is marked as passing no DHT or
-  µTP. Needs the 1.8.11 node.
-- **Torrents / P2P: every WireGuard / AmneziaWG device gets its own incoming port.** Where torrents leave by a
-  server's own address — a node on Direct, or an interface whose own choice is Direct — every WireGuard / AmneziaWG
-  device has its own incoming port (20000–29999, the same on every server it is on), forwarded from the server's
-  address, so other peers can connect in (seeding, private trackers). The subscription page's magnet bubble opens with
-  that port to set in the torrent client; a port another program on the server uses is not forwarded and not shown.
-  WDTT / csqtt-only devices take none. The panel keeps 20000–29999 for this: a new interface, WDTT or csqtt server
-  port, turn-proxy move or dial-in exit port is refused there (one a server already holds stays savable). Needs the
-  1.8.11 node.
-- **Torrents / P2P: a device can be marked as a router.** "Router — several devices share this address", in the
-  device's settings: the torrent guard then never cuts it as a whole, so one device's torrent behind a NAT router no
-  longer stops the others' VPNs, calls and games, while torrent connections from it are still blocked one by one. The
-  Protection card's torrent list points to it. Needs the 1.8.11 node.
-- **Torrents / P2P: the ports a flagged device may still reach are yours to set** — fleet-wide in Settings ▸ Geo data
-  providers ▸ Blocking (under Never block) and per node in Filters & abuse — instead of a fixed list. OpenVPN 1194 and
-  WireGuard 51820 are on it by default, so a laptop that torrents keeps its own VPN; torrents to those ports are still
-  caught by their contents. Needs the 1.8.11 node.
-- **Torrent users are told the setting for full speed.** Where torrents get through — on the server and on every server
-  they cross — the subscription page shows a magnet beside the config's name; tap or hover it for the one client
-  setting that matters through the tunnel: TCP only, or µTP-TCP mixed mode "Prefer TCP" (measured: 117 Mbit/s with the
-  default mix, 369 with Prefer TCP, 540 with TCP only).
-- **Never block: one list of sites and addresses no block list may block.** One wrong entry in a public list no longer
-  means switching the whole list off: put the site or address on the fleet-wide Never-block list (Settings → Geo data
-  providers → Blocking) and it comes out of every block list on every interface of every node, while your routing rules
-  still route it as before. Addresses come out of the address lists on every server; site names out of the site lists
-  on Force-DNS and Hybrid SNI (a node that needs an update for it says so). Your own Block rules and the abuse
-  protections are untouched.
-- **Ports on routing rules.** An interface rule (WDTT and csqtt included) can name a protocol — TCP, UDP or both — and
-  ports or ranges, so "Google → server A" and "Google on UDP 19302-19309 → server B" work side by side; "every address"
-  is a 0.0.0.0/0 rule. Servers need the update to apply them (the server card says so); the rule chip says what the
-  routing mode does with the ports, and the list marks a port rule that can never fire.
-- **App routing per device, user or group (csqtt 2.5).** Under a server's App routing, Exceptions give chosen people,
-  groups or single devices their own rule, or No App routing at all. A device's exception beats its user's, a user's
-  beats a group's, and a person in two groups gets the upper one in the list. Servers need the update to apply them
-  (the sheet says so); until then everyone gets the server's rule.
-- **Default client apps per csqtt line.** Where a server runs both csqtt lines, Default client apps keeps a default app
-  per line (a 2.1 / 2.5 switch); left unset, 2.5 follows 2.1 as before.
+- **Панель, сделанная для телефона.** На телефоне панель открывается в своей раскладке: панель вкладок внизу, списки
+  карточками, окна выезжают снизу и закрываются свайпом вниз или кнопкой «Назад» телефона, действия строки — за свайпом
+  влево (или ⋮), фильтры и сортировка — в окне «Фильтры», а для правил маршрутизации — поиск на весь экран. «Ещё →
+  Версия для компьютера» возвращает полную раскладку; панель можно добавить на главный экран как приложение.
+- **Обратные выходы: выход через апстрим без белого адреса.** Домашний роутер за NAT сам подключается к серверу. В
+  «Настройки → ВАРП и выходы» («Добавить обратный выход») панель создаёт обе стороны — WireGuard, AmneziaWG 2.0 или 3.1
+  — на свободном порту из 42821–42899, выбранном случайно (или на порту и MTU, которые вы укажете), и один раз
+  показывает конфиг роутера целиком, с QR, «Скачать» и «Копировать», и шагами для каждого роутера (Keenetic, OpenWrt,
+  другой Linux) с командами для копирования. Параметры AmneziaWG — в раскрывающемся блоке под протоколом, их можно
+  изменить потом в карточке выхода; «Пересоздать» выдаёт обеим сторонам новые ключи, сохраняя порт и адрес. Можно и
+  вставить серверную сторону своего конфига. Пользователи сервера попадают через обратный выход только в интернет, но
+  не в домашнюю сеть за ним: локальная сеть роутера, его страница настроек и адрес в туннеле отрезаны на ноде, а шаги
+  для Linux-роутера выпускают трафик ноды только в интернет. Если панель хранит зашифрованные конфиги, конфиг роутера
+  хранится вместе с ними, и кнопка QR в строке выхода показывает его снова. Строка покажет, если роутер не подключился
+  или подключился, но трафик не идёт, и что туннель восстанавливается, когда трафик пошёл снова. Нужна нода 1.8.11.
+- **Выходы SOCKS5.** Прокси SOCKS5 может быть выходом: вставьте его как хост:порт:пользователь:пароль (или в другом
+  виде, как показывает провайдер), проверьте с ноды до сохранения и используйте как любой другой выход. Нода запускает
+  для него закреплённую программу туннеля, разрешает имена через прокси и сразу отклоняет UDP, если прокси его не
+  пропускает. Нужна нода 1.8.11.
+- **Выходы, которые вы держите сами, проверяются.** Выход через своё устройство (свой tun2socks, sing-box или клиент
+  WireGuard) проверяется так же, как выход WARP: если устройство поднято, но ничего не пропускает, его трафик уходит
+  через собственный IP ноды — или держится, когда включён kill-switch, — и возвращается, когда выход снова работает;
+  строка выхода это показывает. Сетевые карты не проверяются.
+- **Общий пул ссылок на VK-звонки проверяет ссылки в VK.** Раз в 6 часов (переключатель, включён по умолчанию) или по
+  «Проверить все» панель спрашивает VK о каждой живой ссылке, по одной в секунду; ссылка, которой по словам VK больше
+  нет, отмечается мёртвой, а её пользователи переходят на другую; «Проверить» в строке спрашивает об одной ссылке.
+  Ограничения в 64 ссылки больше нет, а ссылку VK можно ввести одним хешем — в пуле, в окне QR пользователя и в его
+  окне «Править». Подсказка «живых ссылок не осталось» теперь говорит как есть: пользователи лишаются ссылок из пула,
+  а новые не получают ни одной, пока не добавлена рабочая ссылка.
+- **Торренты / P2P: каждый интерфейс выбирает свой путь.** При «Решает каждый интерфейс» каждый интерфейс, сервер WDTT
+  и csqtt выбирает: блокировать, разрешить (не проверять), разрешить только через собственный адрес сервера или
+  направить через выход ноды либо другую ноду — вместо переключателя вкл/выкл. Если маршрут недоступен, торренты этих
+  интерфейсов блокируются, и карточка ноды называет интерфейсы, чей маршрут не работает; выход SOCKS5 без UDP помечен
+  как не пропускающий DHT и µTP. Нужна нода 1.8.11.
+- **Торренты / P2P: у каждого устройства WireGuard / AmneziaWG свой входящий порт.** Там, где торренты выходят с
+  собственного адреса сервера — нода в режиме «Напрямую» или интерфейс, который сам выбрал «Напрямую», — у каждого
+  устройства WireGuard / AmneziaWG свой входящий порт (20000–29999, один и тот же на всех серверах, где оно есть),
+  проброшенный с адреса сервера, так что другие участники могут подключаться сами (раздача, закрытые трекеры).
+  Подсказка магнита на странице подписки начинается с этого порта, который нужно указать в торрент-клиенте; порт,
+  занятый на сервере другой программой, не пробрасывается и не показывается. Устройства только с WDTT / csqtt порт не
+  занимают. Панель держит 20000–29999 под это: новый интерфейс, порт сервера WDTT или csqtt, перенос turn-прокси или
+  порт обратного выхода там не создать (порт, который сервер уже занимает, сохраняется). Нужна нода 1.8.11.
+- **Торренты / P2P: устройство можно отметить как роутер.** «Роутер — за этим адресом несколько устройств» в настройках
+  устройства: защита от торрентов больше не отрезает его целиком, и торрент одного устройства за NAT-роутером не
+  обрывает VPN, звонки и игры остальных, а торрент-соединения с него по-прежнему блокируются по одному. Список торрентов
+  в карточке «Защита» подсказывает это. Нужна нода 1.8.11.
+- **Торренты / P2P: порты, куда может ходить отмеченное устройство, задаёте вы** — для всего парка в Настройки ▸
+  Провайдеры гео-данных ▸ Блокировки (под «Не блокировать») и для ноды в «Фильтры и ограничения» — вместо
+  фиксированного списка. OpenVPN 1194 и WireGuard 51820 в нём по умолчанию, так что ноутбук с торрентом сохраняет свой
+  VPN; торренты на эти порты по-прежнему ловятся по содержимому. Нужна нода 1.8.11.
+- **Пользователи торрентов узнают настройку для полной скорости.** Там, где торренты проходят — на сервере и на каждом
+  сервере по пути, — страница подписки показывает магнит рядом с названием конфига; нажмите на него или наведите курсор
+  — и увидите единственную настройку клиента, которая важна в туннеле: только TCP или алгоритм смешанного режима
+  µTP-TCP «Предпочитать TCP» (замер: 117 Мбит/с с обычной смесью, 369 с «Предпочитать TCP», 540 только по TCP).
+- **«Не блокировать»: один список сайтов и адресов, которые не блокирует ни один список блокировок.** Одна ошибочная
+  запись в публичном списке больше не заставляет выключать весь список: добавьте сайт или адрес в общий список «Не
+  блокировать» (Настройки → Провайдеры гео-данных → Блокировки) — он уйдёт из всех списков блокировок на всех
+  интерфейсах всех нод, а маршрутизировать его по-прежнему будут ваши правила. Адреса уходят из списков адресов на
+  любом сервере, имена сайтов — из списков сайтов в Force-DNS и Hybrid SNI (нода, которой для этого нужно обновление,
+  об этом скажет). Ваши собственные правила «Заблокировать» и защита от злоупотреблений не затрагиваются.
+- **Порты в правилах маршрутизации.** Правило интерфейса (включая WDTT и csqtt) может указать протокол — TCP, UDP или
+  оба — и порты или диапазоны, так что «Google → сервер A» и «Google по UDP 19302-19309 → сервер B» работают вместе;
+  «все адреса» — правило на 0.0.0.0/0. Чтобы правила с портами действовали, серверы нужно обновить (об этом скажет
+  карточка сервера); значок правила подсказывает, что режим маршрутизации делает с портами, а список отмечает правило с
+  портами, которое никогда не сработает.
+- **Маршрутизация приложений для устройства, пользователя или группы (csqtt 2.5).** В маршрутизации приложений сервера
+  «Исключения» дают выбранным людям, группам или отдельным устройствам своё правило — или «Без маршрутизации
+  приложений». Исключение устройства важнее исключения его пользователя, исключение пользователя — важнее группы, а
+  человек из двух групп получает правило той, что выше в списке. Чтобы исключения действовали, серверы нужно обновить
+  (окно об этом скажет); до тех пор все получают правило сервера.
+- **Клиентские приложения по умолчанию для каждой линии csqtt.** Если на сервере обе линии csqtt, в «Клиентских
+  приложениях по умолчанию» приложение задаётся для каждой линии (переключатель 2.1 / 2.5); если 2.5 не задать, она,
+  как раньше, следует 2.1.
 
-### Changed
+### Изменено
 
-- **csqtt 2.5.3 on your servers.** csqtt 2.5 servers move to 2.5.3 with this update, restarting once; their users
-  reconnect by themselves. An expired password's open session is now cut within a minute (before, it only could not
-  reconnect); 2.5.1-2 stays in the Version picker for a rollback. A 2.5 server whose address was .2–.250 is moved to .1
-  of its subnet, which 2.5.3 needs. The subscription page offers La Lune and our csq-socks (Linux, Windows) for csqtt
-  2.5 too, follows our newest 2.5.x app release (later 2.5.x apps reach every panel without a panel update), and
-  Settings → Turn proxies shows both csqtt versions a server runs.
-- **WDTT-Plus v20 and qWDTT v1.4.4.** WDTT-Plus servers move to v20 (build 20-1) and qWDTT servers to v1.4.4 (build
-  1.4.4-2, which also stops rewriting the password store on every RAW reconnect), each restarting once; users reconnect
-  by themselves. The v20 WDTT-Plus app works with WDTT-Plus servers on v20 and on the previous 18-2.
-- **Live names the turn server a csqtt or WDTT device came through.** Its Endpoint says "turn-proxy" in the server's
-  colour with "Connected via `<server>`" (dimmed while idle), and its status badge, when online, is the turn badge — as
-  for a WireGuard device that comes in through a turn-proxy.
-- **The torrent flag lasts while the torrent client runs.** Every BitTorrent signature restarts the 10 minutes, under
-  Block too. Before, the flag lapsed every 10 minutes and the user's new connections took their normal route for a few
-  seconds until the next signature.
-- **A proxy's error is logged as one line.** A node that reaches the panel through a proxy such as Cloudflare logs
-  "sync HTTP 502: … 502: Bad gateway" once, instead of one red row per line of the proxy's HTML page.
-- **The exits table times an exit that answers no ping.** A custom exit whose server does not answer ping
-  shows "~N ms", timed through the tunnel and explained in the hover bubble.
-- **Light theme:** the amber "from `<ref>`" beside the version, the update dot, "awaiting enroll" and the queued tags
-  are a darker amber that reads on white (it was 2.2:1).
+- **csqtt 2.5.3 на ваших серверах.** Серверы csqtt 2.5 переходят на 2.5.3 с этим обновлением и перезапускаются один
+  раз; пользователи переподключатся сами. Открытая сессия пароля с истёкшим сроком теперь обрывается в течение минуты
+  (раньше он только не мог переподключиться); 2.5.1-2 остаётся в выборе версии для отката. Сервер 2.5 с адресом
+  .2–.250 переносится на .1 своей подсети — этого требует 2.5.3. Страница подписки предлагает для csqtt 2.5 и La Lune,
+  и наш csq-socks (Linux, Windows), берёт приложение из нашего самого нового выпуска 2.5.x (следующие 2.5.x доходят до
+  всех панелей без обновления панели), а «Настройки → Turn-прокси» показывают обе версии csqtt на сервере.
+- **WDTT-Plus v20 и qWDTT v1.4.4.** Серверы WDTT-Plus переходят на v20 (сборка 20-1), а qWDTT — на v1.4.4 (сборка
+  1.4.4-2, которая к тому же больше не перезаписывает хранилище паролей при каждом переподключении RAW); каждый
+  перезапускается один раз, пользователи переподключаются сами. Приложение WDTT-Plus v20 работает с серверами
+  WDTT-Plus и на v20, и на прежней 18-2.
+- **Live называет turn-сервер, через который пришло устройство csqtt или WDTT.** Его «Эндпоинт» — «turn-proxy» в цвете
+  сервера с «Подключён через `<сервер>`» (приглушённо, пока оно простаивает), а значок статуса, когда оно в сети, —
+  значок turn, как у устройства WireGuard, пришедшего через turn-прокси.
+- **Пометка торрентов держится, пока работает торрент-клиент.** Каждая сигнатура BitTorrent заново запускает 10 минут,
+  в том числе в режиме «Блокировать». Раньше пометка истекала каждые 10 минут, и новые соединения пользователя на
+  несколько секунд уходили обычным маршрутом до следующей сигнатуры.
+- **Ошибка прокси пишется одной строкой.** Нода, которая ходит к панели через прокси вроде Cloudflare, пишет «sync HTTP
+  502: … 502: Bad gateway» один раз, а не красной строкой на каждую строку HTML-страницы прокси.
+- **Таблица выходов измеряет выход, который не отвечает на ping.** Для своего выхода, чей сервер не отвечает
+  на ping, видно «~N мс» — время через туннель, с пояснением во всплывающей подсказке.
+- **Светлая тема:** янтарные «from `<ref>`» рядом с версией, точка обновления, «ждёт подключения» и метки очереди стали
+  темнее и читаются на белом (было 2.2:1).
 
-### Fixed
+### Исправлено
 
-- **Taking over a csqtt server no longer cuts it off.** A foreign csqtt server is adopted on the version it runs (2.1
-  or 2.5, read from its binary), so a 2.5 server — in place of 2.1.9 or next to it — is no longer taken over as 2.1; a
-  stock 2.1.9 (no --iface) is found and stopped on csqtt1 instead of losing its live interface; with two servers on one
-  box the take-over of one never touches the other. While it runs the node page says "adopting" and the server page
-  shows the take-over notice (no "missing", no Recreate); a failed attempt shows the node's reason and names what keeps
-  restarting the old server, which is stopped at most once a minute; the node never installs over or removes under a
-  csqtt it does not manage; a take-over that cannot finish is dropped after 5 minutes and the server is offered again.
-  The adopt sheet disables
-  Adopt, and says why, for a csqtt version this panel doesn't offer. The node card and the adopt sheet show the version.
-- **Taking over a WDTT server that something keeps restarting no longer cuts it off**: the stop is checked, what
-  restarts it is named, its interface is left alone and nothing is installed over it, and the take-over completes once
-  it stays down. Found-server cards show the whole server name.
-- **Docker panel certificates.** A Let's Encrypt certificate for the bare IP keeps renewing when the subscription page
-  shares the IP: the page no longer takes over the panel's renewal, a start repairs one it already took, the page's copy
-  follows each renewal (also when an acme entry for a host it had before is still in the store, or its own entry was
-  issued in other letter case), a short-lived certificate is judged by the share of its life left, a converted panel
-  stops the host's old copy renewing beside the container, and a renewal that fails because port 80 is held says what
-  holds it. An IPv6 page's self-signed
-  certificate is reused instead of made again on every start.
-- **Port checks.** A server no longer reads as clashing with itself — a WDTT or csqtt server whose node has not applied
-  a port move yet, or a turn-proxy moved earlier, saves back onto the port it runs on, while another server on that port
-  is still refused. The panel's own port pick for mesh links avoids every port the node already uses,
-  WDTT, csqtt and the host's own listeners included (the mesh allocator used to miss some).
-- **Exits.** An AmneziaWG I-line or S/H value no app can read is refused when a pasted exit is saved, as it is for an
-  interface (an exit already holding one can still be edited). An exit kind this panel does not know is refused instead
-  of being saved as a WARP account.
-- **Updates.** A master's own node says "own update command" when its Update button runs it, and a Docker update names
-  a compose key that one service has and the other lacks.
-- **Subscription page:** the WDTT "Faster mode available" note no longer sits under the arrow on a phone or above the
-  badges on a desktop.
-- **Enter in a panel window** on a focused button (Cancel, Remove, a switch) is that button's again; it used to run the
-  window's Save or Create.
-- **Docker: a subscription page whose host changed** no longer gets the old host's certificate back when that host's
-  certificate renews (the old host's renewal is dropped once the page has its new certificate).
-- **Docker without its Compose plugin.** On a server whose Docker came without Compose (the distribution's own
-  docker.io, for one), the install — or a conversion from bare metal — stops before it installs anything and names
-  what to install for that Docker (apt install docker-compose-v2 for Ubuntu's docker.io, docker-compose-plugin for
-  Docker's docker-ce), instead of failing at its end with "unknown flag: --profile".
+- **Приём сервера csqtt больше не обрывает его.** Чужой сервер csqtt принимается на той версии, на которой работает
+  (2.1 или 2.5 — по его бинарнику), поэтому сервер 2.5 — вместо 2.1.9 или рядом с ним — больше не захватывается как
+  2.1; штатный 2.1.9 (без --iface) находится и останавливается на csqtt1, а не лишается живого интерфейса; при двух
+  серверах на одной машине приём одного не трогает другой. Во время приёма на странице ноды — «подключение», на
+  странице сервера — уведомление о приёме (без «пропал» и «Пересоздать заново»); при неудаче видна причина от ноды и что
+  перезапускает старый сервер, а нода останавливает его не чаще раза в минуту; нода не ставит свой сервер поверх чужого
+  csqtt и не удаляет его интерфейс; приём, который не может завершиться, через 5 минут снимается, и сервер снова
+  предлагается к приёму. Окно приёма
+  отключает «Принять» и объясняет почему, если версия csqtt не предлагается панелью. Карточка ноды и окно приёма
+  показывают версию.
+- **Приём сервера WDTT, который что-то перезапускает, больше не обрывает его**: остановка проверяется, называется, что
+  его перезапускает, его интерфейс не трогается и поверх ничего не ставится, а приём завершается, как только сервер
+  остаётся остановленным. Карточки найденных серверов показывают имя целиком.
+- **Сертификаты Docker-панели.** Сертификат Let's Encrypt для голого IP продолжает продлеваться, когда страница
+  подписки на том же IP: страница больше не перехватывает продление панели, запуск чинит уже перехваченное, копия
+  страницы обновляется с каждым продлением (и когда в хранилище осталась acme-запись для прежнего адреса страницы или
+  её собственная запись выпущена в другом регистре букв), короткоживущий сертификат оценивается по доле оставшегося
+  срока, после конвертации старая копия на хосте больше не продлевается рядом с контейнером, а неудачное продление
+  из-за занятого порта 80 называет, кто его занял. Самоподписанный сертификат страницы на IPv6 используется повторно,
+  а не создаётся заново при каждом запуске.
+- **Проверка портов.** Сервер больше не считается конфликтующим с самим собой — сервер WDTT или csqtt, на ноде которого
+  перенос порта ещё не применён, или ранее перенесённый turn-прокси сохраняется на порту, где он работает, а другой
+  сервер на этом порту по-прежнему отклоняется. Порты, которые панель сама выбирает для mesh-связей, обходят все
+  занятые на ноде, включая WDTT, csqtt и то, что слушает сам хост (раньше mesh пропускал
+  часть из них).
+- **Выходы.** Строка I или значение S/H AmneziaWG, которое не прочтёт ни одно приложение, отклоняется при сохранении
+  вставленного выхода, как и для интерфейса (выход, где такая строка уже есть, по-прежнему можно изменить). Неизвестный
+  панели вид выхода отклоняется, а не сохраняется как аккаунт WARP.
+- **Обновления.** Собственная нода мастера показывает «своя команда обновления», когда её запускает кнопка Update, а
+  обновление Docker называет ключ compose, который есть у одной службы и нет у другой.
+- **Страница подписки:** заметка WDTT «Доступен быстрый режим» больше не оказывается под стрелкой на телефоне и над
+  значками на компьютере.
+- **Enter в окне панели** на кнопке в фокусе («Отмена», «Удалить», переключатель) снова нажимает эту кнопку, а не
+  «Сохранить» или «Создать» окна.
+- **Docker: страница подписки, у которой сменился адрес,** больше не получает обратно сертификат прежнего адреса при его
+  продлении (прежнее продление снимается, как только у страницы есть новый сертификат).
+- **Docker без плагина Compose.** На сервере, где Docker поставлен без Compose (например, из собственного пакета
+  дистрибутива docker.io), установка — или переход с голого сервера — останавливается, ничего не установив, и
+  называет, что установить для этого Docker (apt install docker-compose-v2 для docker.io из Ubuntu,
+  docker-compose-plugin для docker-ce от Docker), а не обрывается в конце ошибкой «unknown flag: --profile».
 
-### Upgrading
+### Обновление
 
-- **Nodes that sync through Cloudflare** see an occasional 502 from Cloudflare (now one log line, above).
-  README.technical, Troubleshooting, says when such a node can reach the panel directly instead.
-- Several features need the 1.8.11 node; their screens say so until the node is updated.
+- **Ноды, которые синхронизируются через Cloudflare,** иногда получают от него 502 (теперь это одна строка в логе, см.
+  выше). Когда такую ноду можно направить на панель напрямую, сказано в README.technical.ru, раздел «Диагностика».
+- Части возможностей нужна нода 1.8.11; их экраны говорят об этом, пока нода не обновлена.
 
 ## [1.8.10-beta] — 2026-10-21
 
-### Added
+### Добавлено
 
-- **The subscription page names the csqtt version.** Each csqtt card says CSQTT 2.1 or CSQTT 2.5, and its download
-  names the app's version (CSQTT 2.5.1), so a 2.1 and a 2.5 server no longer look alike until the app is downloaded.
-- **A server that doesn't update to releases says so.** A server installed or last updated from a branch other than
-  main keeps updating from it; its page now shows "from dev" beside its version, with the way back to releases. One
-  with a hand-set update command of its own says "own update command". The panel's header does the same for the
-  panel's own server.
+- **Страница подписки показывает версию csqtt.** На каждой карточке csqtt написано CSQTT 2.1 или CSQTT 2.5, а в кнопке
+  скачивания — версия приложения (CSQTT 2.5.1), так что серверы 2.1 и 2.5 больше не выглядят одинаково, пока не скачаешь
+  приложение.
+- **Сервер, который не обновляется до выпусков, говорит об этом.** Сервер, установленный или в последний раз
+  обновлённый из ветки, отличной от main, и дальше обновляется из неё; теперь на его странице рядом с версией написано
+  «из dev» и как вернуться к выпускам. Если у сервера своя, заданная вручную команда обновления, — «своя команда
+  обновления». То же показывает шапка панели для сервера самой панели.
 
-### Fixed
+### Исправлено
 
-- **The panel stayed blank for anyone with an ad or tracker blocker** (uBlock Origin, AdGuard, Brave): the common block
-  lists refuse the name one of its files had, the log viewer's. It has another name now.
-- **A Docker update asked to re-run the installer for nothing.** It named an optional setting nobody had set
-  (SWG_NFT_CLI_ONLY) as missing from docker-compose.yml.
-- **The csqtt 2.5 server logged a web-panel password and address it never uses.** csqtt 2.5 servers move to 2.5.1-2
-  with this update, restarting once; their users reconnect by themselves.
+- **Панель не открывалась у тех, у кого стоит блокировщик рекламы или трекеров** (uBlock Origin, AdGuard, Brave):
+  распространённые списки блокировки отсекают имя одного из её файлов — файла просмотра логов. Теперь у него другое имя.
+- **Обновление Docker зря просило перезапустить установщик.** Оно называло отсутствующей в docker-compose.yml
+  необязательную настройку, которую никто не задавал (SWG_NFT_CLI_ONLY).
+- **Сервер csqtt 2.5 писал в журнал пароль и адрес веб-панели, которой не пользуется.** С этим обновлением серверы
+  csqtt 2.5 переходят на 2.5.1-2 и один раз перезапускаются; пользователи переподключаются сами.
 
 ## [1.8.9-beta] — 2026-10-20
 
-### Added
+### Добавлено
 
-- **Log levels.** Settings → Logs sets how much the panel and every server log: Off, Errors, Warnings, Info (the
-  default) or Debug, which can switch itself off after an hour or a day. The sites your users open are no longer logged
-  at the default level.
-- **A disk budget for logs.** swg now writes to journals of its own, capped per server (100 MB by default), so it never
-  pushes out the server's other logs. Read them with the new `swg-logs` command — `swg-logs noded -f`, `swg-logs panel`,
-  `swg-logs turn <name>`; plain `journalctl -u swg-noded` now shows only start and stop lines.
-- **Live logs in the panel.** Settings → Logs streams any servers and sources — the node, smart DNS, relays, turn
-  proxies, WDTT and csqtt servers, interfaces, the kernel — merged by time, with level filters, search and download.
-  Servers read their logs only while someone is watching.
-- **Logs for a time range, as one file.** Pick servers, sources and a period of up to 7 days or your own window, and the
-  panel builds one file, with keys and tokens masked.
-- **csqtt 2.5, beside 2.1.** Each csqtt server runs 2.1 or 2.5, and you can switch it either way, keeping its users and
-  their passwords. The two versions don't talk to each other: every device needs the app of its server's version, and
-  the iPhone app works with 2.1 only. The panel asks before switching, hands out the encrypted links and QR codes the
-  2.5 app needs, and puts a server back on its old version by itself if the new one won't start.
-- **csqtt 2.5.1 — our build, at full speed.** amurcanov released 2.5.0 and ended his support; we ship 2.5.1, his 2.5.0
-  with one fix: QUIC traffic (YouTube, Google) and nested VPNs now use every relay stream instead of one — in our tests
-  downloads went from 2.1 to 20 Mbit/s and uploads from 10 to 20. Its Android app, CSQTT 2.5.1, carries the upload half,
-  resumes the tunnel after a Wi-Fi auto-pause again, and installs beside his app. Subscription pages hand out the csqtt apps (2.1.9 or 2.5.1, by the server's version) from
-  our own releases, so they keep working whatever happens to the original repository.
-- **App routing for csqtt 2.5.** Choose which apps, domains and addresses bypass the tunnel — or which alone use it —
-  optionally with the built-in list of Russian sites. The server sends the rule to each user's app when it connects.
-- **The subscription page offers the app version the server runs**, for apps built from the server's own repository
-  (CSQTT, WDTT and their kin).
-- **Half the memory.** The panel and each server's swg-noded use about half the RAM they did — on our servers the panel
-  went from 134 to about 50 MB and a node from 96 to about 47 MB.
-- **Far less CPU at rest.** On our busiest test servers swg-noded went from about 11 % of one core to about 3 % while
-  nothing changes.
-- **Almost no disk writes at rest.** swg-noded no longer rewrites its unchanged state files every few seconds — an idle
-  server's writes went from hundreds of kilobytes a minute to a few.
-- **AmneziaWG 3.1 without a reboot.** When an update installs a newer AmneziaWG module than the one running, **Load
-  now** restarts the server's AmneziaWG interfaces on it (devices reconnect within about 15 seconds); otherwise it loads
-  at the next reboot.
-- **Mesh links can be AmneziaWG 2.0, 3.1 or plain WireGuard** — as the fleet's default or per link, with AWG
-  parameters per link.
-- **Disguise as.** An AmneziaWG interface can disguise its handshake as a QUIC packet or a DNS query (Edit interface →
-  Advanced settings).
-- **Any AmneziaWG field can be left out** by typing `-` in it.
-- **The node page says why AmneziaWG's module won't load** — Secure Boot, with the steps to enrol its key; a module that
-  doesn't build on that kernel; or an apt run left unfinished.
-- **⚠️ Torrents are blocked by default**, on every way out of a server: its interfaces, traffic other nodes send through
-  it, and programs on the server itself. Encrypted clients are caught too; web, calls and games aren't affected. A server
-  can instead allow them, route them through an exit or another node, or leave it to each interface as before — pick
-  **Each interface decides** to keep the old behaviour (the server's settings → Filters & abuse).
-- **The Port-scan / Brute-force filter catches slow scans** — one client reaching many different servers on SSH, RDP,
-  database or router-admin ports, the kind of abuse that gets a server's network blocked by its host. Exempt your own
-  addresses in Settings → Network → Trusted sources.
+- **Уровни логов.** «Настройки → Логи» задаёт, сколько пишут в логи панель и каждый сервер: Выкл, Ошибки,
+  Предупреждения, Инфо (по умолчанию) или Отладка, которая может выключиться сама через час или сутки. Сайты, которые
+  открывают ваши пользователи, на уровне по умолчанию больше не записываются.
+- **Лимит места для логов.** swg теперь пишет в собственные журналы с лимитом на каждый сервер (по умолчанию 100 МБ) и
+  не вытесняет другие журналы сервера. Читать их — новой командой `swg-logs`: `swg-logs noded -f`, `swg-logs panel`,
+  `swg-logs turn <имя>`; обычный `journalctl -u swg-noded` теперь показывает только запуск и остановку.
+- **Логи в реальном времени в панели.** «Настройки → Логи» показывает любые серверы и источники — ноду, умный DNS,
+  ретрансляторы, turn-прокси, серверы WDTT и csqtt, интерфейсы, ядро — одним потоком по времени, с фильтром уровней,
+  поиском и скачиванием. Серверы читают логи, только пока их кто-то смотрит.
+- **Логи за период — одним файлом.** Выберите серверы, источники и период до 7 дней или свой промежуток — панель соберёт
+  один файл, скрыв ключи и токены.
+- **csqtt 2.5 рядом с 2.1.** Каждый сервер csqtt работает на 2.1 или 2.5, и его можно переключить в любую сторону,
+  сохранив пользователей и их пароли. Версии между собой не совместимы: на каждом устройстве нужно приложение версии
+  его сервера, а приложение для iPhone работает только с 2.1. Панель спрашивает перед переключением, выдаёт
+  зашифрованные ссылки и QR-коды, нужные приложению 2.5, и сама возвращает сервер на прежнюю версию, если новая не
+  запускается.
+- **csqtt 2.5.1 — наша сборка, на полной скорости.** amurcanov выпустил 2.5.0 и завершил поддержку; мы поставляем 2.5.1 —
+  его 2.5.0 с одним исправлением: QUIC-трафик (YouTube, Google) и вложенные VPN теперь идут по всем стримам
+  ретранслятора, а не по одному — в наших тестах скачивание выросло с 2,1 до 20 Мбит/с, отдача — с 10 до 20. Его
+  приложение для Android, CSQTT 2.5.1, несёт исправление отдачи, снова возвращает туннель после автопаузы при Wi-Fi и
+  ставится рядом с приложением автора. Страницы подписки
+  выдают приложения csqtt (2.1.9 или 2.5.1 — по версии сервера) из наших релизов, так что работают, что бы ни случилось
+  с исходным репозиторием.
+- **Маршрутизация приложений для csqtt 2.5.** Выберите, какие приложения, домены и адреса идут мимо туннеля — или только
+  они через него, — при желании со встроенным списком российских сайтов. Сервер отправляет правило в приложение
+  каждого пользователя при подключении.
+- **Страница подписки предлагает версию приложения, на которой работает сервер**, — для приложений из репозитория самого
+  сервера (CSQTT, WDTT и родственные).
+- **Вдвое меньше памяти.** Панель и swg-noded на каждом сервере расходуют примерно вдвое меньше памяти — на наших
+  серверах панель со 134 до ~50 МБ, нода с 96 до ~47 МБ.
+- **Намного меньше процессора в покое.** На самых загруженных тестовых серверах swg-noded, пока ничего не меняется,
+  тратит около 3 % одного ядра вместо примерно 11 %.
+- **Почти никакой записи на диск в покое.** swg-noded больше не перезаписывает неизменившиеся файлы состояния каждые
+  несколько секунд — простаивающий сервер пишет несколько килобайт в минуту вместо сотен.
+- **AmneziaWG 3.1 без перезагрузки.** Если обновление установило модуль AmneziaWG новее работающего, **Загрузить
+  сейчас** перезапускает на нём интерфейсы AmneziaWG сервера (устройства переподключаются примерно за 15 секунд);
+  иначе он загрузится при следующей перезагрузке.
+- **Меш-линки могут быть на AmneziaWG 2.0, 3.1 или обычном WireGuard** — по умолчанию для флота или для отдельного
+  линка, с параметрами AWG на каждом линке.
+- **Маскировка.** Интерфейс AmneziaWG может маскировать хендшейк под пакет QUIC или DNS-запрос («Изменить интерфейс →
+  Дополнительно»).
+- **Любое поле AmneziaWG можно убрать совсем**, введя в него `-`.
+- **Страница ноды объясняет, почему не загружается модуль AmneziaWG** — Secure Boot, с шагами регистрации ключа; модуль,
+  который не собирается на этом ядре; или незавершённый запуск apt.
+- **⚠️ Торренты блокируются по умолчанию** на всех выходах сервера: с его интерфейсов, от других нод, выходящих через
+  него, и от программ на самом сервере. Зашифрованные клиенты тоже ловятся; сайты, звонки и игры не затрагиваются.
+  Сервер может вместо этого разрешать их, направлять через выход или другую ноду или оставить решение каждому
+  интерфейсу, как раньше, — выберите **Решает каждый интерфейс**, чтобы сохранить прежнее поведение (настройки
+  сервера → Фильтры и ограничения).
+- **Фильтр «Сканы портов / подбор паролей» ловит медленные сканы** — когда один клиент обращается ко множеству разных
+  серверов по портам SSH, RDP, баз данных или админок роутеров: за такое хостер может заблокировать всю сеть сервера.
+  Свои адреса исключите в «Настройки → Сеть → Доверенные источники».
 
-### Changed
+### Изменено
 
-- **⚠️ Updates upgrade AmneziaWG's packages.** A server that installed AmneziaWG from the PPA used to keep its original
-  build for good; every update now upgrades amneziawg-dkms and amneziawg-tools when the PPA has a newer one. Tools you
-  built yourself and packages held with apt-mark are left alone.
-- **Mesh AWG parameters are set per link.** A server's own mesh AWG parameters moved onto the links they applied to;
-  nothing changes on the wire.
-- **MYSOREZ, Moroka8 and XXcipherX are hidden**, with the MYSOREZ and XXcipherX apps — their development has stopped.
-  Servers already running them keep working. samosvalishe's fork is now shown as hack-diaz.
+- **⚠️ Обновление обновляет пакеты AmneziaWG.** Сервер, где AmneziaWG поставлен из PPA, раньше навсегда оставался на
+  исходной сборке; теперь каждое обновление обновляет amneziawg-dkms и amneziawg-tools, если в PPA есть сборка новее.
+  Собранные вами утилиты и пакеты, закреплённые через apt-mark, остаются как есть.
+- **Параметры AWG меша задаются на каждом линке.** Собственные параметры AWG меша у сервера перенесены на линки, к
+  которым они относились; в сети ничего не меняется.
+- **MYSOREZ, Moroka8 и XXcipherX скрыты** вместе с приложениями MYSOREZ и XXcipherX — их разработка остановилась.
+  Уже работающие на них серверы продолжают работать. Форк samosvalishe теперь называется hack-diaz.
 
-### Fixed
+### Исправлено
 
-- **Two server logs could grow until the disk filled** — the SNI classifier's host-name file, and the log of a
-  long-running WDTT or csqtt server in Docker.
-- **A Docker server flooded the system log** with up to 200,000 lines a day from its helper container.
-- **AmneziaWG's module builds on Ubuntu's kernel 7.0.0-38** (Ubuntu 26.04 and 24.04 HWE), and upgrading to that kernel
-  no longer leaves apt broken.
-- **On Ubuntu 26.04 the installer froze at its first question.** Every install command is now
-  `sudo bash -c "$(curl …)" -- …`, which works with any sudo.
-- **A pasted AmneziaWG 3.1 profile works as an exit** — it came up green and carried nothing.
-- **The port-scan filter cut ordinary bursts**: a tunnel running inside another tunnel never came up, and busy pages lost
-  connections. A client may now open 200 connections at once.
-- **A turn server can use any address its clients dial, a DDNS name included** — a home server behind its router used to
-  crash-loop.
-- **Editing a server's exits dropped the WARP keys kept in the vault**, losing the earlier account (since 1.8.6).
-- **A server carrying another server's traffic out to the internet could rebuild its routing every minute**, briefly
-  dropping replies each time.
-- **Re-provisioning a server reset its mesh links' relay and dial settings.**
-- **An iPhone was handed a VK TURN Proxy config for an AmneziaWG interface**, which could never connect.
-- **Typing `list:all` into a routing rule** silently disabled every rule below it.
-- **The panel could delete a turn-proxy, WDTT or csqtt build a server still needed** after a rollback, and never fetch
-  it again.
-- **Right after a release, the update bubble could show the previous release's notes.**
-- **A Docker server's update no longer asks to re-run the installer for nothing** — a Docker node was told its
-  docker-compose.yml lacked the panel's settings. The check now looks only at the services the server runs.
+- **Два журнала сервера могли расти, пока не заполнят диск** — файл имён хостов классификатора SNI и журнал долго
+  работающего сервера WDTT или csqtt в Docker.
+- **Сервер в Docker засорял системный журнал** — до 200 000 строк в сутки от вспомогательного контейнера.
+- **Модуль AmneziaWG собирается на ядре Ubuntu 7.0.0-38** (Ubuntu 26.04 и 24.04 HWE), и обновление на это ядро больше
+  не ломает apt.
+- **В Ubuntu 26.04 установщик замирал на первом вопросе.** Все команды установки теперь имеют вид
+  `sudo bash -c "$(curl …)" -- …` и работают с любым sudo.
+- **Вставленный профиль AmneziaWG 3.1 работает как выход** — раньше он поднимался зелёным и не пропускал трафик.
+- **Фильтр сканов портов обрезал обычные всплески**: туннель внутри другого туннеля не поднимался, а тяжёлые страницы
+  теряли соединения. Теперь клиент может открыть 200 соединений сразу.
+- **Адресом turn-сервера может быть любой адрес, к которому подключаются клиенты, включая DDNS-имя**, — домашний сервер
+  за роутером раньше падал в цикле перезапусков.
+- **Изменение выходов сервера стирало ключи WARP, сохранённые в хранилище**, и прежний аккаунт терялся (с 1.8.6).
+- **Сервер, через который трафик другого сервера выходит в интернет, мог перестраивать маршрутизацию каждую минуту**,
+  каждый раз ненадолго теряя ответы.
+- **Пересборка сервера сбрасывала режим реле и адреса подключения его меш-линков.**
+- **iPhone получал конфигурацию VK TURN Proxy для интерфейса AmneziaWG**, которая не могла подключиться.
+- **Набранное в правиле маршрутизации `list:all`** незаметно отключало все правила ниже.
+- **Панель могла удалить сборку turn-прокси, WDTT или csqtt, нужную серверу** после отката, и больше её не скачивала.
+- **Сразу после выпуска окно обновления могло показывать примечания прошлого выпуска.**
+- **Обновление Docker-сервера больше не просит зря перезапустить установщик** — Docker-ноде сообщалось, что в её
+  docker-compose.yml нет настроек панели. Теперь проверка смотрит только на службы, которые сервер запускает.
 
-### Security
+### Безопасность
 
-- **Each server's latest report, which includes every connection's preshared key, was readable by any user on the
-  panel's server.** Now only the panel and the subscription service can read it.
-- **Editing a blocked user (name, note, expiry, VK links) unblocked them.** Their devices went back onto every
-  server while the subscription page still said "disabled". A blocked user now stays blocked until unblocked.
+- **Последний отчёт каждого сервера, где есть предварительные ключи (PSK) всех подключений, мог прочитать любой
+  пользователь сервера панели.** Теперь его читают только панель и служба подписок.
+- **Правка заблокированного пользователя (имя, заметка, срок, ссылки VK) снимала блокировку.** Его устройства
+  снова попадали на все серверы, хотя страница подписки показывала «отключена». Теперь блокировка держится до
+  разблокировки.
 
-### Upgrading
+### Обновление
 
-- **The first update upgrades AmneziaWG on servers that installed it from the PPA.** It takes about a minute and doesn't
-  interrupt traffic; the new module is used after a reboot or **Load now**.
-- **Going back to an older version:** first clear every AmneziaWG field set to `-`, and set the mesh link type back to
-  AmneziaWG 2.0 and re-provision — an older panel can't handle either.
+- **Первое обновление обновит AmneziaWG на серверах, где он поставлен из PPA.** Это занимает около минуты и не прерывает
+  трафик; новый модуль начинает работать после перезагрузки или **Загрузить сейчас**.
+- **Возврат к старой версии:** сначала уберите все поля AmneziaWG со значением `-`, верните тип меш-линков на
+  AmneziaWG 2.0 и пересоздайте линки — старая панель не справится ни с тем, ни с другим.
 
 ## [1.8.8-beta] — 2026-09-29
 
-### Added
+### Добавлено
 
-- **Traffic totals per device, person and group, for any stretch of days.** The Peers, Users and Groups screens
-  count every device's traffic through counter restarts, reinstalls and container recreates. A rail on the right
-  edge sets the window for all three — **All time** (the default), **Day**, **Week**, **Month** or **Custom** dates
-  — and the live counter moved into the figure's bubble. A person's total keeps their deleted devices and the ones
-  handed to someone else (up to the handover), and traffic between two of one person's own devices counts on both;
-  clicking a user's total opens their graph and every device they had, and a group's row adds up its members'.
-  **Settings → Display → Data** shows how much disk the history uses and how fast it grows, sets its detail
-  (**History resolution**, 5 minutes to a day), and with **Infinite history** off keeps that detail for the last 33
-  days only — totals for any period stay either way. Counting starts when the panel is updated: each device's
-  counter at that moment becomes its opening balance, so its lifetime includes what that counter held — the traffic
-  since it last restarted. Servers need no update for it.
-- **The Overview for any days you pick.** **Custom** on the Overview's side rail shows every chart and figure for
-  chosen days from the last 33, counted in the panel's days.
-- **Days are counted in your own time zone.** Servers usually run on UTC, so the panel's day ended at 03:00 in
-  Moscow. **Settings → Display → Days are counted in** picks the zone — your browser's is one click — and traffic
-  totals, the charts and the turn-proxy update hour follow it. Left on **This server's zone** (the default), nothing
-  changes. After a change the charts draw what they recorded before it shifted by the difference, until it scrolls
-  out of them (up to 33 days).
-- **A routing rule can apply to chosen people.** The sliders button before a rule's destination opens **Rule
-  settings**: where the rule leaves by, and for whom — **Everyone on this interface**, or **Chosen people and
-  devices**: people, groups and single devices. A user's new device is covered with no edit, and a group follows its
-  members. The rule's chip counts the devices it covers here and how many it can't — those on a WDTT or csqtt build
-  that can't prove which user is sending — with who and why in its bubble. A server that needs an update applies
-  such rules to nobody, and its card says so. They match site names too — except on a server whose kernel can't tie
-  an address to its device: there they match by IP address and network only, and the rule's list says so.
-- **Kernel SNI blocks a site by name, and sends one direct.** A **Block** rule by site name refuses every connection
-  to that site — the first included — and never touches another site on the same address; a **Direct** rule by site
-  name sends it out of the server's own address even under a catch-all that forwards everything else. Both keep the
-  engine's order: a rule above that names the same site wins. Lists work the same way (their sites and their
-  addresses alike). Domain **block lists** (ads, malware and the like) stay with Force-DNS and Hybrid SNI: at tens of
-  thousands of names they are too long for an in-kernel scan, and the Blocking tab still says so.
-- **A rule can choose the address its traffic leaves by.** In **Rule settings**, **As address** sits beside **Leaves
-  by**: for a **Forward to …** rule it picks one of that server's addresses, for **Direct** one of this server's;
-  left on **Auto**, the server picks. The address belongs to the interface and that server, so every rule sending
-  the interface there — or every Direct rule on it — leaves by it, and each of those rules shows it. The far server
-  needs no update: even an older one applies it. If a server stops reporting an address you chose, the rule turns
-  amber and says so — its traffic still leaves with that address, and those connections fail until you choose
-  another. Moving that server to a new box (**Migrate**) puts such choices back to Auto, unless the move names the
-  new box's address.
-- **A server's default can be a rule list.** **Settings → Network → Default exit → Routing (smart cascade)**: one
-  list routes the server's interfaces set to Auto, what its smart interfaces leave unsaid, and the traffic other
-  servers send out through it — by site, list or address; out one of its exits, directly, or blocked. A rule's
-  settings can narrow it to **Own clients** or to traffic **Cascaded in**, and the line under the list says whom it
-  affects. A **Forward to …** rule there sends traffic cascaded in one hop further, to a server the first one cannot
-  reach: the middle server masquerades it to its own link address, and the last one lets it out and never forwards
-  it again. A routing list named only there is sized, refreshed and kept like any other.
-- **AmneziaWG 3.1.** An AmneziaWG interface can run AmneziaWG 3.1 — header protection, random trailers and
-  Amnezia's 3.1 timings. Pick it under **AmneziaWG version** when you create the interface, or switch either way from
-  its Edit sheet, where flipping to 3.1 shows the 3.1 values at once, so one Save switches with the values you want.
-  Before a switch the panel shows every device it cuts off until they re-import, network gateways first, and refuses
-  while a WINGS-N turn proxy points at the interface, naming it — WINGS V carries AmneziaWG 2.0 only, so a WINGS-N
-  proxy cannot be pointed at a 3.1 interface either; subscription pages serve the new config at once. Only apps that
-  carry 3.1 can connect: Amnezia VPN 5.0.1.5 or newer (an older one imports the config without complaint and never
-  connects), AmneziaWG from the App Store or GitHub (not the Google Play build), WG Tunnel 5.6 or newer and
-  FreeTurn 4.3 — not WINGS V, Keenetic or MikroTik. A server offers 3.1 only when its AmneziaWG module (or
-  amneziawg-go) and tools are 3.1; where they are not — a NixOS node on a 2.0 channel, say — the switch says why. 3.1
-  interfaces wear a blue badge, with its own swatch in **Settings → Interfaces** beside WG and AWG 2.0. That section
-  also sets the version new interfaces start on (2.0 by default) and the 3.1 values an interface takes when it is
-  created on 3.1 or switched to it — padding and timings; the header protection key is always its own.
-- **Client DNS for WDTT and csqtt servers.** Each of these servers hands its clients a DNS server when they
-  connect, and the panel never set one, so every fork gave its own — 1.1.1.1, 8.8.8.8 or Yandex's — and csqtt's
-  could not be changed anywhere. A WDTT or csqtt interface's **Edit interface** sheet now has **Client DNS** under
-  **Advanced settings**: one or two IPv4 addresses. Left empty, clients get what the server gave before, which the
-  field shows; saving restarts the server. A build that cannot take the setting says so — ildarmaga takes it from
-  1.5.0-4. Taking over a WDTT server that runs with its own DNS keeps it.
-- **Force-DNS asks the resolver you choose.** On a server in Force-DNS mode every client's plain DNS is answered by
-  the server's own resolver, which always asked 1.1.1.1 and 8.8.8.8. **Settings → Routing & Blocking** now has
-  **Upstream DNS** for a server in that mode: up to four IPv4 or IPv6 addresses, each optionally with `#port` — a
-  local resolver such as `127.0.0.1#5335` works. Left empty, nothing changes. The field says whether the server
-  already uses what is saved.
-- **Renew now.** acme.sh's scheduled renewal fails in silence — port 80 taken, a firewall, a CA error — while the
-  certificate runs out. **Settings → Panel access → Certificate** now has **Renew now** inside the certificate
-  warning: it runs acme.sh's renewal there and then and shows the new expiry, "not due yet", or acme.sh's own error.
-  When another program owns the acme.sh entry it asks first, since acme.sh then runs that program's reload command.
-  Settings also says when another program renews the certificate, or when nothing does; a certificate that lives ten
-  days or less (an IP certificate) warns once two-thirds of its life have passed, not from the day it was issued; and
-  panels behind the installer's nginx or caddy get the warning and the button too. It is not for a Docker panel,
-  which renews its certificate itself every 12 hours, or a NixOS one.
-- **Mesh links on demand.** **Settings → Network → Mesh links**: **Full mesh** (every pair, as before), **On demand**
-  (only the pairs a forward or a smart rule routes over; a link nothing uses is removed after an hour) or **Auto**
-  (the default: a full mesh up to 30 nodes, on demand above). **Fleets of up to 30 nodes see no change.** Above that
-  the panel no longer keeps a link for every pair — a 200-node fleet's sync costs the panel about 29 ms instead of
-  490 on a laptop (a one-core server takes roughly twice as long), and nodes.json shrinks from 68 MB to under 3 MB —
-  and each node carries only the links it uses. On demand, a
-  newly chosen forward target takes 10–15 s to come up; its traffic waits for the link rather than leaving directly.
-- **A notice when two different panels answer at one address.** A panel installed beside another — bare metal and
-  Docker, or a leftover from a reinstall — keeps its own servers, settings and lists, and the page showed whichever
-  one answered: one fleet on one reload, another on the next, and saves that never reached the servers. The page
-  now says **Two different panels are answering at this address**, naming each one's install, version, state
-  directory and how many servers report to it: keep that one, stop the other. The installers now ask before starting
-  a panel beside a running one of the other kind — abort, stop the other (its data stays) or keep both; an unattended
-  install refuses unless `SWG_OTHER_PANEL=stop` or `keep` says otherwise. A panel stopped that way stays stopped
-  through updates, and so does its subscription page. An update reports its result to the panel that is running, and
-  the install that stopped the other one ends with its own login. Removing either panel with the uninstaller leaves the other its
-  one-click update and its address changes, and starts it again if it was the one stopped.
+- **Итоги трафика по устройствам, людям и группам за любой период.** Экраны «Пиры», «Пользователи» и «Группы»
+  считают трафик каждого устройства, не теряя его при перезапуске счётчиков, переустановке и пересоздании
+  контейнеров. Панель у правого края задаёт период сразу для всех трёх — **За всё время** (по умолчанию), **Сутки**,
+  **Неделя**, **Месяц** или **Свой период**, — а живой счётчик переехал в подсказку к цифре. В итог человека входят и
+  его удалённые устройства, и переданные другому (до момента передачи), а трафик между двумя его собственными
+  устройствами считается на обоих; щелчок по итогу пользователя открывает его график и все устройства, которые у
+  него были, а строка группы складывает итоги её участников. **Настройки → Отображение → Данные** показывают, сколько
+  места занимает история и как быстро она растёт, задают её детализацию (**Детализация истории**, от 5 минут до
+  суток), а если выключить **Бесконечная история**, хранят эту детализацию только за последние 33 дня — итоги за
+  любой период остаются в любом случае. Счёт начинается с обновления панели: показание счётчика устройства в этот
+  момент становится его начальным остатком, поэтому итог за всё время включает то, что было на этом счётчике, —
+  трафик с его последнего перезапуска. Серверы обновлять для этого не нужно.
+- **Обзор за любые выбранные дни.** **Свой период** на боковой панели Обзора показывает все графики и цифры за
+  выбранные дни из последних 33 — по суткам панели.
+- **Сутки считаются в вашем часовом поясе.** Серверы обычно работают по UTC, и сутки в панели заканчивались в 03:00
+  по Москве. **Настройки → Отображение → Сутки считаются по поясу** задаёт пояс — пояс вашего браузера выбирается в
+  один клик, — и ему следуют итоги трафика, графики и час обновления turn-прокси. Если оставить **Пояс этого
+  сервера** (по умолчанию), ничего не меняется. После смены графики рисуют то, что записали до неё, со сдвигом на
+  разницу, пока оно не уйдёт из окна (до 33 дней).
+- **Правило маршрутизации может действовать только для выбранных людей.** Кнопка с ползунками перед направлением
+  правила открывает **Настройки правила**: куда правило выпускает трафик и для кого — **Все на этом интерфейсе** или
+  **Выбранные люди и устройства**: люди, группы и отдельные устройства. Новое устройство пользователя попадает под
+  правило без правки, а группа следует за своими участниками. Метка правила показывает, сколько устройств оно здесь
+  охватывает и сколько не может — тех, что стоят за сборкой WDTT или csqtt, не подтверждающей, какой пользователь
+  отправляет трафик, — а подсказка к ней говорит, кто и почему. Сервер, которому нужно обновление, не применяет
+  такие правила ни к кому, и его карточка об этом говорит. По именам сайтов они тоже срабатывают — кроме сервера,
+  ядро которого не умеет привязать адрес к устройству: там только по IP-адресам и сетям, и список правила об этом
+  говорит.
+- **Kernel SNI блокирует сайт по имени и выпускает его напрямую.** Правило **Заблокировать** по имени сайта отказывает
+  каждому соединению с этим сайтом, включая первое, и никогда не задевает другой сайт на том же адресе; правило
+  **Напрямую** по имени сайта выпускает его с собственного адреса сервера, даже когда всё остальное уходит в
+  пересылку. Оба соблюдают порядок этого режима: правило выше, называющее тот же сайт, побеждает. Списки работают
+  так же — и своими сайтами, и своими адресами. Доменные **списки блокировки** (реклама, вредоносное ПО и подобное)
+  остаются за Force-DNS и Hybrid SNI: в десятки тысяч имён они слишком длинные для чтения в ядре, и вкладка
+  «Блокировки» по-прежнему об этом говорит.
+- **Правило может выбрать, с какого адреса выходит его трафик.** В окне **Настройки правила** рядом с **Выход через**
+  стоит **С адреса**: для правила **Переслать на …** это один из адресов того сервера, для **Напрямую** — один из
+  адресов этого; в режиме **Авто** сервер выбирает сам. Адрес принадлежит паре «интерфейс — сервер», поэтому с него
+  выходят все правила, отправляющие интерфейс на тот сервер, — или все правила **Напрямую** на нём, — и он показан у
+  каждого из них. Дальний сервер обновлять не нужно: адрес применит и более старая версия. Если сервер перестал
+  сообщать выбранный адрес, правило помечается предупреждением и говорит об этом — трафик всё равно выходит с этого
+  адреса, и такие соединения не работают, пока вы не выберете другой. Перенос этого сервера на новую машину
+  (**Перенести**) возвращает такой выбор к «Авто», если только при переносе не указан адрес новой машины.
+- **Выход сервера по умолчанию может быть списком правил.** **Настройки → Сеть → Выход по умолчанию → Маршрутизация
+  (умный каскад)**: один список отвечает за интерфейсы сервера на «Авто», за то, о чём молчат его умные интерфейсы,
+  и за трафик, который другие серверы выпускают через него, — по сайтам, спискам или адресам: через один из его
+  выходов, напрямую или блокируя. В настройках правила его можно сузить до **Свои клиенты** или до трафика **С других
+  узлов**, а строка под списком говорит, кого он затрагивает. Правило **Переслать на …** в этом списке отправляет
+  трафик с других серверов ещё на один сервер дальше — на тот, до которого первый не дотягивается: промежуточный
+  сервер подменяет адрес на свой адрес линка, а последний выпускает трафик и больше никуда его не пересылает. Список
+  маршрутизации, упомянутый только здесь, измеряется, обновляется и хранится так же, как любой другой.
+- **AmneziaWG 3.1.** Интерфейс AmneziaWG может работать на AmneziaWG 3.1 — с защитой заголовков, случайными хвостами
+  пакетов и таймингами Amnezia для 3.1. Выберите её в поле **Версия AmneziaWG** при создании интерфейса или
+  переключите в любую сторону в окне его изменения: при переключении на 3.1 значения 3.1 появляются сразу, так что
+  одно сохранение переключает с нужными значениями. Перед переключением панель показывает все устройства, которые
+  потеряют связь до повторного импорта, — первыми сетевые шлюзы, — и отказывает, пока на интерфейс указывает
+  turn-прокси WINGS-N, называя его: WINGS V поддерживает только AmneziaWG 2.0, поэтому и turn-прокси WINGS-N нельзя
+  направить на интерфейс 3.1; страницы подписки сразу отдают новый конфиг. Подключатся только приложения с поддержкой 3.1:
+  Amnezia VPN 5.0.1.5 и новее (более старая версия импортирует конфиг без единой жалобы и так и не подключается),
+  AmneziaWG из App Store или с GitHub (не сборка из Google Play), WG Tunnel 5.6 и новее и FreeTurn 4.3, — но не
+  WINGS V, Keenetic и MikroTik. Сервер предлагает 3.1, только если его модуль AmneziaWG (или amneziawg-go) и
+  утилиты — версии 3.1; где это не так — например, на ноде NixOS с каналом 2.0, — переключатель объясняет почему. У
+  интерфейсов 3.1 синий значок со своим образцом цвета в **Настройки → Интерфейсы** рядом с WG и AWG 2.0. Там же
+  задаётся версия для новых интерфейсов (по умолчанию 2.0) и значения 3.1, которые интерфейс получает при создании на
+  3.1 или переключении на неё, — паддинг и тайминги; ключ защиты заголовков у каждого интерфейса свой.
+- **DNS для клиентов серверов WDTT и csqtt.** Каждый такой сервер при подключении выдаёт клиентам DNS-сервер, а
+  панель его не задавала, поэтому каждый форк давал свой — 1.1.1.1, 8.8.8.8 или Яндекс, — а у csqtt его нельзя было
+  изменить нигде. В окне **Изменить интерфейс** у интерфейса WDTT или csqtt теперь есть **DNS для клиентов** в разделе
+  **Дополнительно**: один или два адреса IPv4. Если оставить поле пустым, клиенты получают то, что сервер выдавал
+  раньше, — поле это показывает; сохранение перезапускает сервер. Сборка, которая не умеет принимать эту настройку,
+  так и говорит; ildarmaga принимает её начиная с 1.5.0-4. При перехвате сервера WDTT, запущенного со своим DNS,
+  этот DNS сохраняется.
+- **Force-DNS спрашивает резолвер, который выберете вы.** На сервере в режиме Force-DNS обычные DNS-запросы каждого
+  клиента обслуживает собственный резолвер сервера, а он всегда спрашивал 1.1.1.1 и 8.8.8.8. Теперь в **Настройки →
+  Маршрутизация** у сервера в этом режиме есть **Вышестоящий DNS**: до четырёх адресов IPv4 или IPv6, у каждого можно
+  указать `#порт`, — подойдёт и локальный резолвер вроде `127.0.0.1#5335`. Если оставить поле пустым, ничего не
+  меняется. Поле показывает, использует ли сервер уже сохранённое значение.
+- **«Обновить сейчас».** Плановое обновление сертификата в acme.sh сбоит молча — порт 80 занят, файрвол, ошибка
+  удостоверяющего центра, — пока сертификат истекает. В **Настройки → Доступ к панели → Сертификат** внутри
+  предупреждения о сертификате появилась кнопка **Обновить сейчас**: она тут же запускает обновление в acme.sh и
+  показывает новый срок действия, «ещё рано» или собственную ошибку acme.sh. Если запись acme.sh принадлежит другой
+  программе, кнопка сначала спрашивает: acme.sh тогда выполнит команду перезагрузки той программы. Настройки также
+  сообщают, что сертификат обновляет другая программа или не обновляет никто; сертификат, который живёт десять дней
+  или меньше (сертификат на IP), предупреждает, когда прошли две трети его срока, а не со дня выпуска; а панели за
+  nginx или caddy от установщика тоже получают предупреждение и кнопку. Это не для Docker-панели, которая сама
+  обновляет сертификат каждые 12 часов, и не для панели на NixOS.
+- **Связи меша по требованию.** **Настройки → Сеть → Связи в меше**: **Полный меш** (каждая пара, как раньше), **По
+  требованию** (только пары, через которые идёт пересылка или умное правило; связь, которой никто не пользуется,
+  удаляется через час) или **Авто** (по умолчанию: полный меш до 30 нод, дальше — по требованию). **Флотов до 30 нод
+  это не касается.** Дальше панель не держит связь на каждую пару — синхронизация флота из 200 нод обходится панели
+  примерно в 29 мс вместо 490 на ноутбуке (на одноядерном сервере — примерно вдвое дольше), а nodes.json уменьшается
+  с 68 МБ до менее чем 3 МБ, — и на каждой ноде только те
+  связи, которыми она пользуется. В режиме «По требованию» новая цель пересылки поднимается за 10–15 с; её трафик ждёт
+  связь, а не уходит напрямую.
+- **Предупреждение, когда по одному адресу отвечают две разные панели.** Панель, установленная рядом с другой, — на
+  голом железе и в Docker или оставшаяся от переустановки, — хранит свои серверы, настройки и списки, а страница
+  показывала ту, что ответила: один флот при одной перезагрузке, другой при следующей, и сохранения, которые не
+  доходили до серверов. Теперь страница пишет **По этому адресу отвечают две разные панели** и называет для каждой
+  способ установки, версию, каталог состояния и сколько серверов с ней синхронизируется: оставьте эту, а другую
+  остановите. Установщики теперь спрашивают, прежде чем запустить панель рядом с работающей панелью другого типа:
+  прервать, остановить другую (её данные остаются) или оставить обе; установка без участия человека отказывается,
+  если `SWG_OTHER_PANEL=stop` или `keep` не говорит иначе. Остановленная так панель остаётся остановленной и при
+  обновлениях — как и её страница подписки. Обновление сообщает о результате той панели, что работает, а установка,
+  остановившая другую панель, заканчивается своими собственными данными для входа. Удаление любой из двух панелей
+  оставляет другой обновление в один клик и смену адреса и снова запускает её, если остановлена была она.
 
-### Changed
+### Изменено
 
-- **⚠️ On Kernel SNI a site rule matches that site and its subdomains, not any name containing its letters.** A rule
-  for `x.com` also caught `netflix.com`, and one for `ya.ru` caught `vanya.ru` — a Direct rule sent such sites out
-  unprotected, and an Exit rule forwarded them. Now `x.com` matches `x.com` and `api.x.com` only. What can still
-  match is a longer name that carries the site inside it (`x.com.example.net`). If a rule of yours relied on the
-  looser match, add the other sites to it by name.
-- **⚠️ On Force-DNS, a blocked site that shares its address with an allowed one stays reachable.** Force-DNS decides
-  by the address a name resolves to, and trackers share addresses with the services beside them — so blocking a
-  tracker used to block YouTube or Instagram on the same front end (see Fixed). An address that an allowed site also
-  resolved to is no longer dropped, which lets the tracker through there too. To block such names as well, use
-  **Hybrid SNI**, which refuses each connection by its name.
-- **Kernel SNI reads each new connection for less.** Every site name was searched for twice in each packet it scanned,
-  and the scan went on past the server's reply into the client's request. Each name is now searched once, and only
-  in the connection's opening message — on a 1-vCPU server with four large lists, a new connection to a site no rule
-  names costs about half the processor time it did. A site's first connection is still reset while its address is
-  learned, as before. Kernel SNI servers rebuild their routing chain once.
-- **⚠️ A content-filter category switched off for a server stops filtering there.** Switching **Filter on
-  <server>** off hid the category's chip on every interface of that server, while those interfaces kept blocking it
-  — a filter nobody could see or untick. It is now enforced only where it is on, and switching it back on restores
-  it as it was. If you relied on that hidden filter, switch the category back on for that server.
-- **The Users screen filters by group, and groups get a grid of their own.** The Users | Groups switch is gone: a
-  **Groups** filter narrows the list to one group's members, and an icon beside the title opens the groups grid.
-  There each group is a row — its members and how many are online, peers, nodes, the networks shared with it, and
-  its members' speed and traffic added together, all sortable — which opens onto its members; a group's traffic
-  window draws its graph and lists each member's figure. A new **Online** filter shows only users with a device
-  online, and **New peer** moved to the Peers screen.
-- **Every VK call link reaches the apps that take a list, and a new user starts with three.** Each call link is its
-  own pool of TURN streams, so a config carrying one link runs at a fraction of what the user's links allow. FreeTurn
-  (samosvalishe), the MYSOREZ app and the free-turn and MYSOREZ command lines now carry every link; they carried only
-  the first. A new user now gets 3 links from the pool — distinct, least-used first — where it got 1: **Settings →
-  Turn proxies → Links per new user** sets the number (0–16). Existing users keep what they have.
-- **kiper292 and its WireGuard-TURN client are gone.** The fork was already hidden from every picker; it is now
-  removed, with its Android client (the "plain" WINGS-N pairing included) and the subscription page's .conf import
-  walkthrough. A kiper292 proxy a node still runs keeps syncing and stays listed: its config falls back to the
-  panel's command-line one, and the subscription page hides it. A saved default of WireGuard-TURN falls back to the
-  fork's next app.
-- **Hybrid SNI does less work per connection.** It is now handed only the packets that carry the ClientHello — one
-  or two a connection, where it was every packet the client sent during the handshake (4.5 on average, up to 6 for
-  Chrome) — and no longer wakes 40 times a second with nothing to learn. On a busy server that is under a third of
-  its CPU time per connection (about 48 → 14 µs on a workstation core).
-- **A Docker panel stops cleanly.** As the container's first process it ignored `docker stop`'s signal and was
-  killed ten seconds later; it now saves its traffic history and exits, waiting up to about 8 seconds for an
-  operator action in progress. A bare-metal panel does the same on `systemctl stop` and `restart`.
-- **Every release's Docker images stay available, tagged with the version.** Each release's push deleted the
-  previous release's images, so a Docker server had nothing to go back to — the 1.8.5 and 1.8.6 images are gone.
-  From 1.8.7 on they are kept, and from this release on each is also published as
-  `ghcr.io/sanityprotocol/swg-panel:<version>` and `swg-node:<version>` — this one as `1.8.8-beta`.
-- **Newer server builds.** csqtt 2.1.9-4, qWDTT 1.4.3-4, WDTT-Plus 18-2 and ildarmaga 1.5.0-4; what they fix is
-  under Fixed and Security, and ildarmaga 1.5.0-4 also takes the client DNS setting (see Added).
+- **⚠️ На Kernel SNI правило для сайта совпадает с самим сайтом и его поддоменами, а не с любым именем, где есть его
+  буквы.** Правило для `x.com` ловило и `netflix.com`, а правило для `ya.ru` — `vanya.ru`: правило «Напрямую»
+  выпускало такие сайты без защиты, а правило через выход пересылало их. Теперь `x.com` совпадает только с `x.com` и
+  `api.x.com`. Совпасть ещё может более длинное имя, внутри которого есть этот сайт (`x.com.example.net`). Если ваше
+  правило рассчитывало на прежнее, более широкое совпадение, добавьте в него остальные сайты по имени.
+- **⚠️ На Force-DNS заблокированный сайт на одном адресе с разрешённым остаётся доступным.** Force-DNS решает по
+  адресу, в который разрешается имя, а трекеры живут на тех же адресах, что и сервисы рядом с ними, — поэтому
+  блокировка трекера блокировала YouTube или Instagram на тех же серверах (см. «Исправлено»). Адрес, в который
+  разрешился и незаблокированный сайт, больше не отбрасывается, и трекер на нём тоже проходит. Чтобы блокировать и
+  такие имена, используйте **Hybrid SNI** — он отказывает каждому соединению по его имени.
+- **Kernel SNI тратит на каждое новое соединение меньше.** Каждое имя сайта искалось в каждом просмотренном пакете
+  дважды, а просмотр продолжался и после ответа сервера — по запросу клиента. Теперь каждое имя ищется один раз и
+  только в первом сообщении соединения: на сервере с одним виртуальным ядром и четырьмя большими списками новое
+  соединение с сайтом, которого нет ни в одном правиле, стоит примерно вдвое меньше процессорного времени. Первое
+  соединение с сайтом, как и раньше, сбрасывается, пока узнаётся его адрес. Серверы на Kernel SNI один раз
+  перестраивают цепочку маршрутизации.
+- **⚠️ Категория фильтров содержимого, выключенная для сервера, перестаёт там фильтровать.** Выключение **Фильтр на
+  <сервер>** скрывало метку категории на всех интерфейсах этого сервера, а сами интерфейсы продолжали её блокировать
+  — фильтр, который никто не видел и не мог снять. Теперь категория действует только там, где включена, а повторное
+  включение возвращает её как было. Если вы рассчитывали на этот скрытый фильтр, снова включите категорию для этого
+  сервера.
+- **Экран «Пользователи» фильтруется по группам, а у групп своя таблица.** Переключателя «Пользователи | Группы»
+  больше нет: фильтр **Группы** сужает список до участников одной группы, а значок рядом с заголовком открывает
+  таблицу групп. Там каждая группа — строка: участники и сколько из них в сети, пиры, ноды, открытые ей сети, а также
+  скорость и трафик участников вместе, с сортировкой по любому столбцу; строка раскрывается в список участников, а
+  окно трафика группы рисует её график и показывает цифру каждого участника. Новый фильтр **Онлайн** оставляет только
+  пользователей с устройством в сети, а **Новый пир** переехал на экран «Пиры».
+- **Каждая VK-ссылка доходит до приложений, которые принимают список, а новый пользователь получает три.** Каждая
+  ссылка на звонок — свой пул TURN-потоков, поэтому конфиг с одной ссылкой работает лишь на часть того, что позволяют
+  ссылки пользователя. FreeTurn (samosvalishe), приложение MYSOREZ и командные строки free-turn и MYSOREZ теперь
+  несут все ссылки, а раньше — только первую. Новый пользователь получает из пула 3 ссылки — разные, сначала наименее
+  занятые, — а не одну: число задаёт **Настройки → Turn-прокси → Ссылок новому пользователю** (0–16). У существующих
+  пользователей всё остаётся как есть.
+- **kiper292 и его клиент WireGuard-TURN удалены.** Форк и так был скрыт во всех списках выбора; теперь он удалён
+  вместе с Android-клиентом (включая «простую» пару с WINGS-N) и инструкцией по импорту .conf на странице подписки.
+  Прокси kiper292, который ещё работает на ноде, продолжает синхронизироваться и остаётся в списке: его конфиг
+  переходит на командную строку из панели, а страница подписки его скрывает. Сохранённый по умолчанию клиент
+  WireGuard-TURN заменяется следующим приложением форка.
+- **Hybrid SNI делает меньше работы на соединение.** Теперь ему передаются только пакеты с ClientHello — один-два на
+  соединение, а раньше все пакеты клиента во время рукопожатия (в среднем 4,5, у Chrome до 6), — и он больше не
+  просыпается 40 раз в секунду, когда учить нечего. На нагруженном сервере это меньше трети его процессорного времени
+  на соединение (примерно 48 → 14 мкс на ядре рабочей станции).
+- **Docker-панель останавливается корректно.** Как первый процесс контейнера панель не реагировала на сигнал
+  `docker stop`, и её убивали через десять секунд; теперь она сохраняет историю трафика и завершается, подождав до
+  8 секунд, если идёт действие оператора. Панель на голом железе делает то же при `systemctl stop` и `restart`.
+- **Docker-образы каждого выпуска остаются доступными и помечены версией.** Публикация каждого выпуска удаляла образы
+  предыдущего, поэтому Docker-серверу некуда было возвращаться, — образов 1.8.5 и 1.8.6 уже нет. Начиная с 1.8.7 они
+  сохраняются, а начиная с этого выпуска каждый ещё и публикуется как `ghcr.io/sanityprotocol/swg-panel:<версия>` и
+  `swg-node:<версия>` — этот как `1.8.8-beta`.
+- **Новые сборки серверов.** csqtt 2.1.9-4, qWDTT 1.4.3-4, WDTT-Plus 18-2 и ildarmaga 1.5.0-4; что они исправляют, — в
+  разделах «Исправлено» и «Безопасность», а ildarmaga 1.5.0-4 ещё и принимает DNS для клиентов (см. «Добавлено»).
 
-### Fixed
+### Исправлено
 
-- **⚠️ A content filter blocked YouTube, Instagram and other sites that share addresses with trackers.** Blocking a
-  name blocked every site on the address it was seen on — on **Hybrid SNI** for as long as trackers kept being seen,
-  on **Force-DNS** until the server's rules were rebuilt. Hybrid SNI now refuses each connection to a blocked name, the
-  first included, and never the address; Force-DNS keeps an address open when a site that isn't blocked resolved to it
-  too (see Changed for what that costs). An address or network in a Block rule or an IP list blocks as before.
-- **A block IP list cut clients off from their own devices and home network.** FireHOL level1, the source of the
-  "Malware / C2 IPs" filter, lists the private ranges (10.0.0.0/8, 192.168.0.0/16, 100.64.0.0/10 and others), and the
-  server blocked them with the rest. Block lists no longer block private, local or reserved addresses; an address you
-  type into a Block rule still does. Servers get the corrected list as soon as the panel is updated.
-- **A server's own clients could lose all their traffic when another server sent it a subnet it also used** — the
-  installers' 10.8.0.0/24 and 10.9.0.0/24 are the usual pair. Such traffic is no longer sent there: rules toward that
-  server are skipped for that interface, a forward to it is off, and the sending server's card names both interfaces
-  and both subnets. Give one of them a different subnet.
-- **On Hybrid SNI, sites opened in current Chrome, Edge and other Chromium browsers were missed on about half their
-  connections,** which took the default route or got past a Block rule: their ClientHello now spans two packets, and
-  only the first was read. Both are read now.
-- **A healthy server read "stale", with every action on its page greyed out, when your computer's clock differed from
-  the server's.** The panel now judges a server by when its sync arrived, on its own clock, and a peer's last handshake
-  is the server's own measurement.
-- **An operator's edit could be quietly undone by a node sync** — a change made in the seconds after creating
-  something, a cancelled transfer, a pending turn-proxy delete. The sync now re-reads the store before it saves. While
-  the panel is busy with a long action a node may be answered "busy" and skip a pass, which is safe — **update your
-  nodes together with the panel**: an older node takes "busy" for a failure.
+- **⚠️ Фильтр содержимого блокировал YouTube, Instagram и другие сайты, у которых общие адреса с трекерами.**
+  Блокировка имени блокировала все сайты на адресе, где это имя видели, — на **Hybrid SNI** пока трекеры продолжали
+  встречаться, на **Force-DNS** пока правила сервера не перестроятся. Теперь Hybrid SNI отказывает каждому соединению с
+  заблокированным именем, включая первое, и никогда не трогает адрес; Force-DNS оставляет адрес открытым, если в него
+  разрешился и незаблокированный сайт (цену этого см. в «Изменено»). Адрес или сеть в правиле «Заблокировать» и списки
+  адресов блокируют как прежде.
+- **Список блокировки адресов отрезал клиентов от их собственных устройств и домашней сети.** FireHOL level1 —
+  источник фильтра «Вредоносные IP / C2» — перечисляет частные диапазоны (10.0.0.0/8, 192.168.0.0/16, 100.64.0.0/10 и
+  другие), и сервер блокировал их вместе с остальными. Теперь списки блокировки не трогают частные, локальные и
+  зарезервированные адреса; адрес, вписанный в правило «Заблокировать» вручную, блокируется как прежде. Серверы
+  получают исправленный список сразу после обновления панели.
+- **Собственные клиенты сервера могли потерять весь трафик, когда другой сервер отправлял ему подсеть, которую
+  использует и он сам,** — обычно это 10.8.0.0/24 и 10.9.0.0/24 из установщиков. Теперь такой трафик туда не
+  отправляется: правила в сторону этого сервера для этого интерфейса пропускаются, пересылка на него выключена, а
+  карточка отправляющего сервера называет оба интерфейса и обе подсети. Дайте одному из них другую подсеть.
+- **На Hybrid SNI сайты, открытые в актуальных Chrome, Edge и других браузерах на Chromium, не распознавались примерно
+  в половине соединений,** и те шли маршрутом по умолчанию или проходили мимо правила «Заблокировать»: их ClientHello
+  теперь занимает два пакета, а читался только первый. Теперь читаются оба.
+- **Исправный сервер показывался как молчащий, и все действия на его странице были недоступны, если часы вашего
+  компьютера расходились с часами сервера.** Теперь панель судит о сервере по тому, когда пришла его синхронизация, по
+  своим часам, а последний хендшейк пира измеряет сам сервер.
+- **Правку оператора могла тихо отменить синхронизация ноды** — изменение, сделанное в первые секунды после создания
+  чего-то, отменённый перенос, ожидающее удаление turn-прокси. Теперь синхронизация перечитывает хранилище, прежде
+  чем сохранить. Пока панель занята долгим действием, нода может получить ответ «занято» и пропустить проход — это
+  безопасно; **обновляйте ноды вместе с панелью**: старая нода принимает «занято» за сбой.
 
-#### Routing and blocking
+#### Маршрутизация и блокировки
 
-- **⚠️ On Hybrid SNI and Kernel SNI, an Exit or Direct rule above an overlapping Block rule lost its connections**
-  after their first packet. The rule above now takes them, as "first match wins" says and as **IP only** always did.
-  The other side: a Block placed below such a rule — a country's addresses above a range inside that country, say — no
-  longer stops the destinations the two share, where before it looked as if it did. To block them, move the Block
-  above the other rule; the routing list gives no warning for this overlap. On Kernel SNI an address or network Block
-  that overlaps a site-name rule still blocks those sites in either order.
-- **Hybrid SNI sent some connections by the wrong rule:**
-  - a learned site's address expired an hour after it was first seen, however busy it was, and new connections took
-    the interface's other rules until it was learned again;
-  - a rule turned off and back on routed nothing it had already learned, for up to half an hour;
-  - two rules naming the same site — most often an interface's own and the server's default list — could send its
-    first connection by the lower one;
-  - on a server whose exits go through the relay accelerator, a site's first connection was not reset to follow its
-    rule.
-- **Learned addresses outlived what made them.** After a routing-mode switch, what the old mode had learned went on
-  deciding until **Reset learned IPs** or a reboot; the first pass on the new mode now clears it, keeping lists. On
-  Kernel SNI, turning IP learning on or off, and **Reset all routing**, now reach a running server at once.
-- **Content filters did less than they showed.** Their lists were downloaded once and never refreshed; an IP list
-  (FireHOL, Tor) in a custom category blocked nothing; and the Overview's **Protection** figures counted filters that
-  were not running and left out WDTT and csqtt servers. Lists now refresh on the update schedule, with each list's
-  count — or why it has none — on the **Blocking** tab; IP lists block by address; the Overview counts what the servers
-  enforce.
-- **Two figures were wrong.** The Overview's top talkers were estimated from one speed reading a minute and could show
-  a third of the real figure, or many times it; they now come from the same exact totals as the Users screen. An
-  interface's **Drops** read 40–50% from kernel counters that are not loss; it now counts only what the server itself
-  lost and shows the rest apart as **Not counted**.
+- **⚠️ На Hybrid SNI и Kernel SNI правило «Напрямую» или через выход, стоящее над пересекающимся правилом
+  «Заблокировать», теряло соединения** после первого пакета. Теперь их забирает правило выше, как требует «первое
+  совпадение побеждает» и как всегда было в режиме **Только IP**. Обратная сторона: блокировка ниже такого правила —
+  например, адреса страны выше диапазона внутри неё — больше не останавливает общие для них адреса, хотя раньше
+  выглядело, будто останавливает. Чтобы блокировать их, поставьте блокировку выше другого правила; список
+  маршрутизации об этом пересечении не предупреждает. На Kernel SNI правило «Заблокировать» по адресам или сетям,
+  пересекающееся с правилом по именам сайтов, по-прежнему блокирует эти сайты при любом порядке.
+- **Hybrid SNI отправлял часть соединений не по тому правилу:**
+  - выученный адрес сайта истекал через час после того, как его увидели впервые, как бы активно им ни пользовались, и
+    новые соединения шли по другим правилам интерфейса, пока адрес не выучивался заново;
+  - правило, выключенное и снова включённое, до получаса не направляло уже выученные сайты;
+  - два правила с одним и тем же сайтом — чаще всего собственное правило интерфейса и список сервера по умолчанию —
+    могли отправить его первое соединение по нижнему;
+  - на сервере, выходы которого идут через ускоритель-реле, первое соединение с сайтом не сбрасывалось, чтобы пойти
+    по своему правилу.
+- **Выученные адреса переживали то, что их создало.** После смены режима маршрутизации решения продолжало принимать
+  то, что выучил прежний режим, — до **Сбросить выученные IP** или перезагрузки; теперь первый проход в новом режиме
+  очищает это, а списки остаются. На Kernel SNI включение и выключение памяти адресов и **Сбросить всю маршрутизацию**
+  теперь сразу доходят до работающего сервера.
+- **Фильтры содержимого делали меньше, чем показывали.** Их списки скачивались один раз и больше не обновлялись;
+  IP-список (FireHOL, Tor) в собственной категории ничего не блокировал; а цифры раздела **Защита** на Обзоре учитывали
+  фильтры, которые не работали, и не учитывали серверы WDTT и csqtt. Теперь списки обновляются по расписанию, а
+  вкладка **Блокировки** показывает число записей каждого или почему его нет; IP-списки блокируют по адресу; Обзор
+  считает то, что серверы действительно применяют.
+- **Две цифры были неверны.** «Самые активные» на Обзоре оценивались по одному замеру скорости в минуту и могли
+  показать треть настоящей цифры или во много раз больше; теперь они считаются по тем же точным итогам, что и экран
+  «Пользователи». **Отброшено** на интерфейсе показывало 40–50 % по счётчикам ядра, которые не означают потерь; теперь
+  оно считает только то, что потерял сам сервер, а остальное показывает отдельно как **Не учтено**.
 
-#### Links between servers
+#### Связи между серверами
 
-- **One value in Settings → Network could stop every node's sync** — a mesh subnet of /32 or an IPv6 range. Both mesh
-  fields take only an IPv4 range of /31 or larger now, and a pool that runs out is reported on the node, naming the
-  peers it cannot link.
-- **Links between servers failed in several ways:**
-  - servers with only private addresses — on a LAN or behind NAT — never got a peer on their link; the panel now falls
-    back to the address each server hands its clients;
-  - after a server changed its address, a restart dialled the old one until the far end made contact;
-  - a server moved to another panel and back lost the link's NAT rule at both ends, and two interfaces on one subnet
-    collided the same way; each interface now removes only its own rule, and a rule already lost is put back when the
-    node starts;
-  - after a master's re-install a link stayed down for up to a minute (the far server needs this update);
-  - a raised mesh MTU sent every full-size packet as two fragments, roughly halving throughput;
-  - switching a node from a container back to native left its relays running in containers.
-- **A WARP outage made the node read offline,** its exits tested one after another for about a minute per pass. They
-  are tested together now.
-- **On a Docker node, an interface stopped from the panel came back at the next container start.** It stays down until
-  it is started from the panel, as on bare metal.
+- **Одно значение в «Настройки → Сеть» могло остановить синхронизацию всех нод** — подсеть меша /32 или диапазон
+  IPv6. Теперь оба поля подсети меша принимают только диапазон IPv4 размером /31 или шире, а закончившийся пул
+  показывается на ноде вместе с нодами, с которыми связь не создаётся.
+- **Связи между серверами ломались несколькими способами:**
+  - серверы только с частными адресами — в локальной сети или за NAT — не получали пира на своей связи; теперь панель в
+    этом случае берёт адрес, который сервер выдаёт своим клиентам;
+  - после смены адреса одним из серверов перезапуск снова обращался по старому, пока другая сторона сама не выходила на
+    связь;
+  - сервер, переданный другой панели и вернувшийся, терял правило NAT связи с обеих сторон, и так же сталкивались два
+    интерфейса в одной подсети; теперь каждый интерфейс удаляет только своё правило, а уже потерянное возвращается при
+    запуске ноды;
+  - после переустановки мастера связь до минуты не поднималась (сервер на другом конце нужно обновить);
+  - увеличенный MTU меша отправлял каждый полноразмерный пакет двумя фрагментами и примерно вдвое снижал скорость;
+  - перевод ноды из контейнера обратно в обычную установку оставлял её ретрансляторы работать в контейнерах.
+- **Сбой WARP переводил ноду в «офлайн»:** выходы проверялись по очереди, и проход длился около минуты. Теперь они
+  проверяются одновременно.
+- **На ноде в Docker интерфейс, остановленный из панели, возвращался при следующем запуске контейнера.** Теперь он
+  остаётся выключенным, пока его не запустят из панели, как на голом железе.
 
 #### AmneziaWG
 
-- **An update could leave AmneziaWG unable to start after the next reboot on a node whose awg tools were built by hand
-  before AmneziaWG 3** (`Unable to modify interface: Invalid argument`). Nodes our installer set up are not affected.
-  Such a node now keeps the module it has or runs on the userspace fallback, and the update says to rebuild
-  amneziawg-tools. **If a node already fails this way:** build amneziawg-tools from
+- **После обновления AmneziaWG мог не подняться после перезагрузки на ноде, где утилиты awg собраны вручную до
+  AmneziaWG 3** (`Unable to modify interface: Invalid argument`). Ноды, установленные нашим установщиком, это не
+  затрагивает. Теперь такая нода оставляет свой модуль или работает на запасном userspace-пути, а обновление
+  подсказывает пересобрать amneziawg-tools. **Если нода уже не поднимает интерфейсы:** соберите amneziawg-tools из
   https://github.com/amnezia-vpn/amneziawg-tools (`make -C src && make -C src install PREFIX=/usr WITH_WGQUICK=yes`),
-  then `systemctl daemon-reload && systemctl restart awg-quick@<interface>` — no reboot needed.
-- **Configs the panel rebuilt could be refused:** a client config rebuilt after Edit cut `I1`–`I5` at the first space,
-  and a conf rebuilt from a live AmneziaWG 3.x device carried lines only the 3.x kernel accepts. Both come out whole
-  and portable now.
+  затем `systemctl daemon-reload && systemctl restart awg-quick@<интерфейс>` — перезагрузка не нужна.
+- **Конфиги, собранные панелью заново, могли не приниматься:** конфиг клиента после «Изменить» обрезал `I1`–`I5` по
+  первому пробелу, а файл .conf, восстановленный с работающего устройства AmneziaWG 3.x, содержал строки, которые
+  понимает только модуль 3.x. Теперь оба собираются целиком и подходят везде.
 
-#### Turn proxies
+#### Turn-прокси
 
-- **One config now works on another phone, on every server the panel ships.** A csqtt password stayed tied to the
-  first device that used it; it now moves to the newest one, keeping its address. On qWDTT a device taking over a RAW
-  session got about half its replies, and in WireGuard mode three of a client's four connections were refused; a
-  WDTT-Plus password bound to a device before the panel managed the server was refused on every device. Fixed in csqtt
-  2.1.9-4, qWDTT 1.4.3-4 and WDTT-Plus 18-2.
-- **An iPhone that imported a csqtt link kept one VK call link and lost the rest.** The iPhone now gets its own
-  `vkturnproxy://` link, on the subscription page and in the panel, carrying every call link — **update VK TURN Proxy
-  to build 364 or newer first**; an older build imports it as a server without keys. A csqtt server's card in a peer's
-  config gains **Alternatives**: pick the device and the app, and get that app's link.
-- **A stopped WDTT or csqtt server started again when it moved to a new build,** and a fork updated from **Settings →
-  Turn proxies** showed its old version until the page was reloaded. A stopped server stays down, and the row reads
-  **updating…** until every server it reached reports the new version.
+- **Один конфиг теперь работает на другом телефоне — на каждом сервере, который ставит панель.** Пароль csqtt
+  оставался привязан к первому устройству, которое им воспользовалось; теперь он переходит на самое новое вместе с
+  адресом. На qWDTT устройство, забравшее RAW-сессию, получало около половины ответов, а в режиме WireGuard три из
+  четырёх соединений клиента отклонялись; пароль WDTT-Plus, привязанный к устройству до того, как сервером стала
+  управлять панель, отклонялся на любом устройстве. Исправлено в csqtt 2.1.9-4, qWDTT 1.4.3-4 и WDTT-Plus 18-2.
+- **iPhone, импортировавший ссылку csqtt, оставлял одну VK-ссылку и терял остальные.** Теперь iPhone получает свою
+  ссылку `vkturnproxy://` — на странице подписки и в панели, — в которой есть все ссылки на звонки; **сначала обновите
+  VK TURN Proxy до сборки 364 или новее**: более старая импортирует её как сервер без ключей. У карточки сервера csqtt в
+  окне конфига пира появилась кнопка **Другие варианты**: выберите устройство и приложение и получите ссылку для него.
+- **Остановленный сервер WDTT или csqtt снова запускался при переходе на новую сборку,** а форк, обновлённый из
+  **Настройки → Turn-прокси**, показывал старую версию до перезагрузки страницы. Теперь остановленный сервер остаётся
+  выключенным, а строка показывает **обновление…**, пока все серверы, до которых дошло обновление, не сообщат новую
+  версию.
 
-#### Certificates and sign-in
+#### Сертификаты и вход
 
-- **Certificates:**
-  - a panel could serve an expired certificate while acme.sh renewed it on time, because another program sharing the
-    name (3x-ui, swg-sub) had taken acme.sh's install target; the panel now picks up renewed certificates itself, and
-    nothing of ours takes or deletes another program's entry;
-  - a bare-metal panel on a system without cron never renewed its Let's Encrypt certificate (Debian cloud images,
-    some minimal VPS templates); cron is installed first now;
-  - a node installed while the panel's certificate had expired pinned it and dropped out once the panel was renewed —
-    **re-run the node installer on such a node** (its log says so once an hour);
-  - a certificate reload while the panel was starting could stop it for good.
-- **A panel that refuses every sign-in now says why and names the fix** — a password file it cannot read, one that is
-  gone or empty, or a hash no password can match, which used to read as a plain "wrong password". On Docker it names
-  `docker exec -it swg-panel swg-passwd`, not `systemctl`.
-- **Panel access settings undid themselves:** an IPv6 listen address was accepted and then rolled back in silence (it
-  is refused now, with what to use instead), and behind a reverse proxy every update and the next panel start flipped
-  the TLS setting back and forth.
-- **A Docker address change that expired while its check ran was applied anyway,** and on Cloudflare its confirmation
-  could report a failed dry-run that was still running. An expired change is refused and says so, and the page waits
-  as long as the panel does.
+- **Сертификаты:**
+  - панель могла отдавать истёкший сертификат, хотя acme.sh вовремя его обновлял: другая программа на том же имени
+    (3x-ui, swg-sub) забирала себе цель установки acme.sh; теперь панель сама забирает обновлённый сертификат, а наши
+    скрипты больше не перехватывают и не удаляют чужую запись;
+  - панель на голом железе в системе без cron (облачные образы Debian, некоторые минимальные шаблоны VPS) никогда не
+    обновляла свой сертификат Let's Encrypt; теперь cron ставится первым;
+  - нода, установленная, пока сертификат панели был просрочен, запинивала его и отваливалась после обновления
+    сертификата — **перезапустите на такой ноде установщик** (её журнал раз в час об этом напоминает);
+  - перезагрузка сертификата во время запуска панели могла остановить её насовсем.
+- **Панель, отклоняющая каждый вход, теперь говорит почему и называет исправление** — файл пароля, который она не
+  может прочитать, пропавший или пустой файл или хеш, которому не подходит ни один пароль (раньше это выглядело как
+  простое «неверный пароль»). В Docker она называет `docker exec -it swg-panel swg-passwd`, а не `systemctl`.
+- **Настройки доступа к панели отменяли сами себя:** адрес прослушивания IPv6 принимался, а затем молча откатывался
+  (теперь он отклоняется с подсказкой, что указать вместо него), а за обратным прокси каждое обновление и следующий
+  запуск панели переключали настройку TLS туда и обратно.
+- **Смена адреса Docker-панели, истёкшая во время проверки, всё равно применялась,** а с Cloudflare подтверждение
+  могло сообщить о неудаче пробного прогона, который ещё шёл. Теперь истёкшее изменение отклоняется с объяснением, а
+  страница ждёт столько же, сколько панель.
 
-#### Updates
+#### Обновления
 
-- **Updates:**
-  - an update could sit for about three and a half minutes after "Update complete" when the panel was unreachable, and 25
-    seconds when the panel had already refused the server's key; it now stops at the time it prints, or at the first
-    refusal;
-  - pressing **Update** again did nothing on a node whose last update found nothing to do;
-  - a Docker panel never learned that a new release was out;
-  - rolling a server back to an older version switched its updates to `main`;
-  - updating a Docker node without a panel gave it a panel's files;
-  - Docker panels upgraded from an earlier release kept that release's one-click updater, without 1.8.8's second way
-    to fetch an update when raw.githubusercontent.com is filtered;
-  - with its containers stopped, a Docker box's update did not show the version it was on.
+- **Обновления:**
+  - обновление могло висеть около трёх с половиной минут после «Update complete», когда панель была недоступна, и
+    25 секунд, когда она уже отклонила ключ сервера; теперь оно укладывается в названное время или останавливается на
+    первом отказе;
+  - повторное нажатие **Обновить** ничего не делало на ноде, чьё прошлое обновление ничего не нашло;
+  - панель в Docker не узнавала о выходе новой версии;
+  - откат сервера на старую версию переключал его обновления на `main`;
+  - обновление ноды в Docker без панели давало ей файлы панели;
+  - панели в Docker, обновлённые с прежнего выпуска, сохраняли прежний механизм обновления в один щелчок — без второго
+    способа загрузки, который 1.8.8 даёт, когда raw.githubusercontent.com фильтруется;
+  - при остановленных контейнерах обновление машины с Docker не показывало, на какой она версии.
 
-#### Install, re-install, convert and uninstall
+#### Установка, переустановка, конвертация и удаление
 
-- **On Debian 12, a Docker node broke the host's own nft:** every nft tool on the host crashed while the node ran, an
-  uninstall left a table in the kernel while saying it had removed it, and a Docker node converted to bare-metal could
-  not change its routing or blocking until a reboot. The node now declares its sets in a form every nft reads (a
-  running node's tables are converted when it starts on the new image), and the uninstall — and a convert, when the host
-  cannot read them — removes a Docker node's tables with the node's own nft. **On Debian, installing AmneziaWG also
-  looked like a failed install** — a Python traceback from the Ubuntu-only PPA before the source build; the PPA is tried
-  on Ubuntu only now.
-- **Re-running an installer undid what it was told or what the box had:**
-  - a Docker re-install ignored `-domain`, `-port`, `-user`, `-base` and `-endpoint`, dropped settings from `.env`, and
-    issued a new self-signed certificate that every pinned node refused;
-  - a re-install given a new password (`-pass`, `BASIC_PASS=`) kept the old one;
-  - a bare-metal re-install reset the node's client DNS to 1.1.1.1, dropped its links to other servers from its config,
-    and moved the subscription server back to port 8444;
-  - an unattended re-install could rename the node on the panel after the box;
-  - a Docker node moved to another panel re-installed against the panel it had left, and one moved to a panel with a
-    publicly trusted certificate stopped syncing at its next restart;
-  - `--dry-run` typed after another flag ran a real bare-metal install.
-- **A bare-metal panel uninstalled with its data kept did not come back as itself.** The login, certificate and install
-  settings were deleted, so a re-install made new ones that every node refused. Keeping the data now keeps all of it,
-  and a re-install comes back with the same login, certificate, address and node name. A bare-metal install also no
-  longer deletes Docker data an uninstall kept.
-- **Converting between Docker and bare metal lost things along the way:** the one-click updater, each interface's
-  endpoint, a node's pinned certificate and the panel address it had learned, the node's client DNS, `SWG_LATEST_URL`,
-  `SWG_TURN_MIRROR` and your own service drop-ins, the console's port, an adopted interface's own PostUp and PostDown —
-  and a Docker master came back as a panel without a node. All of it is carried now; what cannot be is named and kept
-  in a dated directory.
-- **Uninstalling left things behind, or reached too far:** ip rules, `swg-passwd`, the installer's firewall rule, the
-  Docker network and an acme.sh renewal stayed; a kept interface's clients lost DNS on Force-DNS; every Docker install
-  and uninstall added another copy of an interface's NAT rules; a later uninstall could delete a firewall rule that was
-  by then your own; and `uninstall.sh --dry-run` took a Docker node's interfaces down for real. A dry run changes
-  nothing now.
-- **A check for a running swg container could read "none" on a loaded box, and act on it** — taking a Docker master for
-  a node, or deleting a Docker install's directory as a cancelled convert's leftover. Every such check reads the whole
-  list now.
-- **Installer and uninstaller messages said something other than what happened** — raw terminal errors in unattended
-  runs, answers given in advance taken without a word, "couldn't reach the panel" for a refused key, a dry run that
-  claimed to issue a certificate or printed another panel's login, a panel install that said the panel had not started.
-  Each line now says what happened, and a dry run says it changed nothing. A node's service is labelled with its name
-  on the panel, and bare-metal installs no longer leave empty `claims.untrusted.*` directories.
+- **На Debian 12 нода в Docker ломала собственный nft хоста:** пока нода работала, любой инструмент nft на хосте
+  падал, удаление оставляло таблицу в ядре, сообщая, что убрало её, а нода в Docker, перенесённая на голое железо, до
+  перезагрузки не могла изменить свою маршрутизацию и блокировки. Теперь нода объявляет свои наборы в форме, которую
+  читает любой nft (таблицы работающей ноды переводятся в неё, когда она запускается на новом образе), а удаление — и
+  перенос, если хост не может их прочитать, — убирает таблицы ноды в Docker её собственным nft. **На Debian и установка
+  AmneziaWG выглядела неудачной** — трассировка Python от PPA, который публикуется только для Ubuntu, перед сборкой из
+  исходников; теперь PPA пробуется только на Ubuntu.
+- **Повторный запуск установщика отменял то, что ему сказали, или то, что уже было на машине:**
+  - переустановка в Docker игнорировала `-domain`, `-port`, `-user`, `-base` и `-endpoint`, теряла настройки из `.env` и
+    выпускала новый самоподписанный сертификат, который отвергали все ноды с закреплением;
+  - переустановка с новым паролем (`-pass`, `BASIC_PASS=`) оставляла старый;
+  - переустановка на голом железе сбрасывала клиентский DNS ноды на 1.1.1.1, выбрасывала из её конфигурации связи с
+    другими серверами и возвращала сервер подписок на порт 8444;
+  - переустановка без участия оператора могла переименовать ноду в панели по имени машины;
+  - нода в Docker, переданная другой панели, переустанавливалась по панели, от которой ушла, а переданная панели с
+    сертификатом от общедоступного удостоверяющего центра переставала синхронизироваться после перезапуска;
+  - `--dry-run` после другого флага запускал настоящую установку на голое железо.
+- **Панель на голом железе, удалённая с сохранением данных, возвращалась не собой.** Вход, сертификат и параметры
+  установки стирались, и переустановка создавала новые, которые отвергали все ноды. Теперь сохранение данных сохраняет
+  всё, а переустановка возвращает тот же вход, сертификат, адрес и имя ноды. И установка на голое железо больше не
+  удаляет данные Docker, сохранённые удалением.
+- **Конвертация между Docker и голым железом теряла по дороге** обновление в один щелчок, адрес каждого интерфейса для
+  клиентов, закреплённый нодой сертификат и адрес панели, который она узнала, клиентский DNS ноды, `SWG_LATEST_URL`,
+  `SWG_TURN_MIRROR` и ваши собственные дополнения к службам, порт консоли, собственные PostUp и PostDown принятого
+  интерфейса, — а мастер из Docker возвращался панелью без ноды. Теперь переносится всё, а то, что перенести нельзя,
+  называется и сохраняется в каталоге с датой.
+- **Удаление оставляло следы или заходило слишком далеко:** оставались правила ip, `swg-passwd`, правило брандмауэра
+  от установщика, сеть Docker и продление acme.sh; клиенты сохранённого интерфейса теряли DNS в режиме Force-DNS;
+  каждая установка и удаление в Docker добавляли ещё одну копию правил NAT интерфейса; следующее удаление могло удалить
+  правило брандмауэра, к тому времени уже ваше собственное; а `uninstall.sh --dry-run` по-настоящему отключал
+  интерфейсы ноды в Docker. Теперь пробный прогон ничего не меняет.
+- **Проверка запущенного контейнера swg на нагруженной машине могла ответить «нет» — и действовать по этому ответу:**
+  принять мастер в Docker за ноду или удалить каталог установки в Docker как остаток прерванной конвертации. Теперь
+  каждая такая проверка читает список целиком.
+- **Сообщения установщиков и удаления говорили не то, что происходило** — сырые ошибки терминала при запуске без
+  терминала, молча принятые ответы, заданные заранее, «не удалось связаться с панелью» при отклонённом ключе, пробный
+  прогон, который «выпускал» сертификат или печатал вход другой панели, установка панели, сообщавшая, что та не
+  запустилась. Теперь каждая строка говорит, что произошло, а пробный прогон — что ничего не изменил. Служба ноды
+  подписана её именем в панели, а установки на голое железо больше не оставляют пустых каталогов `claims.untrusted.*`.
 
-#### Subscriptions
+#### Подписки
 
-- **The subscription server's port and state did not stay as set.** A `SUB_PORT=` given at install was never recorded:
-  Settings showed 8444, the links carried `:8444`, and a re-install or the panel's second start moved it there. The
-  address the panel put back could wait for swg-sub's next restart, and the panel's start and every update started a
-  subscription server you had stopped. The panel now records and keeps the port it runs on, and a stopped or disabled
-  swg-sub stays that way.
+- **Порт и состояние сервера подписок не оставались такими, как заданы.** `SUB_PORT=`, заданный при установке, нигде
+  не записывался: настройки показывали 8444, ссылки несли `:8444`, а переустановка или второй запуск панели переводили
+  сервер туда. Адрес, который панель возвращала, мог ждать следующего перезапуска swg-sub, а запуск панели и каждое
+  обновление запускали сервер подписок, который вы остановили. Теперь панель записывает и сохраняет порт, на котором
+  он работает, а остановленный или отключённый swg-sub таким и остаётся.
 
-#### Panel screens
+#### Экраны панели
 
-- **Keyboard and unsaved changes:** Enter in a user search pressed the window's main button; Escape in a list search
-  closed the window behind it, or a pinned bubble under an open list; a change made by a click in **Edit interface**
-  vanished on Escape; and text typed into a routing rule without Enter was dropped by Save. Enter now picks the typed
-  name, Escape closes the top thing first, and the sheet asks before it drops a change or text not yet added.
-- **About forty labels and messages were English in the Russian panel** — chart dates, the online count, page counts,
-  the built-in blocking categories and the descriptions of their lists, and more; a check now reads each page's own
-  text. Sentences that sent you to a Settings section by a name the sidebar does not show now say **Routing &
-  Blocking**.
-- **Small display fixes:** Block, Delete and Rotate all keys were a size smaller than the buttons beside them; the
-  Blocking legend broke into columns; an interface's route read "Throughput" where it means traffic; two turn-proxy
-  servers by the same author shared one name on the Overview; a server kept an empty counter for each interface that
-  left device access; and a node's uninstaller said the panel had closed the connection without a reply.
+- **Клавиатура и несохранённые правки:** Enter в поиске пользователя нажимал главную кнопку окна; Escape в поиске по
+  списку закрывал окно под ним или закреплённую подсказку под открытым списком; правка, сделанная щелчком в окне
+  изменения интерфейса, пропадала по Escape; а текст, набранный в правило маршрутизации без Enter, терялся при
+  сохранении. Теперь Enter выбирает введённое имя, Escape сначала закрывает верхнее, а окно спрашивает, прежде чем
+  отбросить правку или ещё не добавленный текст.
+- **Около сорока подписей и сообщений были на английском в русской панели** — даты в графиках, счётчик «в сети»,
+  счётчики страниц, встроенные категории блокировки и описания их списков и другие; теперь проверка читает собственный
+  текст каждой страницы. Подсказки, отправлявшие в раздел настроек под именем, которого нет в боковом меню, теперь
+  называют его **Маршрутизация**.
+- **Мелкие исправления вида:** «Заблокировать», «Удалить» и «Сменить ключи» были на размер меньше соседних кнопок;
+  легенда вкладки «Блокировки» распадалась на столбцы; в английской панели маршрут интерфейса был подписан словом для
+  скорости; два turn-прокси-сервера одного автора делили одно имя на Обзоре; сервер хранил пустой счётчик для каждого
+  интерфейса, снятого с контроля доступа к устройствам; а удаление ноды сообщало, что панель закрыла соединение без
+  ответа.
 
-### Security
+### Безопасность
 
-- **A blocked or expired device kept its tunnel on an adopted interface — and, after a Docker → bare-metal convert or
-  a re-install, on the panel's own interfaces too.** An adopted interface keeps the peers it came with, so a server
-  removed only the devices the panel deleted or re-keyed there: a device you blocked, whose owner you blocked, or whose
-  date ran out kept connecting. A Docker → bare-metal convert marked every interface it carried that way, the panel's
-  own and the links between servers included, and so did a server taking back its interfaces after a re-install that
-  had kept them. The panel now has every server drop the blocked and expired devices it still carries, on any
-  interface — servers need no update for this — and unblocking or extending brings a device back. Updated installers
-  and servers no longer mark: a convert or a re-install leaves each interface as it was, and a link between servers
-  keeps no key the panel did not send. An interface marked earlier stays marked, since nothing on a server tells one
-  the panel made from one it adopted; now that only means a key the panel has never seen stays on it, listed there as
-  an orphan.
-- **Traffic another server routed into a server by rule leaked out by that server's own address, even with the
-  exit's kill-switch on.** It ignored the server's default exit, which whole-interface forwarding took, so the sites
-  it reached saw the server's own address instead of the exit's — a privacy leak, and the one the kill-switch exists
-  to prevent. It now takes the default exit the same way, unless you chose the address it leaves that server by, and
-  with the kill-switch on it stops when the exit is down. Servers need no update for this.
-- **On Force-DNS and Hybrid SNI, a Block on one interface could be bypassed through another interface's rule.** A
-  site named by one interface's rule was taken away from a broader rule on another interface: a Block on
-  `example.com` for wg0 stopped blocking `shop.example.com` the moment wg1 had any rule naming `shop.example.com`.
-  That no longer happens, and a rule for chosen people likewise changes nothing for anyone it does not choose. Where
-  two rules for the same devices overlap, the more specific one still wins, as before.
-- **A client holding a valid password could crash a qWDTT server and drop every client on it.** A device switch, a
-  revoked password or an idle timeout that closed a connection while data was on its way to it ended the server — by
-  chance, or on purpose by a client switching its config between two devices. The fault was in every earlier build;
-  fixed in qWDTT 1.4.3-4.
-- **Re-installing with a saved Cloudflare token showed the token on the screen** — it was the prompt's default,
-  printed beside the question. The installers now read a token with echo off and offer a saved one as `keep current`;
-  nothing prints it, an unattended install's log included.
-- **Re-installing a node could leave it trusting a certificate nobody had checked — or send its panel token to one.**
-  A Docker node re-install turned off its check of the panel's certificate: a node that had pinned a self-signed panel
-  came back verifying nothing. A bare-metal one pinned whatever certificate answered, even one that had changed since,
-  or one that answered in place of a panel it had verified through a CA. A machine in the middle presents a different
-  certificate too, and the node would then have sent it its panel token. Both keep their pin now while the panel
-  presents that certificate or cannot be reached, and a node that verifies through a CA keeps doing so. When the
-  certificate has changed, a re-install at a terminal asks, and Enter keeps the old pin. Without a terminal it never
-  takes the new one: it keeps the old pin and says how to accept the new one once you have checked it on the panel's
-  box — re-run with `TLS_FINGERPRINT=<new>`, or with `TLS_VERIFY=yes` when a public CA vouches for it, which is then
-  verified rather than pinned. The pin is decided first: a re-install used to tell the panel "re-installing", with the
-  node's token, to whatever answered, and drop the node's key backups before it compared the certificate at all. A run
-  that keeps the old pin now stops right there, with nothing on the box changed and the token sent nowhere; and every
-  call the installers, updates, converts and uninstalls make with a node's token checks the panel on that same
-  connection — against the node's pin or its CA — as the node itself does.
-- **A node's config file, which holds its panel token, became readable by every user on the box** after the first
-  interface the node changed. It keeps its mode and owner now, and a file an older version left open is closed again on
-  the next change.
-- **Anything running as the panel's user could have root overwrite a `.json` file anywhere on the box.** The root
-  helper that carries out the panel's privileged actions wrote its answers through the panel's own `netctl/`
-  directory, which that user can rearrange — a folder there swapped for a link sent root's write wherever the link
-  pointed — and the Docker helper took a request id holding `../` as a path. The helper now works there only through
-  directories it has checked are root's own, follows no link the panel's user controls, and takes a request id as a
-  plain file name. Its answers no longer pile up there either: the panel could never delete them (26 had gathered on
-  one server), and the helper now sweeps those older than an hour.
-- **An install printed a password you gave it.** `BASIC_PASS=` on bare metal and `-pass` on Docker appeared in the
-  install's summary, so the log of an unattended install held the panel password in plain text (1.8.7 did the same). A
-  password you give is never printed now — the summary says it is the one you gave; one the install generates is shown
-  once, as before. The recovery menu of a node re-install, which runs unattended too, shows a leftover node key only by
-  its first six and last four characters.
-- **A bare-metal panel behind your own reverse proxy moved its subscription server off loopback at its second start.**
-  Installed that way (your own proxy, nginx or Caddy), swg-sub listens on 127.0.0.1 and only the proxy reaches it. The
-  panel's start-up check read Settings together with their defaults and took the default subscription address,
-  0.0.0.0:8444, for one you had set: at the panel's next start it wrote that into swg-sub's drop-in, and swg-sub then
-  listened on every address, around the proxy. 1.8.7 did the same. An address nobody set is no longer written; one you
-  set in **Settings → Panel access → Subscription address** is kept, as before. Where it already happened, the update
-  undoes it: the subscription server goes back to the address it was installed with, and the panel's log says so, and
-  how to choose every address on purpose. That includes every address chosen in Settings under 1.8.7, which kept no
-  record of the choice and so cannot be told from the panel's own: to keep it, set it again there. A server installed
-  without a proxy, an address set in Settings under this release and a drop-in of your own are left alone.
-- **A deleted interface's private key stayed on its server.** The Delete dialog says the interface's server key is
-  removed; the node kept its own backup of it (`/var/lib/swg-noded/iface-keys/<name>.json`, on Docker under
-  `data/node`) until its next re-install, and an interface created later under the same name took that old backup as
-  its own. The backup now goes with the interface, and an interface created under the name of one deleted before takes
-  its own key as its backup. Other backups of interfaces deleted before this update stay until the next re-install (a
-  lost interface's backup, which restores it, is never touched).
-- **A fresh Docker install kept the panel password in its `.env`** (readable by root only) until the next re-install.
-  Once the panel holds its login, the password leaves the file and the install says so; an update takes it out of a
-  Docker panel installed before. And the placeholder left in its place can no longer become the login: a panel whose
-  login file was lost starts no more with `(preserved)` as its password — it refuses to start and says what to do — and
-  a re-install makes a new one.
-- **An uninstall handed the panel's recovery archives to whichever accounts the box created next.** A convert moves
-  the panel's state aside together with its owners (`/etc/swg-panel.converted-*`, `/var/lib/swg-panel.converted-*`);
-  the uninstall kept those archives and deleted the accounts that owned them, and the next accounts created on the box
-  took over their user and group ids. An ordinary user account could then read the archived login hash and the live
-  panel's TLS key and write into the archive; a system account could read the panel's session key — enough to sign in
-  as an operator — its settings and every device's pre-shared key. Every earlier release did this. An archive now
-  belongs to root alone from the moment it is moved aside, and the uninstaller hands every file it keeps to root before
-  it deletes an account or the `swg` group. The next install, update or convert does the same to the archives an
-  earlier build left. A box uninstalled with an earlier build keeps them as they are: delete the ones you no longer
-  need, or give them to root (`chown -R root:root` and `chmod 700` on each). If accounts were created on such a box
-  since, also replace the panel's session key (delete `session.key` from its state directory and restart the panel;
-  everyone signs in again) and its TLS key (servers pinned to the old certificate then need their pin updated).
-- **A Docker panel's container kept the panel password in its configuration** (`docker inspect`, readable by root)
-  until the next update. The password left `.env` only after the containers were recreated from it — at every update,
-  and after an install that set a new login. It leaves before the containers are created now, and after a new login the
-  panel's container is created again without it.
+- **Заблокированное или просроченное устройство сохраняло туннель на принятом интерфейсе — а после конвертации из
+  Docker на голое железо или переустановки и на собственных интерфейсах панели.** Принятый интерфейс сохраняет пиров,
+  с которыми пришёл, поэтому сервер удалял на нём только устройства, которые панель удалила или которым сменила ключи:
+  устройство, которое вы заблокировали, чьего владельца заблокировали или чей срок истёк, продолжало подключаться.
+  Конвертация из Docker на голое железо помечала так каждый перенесённый интерфейс, включая собственные интерфейсы
+  панели и связи между серверами, а сервер, забиравший обратно свои интерфейсы после переустановки, которая их
+  оставила, помечал все забранные. Теперь панель велит каждому серверу убрать заблокированные и просроченные
+  устройства, которые на нём ещё остались, на любом интерфейсе — серверы для этого обновлять не нужно, — а
+  разблокировка или продление срока возвращает устройство. Обновлённые установщики и серверы больше не помечают:
+  конвертация и переустановка оставляют каждый интерфейс таким, каким он был, а связь между серверами не держит ключ,
+  которого панель не присылала. Интерфейс, помеченный раньше, остаётся помеченным: на сервере ничто не отличает
+  созданный панелью интерфейс от принятого. Теперь это значит лишь, что ключ, которого панель никогда не видела,
+  остаётся на нём и показан там как чужой.
+- **Трафик, который другой сервер направлял через сервер по правилу, уходил с собственного адреса этого сервера —
+  даже при включённом kill-switch выхода.** Он шёл мимо выхода сервера по умолчанию, через который шла пересылка
+  целого интерфейса, поэтому сайты видели собственный адрес сервера вместо адреса выхода, — это утечка, и именно от
+  неё kill-switch должен защищать. Теперь такой трафик так же идёт через выход по умолчанию, если только вы не
+  выбрали адрес, с которого он выходит с того сервера, а с включённым kill-switch останавливается, когда выход не
+  работает. Серверы для этого обновлять не нужно.
+- **На Force-DNS и Hybrid SNI блокировку на одном интерфейсе можно было обойти через правило другого.** Сайт,
+  названный в правиле одного интерфейса, забирался у более широкого правила другого интерфейса: блокировка
+  `example.com` на wg0 переставала блокировать `shop.example.com`, как только на wg1 появлялось любое правило с
+  `shop.example.com`. Больше так не бывает, и правило для выбранных людей тоже ничего не меняет для тех, кого оно не
+  выбирает. Если пересекаются два правила для одних и тех же устройств, по-прежнему побеждает более точное.
+- **Клиент с действующим паролем мог уронить сервер qWDTT и оборвать всех его клиентов.** Сервер падал, когда
+  переключение устройства, отзыв пароля или тайм-аут простоя закрывали соединение, пока к нему шли данные, — случайно
+  или намеренно, если клиент переключал свой конфиг между двумя устройствами. Ошибка была во всех прежних сборках;
+  исправлено в qWDTT 1.4.3-4.
+- **Переустановка с сохранённым токеном Cloudflare показывала токен на экране** — он был значением по умолчанию и
+  печатался рядом с вопросом. Теперь установщики читают токен без отображения, а сохранённый предлагают как
+  `keep current`; его не печатает ничто, в том числе журнал установки без участия человека.
+- **Переустановка узла могла оставить его доверяющим сертификату, который никто не проверял, — или отправить такому
+  сертификату токен узла.** Переустановка узла в Docker отключала проверку сертификата панели: узел, закрепивший
+  самоподписанный сертификат, возвращался, не проверяя ничего. Узел на голом железе закреплял любой ответивший
+  сертификат, даже сменившийся с тех пор или ответивший вместо панели, которую узел проверял через удостоверяющий
+  центр. Посредник в сети тоже предъявляет другой сертификат, и узел отдал бы ему свой токен панели. Теперь оба
+  сохраняют закрепление, пока панель предъявляет тот же сертификат или недоступна, а узел, проверяющий панель через
+  удостоверяющий центр, так и продолжает. Если сертификат сменился, переустановка в терминале спрашивает, и Enter
+  оставляет старое закрепление. Без терминала новый сертификат не принимается никогда: остаётся старое закрепление, а
+  строка говорит, как принять новый, когда вы проверите его на машине панели, — запустить установщик снова с
+  `TLS_FINGERPRINT=<новый>` или с `TLS_VERIFY=yes`, если за сертификат ручается публичный удостоверяющий центр: такой
+  сертификат тогда проверяется, а не закрепляется. Решение о закреплении теперь принимается первым: раньше
+  переустановка ещё до сравнения сертификата сообщала «переустанавливается» с токеном узла тому, кто ответил, и стирала
+  резервные копии ключей узла. Запуск, оставивший старое закрепление, теперь на этом и останавливается: на машине ничего
+  не изменено, токен никуда не отправлен. А каждый запрос с токеном узла, который делают установщики, обновление,
+  конвертация и удаление, проверяет панель на том же соединении — по закреплению узла или по удостоверяющему центру, —
+  как это делает сам узел.
+- **Файл настроек узла, где хранится его токен панели, становился доступен для чтения всем пользователям машины**
+  после первого изменённого узлом интерфейса. Теперь он сохраняет свои права и владельца, а файл, оставленный открытым
+  старой версией, закрывается при следующем изменении.
+- **Любой процесс от имени пользователя панели мог заставить root перезаписать файл `.json` в любом месте
+  системы.** Помощник с правами root, который выполняет привилегированные действия панели, писал ответы через
+  собственный каталог панели `netctl/`, а его содержимое этот пользователь может менять: подменённая ссылкой папка
+  отправляла запись root туда, куда указывала ссылка, — а Docker-помощник принимал идентификатор запроса с `../` за
+  путь. Теперь помощник работает там только через каталоги, которые проверил как принадлежащие root, не идёт по
+  ссылкам, которыми распоряжается пользователь панели, и принимает идентификатор запроса только как имя файла.
+  И его ответы там больше не копятся: панель не могла их удалять (на одном сервере их набралось 26), а теперь помощник
+  сам удаляет те, что старше часа.
+- **Установка печатала пароль, который вы ей дали.** `BASIC_PASS=` на голом железе и `-pass` в Docker попадали в
+  итоговую сводку установки, так что журнал установки без участия оператора хранил пароль панели открытым текстом (в
+  1.8.7 было так же). Пароль, который вы даёте, теперь никогда не печатается — сводка говорит, что это ваш пароль;
+  сгенерированный установкой показывается один раз, как и раньше. Меню восстановления при переустановке узла, которое
+  тоже работает без участия оператора, показывает оставшийся ключ узла только первыми шестью и последними четырьмя
+  символами.
+- **Панель на голом железе за вашим собственным обратным прокси при втором запуске уводила сервер подписок с
+  loopback.** При такой установке (ваш прокси, nginx или Caddy) swg-sub слушает 127.0.0.1, и до него доходит только
+  прокси. Проверка при запуске панели читала настройки вместе со значениями по умолчанию и принимала адрес подписок по
+  умолчанию, 0.0.0.0:8444, за заданный вами: при следующем запуске панель записывала его в дополнение swg-sub, и
+  swg-sub начинал слушать все адреса — в обход прокси. В 1.8.7 было так же. Адрес, который никто не задавал, больше не
+  записывается; заданный в **Настройки → Доступ к панели → Адрес подписок** сохраняется, как и раньше. Там, где это
+  уже случилось, обновление это исправляет: сервер подписок возвращается на адрес, с которым был установлен, а журнал
+  панели говорит об этом и о том, как выбрать все адреса намеренно. Это касается и всех адресов, выбранных в
+  настройках под 1.8.7: он не сохранял записи о выборе, и такой выбор нельзя отличить от записанного самой панелью —
+  чтобы его сохранить, задайте его там снова. Сервер, установленный без прокси, адрес, заданный в настройках под этим
+  выпуском, и ваше собственное дополнение не затрагиваются.
+- **Закрытый ключ удалённого интерфейса оставался на его сервере.** Окно удаления говорит, что серверный ключ
+  интерфейса удаляется; узел же хранил собственную копию (`/var/lib/swg-noded/iface-keys/<имя>.json`, в Docker — в
+  `data/node`) до следующей переустановки, а интерфейс, созданный позже с тем же именем, принимал эту старую копию
+  за свою. Теперь копия удаляется вместе с интерфейсом, а интерфейс, созданный с именем удалённого раньше, хранит копией
+  собственный ключ. Прочие копии интерфейсов, удалённых до этого обновления, остаются до следующей переустановки
+  (копия потерянного интерфейса, по которой он восстанавливается, не трогается никогда).
+- **Новая установка в Docker хранила пароль панели в своём `.env`** (доступном только root) до следующей
+  переустановки. Как только панель держит свой вход, пароль уходит из файла, и установка говорит об этом; обновление
+  убирает его и из панели в Docker, установленной раньше. А заглушка, оставленная на его месте, больше не может стать
+  паролем: панель, потерявшая файл входа, больше не запускается с паролем `(preserved)` — она отказывается запускаться
+  и говорит, что делать, — а переустановка создаёт новый пароль.
+- **Удаление отдавало архивы восстановления панели тем учётным записям, которые на машине создавались следующими.**
+  Конвертация откладывает состояние панели в сторону вместе с его владельцами (`/etc/swg-panel.converted-*`,
+  `/var/lib/swg-panel.converted-*`); удаление сохраняло эти архивы и удаляло учётные записи, которым они принадлежали,
+  а следующие созданные на машине учётные записи получали их идентификаторы пользователя и группы. Обычная учётная
+  запись могла тогда прочитать сохранённый в архиве хэш пароля входа и TLS-ключ работающей панели и писать в архив;
+  системная — ключ сессий панели (этого достаточно, чтобы войти как оператор), её настройки и общий ключ (PSK) каждого
+  устройства. Так было во всех прежних версиях. Теперь архив с момента, когда его откладывают, принадлежит только root,
+  а удаление передаёт root каждый сохраняемый файл, прежде чем удалить учётную запись или группу `swg`. Следующая
+  установка, обновление или конвертация делают то же с архивами, оставленными прежней версией. Машина, удалённая
+  прежней версией, хранит их как есть: удалите ненужные или отдайте их root (`chown -R root:root` и `chmod 700` для
+  каждого). Если с тех пор на такой машине создавались учётные записи, замените также ключ сессий панели (удалите
+  `session.key` из её каталога состояния и перезапустите панель; все войдут заново) и её TLS-ключ (серверам, которые
+  закрепили старый сертификат, придётся обновить закрепление).
+- **Контейнер панели в Docker хранил пароль панели в своей конфигурации** (`docker inspect`, доступно root) до
+  следующего обновления. Пароль уходил из `.env` только после того, как контейнеры пересоздавались из него, — при каждом
+  обновлении и после установки, задавшей новый вход. Теперь он уходит до создания контейнеров, а после нового входа
+  контейнер панели создаётся заново уже без него.
 
-### Upgrading
+### Обновление
 
-- **⚠️ A Docker panel on 1.8.7 does not tell you this release is out** (fixed in this one). Update it on the box:
-  `sudo /usr/local/bin/swg-update`, or `docker compose pull && docker compose up -d` with its profile in the install's
-  directory.
-- **⚠️ Update the servers together with the panel.** Until a server reports the new version it takes the panel's new
-  "busy" answer for a failure; rules for chosen people apply to nobody there, and its card says so; traffic other
-  servers send out through it leaves by its default list's **Everything else** as a plain default — through that exit
-  when it is one, by the server's own address when it is **Direct**, **Block** or **Forward to …** — and its card
-  says so when that changes where traffic cascaded in goes; and **Upstream DNS**, **Client DNS**, the new **Drops**
-  figure and the server-side fixes above wait for it. On a NixOS native node a rebuild does not restart the daemon:
-  run `sudo systemctl restart swg-noded` once it is done.
-- **A server's first sync after the update records its routing mode and resets nothing.** A server switched between
-  modes before the update keeps what the old mode learned until you press **Reset learned IPs** or it reboots.
-  Servers on Hybrid SNI or Kernel SNI also rebuild their routing chains once.
-- **csqtt, qWDTT, WDTT-Plus and ildarmaga servers move to the new builds on their next sync** and restart once, so
-  their clients reconnect. A server you rolled back to a chosen build stays on it; taking qWDTT back to 1.4.3-3 or
-  earlier brings back the crash fixed in 1.4.3-4.
-- **⚠️ Three things that looked blocked may get through.** A category switched off with **Filter on <server>** stops
-  filtering on that server — switch it back on where you relied on it (see Changed). On Hybrid SNI and Kernel SNI, a
-  **Block** rule below an Exit or Direct rule whose destinations overlap it no longer stops the overlap — move the
-  Block above (see Fixed). And on Force-DNS a blocked site that shares its address with an allowed one now gets
-  through — block such sites on **Hybrid SNI** (see Changed).
-- **Two things that got through are blocked.** On Kernel SNI a **Block** rule by site name never blocked, and now does
-  — check such rules before the update if you kept them only because they did nothing. And a Kernel SNI site rule no
-  longer matches names that merely contain its letters (see Changed).
-- **Servers with a Block rule or a content filter rebuild their routing chains once** (Hybrid SNI, Force-DNS and
-  Kernel SNI), and a Hybrid SNI server's name checker restarts with the update, so the connections it was just
-  starting to learn from are reset once.
-- **Drops after the update.** On a kernel WireGuard or AmneziaWG client interface you reset before this update,
-  **Since reset** starts over once, at the update.
-- **Going back to 1.8.7 — the panel.** Saving an interface, a WDTT or a csqtt server on an older panel drops the
-  chosen people from its rules for good; the rules stay, switched off — and switching one on there applies it to
-  everyone on the interface. An older panel never reads a server's default list, so none of its rules apply: a server
-  whose **Everything else** is an exit or **Direct** keeps that as a plain default, and one whose **Everything else**
-  is **Block** or **Forward to …** lets traffic out by its own address. An address chosen under **As address** and a
-  server's **Upstream DNS** only pause — Force-DNS servers ask 1.1.1.1 and 8.8.8.8 meanwhile — and apply again after
-  the upgrade. The first save in **Settings** there clears the AmneziaWG 3.1 defaults under **Settings → Interfaces**;
-  note them first.
-- **⚠️ Going back moves turn servers to the older builds.** On their next sync csqtt, qWDTT, WDTT-Plus and ildarmaga
-  servers take 1.8.7's builds and restart once, and the fixes above go with them: one config on a second phone is
-  refused again, a client can crash a qWDTT server, and ildarmaga clients get 1.1.1.1 whatever **Client DNS** says. A
-  server you rolled back to a chosen build stays on it. Coming forward moves them up again.
-- **⚠️ AmneziaWG 3.1 interfaces on an older panel.** Devices already set up keep connecting, but every config, QR code
-  and subscription page 1.8.7 produces for a 3.1 interface lacks the 3.1 lines and does not connect, and saving the
-  interface there drops its 3.1 values from the panel. Right after going back, every 3.1 interface there is marked
-  **modified** ("A setting was edited directly on the server") with nothing saved, and pressing **Adopt** there drops
-  its 3.1 values just as a save does. To stay on 1.8.7, switch those interfaces to 2.0 before going back. Coming
-  forward after such a save, the interface's Edit sheet says **Edited directly on the server** — press **Adopt**;
-  **Restore panel value** turns the server to 2.0 and cuts every 3.1 device.
-- **Going back on a fleet of more than 30 nodes** (or with **Mesh links** on **On demand**) links every pair of nodes
-  again on the older panel's first sync — a new link on every node for every other node. Coming forward removes the
-  unused ones within an hour.
-- **Going back takes links between servers with only private addresses down again**: 1.8.7 cannot find their address
-  (see Fixed). Coming forward brings them back on the first sync.
-- **Traffic totals across a stint on 1.8.7.** Its days show no traffic; what flowed then is counted on the day you
-  come forward, and traffic of peers created or deleted there, or sent before a server restarted there, is partly
-  missing.
-- **Going back to 1.8.7 — a server.** A server taken back keeps routing chains and sets it does not know — from rules
-  for chosen people, a default list, and any Block rule below an Exit or Direct rule on Hybrid SNI or Kernel SNI. On
-  Hybrid SNI they stop it applying the next change to IP learning. Run `sudo nft delete table inet swg_smart` on it
-  once (on a Kernel SNI server that ran a default list, also `sudo ipset destroy swga`); it rebuilds within a minute.
-  A Kernel SNI server that ran rules for chosen people also keeps unused `swgs_*` ipsets until a reboot — harmless;
-  `ipset destroy` them to tidy. Its Force-DNS resolver asks 1.1.1.1 and 8.8.8.8 again, a WDTT server's **Client DNS**
-  lasts only until the server is next reconfigured or restarted, and its **Drops** figure counts the kernel counters
-  that are not loss again. A Docker node taken back adds an untagged copy beside each interface's NAT rule at its start
-  — a harmless duplicate, removed on the way forward.
-- **Going back takes one command.** On bare metal `SWG_REF` now takes a commit:
+- **⚠️ Панель в Docker на 1.8.7 не сообщит о выходе этой версии** (исправлено в ней). Обновите её на машине:
+  `sudo /usr/local/bin/swg-update` или `docker compose pull && docker compose up -d` с её профилем в каталоге установки.
+- **⚠️ Обновляйте серверы вместе с панелью.** Пока сервер не сообщит новую версию, он принимает новый ответ панели
+  «занято» за сбой; правила для выбранных людей на нём не применяются ни к кому, и его карточка об этом говорит;
+  трафик, который другие серверы выпускают через него, уходит так, как велит **Всё остальное** его списка по
+  умолчанию, — как при обычном выходе по умолчанию: через выход, если там выход, и с собственного адреса сервера,
+  если там **Напрямую**, **Заблокировать** или **Переслать на …**, — и карточка говорит об этом, когда это меняет путь
+  трафика с других узлов; а **Вышестоящий DNS**, **DNS для клиентов**, новый показатель **Отброшено** и исправления
+  на стороне сервера из списка выше ждут его обновления. На нативной ноде NixOS пересборка не перезапускает демон:
+  выполните `sudo systemctl restart swg-noded`, когда она закончится.
+- **Первая синхронизация сервера после обновления только запоминает его режим маршрутизации и ничего не
+  сбрасывает.** Сервер, который переключали между режимами до обновления, хранит выученное прежним режимом, пока вы
+  не нажмёте **Сбросить выученные IP** или он не перезагрузится. Серверы на Hybrid SNI или Kernel SNI к тому же один
+  раз перестраивают цепочки маршрутизации.
+- **Серверы csqtt, qWDTT, WDTT-Plus и ildarmaga переходят на новые сборки на следующей синхронизации** и один раз
+  перезапускаются, так что их клиенты переподключаются. Сервер, который вы откатили на выбранную сборку, на ней и
+  остаётся; откат qWDTT на 1.4.3-3 или раньше возвращает падение, исправленное в 1.4.3-4.
+- **⚠️ Кое-что, что выглядело заблокированным, может начать проходить.** Категория, выключенная переключателем
+  **Фильтр на <сервер>**, перестаёт фильтровать на этом сервере — включите её снова там, где на неё рассчитывали (см.
+  «Изменено»). На Hybrid SNI и Kernel SNI правило **Заблокировать** ниже правила «Напрямую» или через выход с
+  пересекающимися адресами больше не останавливает пересечение — поставьте блокировку выше (см. «Исправлено»). А на
+  Force-DNS заблокированный сайт на одном адресе с разрешённым теперь проходит — блокируйте такие сайты на
+  **Hybrid SNI** (см. «Изменено»).
+- **Кое-что, что проходило, начнёт блокироваться.** На Kernel SNI правило **Заблокировать** по имени сайта не
+  блокировало никогда, а теперь блокирует — проверьте такие правила до обновления, если держали их только потому, что
+  они ничего не делали. А правило для сайта на Kernel SNI больше не совпадает с именами, где просто встречаются его
+  буквы (см. «Изменено»).
+- **Серверы с правилом «Заблокировать» или фильтром содержимого один раз перестраивают цепочки маршрутизации** (Hybrid
+  SNI, Force-DNS и Kernel SNI), а проверка имён на сервере Hybrid SNI перезапускается вместе с обновлением, поэтому
+  соединения, по которым она как раз начинала учиться, один раз сбрасываются.
+- **«Отброшено» после обновления.** На клиентском интерфейсе WireGuard или AmneziaWG в ядре, счётчики которого вы
+  обнуляли до этого обновления, **С обнуления** один раз начинается заново — в момент обновления.
+- **Возврат на 1.8.7 — панель.** Сохранение интерфейса, сервера WDTT или csqtt в старой панели навсегда убирает
+  выбранных людей из его правил; сами правила остаются, но выключенными, — а если включить такое правило там, оно
+  действует на всех на интерфейсе. Старая панель не читает список сервера по умолчанию, поэтому ни одно его правило не
+  действует: сервер, у которого **Всё остальное** — выход или **Напрямую**, оставляет это как обычный выход по
+  умолчанию, а сервер, у которого там **Заблокировать** или **Переслать на …**, выпускает трафик со своего адреса.
+  Адрес, выбранный в **С адреса**, и **Вышестоящий DNS** сервера лишь приостанавливаются — серверы Force-DNS тем
+  временем спрашивают 1.1.1.1 и 8.8.8.8 — и после обновления снова действуют. Первое сохранение в **Настройках** там
+  стирает значения AmneziaWG 3.1 по умолчанию в **Настройки → Интерфейсы**; запишите их заранее.
+- **⚠️ Возврат переводит серверы TURN на старые сборки.** При следующей синхронизации серверы csqtt, qWDTT, WDTT-Plus
+  и ildarmaga берут сборки 1.8.7 и один раз перезапускаются, а исправления выше уходят вместе с ними: один конфиг на
+  втором телефоне снова не пускает, клиент снова может уронить сервер qWDTT, а клиенты ildarmaga получают 1.1.1.1,
+  что бы ни стояло в **DNS для клиентов**. Сервер, который вы откатили на выбранную сборку, на ней и остаётся.
+  Обновление обратно снова поднимает их.
+- **⚠️ Интерфейсы AmneziaWG 3.1 в старой панели.** Уже настроенные устройства продолжают подключаться, но каждый
+  конфиг, QR-код и страница подписки, которые 1.8.7 выдаёт для интерфейса 3.1, лишены строк 3.1 и не подключаются, а
+  сохранение интерфейса там стирает его значения 3.1 в панели. Сразу после возврата каждый интерфейс 3.1 там помечен
+  **изменён** («Настройку правили прямо на сервере»), хотя ничего не сохраняли, а **Принять** там стирает его значения
+  3.1 так же, как сохранение. Чтобы остаться на 1.8.7, переключите такие интерфейсы на 2.0 до возврата. Если после
+  такого сохранения вы обновились обратно, окно изменения интерфейса скажет **Правили прямо на сервере** — нажмите
+  **Принять**; **Вернуть значение панели** переводит сервер на 2.0 и отрезает все устройства 3.1.
+- **Возврат во флоте больше чем из 30 узлов** (или со **Связями в меше** в режиме **По требованию**) при первой
+  синхронизации старой панели снова связывает каждую пару узлов — новая связь на каждом узле с каждым другим.
+  Обновление обратно убирает неиспользуемые в течение часа.
+- **Возврат снова обрывает связи между серверами только с частными адресами**: 1.8.7 не может найти их адрес (см.
+  «Исправлено»). Обновление обратно восстанавливает их с первой синхронизацией.
+- **Трафик за время на 1.8.7.** Дни на ней показывают ноль; прошедшее тогда засчитывается в день обновления обратно,
+  а трафик пиров, созданных или удалённых там, и отправленный до перезапуска сервера там, учтён не полностью.
+- **Возврат на 1.8.7 — сервер.** Сервер, возвращённый на старую версию, сохраняет цепочки и наборы маршрутизации,
+  которых не знает, — от правил для выбранных людей, от списка по умолчанию и от любого правила «Заблокировать» ниже
+  правила «Напрямую» или через выход на Hybrid SNI или Kernel SNI. На Hybrid SNI они не дают ему применить следующее
+  изменение памяти адресов. Выполните на нём один раз `sudo nft delete table inet swg_smart` (на сервере Kernel SNI,
+  где был список по умолчанию, ещё и `sudo ipset destroy swga`) — он перестроит всё в течение минуты. Сервер Kernel
+  SNI, на котором были правила для выбранных людей, ещё и держит неиспользуемые наборы `swgs_*` до перезагрузки — это
+  безвредно; чтобы прибраться, удалите их через `ipset destroy`. Его резолвер Force-DNS снова спрашивает 1.1.1.1 и
+  8.8.8.8, **DNS для клиентов** сервера WDTT держится лишь до следующей перенастройки или перезапуска сервера, а
+  показатель **Отброшено** снова считает счётчики ядра, которые не являются потерями. Узел в Docker, возвращённый на
+  старую версию, при запуске добавляет рядом с NAT-правилом каждого интерфейса его копию без метки — безвредный дубль,
+  который уходит при обновлении обратно.
+- **Вернуться можно одной командой.** На голом железе `SWG_REF` теперь принимает коммит:
   `curl -fsSL https://raw.githubusercontent.com/SanityProtocol/swg-panel/main/bootstrap.sh | sudo SWG_REF=df3bb45 bash -s update`
-  installs 1.8.7-beta, and the box's **Update** button goes on following the branch it followed — the header offers
-  this release again, and one press brings it back. On Docker, set `SWG_IMAGE_TAG=sha-df3bb45` in the install's
-  `.env` and run `docker compose pull` and `docker compose up -d` with its profile; remove the line to come forward.
-  Every release's images now stay published (see Changed).
+  ставит 1.8.7-beta, а кнопка **Обновить** на этой машине по-прежнему следит за той же веткой — заголовок снова
+  предложит этот выпуск, и одно нажатие вернёт его. В Docker укажите `SWG_IMAGE_TAG=sha-df3bb45` в `.env` установки и
+  выполните `docker compose pull` и `docker compose up -d` с её профилем; чтобы вернуться вперёд, уберите эту строку.
+  Образы каждого выпуска теперь остаются опубликованными (см. «Изменено»).
 
 ## [1.8.7-beta] — 2026-09-17
 
-### Added
+### Добавлено
 
-- **Networks behind a device.** A device can front a network — the office LAN behind a router, the home
-  network behind a Raspberry Pi. List it in the device's **Networks** window and the node carries it, so
-  clients reach it whether their interface sends traffic direct, forwards it to another node or routes it by
-  rule. The window shows how to set up the device's side — an OpenWrt, MikroTik or Keenetic router, or a Linux
-  computer — and the device only has to send its own interface's subnet back: the node gives clients of its
-  other interfaces its own address there. The node can test on request that the network answers. You choose
-  who reaches it: everyone on the node, or only its owner and the people and groups you share it with, each
-  until a date or for good — enforced on the node itself. WDTT and csqtt users count where their server build
-  can prove which user is sending. A user's sheet lists the networks they can reach, their subscription page
-  does too, and DNS to a server on the network gets past Force-DNS, so its names resolve.
-- **Who can reach a device, and Private devices.** Every interface, WDTT server and csqtt server has a setting,
-  **Who can open connections to devices here**: **Everyone on this node**, **Same user and their groups**, or
-  **Nobody**. The node enforces it, and the interface shows how many packets it stopped. A device's own
-  connections, its internet access and the networks behind devices are not affected. A device marked
-  **Private** is reachable only by its owner's other devices, and the networks behind it are the owner's alone,
-  whatever its interface allows. ⚠️ The default applies to the interfaces you already have — see Changed.
-- **User groups.** Put people in named groups under **Users → Groups** or from a person's own sheet. Members
-  reach each other's devices on interfaces set to **Same user and their groups**, and a network can be shared
-  with a whole group at once.
-- **Relay works on smart-routing legs.** Forward or Relay was a choice only for a mesh leg carrying a whole
-  interface. A leg that an interface uses for some destinations now has the same switch: only those
-  destinations are relayed and the rest of its traffic goes on as before. The relay terminates TCP, so a rule's
-  UDP always forwards. One switch can start several relays, and the CPU cap is shared by every relay on the node.
-- **AmneziaWG survives a kernel upgrade.** A reboot onto a kernel without matching headers took every
-  AmneziaWG interface down, mesh links included, with "Unknown device type". Bare-metal installs and updates
-  now put in headers that follow the kernel and a pinned userspace AmneziaWG to fall back on. The panel says
-  an interface is running on the slower fallback instead of calling it broken, and an update moves it back to
-  the kernel module once the module loads.
-- **Desktop apps for csqtt.** A csqtt server offered desktop users nothing. FOCSQ (Windows, Linux) and La Lune
-  (Windows, Linux, Android) are now offered, and La Lune on Android is one-tap, like the CSQTT app.
+- **Сети за устройством.** Устройство может открывать путь в сеть — офисную локальную сеть за роутером,
+  домашнюю сеть за Raspberry Pi. Укажите её в окне **Сети** устройства, и нода будет её проводить: клиенты
+  попадут туда, отправляет ли их интерфейс трафик напрямую, пересылает на другую ноду или маршрутизирует по
+  правилам. Окно показывает, как настроить сторону устройства — роутер OpenWrt, MikroTik или Keenetic либо
+  компьютер с Linux, — и устройству достаточно отправлять обратно подсеть своего интерфейса: клиентам других
+  своих интерфейсов нода даёт там свой адрес. Нода по запросу проверяет, что сеть отвечает. Кому она доступна,
+  решаете вы: всем на ноде или только владельцу и тем людям и группам, которым вы её открыли, — до даты или
+  бессрочно, и это соблюдается на самой ноде. Пользователи WDTT и csqtt учитываются там, где сборка их сервера
+  подтверждает, какой пользователь отправляет трафик. В карточке пользователя видно, до каких сетей он достаёт,
+  на его странице подписки тоже, а DNS-запросы к серверу в такой сети проходят мимо Force-DNS, поэтому имена в
+  ней резолвятся.
+- **Кто может достучаться до устройства, и личные устройства.** У каждого интерфейса, сервера WDTT и сервера
+  csqtt есть настройка **Кто может открывать соединения к устройствам здесь**: **Все на этой ноде**, **Тот же
+  пользователь и его группы** или **Никто**. Нода это соблюдает, а интерфейс показывает, сколько пакетов
+  остановлено. Собственные соединения устройства, его доступ в интернет и сети за устройствами это не
+  затрагивает. Устройство с отметкой **Личное** доступно только другим устройствам своего владельца, и сети за
+  ним — тоже только его, что бы ни разрешал интерфейс. ⚠️ Значение по умолчанию действует и на уже
+  существующие интерфейсы — см. «Изменено».
+- **Группы пользователей.** Объединяйте людей в именованные группы в **Пользователи → Группы** или из карточки
+  самого человека. Участники достают до устройств друг друга на интерфейсах с уровнем **Тот же пользователь и
+  его группы**, а сеть можно открыть сразу всей группе.
+- **Релей работает на плечах умной маршрутизации.** «Транзит» или «Релей» можно было выбрать только для плеча
+  меша, которое несёт интерфейс целиком. Плечо, через которое интерфейс отправляет лишь часть назначений,
+  получило тот же переключатель: в релей уходят только эти назначения, а остальной трафик идёт как раньше.
+  Релей терминирует TCP, поэтому UDP правила всегда остаётся на транзите. Один переключатель может запустить
+  несколько релеев, и лимит CPU у всех релеев ноды общий.
+- **AmneziaWG переживает обновление ядра.** Перезагрузка в ядро без подходящих заголовков роняла все
+  интерфейсы AmneziaWG, включая связи меша, с ошибкой «Unknown device type». Установка и обновление на голом
+  железе теперь ставят заголовки, которые следуют за ядром, и закреплённую userspace-сборку AmneziaWG про
+  запас. Панель пишет, что интерфейс работает на более медленном запасном пути, а не называет его сломанным,
+  а обновление возвращает его на модуль ядра, как только модуль загрузится.
+- **Приложения csqtt для компьютера.** Сервер csqtt ничего не предлагал пользователям компьютеров. Теперь
+  предлагаются FOCSQ (Windows, Linux) и La Lune (Windows, Linux, Android), а La Lune на Android открывается в
+  одно касание, как приложение CSQTT.
 
-### Changed
+### Изменено
 
-- **⚠️ After the update, devices of different users on one interface stop reaching each other.** An interface
-  nobody has set is at **Same user and their groups**, and that includes every interface that existed before.
-  Where people should reach each other's devices, put them in a group or set the interface to **Everyone on
-  this node**. **Settings → Interfaces** holds the level new interfaces start with and lists the interfaces set
-  to Everyone.
-- **A node says that its clients can reach its own local network, and you can close it.** A client's traffic
-  to the private network a node sits on has always left by the node's own network card, and nothing said so.
-  The node's page now shows that network with a switch to keep clients off it, and **Settings → Network**
-  hides and closes it on every node at once. Nothing changes until you use either.
-- **Smart routing is offered on a single node.** It appeared only once the panel had a second node, so a lone
-  server with a WARP account or another exit could not send chosen destinations out through it.
-- **Updates get through where GitHub is filtered.** The version check, the release notes and the updater's
-  first download came from `raw.githubusercontent.com`, the address such networks block. Each now falls back
-  to GitHub's API — the same files from the same repository. The updater is also downloaded in full before any
-  of it runs; a dropped connection used to run part of it.
-- **The update check says what stopped it, and an update says how it ended.** The check retries within a short
-  budget and names the cause when it cannot get through: DNS, a certificate, a refused or reset connection, no
-  route, a rate limit, or a page that was not a version. A node's update reports one of three outcomes —
-  updated, already up to date, or failed with the last of the updater's output — on its next sync, instead of
-  "never reported a new version" five minutes later on a node that was already current.
-- **A mesh leg without a Forward/Relay choice says why.** The control used to vanish. It now names the reason:
-  the other end sends the traffic and owns the choice, nothing forwards through the link yet, or its routes
-  have not been worked out yet.
-- **Arming and disarming a relay is written to the node's log,** with the interface, the port and, when it is
-  disarmed, the reason.
-- **Force-DNS says what it does with encrypted DNS.** The mode card promised to block DoH and DoT; it flags a
-  client that bypasses it, and the interface's DoH / DoT / DoQ block is what stops one. The flag now fires only
-  where a lookup really got past Force-DNS, and it offers the remedies that exist.
-- **Newer server builds.** WDTT-Plus 18, xxcipherx 2.0.0.72, amurcanov 1.2.4-3, qWDTT 1.4.3-2, ildarmaga
-  1.5.0-3 and csqtt 2.1.9-2; what they fix is under Fixed and Security. ildarmaga is labelled 1.5.0-3 because
-  v1.5.0 is the newest source its author has published — the builds called 1.5.40 were made from it too.
-  WDTT-Plus 18 refuses the in-tunnel update, download, HTTPS and deploy requests that upstream 18 adds.
+- **⚠️ После обновления устройства разных пользователей на одном интерфейсе перестают доставать друг до
+  друга.** Интерфейс, которому уровень никто не задавал, получает **Тот же пользователь и его группы**, и это
+  касается всех интерфейсов, существовавших до обновления. Если людям нужно доставать до устройств друг друга,
+  объедините их в группу или поставьте интерфейсу **Все на этой ноде**. В **Настройки → Интерфейсы** задаётся
+  уровень для новых интерфейсов и перечислены интерфейсы с уровнем «Все».
+- **Нода сообщает, что её клиентам доступна её собственная локальная сеть, и её можно закрыть.** Трафик
+  клиента в частную сеть, в которой стоит нода, всегда уходил через сетевую карту ноды, и ничто об этом не
+  говорило. Теперь на странице ноды видна эта сеть и переключатель, закрывающий её от клиентов, а **Настройки →
+  Сеть** скрывают и закрывают её сразу на всех нодах. Пока вы ничего не трогаете, ничего не меняется.
+- **Умная маршрутизация доступна на единственной ноде.** Она появлялась, только когда в панели была вторая
+  нода, поэтому одиночный сервер с аккаунтом WARP или другим выходом не мог отправлять через него выбранные
+  назначения.
+- **Обновления проходят там, где GitHub фильтруется.** Проверка версии, заметки к выпуску и первое, что
+  скачивает обновлятор, брались с `raw.githubusercontent.com` — адреса, который в таких сетях блокируют.
+  Теперь при неудаче всё это берётся через API GitHub: те же файлы из того же репозитория. А обновлятор
+  скачивается целиком, прежде чем что-то из него запустится; раньше обрыв соединения запускал его часть.
+- **Проверка обновлений говорит, что ей помешало, а обновление — чем оно закончилось.** Проверка повторяет
+  попытки в пределах короткого бюджета и, если достучаться не удаётся, называет причину: DNS, сертификат,
+  отклонённое или сброшенное соединение, нет маршрута, ограничение частоты запросов или страница вместо версии.
+  Обновление ноды сообщает один из трёх исходов — обновилась, уже была актуальна или не удалось, с хвостом
+  вывода обновлятора — на следующей синхронизации, а не «так и не сообщила о новой версии» через пять минут на
+  ноде, которая и так была актуальна.
+- **Плечо меша без выбора «Транзит»/«Релей» объясняет почему.** Раньше элемент просто исчезал. Теперь
+  называется причина: трафик идёт с другой стороны и выбор за ней, через эту связь пока ничего не пересылается,
+  или маршруты для неё ещё не рассчитаны.
+- **Включение и выключение релея пишется в журнал ноды** — с интерфейсом, портом и, при выключении, причиной.
+- **Force-DNS говорит, что он делает с шифрованным DNS.** Карточка режима обещала блокировать DoH и DoT; на
+  деле он помечает клиента, который его обходит, а останавливает такого клиента блокировка DoH / DoT / DoQ на
+  интерфейсе. Пометка теперь появляется только там, где запрос действительно прошёл мимо Force-DNS, и
+  предлагает способы, которые на самом деле есть.
+- **Новые сборки серверов.** WDTT-Plus 18, xxcipherx 2.0.0.72, amurcanov 1.2.4-3, qWDTT 1.4.3-2, ildarmaga
+  1.5.0-3 и csqtt 2.1.9-2; что они исправляют — в разделах «Исправлено» и «Безопасность». У ildarmaga метка
+  1.5.0-3, потому что v1.5.0 — самый новый исходный код, который опубликовал автор, и сборки с меткой 1.5.40
+  тоже сделаны из него. WDTT-Plus 18 отказывает во внутритуннельных запросах обновления, скачивания, HTTPS и
+  развёртывания, которые добавил upstream 18.
 
-### Fixed
+### Исправлено
 
-- **A relay could be driven into connecting to itself.** One TCP connection to its port, from anywhere that
-  could reach the node, made it dial itself over and over: 6 open files to 47,780 in six seconds, then no
-  answer at all. The port is closed to everything but the divert, and the relay refuses its own address.
-- **A relay that had stopped serving anyone still counted as healthy,** so its interface swallowed every TCP
-  connection while the panel showed it working. The node now compares the traffic handed to the relay with the
-  connections it took, and withdraws the divert when one moves without the other.
-- **On a relay-mode interface, a device could not accept a TCP connection from elsewhere on its node.** The
-  divert took every TCP packet from the interface: the device's replies went to the relay, the watchdog read
-  them as failures and switched the relay off, and a client dialling the node's own address looped through the
-  relay thousands of times. The divert now takes only a new connection that leaves by a mesh link.
-- **A relay switched back to Forward kept running after a restart** — a listener on every address that nothing
-  supervised. It is now stopped on the next pass.
-- **Removing a node left every interface that forwarded to it pointing at a ghost.** Their clients quietly left
-  by the node's own address and the egress control rendered blank. They are reset to direct, on the removal and
-  on any later save, and the node whose routing changed is named.
-- **A client on a forward-mode interface could not reach other devices on its own node.** Its packets went out
-  the mesh leg and bounced between the two nodes until they expired.
-- **An interface routing to two device exits NATed only one of them at a time.** The rule moved between the
-  exits on every pass, so traffic out the other one left with the client's private address.
-- **An imported exit whose tunnel stopped carrying traffic still counted as up.** A WARP account or a pasted
-  profile whose device is up but whose far side has answered nothing for 30 seconds is now routed around like
-  a down exit — by the node's own address with the kill-switch off, refused with it on — and the node says
-  which happened.
-- **An interface whose `Address` line lists IPv6 first was read as IPv6.** Its clients got no NAT and no
-  forwarding, and every peer add was refused.
-- **A newly enabled routing-list provider showed no lists until the page was reloaded,** and no provider could
-  be found by its own name.
-- **After Reset learned IPs or Reset routing, Force-DNS sent cached sites out the wrong way.** Names dnsmasq
-  already had cached stayed out of their sets until their TTL ran out, so they left by the entry node instead
-  of their rule's exit. The node now clears dnsmasq's cache when it empties a set.
-- **Restoring a plain WireGuard interface brought it back as AmneziaWG,** and its clients could no longer
-  connect. See Upgrading.
-- **A plain WireGuard interface outside `/etc/wireguard` could not be restarted, stopped or deleted** — on every
-  Docker node once its container was recreated, and on a node carried from Docker to bare metal. Delete removed
-  the config but left the device up with its peers, and a copy in the other directory brought it back at boot.
-- **A peer whose preshared key was changed in the panel could stay disconnected for days.** The node now
-  compares the live key and re-applies one that has drifted.
-- **A new peer could be given an address the node already uses itself.** The picker skipped other peers and the
-  interface's own address, but not an exit's tunnel address inside the same range — an imported profile's
-  address, say. That peer showed online while nothing reached it. The picker now skips every address the node
-  holds, a disabled exit's included; a peer already given one keeps it until its address is changed.
-- **Mesh links read 0/N on NixOS and Docker nodes.** Neither had `ping`, so the probe never measured a link;
-  links named with a custom prefix were never measured on any node.
-- **On a distribution that confines the WireGuard tools with AppArmor, no interface could be created.** The node
-  daemon ran with `NoNewPrivileges`, which stopped the kernel executing `ip`, `wg` and `awg`, and the panel
-  blamed the port. The directive is gone, including from installed units, and a refused bring-up now says which
-  of the two refusals happened. Interfaces read through `/run/wireguard/*.sock` (WDTT, csqtt, userspace
-  AmneziaWG) showed no peers on those hosts; installing or updating a node adds the two AppArmor rules they need,
-  or says where to add them.
-- **A NixOS node was told to run commands that cannot stick,** such as editing a `docker-compose.yml` its host
-  does not have. Advice now asks whether the node is declared before it asks whether it is a container.
-- **The abuse-blocking table stayed empty after being flushed in place.** SMTP, QUIC, torrent and port-scan
-  blocking read as applied while it blocked nothing; the node now rebuilds it.
-- **A Docker node pinned to a build ran its host helpers from `swg-node:latest`** — an image nobody chose,
-  pulled on hosts that had never fetched it. Helpers now run from the node's own image.
-- **samosvalishe was not offered for AmneziaWG interfaces,** although it has carried AmneziaWG since v3.2.0.
-- **A turn-proxy that kept crashing read as running.** A proxy bound to an address its box no longer had died
-  262 times in ninety minutes behind a green card, cutting every session each time. The node now reports a
-  crash loop for as long as it lasts, and the node card, the proxy's card and its sheet say the same.
-- **A new turn-proxy was offered an address the box no longer had,** and the warning meant for that could never
-  fire. The form now pre-selects the address only while the node reports having it.
-- **When a box changed its address, nothing said what still pointed at the old one.** A node whose stored dial
-  address has left the box says so on its card, and so does a WDTT server, a csqtt server or an exit still bound
-  to a departed address.
-- **A `wingsv://` link could switch a client option on but never off.** A device that had once imported "no
-  obfuscation" kept sending plain WireGuard, which an AmneziaWG interface drops in silence. Links now state
-  every option either way.
-- **A NixOS node's take-over of a WDTT or csqtt server running in a container left two servers.** The stop never
-  ran and the container's restart policy brought the old server back. The node now stops the container with
-  the right tool, or refuses the take-over and says why; podman containers are stopped too.
-- **The subscription page offered macOS a csqtt cell for an app that does not exist there,** plus a tab that
-  led nowhere. "by" before an app's author was English on Russian pages and in the panel's app pickers.
-- **The NixOS enrolment the panel prints failed on a stock box.** It needed git, which NixOS does not ship, and
-  opened no UDP ports, so clients never connected while the node reported healthy.
-- **A fresh NixOS container node rebuilt itself about half a minute after installing,** restarting the node
-  container for an update nobody asked for.
-- **`uninstall.sh --dry-run` without root reported that the host was NixOS.**
-- **Converting from Docker to bare metal left the kept login unreadable by the panel,** which then refused every
-  request, and lost the graph history.
-- **`--dry-run` on the Docker installer wrote four files into the install directory.**
-- **Dates followed the browser's language instead of the panel's.**
-- **A password manager could fill a saved login into a user's sheet,** where the vault unlock field sits beside
-  other text fields.
-- **«Датапас» was not a Russian word.** Two labels now read «Путь данных».
-- **amurcanov and WDTT-Plus servers deleted the owner password's device on every reconcile,** cutting its
-  session. Fixed in amurcanov 1.2.4-3 and WDTT-Plus 18.
-- **xxcipherx 2.0.0.70 broke under ordinary roster changes.** A password added from the panel could not connect
-  until a restart, any removal made the next start fail and loop, and every change reassigned addresses between
-  users. Fixed in 2.0.0.72.
+- **Релей можно было заставить подключаться к самому себе.** Одно TCP-соединение к его порту откуда угодно,
+  лишь бы была связь с нодой, заставляло его раз за разом набирать самого себя: 6 открытых файлов превращались
+  в 47 780 за шесть секунд, после чего он не отвечал вовсе. Порт закрыт для всего, кроме перенаправления, а
+  релей отказывается соединяться со своим адресом.
+- **Релей, переставший кого-либо обслуживать, всё равно считался исправным,** поэтому его интерфейс проглатывал
+  каждое TCP-соединение, пока панель показывала, что всё работает. Теперь нода сравнивает трафик, отданный
+  релею, с принятыми им соединениями и снимает перенаправление, когда одно растёт без другого.
+- **На интерфейсе в режиме релея устройство не могло принять TCP-соединение от других на своей ноде.**
+  Перенаправление забирало каждый TCP-пакет с интерфейса: ответы устройства уходили в релей, сторож считал их
+  сбоями и выключал релей, а клиент, набиравший собственный адрес ноды, тысячи раз ходил по кругу через релей.
+  Теперь перенаправляется только новое соединение, которое уходит через связь меша.
+- **Релей, переключённый обратно на «Транзит», продолжал работать после перезапуска** — слушатель на всех
+  адресах, за которым никто не следил. Теперь он останавливается на следующем проходе.
+- **Удаление ноды оставляло все интерфейсы, которые на неё пересылали, указывающими в пустоту.** Их клиенты
+  тихо выходили собственным адресом ноды, а поле выхода было пустым. Такие интерфейсы переводятся на «напрямую»
+  — при удалении и при любом последующем сохранении, — и нода, чья маршрутизация изменилась, называется.
+- **Клиент на интерфейсе в режиме пересылки не доставал до других устройств на своей ноде.** Его пакеты уходили
+  в плечо меша и метались между двумя нодами, пока не истекали.
+- **Интерфейс, маршрутизирующий через два устройства-выхода, делал NAT только для одного из них за раз.**
+  Правило на каждом проходе перескакивало с выхода на выход, и трафик через другой уходил с частным адресом
+  клиента.
+- **Импортированный выход, туннель которого перестал пропускать трафик, всё равно считался рабочим.** Аккаунт
+  WARP или вставленный профиль, у которого устройство поднято, а дальняя сторона 30 секунд ничего не отвечает,
+  теперь обходится как упавший выход — собственным адресом ноды при выключенном kill-switch, отказом при
+  включённом, — и нода говорит, что именно произошло.
+- **Интерфейс, в строке `Address` которого первым стоит IPv6, считался IPv6-интерфейсом.** Его клиенты не
+  получали ни NAT, ни пересылки, а добавление любого пира отклонялось.
+- **Только что включённый поставщик списков маршрутизации не показывал списков до перезагрузки страницы,** а
+  поставщика нельзя было найти по его собственному названию.
+- **После «Сбросить выученные IP» или сброса маршрутов Force-DNS отправлял закэшированные сайты не туда.**
+  Имена, уже лежавшие в кэше dnsmasq, не попадали в свои наборы, пока не истекал их TTL, и уходили через входную
+  ноду, а не через выход своего правила. Теперь нода очищает кэш dnsmasq, когда опустошает набор.
+- **Восстановление обычного интерфейса WireGuard возвращало его как AmneziaWG,** и его клиенты больше не могли
+  подключиться. См. «Обновление».
+- **Обычный интерфейс WireGuard вне `/etc/wireguard` нельзя было перезапустить, остановить или удалить** — на
+  любой Docker-ноде после пересоздания контейнера и на ноде, перенесённой из Docker на голое железо. Удаление
+  убирало конфиг, но оставляло устройство поднятым вместе с пирами, а копия в другом каталоге возвращала его
+  при загрузке.
+- **Пир, которому в панели сменили ключ PSK, мог оставаться без связи днями.** Теперь нода сверяет живой ключ и
+  заново применяет разошедшийся.
+- **Новому пиру мог достаться адрес, который нода уже занимает сама.** Выбор адреса пропускал других пиров и адрес
+  самого интерфейса, но не адрес туннеля выхода в том же диапазоне — например, адрес импортированного профиля. Такой
+  пир показывался в сети, но до него ничего не доходило. Теперь выбор пропускает все адреса ноды, включая адрес
+  выключенного выхода; пир, которому такой адрес уже достался, сохраняет его, пока адрес не сменят.
+- **Связи меша показывали 0/N на нодах NixOS и Docker.** Ни там, ни там не было `ping`, и проба не измеряла ни
+  одной связи; связи с собственным префиксом имени не измерялись ни на одной ноде.
+- **На дистрибутиве, где инструменты WireGuard ограничены AppArmor, не создавался ни один интерфейс.** Демон
+  ноды работал с `NoNewPrivileges`, из-за чего ядро не запускало `ip`, `wg` и `awg`, а панель винила порт.
+  Директива убрана, в том числе из установленных юнитов, а отказ при подъёме теперь говорит, какой из двух
+  отказов произошёл. Интерфейсы, читаемые через `/run/wireguard/*.sock` (WDTT, csqtt, userspace AmneziaWG),
+  показывали ноль пиров на таких хостах; установка или обновление ноды добавляет два нужных им правила
+  AppArmor или говорит, куда их добавить.
+- **Ноде на NixOS советовали команды, которые не приживаются,** например править `docker-compose.yml`, которого
+  у её хоста нет. Теперь совет сначала спрашивает, описана ли нода декларативно, и только потом — контейнер ли
+  она.
+- **Таблица блокировки злоупотреблений оставалась пустой после очистки на месте.** Блокировка SMTP, QUIC,
+  торрентов и сканирования портов значилась применённой, но ничего не блокировала; теперь нода её пересобирает.
+- **Docker-нода, закреплённая на сборке, запускала вспомогательные контейнеры из `swg-node:latest`** — образа,
+  который никто не выбирал и который скачивался даже там, где его никогда не было. Теперь они запускаются из
+  образа самой ноды.
+- **samosvalishe не предлагался для интерфейсов AmneziaWG,** хотя поддерживает AmneziaWG с v3.2.0.
+- **Turn-прокси, который постоянно падал, выглядел работающим.** Прокси, привязанный к адресу, которого на
+  сервере уже не было, за полтора часа упал 262 раза при зелёной карточке, каждый раз обрывая все сессии.
+  Теперь нода сообщает о падениях по кругу, пока они продолжаются, и карточка ноды, карточка прокси и его окно
+  говорят одно и то же.
+- **Новому turn-прокси предлагался адрес, которого на сервере уже нет,** а предупреждение, придуманное для
+  этого случая, не могло сработать. Теперь форма выбирает этот адрес, только пока нода сообщает, что он у неё
+  есть.
+- **Когда сервер сменил адрес, ничто не говорило, что всё ещё указывает на старый.** Нода, чей сохранённый адрес
+  подключения больше не принадлежит серверу, говорит об этом в своей карточке, и так же поступают сервер WDTT,
+  сервер csqtt или выход, всё ещё привязанные к ушедшему адресу.
+- **Ссылка `wingsv://` могла включить параметр клиента, но не выключить его.** Устройство, однажды
+  импортировавшее «без обфускации», продолжало слать обычный WireGuard, который интерфейс AmneziaWG молча
+  отбрасывает. Теперь ссылка явно указывает каждый параметр в любом положении.
+- **Перехват нодой на NixOS сервера WDTT или csqtt, работающего в контейнере, оставлял два сервера.** Остановка
+  не выполнялась, и политика перезапуска контейнера возвращала старый сервер. Теперь нода останавливает
+  контейнер нужным инструментом или отказывается от перехвата и объясняет почему; контейнеры podman тоже
+  останавливаются.
+- **Страница подписки предлагала на macOS ячейку csqtt для приложения, которого там нет,** и вкладку, которая
+  никуда не вела. «by» перед автором приложения оставалось английским на русских страницах и в выборе
+  приложения в панели.
+- **Подключение ноды NixOS по инструкции, которую печатает панель, не работало на чистой системе.** Нужен был
+  git, которого в NixOS нет, и не открывались UDP-порты, поэтому клиенты не подключались, хотя нода
+  отчитывалась, что всё в порядке.
+- **Свежая нода NixOS в контейнере пересобирала себя примерно через полминуты после установки,** перезапуская
+  контейнер ноды ради обновления, о котором никто не просил.
+- **`uninstall.sh --dry-run` без root сообщал, что у вас NixOS.**
+- **Переход с Docker на голое железо оставлял сохранённый вход нечитаемым для панели,** из-за чего она
+  отклоняла любой запрос, и терял историю графиков.
+- **`--dry-run` установщика Docker записывал четыре файла в каталог установки.**
+- **Даты следовали языку браузера, а не языку панели.**
+- **Менеджер паролей мог вписать сохранённый логин в карточку пользователя,** где поле разблокировки хранилища
+  стоит рядом с другими текстовыми полями.
+- **«Датапас» — не русское слово.** Две подписи теперь читаются «Путь данных».
+- **Серверы amurcanov и WDTT-Plus удаляли устройство пароля владельца при каждой сверке,** обрывая его сессию.
+  Исправлено в amurcanov 1.2.4-3 и WDTT-Plus 18.
+- **xxcipherx 2.0.0.70 ломался от обычных изменений списка паролей.** Пароль, добавленный из панели, не мог
+  подключиться до перезапуска, любое удаление заставляло следующий запуск падать по кругу, а каждое изменение
+  перекидывало адреса между пользователями. Исправлено в 2.0.0.72.
 
-### Security
+### Безопасность
 
-- **A panel that could not read its password file served everything without a login.** An unreadable file was
-  treated like no password at all — a documented mode — so a published panel whose `/etc/swg-panel/auth` only
-  root could read handed its roster to anyone. A named password file that cannot be read, or is empty, now
-  closes the panel: every data request is refused, `/metrics` and the API included, and the login page names
-  the file and the fix. Nodes keep syncing throughout.
-- **`swg-passwd` left signed-in sessions valid.** Resetting a lost or leaked password with it kept every existing
-  session for its full week; it now ends them, as a change inside the panel does.
-- **On Docker older than 28 with a FORWARD policy of DROP, VPN clients could reach containers' unpublished
-  ports.** The node's tunnel accepts sat above Docker's own rules. Traffic bound into Docker's bridges now goes
-  back to Docker to decide.
-- **A WDTT or csqtt client with a valid password could take another client's address or outlast its own
-  revocation.** csqtt accepted any source address inside the tunnel and let a second password adopt another
-  client's device; qWDTT's RAW path let a second password take a device's address and receive its traffic, and
-  kept a revoked password's live RAW session; ildarmaga kept a revoked password's WireGuard and RAW sessions, and
-  accepted a spoofed source on RAW. Fixed in csqtt 2.1.9-2, qWDTT 1.4.3-2 and ildarmaga 1.5.0-3.
+- **Панель, которая не могла прочитать свой файл паролей, отдавала всё без входа.** Нечитаемый файл считался
+  тем же, что отсутствие пароля вовсе, — а это документированный режим, — поэтому опубликованная панель, чей
+  `/etc/swg-panel/auth` мог читать только root, отдавала список пользователей любому. Теперь файл паролей,
+  который указан, но не читается или пуст, закрывает панель: любой запрос данных отклоняется, включая
+  `/metrics` и API, а страница входа называет файл и способ исправить. Ноды всё это время продолжают
+  синхронизироваться.
+- **`swg-passwd` оставлял открытые сессии в силе.** Сброс утерянного или утёкшего пароля через него сохранял
+  каждую существующую сессию на всю её неделю; теперь он их завершает, как и смена пароля в самой панели.
+- **На Docker старше 28 с политикой FORWARD DROP клиенты VPN могли достучаться до неопубликованных портов
+  контейнеров.** Разрешающие правила туннелей ноды стояли выше собственных правил Docker. Теперь трафик в мосты
+  Docker возвращается на решение самому Docker.
+- **Клиент WDTT или csqtt с действующим паролем мог занять адрес другого клиента или пережить собственный
+  отзыв.** csqtt принимал внутри туннеля любой адрес отправителя и позволял второму паролю забрать устройство
+  другого клиента; RAW-путь qWDTT позволял второму паролю занять адрес устройства и получать его трафик и
+  сохранял живую RAW-сессию отозванного пароля; ildarmaga сохранял WireGuard- и RAW-сессии отозванного пароля и
+  принимал подменённый адрес отправителя по RAW. Исправлено в csqtt 2.1.9-2, qWDTT 1.4.3-2 и ildarmaga 1.5.0-3.
 
-### Upgrading
+### Обновление
 
-- **⚠️ Devices of different users on one interface stop reaching each other** as soon as a node is updated —
-  the first entry under Changed. Decide per interface before or right after updating: a group, or **Everyone on
-  this node**.
-- **Update the nodes as well as the panel.** A node still on 1.8.6 carries no networks, does not enforce who can
-  reach a device (its interfaces show **not enforced**), and keeps its node-side defects. On a NixOS native node
-  a rebuild does not restart the daemon: run `sudo systemctl restart swg-noded` once it is done.
-- **WDTT and csqtt servers move to the new builds on their next sync** and restart once, so their clients
-  reconnect. A server you rolled back to a chosen build stays on it.
-- **A plain WireGuard interface you restored under 1.8.6 stays AmneziaWG.** 1.8.7 cannot tell it from a real
-  AmneziaWG interface. Its users need the AmneziaWG app with the config the panel shows now, or delete the
-  interface and create it again as WireGuard.
-- **Going back to 1.8.6.** Bare metal needs nothing. A Docker node keeps two firewall tables that version cannot
-  manage: `sudo nft delete table inet swg_reach; sudo nft delete table inet swg_share`, or reboot. On NixOS, see
-  [Going back to an older build](nix/README.md#going-back-to-an-older-build).
+- **⚠️ Устройства разных пользователей на одном интерфейсе перестают доставать друг до друга,** как только
+  нода обновлена, — первый пункт раздела «Изменено». Решите для каждого интерфейса до обновления или сразу
+  после: группа или **Все на этой ноде**.
+- **Обновите не только панель, но и ноды.** Нода, оставшаяся на 1.8.6, не проводит сети, не соблюдает, кто может
+  достучаться до устройства (её интерфейсы показывают **не действует**), и сохраняет свои ошибки на стороне
+  ноды. На нативной ноде NixOS пересборка не перезапускает демон: выполните `sudo systemctl restart swg-noded`,
+  когда будете готовы.
+- **Серверы WDTT и csqtt переходят на новые сборки на следующей синхронизации** и один раз перезапускаются, так
+  что их клиенты переподключаются. Сервер, который вы откатили на выбранную сборку, на ней и остаётся.
+- **Обычный интерфейс WireGuard, восстановленный под 1.8.6, остаётся AmneziaWG.** 1.8.7 не может отличить его от
+  настоящего интерфейса AmneziaWG. Его пользователям нужно приложение AmneziaWG с конфигом, который панель
+  показывает теперь, — или удалите интерфейс и создайте его заново как WireGuard.
+- **Возврат на 1.8.6.** На голом железе ничего делать не нужно. На Docker-ноде остаются две таблицы
+  файрвола, с которыми та версия не умеет работать: `sudo nft delete table inet swg_reach; sudo nft delete table
+  inet swg_share` или перезагрузка. Для NixOS — см. [Возврат на старую сборку](nix/README.ru.md#возврат-на-старую-сборку).
 
 ## [1.8.6-beta] — 2026-09-11
 
-### Added
+### Добавлено
 
-- **A node can now leave by something other than its own address.** Register a free Cloudflare WARP account
-  in one click — or paste a WARP+ licence from the mobile app and the exit comes up on WARP+ — paste a
-  WireGuard profile from anywhere else, or point at a network card or tunnel the box already runs. Any of them can be the node's default way out, one interface's way out, or the destination of
-  a single routing rule — the same question, asked the same way, in every picker that asks it.
-- **A kill-switch per exit.** With it on, traffic using that exit is refused the moment the exit stops
-  working, instead of quietly falling back to the node's own address — which is the one thing an exit exists
-  to prevent. It is a route installed whether the device is up or not, so the very next packet is refused,
-  with nothing of ours having to notice first.
-- **An exit's original account survives losing the node's key.** The key is sealed under your encryption key
-  and the panel only ever holds ciphertext it cannot open. If a node re-registers and the address websites
-  see changes, the row says so and offers the old account back.
-- **Hybrid SNI routing.** The kernel matches IP categories and reads the TLS handshake for host categories in
-  one pass, with no helper process — the throughput of the IP engine with the reach of the name engine.
-- **Recreating a lost interface puts back what it was.** Its endpoint, port, MTU, DNS, keepalive and
-  obfuscation band all come from what the panel held, instead of the fleet defaults; and an AmneziaWG
-  interface comes back as AmneziaWG.
-- **A NixOS node reports which build it is running.** Two builds of the same branch used to be
-  indistinguishable to the panel.
-- **The iPhone app can open a csqtt server.** anton48's VK TURN Proxy added csqtt in build 364, so a csqtt
-  server is no longer Android-only — the same `csqtt://` link serves both apps, and iOS users are offered the
-  app instead of "no client for this platform".
-- **Speeds can be shown in bits.** Settings → Display → Throughput units. Bytes stay the default — it is
-  what the node counts, and what totals are shown in — but a panel set to bits reads 200 Mbit/s where a
-  speed test reads 200, with no dividing by eight. Totals are always in bytes.
-- **Every leg of the mesh is either Forward or Relay, and the panel says which case you are in.** Forward
-  sends packets across the link untouched: the cheapest option, nothing in the path to fail, and the right
-  one while the leg is healthy. Relay makes the node answer the client itself and open its own connection
-  onward, so loss on a bad leg stops reaching the user — in exchange it costs noticeably more CPU and buys
-  nothing on a clean link. The card reads the leg's live loss and names the choice that fits, and a CPU cap
-  bounds what the relay may take. ⚠️ A divert whose relay is not serving is a blackhole, not a no-op, so the
-  rule exists only while a watchdog has just proven the relay answering from inside its own event loop —
-  anything that cannot be proven is removed on that pass, and "could not check" counts as cannot.
+- **Нода может выходить в интернет не своим адресом.** Зарегистрируйте бесплатный аккаунт Cloudflare WARP в
+  один клик — или вставьте ключ WARP+ из мобильного приложения, и выход поднимется на WARP+, — вставьте
+  профиль WireGuard откуда угодно ещё или укажите на сетевую карту или туннель, которые на машине уже есть. Любой из них может быть выходом ноды по умолчанию, выходом одного интерфейса или
+  назначением одного правила маршрутизации — один и тот же вопрос, заданный одинаково во всех списках.
+- **Kill-switch для каждого выхода.** Когда он включён, трафик через этот выход получает отказ в тот момент,
+  когда выход перестаёт работать, а не уходит тихо своим адресом ноды — ровно тем адресом, ради сокрытия
+  которого выход и заводят. Это маршрут, установленный независимо от того, поднято устройство или нет, так
+  что отказ получает уже следующий пакет.
+- **Исходный аккаунт выхода переживает потерю ключа на ноде.** Ключ запечатан вашим ключом шифрования, и
+  панель хранит только шифротекст, который сама открыть не может. Если нода перерегистрировалась и адрес,
+  который видят сайты, сменился — строка скажет об этом и предложит вернуть прежний аккаунт.
+- **Гибридная маршрутизация по SNI.** Ядро само сопоставляет IP-категории и читает TLS-хендшейк для
+  категорий по именам за один проход, без вспомогательного процесса: скорость IP-движка и охват движка по
+  именам.
+- **Пересоздание потерянного интерфейса возвращает то, чем он был.** Адрес входа, порт, MTU, DNS, keepalive и
+  параметры обфускации берутся из того, что хранила панель, а не из значений по умолчанию; интерфейс
+  AmneziaWG возвращается как AmneziaWG.
+- **Нода на NixOS сообщает, какую сборку она запускает.** Раньше две сборки одной ветки панель различить не
+  могла.
+- **Приложение для iPhone умеет открывать сервер csqtt.** VK TURN Proxy от anton48 добавил csqtt в сборке
+  364, так что сервер csqtt больше не только для Android: одна и та же ссылка `csqtt://` подходит обоим
+  приложениям, и на iOS теперь предлагается приложение, а не «нет клиента для этой платформы».
+- **Скорости можно показывать в битах.** Настройки → Отображение → Единицы скорости. По умолчанию остаются
+  байты — так считает нода и так показаны итоговые объёмы, — но панель в битах покажет 200 Мбит/с там, где
+  спидтест показывает 200, и делить на восемь не придётся. Итоговые объёмы всегда в байтах.
+- **Каждое плечо меша — «Транзит» или «Релей», и панель говорит, какой случай у вас сейчас.** «Транзит»
+  пропускает пакеты через тоннель как есть: самый дешёвый вариант, ломаться по пути нечему, и именно он
+  нужен, пока связь работает нормально. «Релей» заставляет ноду самой отвечать клиенту и открывать
+  отдельное соединение дальше, поэтому потери на плохом плече до пользователя уже не доходят — взамен
+  заметно растёт нагрузка на CPU, а на хорошей связи выигрыша нет. Карточка читает текущие потери на плече
+  и называет подходящий вариант, а лимит CPU ограничивает аппетит релея. ⚠️ Перенаправление, за которым
+  релей не отвечает, — это не «ничего не произошло», а чёрная дыра, поэтому правило существует только пока
+  сторож только что доказал, что релей отвечает изнутри своего цикла событий: всё, что доказать не удалось,
+  снимается на том же проходе, и «не смог проверить» считается за «не отвечает».
 
-### Changed
+### Изменено
 
-- **Every dropdown in the panel is one control.** The last 35 native selects were replaced, so grouping,
-  keyboard navigation, disabled rows that say *why* they are disabled, and the way a long list scrolls now
-  behave identically everywhere — including the ones you reach with the keyboard alone.
-- **The exits you can see and the exits you can manage are on one screen.** They were on two, which meant a
-  device you could route through was not a device you could rename, switch off or remove.
-- **A box installed from a branch or a tag keeps tracking it.** One-click Update used to fetch `main` on
-  every box, whatever it was installed from — so a panel tracking a pre-release branch silently rolled
-  itself backwards. Nodes track their own installed ref too, and an update heals a box that never recorded
-  one.
-- **A routing rule says when it cannot run here, and when it points at nothing.** The summary counts both,
-  separately, without opening the section — a target this node's mode cannot match is a different problem
-  from a destination that has been deleted.
-- **The exits grid explains its two switches.** Kill-switch and Active are the only controls there that
-  change what happens to traffic and to an account, and neither said what it did.
-- **Each routing mode says what it can and cannot match.** IP-only takes ranges and networks; Force-DNS
-  adds sites and zones; Kernel-SNI takes sites as text and text patterns; Hybrid SNI takes all of them. A
-  rule whose target the node's current mode cannot run now says so on the rule itself instead of quietly
-  matching nothing, and the summary counts it without opening the section. Punycode names are shown the way
-  they were written.
+- **Все выпадающие списки в панели — один элемент.** Последние 35 системных `select` заменены, поэтому
+  группировка, работа с клавиатуры, недоступные строки с объяснением *почему* и прокрутка длинного списка
+  теперь везде одинаковые.
+- **Выходы, которые видно, и выходы, которыми можно управлять, — на одном экране.** Раньше на разных: через
+  устройство можно было маршрутизировать, но нельзя было переименовать его, выключить или удалить.
+- **Машина, установленная с ветки или тега, продолжает следить именно за ней.** Обновление в один клик
+  раньше тянуло `main` на любой машине, откуда бы её ни ставили, — и панель на пред-релизной ветке молча
+  откатывалась назад. Ноды тоже помнят свою ветку, а обновление лечит машину, которая её не записала.
+- **Правило маршрутизации говорит, когда оно здесь не работает и когда указывает в никуда.** Сводка считает
+  и то и другое, по отдельности, не раскрывая раздел: назначение, которого больше нет, — это не то же самое,
+  что цель, которую не умеет сопоставлять режим этой ноды.
+- **Сетка выходов объясняет свои два переключателя.** Kill-switch и «Активен» — единственные элементы там,
+  которые меняют судьбу трафика и аккаунта, и ни один из них не говорил, что делает.
+- **Каждый режим сопоставления говорит, что он умеет и чего не умеет.** «Только IP» берёт диапазоны и сети;
+  Force-DNS добавляет сайты и зоны; Kernel-SNI берёт сайты как текст и текстовые шаблоны; Hybrid SNI — всё
+  перечисленное. Правило, цель которого текущий режим ноды сопоставлять не умеет, теперь говорит об этом на
+  самом правиле, а не молча не совпадает ни с чем, и сводка считает такие правила, не раскрывая раздел.
+  Punycode-имена показываются так, как их написали.
 
-### Fixed
+### Исправлено
 
-- **A rule whose destination node had been deleted rendered as a blank control and routed nothing.** All of
-  that interface's traffic went out the node's default instead, with nothing on screen saying so.
-- **Force-DNS reported its resolver "down" whenever there was nothing to resolve.** Both other host engines
-  already knew that idle is not broken.
-- **Recreating a ghost interface was refused at its own port,** with a message naming the very interface
-  being recreated.
-- **`convert.sh --dry-run` converted.** The flag every other installer honours was accepted, ignored, and
-  the conversion ran — and the front door announced a preview of it.
-- **An uninstall left a systemd override behind** that the next install of that name silently inherited, and
-  which suppressed the heal that would have corrected it.
-- **`--build` on the docker installer named nothing it built.** The flip that switches compose from the
-  published images to a local build matched a tag that had not been a literal for two releases, so it left
-  every service carrying both. Corrected — and a build install now pins its own image tag, so what a box
-  built from source is distinguishable from what CI publishes from `main`, and cannot be replaced by it.
-- **An interface name the box does not have became a permanent per-sync error.** `MANAGE_IFACES=none`
-  installed cleanly, printed a green summary, and wrote a managed interface called `none` into the node's
-  config — after which the node reported `none: cannot read interface` on every pass, for ever. Both the
-  node and the master installer now refuse a name that is not there, and say what the box does have.
-- **Russian read "1 пир получат"** — a count as the subject of a verb that cannot agree with it — in four
-  places, and two more the audit could not see.
-- **Reordering your nodes did not reach every screen.** The Nodes screen is drag-reorderable, but the peer
-  sheet, the interface picker, the turn-proxy list and the mesh grid each re-sorted nodes alphabetically —
-  so the server you put at the top was third everywhere else, with nothing explaining the disagreement.
-- **Opening the panel at `/index.html` was reported as "a previous address".** The migration ribbon
-  compared the raw path against the mount base, which never carries a file name — so a bookmark, a
-  hand-typed URL or a proxy that does not rewrite `/` produced a banner offering to send you to the address
-  you were already on.
-- **A speed said which unit it was in — and then stopped, exactly where it mattered.** Small rates read
-  "512 B/s"; large ones read "23.8 M/s", the B dropped the moment the number could be misread. On a screen
-  about network speed a bare "M/s" is read as megabits, because bits are what every speed test and ISP plan
-  quotes — so a panel showing 23.8 beside a speed test showing 200 looked like it was under-counting by an
-  order of magnitude. It was not: 200 Mbit/s *is* 23.8 MB/s. Every hop from the node's counters to the graph
-  was measured and carries the rate exactly; the unit letter now stays on at every size.
+- **Правило, чья нода-назначение была удалена, показывалось пустым полем и не маршрутизировало ничего.**
+  Весь трафик этого интерфейса уходил через выход ноды по умолчанию, и на экране об этом не было ни слова.
+- **Force-DNS сообщал, что его резолвер «упал», когда резолвить было нечего.** Оба других движка давно
+  знают, что простой — это не поломка.
+- **Пересоздание призрачного интерфейса отклонялось на его собственном порту** — сообщением, называющим тот
+  самый интерфейс, который пересоздают.
+- **`convert.sh --dry-run` выполнял конвертацию.** Флаг, который уважает любой другой установщик, здесь
+  принимался, игнорировался, и конвертация шла — а входная точка ещё и сообщала о «предпросмотре».
+- **Удаление оставляло systemd-переопределение,** которое следующая установка с тем же именем молча
+  наследовала и которое подавляло лечение, способное это исправить.
+- **`--build` в docker-установщике не давал имени тому, что собирал.** Переключение compose с
+  опубликованных образов на локальную сборку искало тег, который уже два выпуска не был литералом, — и
+  оставляло у каждого сервиса оба варианта. Исправлено; сборка теперь закрепляет собственный тег образа,
+  так что собранное на машине из исходников отличимо от того, что CI публикует из `main`, и не может быть
+  им заменено.
+- **Имя интерфейса, которого на машине нет, превращалось в постоянную ошибку на каждой синхронизации.**
+  `MANAGE_IFACES=none` устанавливался без единой жалобы, печатал зелёную сводку и записывал в конфиг ноды
+  управляемый интерфейс `none` — после чего нода на каждом проходе, навсегда, сообщала
+  `none: cannot read interface`. Теперь и установщик ноды, и установщик мастера отказываются от имени,
+  которого нет, и показывают, что на машине есть.
+- **По-русски читалось «1 пир получат»** — число как подлежащее при глаголе, который с ним не согласуется, —
+  в четырёх местах, и ещё в двух, которых аудит не видел.
+- **Порядок нод, который вы задали, доходил не до всех экранов.** Экран «Ноды» переставляется мышью, но
+  лист пиров, выбор интерфейсов, список turn-прокси и сетка меша сортировали ноды по алфавиту заново — и
+  сервер, поднятый вами наверх, оказывался третьим везде, где это не объяснялось ничем.
+- **Открытие панели по адресу `/index.html` объявлялось «прежним адресом».** Лента переезда сравнивала
+  путь целиком с точкой монтирования, в которой имени файла не бывает, — и закладка, вручную набранный
+  адрес или прокси, не переписывающий `/`, давали баннер, предлагающий перейти на адрес, на котором вы уже
+  находитесь.
+- **Скорость называла свою единицу — и переставала ровно там, где это важно.** Малые скорости читались как
+  «512 B/s», большие — как «23.8 M/s»: буква B пропадала в тот момент, когда число уже можно было понять
+  неправильно. На экране про скорость сети голое «M/s» читается как мегабиты, потому что мегабиты — это то,
+  чем меряют спидтесты и тарифы. Панель, показывающая 23.8 рядом со спидтестом на 200, выглядела так, будто
+  занижает на порядок. Она не занижала: 200 Мбит/с — это и есть 23.8 МБ/с. Весь путь от счётчиков ноды до
+  графика измерен и передаёт скорость точно; буква единицы теперь остаётся при любом размере числа.
 
 ## [1.8.5-beta] — 2026-09-02
 
-### Added
+### Добавлено
 
-- **A newer server build for every fork the panel builds, with the one you were on kept as a rollback
-  target.** csqtt 2.1.9, qWDTT 1.4.3, WDTT-Plus 15, xxcipher 2.0.0.70 and ildarmaga 1.5.40-2, each published
-  for amd64 and arm64, as every fork build always has been. The version picker still lists the build you were
-  on, so an upgrade stays reversible.
-- **ildarmaga's RAW-IP datapath is now the panel's to place.** It used to derive its own listener from the
-  DTLS port and always bind it, on a fixed interface name — a port the panel never allocated, and a name two
-  servers on one machine would fight over. RAW is now an explicit choice per server, on the port the panel
-  reserves, with its own interface and subnet.
-- **The panel now tells you when a proxy on a node is behind, not just the panel itself.** The header update
-  bubble covers the whole fleet: which forks have a newer build, which nodes are running the old one, and —
-  before you press anything — exactly which servers will restart. Updates are grouped by fork rather than
-  listed once per node, so a fleet of ten servers no longer produces ten rows saying the same thing, and a
-  node's own page says when that node in particular has servers behind.
+- **Свежая сборка сервера для каждого форка, который собирает панель, а та, на которой вы были, остаётся
+  доступной для отката.** csqtt 2.1.9, qWDTT 1.4.3, WDTT-Plus 15, xxcipher 2.0.0.70 и ildarmaga 1.5.40-2 —
+  каждая опубликована для amd64 и arm64, как и все сборки форков до неё. В выборе версии по-прежнему видна
+  та, на которой вы были, поэтому обновление остаётся обратимым.
+- **RAW-датаплейн ildarmaga теперь размещает панель.** Раньше сервер сам выводил слушатель из DTLS-порта и
+  поднимал его всегда, на фиксированном имени интерфейса — порт, который панель никогда не выделяла, и имя, за
+  которое два сервера на одной машине дрались бы. Теперь RAW — явный выбор для конкретного сервера, на порту,
+  который панель резервирует, со своим интерфейсом и своей подсетью.
+- **Панель теперь сообщает, что устарел прокси на узле, а не только она сама.** Всплывающее окно обновлений
+  в шапке охватывает весь флот: у каких форков есть свежая сборка, какие узлы работают на старой и — ещё до
+  того, как вы что-то нажмёте, — какие именно серверы перезапустятся. Обновления сгруппированы по форкам, а
+  не перечислены по разу на узел, поэтому флот из десяти серверов больше не даёт десять одинаковых строк, а
+  страница узла говорит, когда серверы отстают именно на нём.
 
-### Changed
+### Изменено
 
-- **Every client app a fork can actually drive is now offered.** Which apps a proxy can hand out is decided
-  by one table — the compatibility matrix — instead of a second, hand-kept list beside it. The practical
-  effect is more choice where it was silently missing: the legacy qWDTT client on the four WDTT forks, and
-  FreeTurn on WINGS-N, Moroka8 and anton48. Apps are ordered by how well they fit: a fork's own app first,
-  then compatible apps, then command-line builds, with connections that work but lose obfuscation last.
-- **Forks are named by their author and their product, never by an internal id.** "SpaceNeuroX" tells you
-  who maintains a server and "qWDTT" tells you what is running; neither on its own is enough, and the raw id
-  was leaking into places meant for a name. Update lists sort by that name too, so the order matches what
-  you are reading rather than a key you cannot see.
-- **A node sizes its UDP buffers to the machine and keeps them across a reboot.** Proxy handshakes were
-  being dropped under load because the kernel's socket ceiling was left at its default; the node now raises
-  it against what the box can actually give and how many listeners it is running.
+- **Теперь предлагаются все клиентские приложения, которые форк действительно умеет обслуживать.** Какие
+  приложения может выдать прокси, решает одна таблица — матрица совместимости, — а не второй список, который
+  вёлся рядом вручную. На практике это больше выбора там, где его молча не хватало: устаревший клиент qWDTT
+  на четырёх форках WDTT и FreeTurn на WINGS-N, Moroka8 и anton48. Приложения упорядочены по тому, насколько
+  они подходят: сначала собственное приложение форка, затем совместимые, затем консольные сборки, а в конце —
+  соединения, которые работают, но теряют обфускацию.
+- **Форки называются по автору и продукту, а не по внутреннему идентификатору.** «SpaceNeuroX» говорит, кто
+  сопровождает сервер, а «qWDTT» — что именно запущено; по отдельности этого мало, а сырой идентификатор
+  просачивался туда, где ожидалось имя. Списки обновлений сортируются по этому же имени, поэтому порядок
+  совпадает с тем, что вы читаете, а не с невидимым ключом.
+- **Узел подбирает размер UDP-буферов под машину и сохраняет его после перезагрузки.** Рукопожатия прокси
+  терялись под нагрузкой, потому что потолок сокетов оставался системным по умолчанию; теперь узел поднимает
+  его исходя из того, что машина реально может дать, и сколько слушателей на ней работает.
 
-### Fixed
+### Исправлено
 
-- **RAW mode refused to work with a portable config on qWDTT.** The server bound each generated password to
-  one device, which is exactly what a portable config is not, so every RAW data worker was turned away while
-  the one that fetches the config was let in. The tunnel came up and carried DNS and then delivered nothing —
-  "connected, but no internet".
-- **xxcipher stopped loading its own peers on any tunnel subnet but the default.** It re-checked stored
-  devices against a hardcoded address range, so records written for a different subnet were rejected on
-  startup and the server died — after the peer had connected once, which made it look like the server had
-  broken by itself.
-- **A config could be issued for a different vendor's app that shares a name.** Two different clients are
-  both called "PWDTT" — one from luminescq, one shipped inside ildarmaga's own release — and they take
-  different link formats. The panel handed ildarmaga users the wrong one, and their app rejected it outright
-  as corrupt. A fork's own app is now always offered and preferred, on the panel and on subscription pages
-  alike.
-- **An app was offered on the one proxy that cannot run it, and hidden on the one that can.** The VK TURN app
-  by MYSOREZ loads a fork's own core, so it only works where that core exists. It was listed for anton48,
-  which has no such core, and withheld from samosvalishe, which ships one — the obfuscated Android path that
-  fork is best used with.
-- **A RAW peer flickered between online and ready.** Liveness was judged on instantaneous byte movement, so
-  an idle-but-connected peer read as offline every time it stopped sending. It now gets the same grace period
-  a WireGuard peer has always had, and a RAW peer's tunnel address reaches the panel instead of being dropped
-  on the way.
-- **A peer's QR code could be squeezed to nothing.** The note about the panel's fallback VK link sat beside
-  the code in the same row and took its width; it is now a footnote under the config, and it no longer tells
-  an unassigned peer about a subscription page it does not have.
-- **Clients using encrypted DNS were disconnected instead of being named.** Forced DNS treated DoH and DoT as
-  something to break; it now identifies those clients and says so, keeps its status badges legible on the
-  live view, and no longer lets a client's own DNS cache outlive the routing decision that changed.
-- **A stored config could stay silent about a key that no longer opens it.** Re-keying the vault left older
-  entries unreadable with nothing said, a locked vault was reported as a missing config rather than a locked
-  one, and a key that had stopped working simply produced nothing. Each of those now states what happened.
-- **An update could be offered that changed nothing, or a newer build could be called out of date.** One
-  version was advertised over another that differed only in formatting, and a proxy running something newer
-  than the published release was reported as behind. The update check also pins its version and changelog
-  fetch to an immutable commit, so a moving branch cannot change what it reports.
-- **A mesh link showed as up with only one end reporting.** Both ends are required in the link card, matching
-  what the map already did.
-- **The provider catalogue sat on the request path and remembered failures.** A lookup that failed once kept
-  answering from that failure; it is now off the request path and a failed fetch is not cached.
-- **A routing category's address list was discarded instead of treated as a floor.** Rebuilding a category
-  could shrink it below the addresses it is defined to contain.
-- **A traffic rate and its unit were split across a line break** in the proxy chart, so a number could be read
-  against the wrong scale.
-- **Two messages had no Russian translation** and rendered in English.
+- **RAW-режим не работал с переносимым конфигом на qWDTT.** Сервер привязывал каждый сгенерированный пароль
+  к одному устройству — а переносимый конфиг устроен ровно наоборот, — поэтому все рабочие потоки RAW
+  получали отказ, а тот единственный, что забирает конфиг, проходил. Туннель поднимался, тянул DNS и не
+  отдавал ничего: «подключено, но интернета нет».
+- **xxcipher переставал загружать собственных пиров на любой подсети туннеля, кроме стандартной.** Он
+  перепроверял сохранённые устройства по жёстко зашитому диапазону адресов, поэтому записи, сделанные для
+  другой подсети, отклонялись при старте и сервер падал — уже после того, как пир один раз подключился, из-за
+  чего это выглядело как поломка самого сервера.
+- **Конфиг мог быть выдан для приложения другого автора с таким же названием.** Два разных клиента называются
+  «PWDTT» — один от luminescq, другой поставляется внутри собственного релиза ildarmaga, — и форматы ссылок у
+  них разные. Панель выдавала пользователям ildarmaga не тот, и их приложение отвергало ссылку как
+  повреждённую. Собственное приложение форка теперь всегда предлагается и выбирается по умолчанию — и в
+  панели, и на страницах подписки.
+- **Приложение предлагалось на том единственном прокси, который не может его запустить, и скрывалось на том,
+  который может.** Приложение VK TURN от MYSOREZ запускает собственное ядро форка, поэтому работает только
+  там, где такое ядро есть. Оно значилось у anton48, у которого ядра нет, и отсутствовало у samosvalishe,
+  который его выпускает, — а это лучший обфусцированный путь для этого форка на Android.
+- **Пир в режиме RAW мигал между «в сети» и «готов».** Живость определялась по мгновенному приросту байт,
+  поэтому подключённый, но неактивный пир каждый раз читался как офлайн. Теперь у него та же отсрочка,
+  которая всегда была у пиров WireGuard, а адрес RAW-туннеля доходит до панели, а не теряется по дороге.
+- **QR-код пира мог сжаться до нуля.** Заметка про запасную VK-ссылку панели стояла рядом с кодом в одной
+  строке и забирала его ширину; теперь это сноска под конфигом, и она больше не рассказывает неназначенному
+  пиру про страницу подписки, которой у него нет.
+- **Клиентов с шифрованным DNS отключали вместо того, чтобы их назвать.** Принудительный DNS считал DoH и DoT
+  тем, что нужно сломать; теперь он опознаёт таких клиентов и сообщает о них, сохраняет читаемость своих
+  значков состояния на живом экране и не даёт собственному DNS-кэшу клиента пережить изменившееся решение о
+  маршрутизации.
+- **Сохранённый конфиг мог промолчать о ключе, который его больше не открывает.** Смена ключа сейфа оставляла
+  старые записи нечитаемыми без единого слова, запертый сейф выдавался за отсутствующий конфиг, а переставший
+  работать ключ просто ничего не возвращал. Теперь каждый из этих случаев называется вслух.
+- **Могло предлагаться обновление, которое ничего не меняет, или свежая сборка объявлялась устаревшей.** Одна
+  версия предлагалась вместо другой, отличавшейся только форматированием, а прокси с версией новее
+  опубликованного релиза считался отстающим. Проверка обновлений к тому же закрепляет загрузку версии и
+  списка изменений за неизменяемым коммитом, поэтому подвижная ветка не может изменить то, что она сообщает.
+- **Связь в меш-сети показывалась поднятой, когда о ней сообщал только один конец.** В карточке связи теперь
+  нужны оба — так же, как это уже делала карта.
+- **Каталог провайдеров стоял на пути запроса и запоминал отказы.** Один неудачный запрос продолжал отвечать
+  этой неудачей; теперь каталог убран с пути запроса, а неудачная загрузка не кэшируется.
+- **Список адресов категории маршрутизации выбрасывался вместо того, чтобы считаться минимумом.** Пересборка
+  категории могла сократить её ниже адресов, которые она обязана содержать.
+- **Скорость трафика и её единица разъезжались по разным строкам** на графике прокси, из-за чего число можно
+  было прочитать не в том масштабе.
+- **Два сообщения не были переведены на русский** и показывались по-английски.
 
-### Security
+### Безопасность
 
-- **An unreadable panel pin silently disabled pinning.** A node that could not read its stored certificate pin
-  carried on without one rather than refusing to sync — a downgrade that looked exactly like a healthy node.
-  It now fails closed and says why.
+- **Нечитаемый отпечаток панели молча отключал закрепление.** Узел, который не смог прочитать сохранённый
+  отпечаток сертификата, продолжал работать без него, вместо того чтобы отказаться синхронизироваться, — и
+  такое понижение защиты выглядело точно как здоровый узел. Теперь он останавливается и объясняет причину.
 
 ## [1.8.4-beta] — 2026-08-30
 
-### Added
-- **A node can be rebuilt onto a new box, because the panel — not the box — holds its identity.** A server
-  that died, or that you are replacing on purpose, no longer takes its interfaces with it. The panel keeps
-  every interface's keypair, address and peer set, shows you **what the rebuild will change before the token
-  rotates**, and puts the identity back on the new machine: the same public keys, so every client config and
-  QR already in someone's hands keeps working. Interfaces the panel escrowed keys for come back *as
-  themselves*; ones it never held a key for are listed as such, up front, instead of quietly reappearing
-  empty. The old box, if it is still out there, is marked — a rebuild is not a thing you should have to
-  guess the state of.
-- **A node can be moved to another panel, and moved back.** Transfer hands the whole node across: its
-  record, its interfaces, its peers with their titles and users, the subscription token map that keeps
-  existing sub links opening, and each peer's stored config byte-for-byte. The receiving panel gets a
-  **fingerprint baseline** so it can diff its own capture against where the node came from. The far panel
-  can hand it back, and it comes home *as itself* — same node id, so nothing keyed on it moves. What
-  travels is authorised by a **transfer token**: one value to paste, not a whole enrolment command, and a
-  panel refuses a bundle for a node it already holds.
-- **Reclaim a turn-family server the node is still running and no panel claims.** After a migration or a
-  re-enrolment, a WDTT/csqtt server could be live on the box with no record anywhere. It is now adoptable
-  from the panel, **with its users**, instead of being invisible until something collided with it.
-- **Mesh egress — which of a node's own addresses it dials the rest of the fleet from.** A box with several
-  addresses no longer leaves this to the kernel's default. It is set per node in Network settings, and a box
-  with a `/32` address and an onlink gateway can pin a source too.
-- **A node can answer to more than one name.** "Hostnames for this node" takes the extra names a node is
-  reachable at, and every address picker in the panel offers them.
+### Добавлено
+- **Узел можно пересобрать на новой машине, потому что его личность хранит панель, а не коробка.** Сервер,
+  который умер или который вы меняете намеренно, больше не уносит интерфейсы с собой. Панель держит у себя
+  ключевую пару, адрес и набор пиров каждого интерфейса, показывает, **что именно изменит пересборка, ещё до
+  ротации токена**, и возвращает личность на новую машину: те же публичные ключи, поэтому все конфиги и
+  QR-коды, которые уже у людей на руках, продолжают работать. Интерфейсы, ключи которых панель депонировала,
+  возвращаются *собой*; те, ключа которых у неё никогда не было, перечислены сразу и прямо, а не появляются
+  молча пустыми. Старая машина, если она ещё жива, помечена — состояние пересборки не должно быть предметом
+  догадок.
+- **Узел можно передать другой панели и забрать обратно.** Передача переносит узел целиком: его запись,
+  интерфейсы, пиров с их названиями и пользователями, карту токенов подписки, благодаря которой уже
+  выданные ссылки продолжают открываться, и сохранённый конфиг каждого пира байт в байт. Принимающая панель
+  получает **эталон отпечатка**, чтобы сверять собственный снимок с тем, откуда узел пришёл. Дальняя панель
+  может вернуть узел, и он возвращается *собой* — с тем же идентификатором, поэтому ничто, что на него
+  завязано, не переезжает. Право на перенос даёт **токен передачи**: одно значение, а не целая команда
+  регистрации, и панель отказывается принимать пакет для узла, который у неё уже есть.
+- **Можно забрать себе сервер turn-семейства, который узел всё ещё держит, а панель не считает своим.** После
+  миграции или повторной регистрации сервер WDTT/csqtt мог работать на машине вообще без записи. Теперь его
+  можно принять из панели **вместе с пользователями**, а не обнаруживать в момент, когда с ним что-то
+  столкнулось.
+- **Mesh-egress — с какого из своих адресов узел ходит к остальному флоту.** Машина с несколькими адресами
+  больше не оставляет это на усмотрение маршрута по умолчанию. Значение задаётся для узла в сетевых
+  настройках, а машина с адресом `/32` и onlink-шлюзом тоже может закрепить источник.
+- **Узел может отзываться на несколько имён.** Поле «Имена хостов для этого узла» принимает дополнительные
+  имена, по которым узел доступен, и все выборы адреса в панели их предлагают.
 
-### Changed
-- **The node record mirrors what the node manages, instead of being a hand-kept list.** Onboarding an
-  interface brings its peers with it, the turn family mirrors too, and a mesh link a previous panel left
-  behind is no longer invisible just because the registry is new.
-- **An interface's kind is asked of the kernel.** The panel used to believe whatever the record said, which
-  is how obfuscation parameters ended up written into a plain-WireGuard conf and how a `wg` interface could
-  wear an AWG badge. The kernel is now the answer, and the agent skips obfuscation on anything that is not
-  AmneziaWG.
+### Изменено
+- **Запись узла отражает то, чем узел управляет, вместо списка, который ведут руками.** Подключение
+  интерфейса приносит с собой его пиров, turn-семейство тоже отражается, а mesh-линк, оставленный прошлой
+  панелью, больше не становится невидимым только потому, что реестр новый.
+- **Тип интерфейса теперь спрашивают у ядра.** Раньше панель верила записи — так параметры обфускации
+  попадали в конфиг обычного WireGuard, а интерфейс `wg` мог носить значок AWG. Ответ даёт ядро, и агент не
+  пишет обфускацию ни во что, кроме AmneziaWG.
 
-### Fixed
-- **Interfaces built from source did not survive a reboot** — on any box that compiled the tools, nothing
-  on the machine could start them again, and every screen showed them healthy right up until the reboot.
-  This hit both AmneziaWG and plain-WireGuard interfaces. The panel now reports boot persistence per
-  interface, each interface is enabled under its own tool, and a down interface is repairable from the panel
-  instead of being a grey card with no reason and no button.
-- **A queued peer removal could be cancelled by a sync that mentioned no interfaces.** A node that reported
-  nothing — briefly, for any reason — cleared work the panel had queued. Absence of an interface is not
-  evidence about its peers, and is no longer treated as any.
-- **The installer refused a bare port.** Answering `8443` where it asked for an address was read as a
-  hostname. A bare port is now a port.
-- **A Docker install published `:80` blind and could take the panel down at switch-over** on any box whose
-  port 80 was already someone's. It checks first; `SWG_FORCE_PORT80=1` overrides.
-- **TLS, four ways.** The subscription surface can need a certificate of its own; `skip` meant two things
-  and four places read only one of them; "Existing certificate files" now covers a certificate the panel
-  serves but does not issue; and a failed order left behind a key that refused every retry.
-- **`SWG_PANEL_WEB=.` served nothing but 403s**, and a panel on plain HTTP said so instead of throwing a
-  `TypeError`.
-- **A panel following a pre-release branch downgraded itself on every update.** The one-click update fetched
-  the right branch's installer and then installed the *stable* branch from it, because the branch lived only
-  in the URL and nothing read it back out. The ref is now taken from the address the installer came from.
-- **A leftover directory could send a bare-metal box down the Docker path.** An `/opt/swg-panel-docker` left
-  behind by an earlier conversion was treated as an installation, and the update failed on container
-  networking having never touched the panel that was actually there. Both the update and the closing summary
-  now want real evidence — containers that have actually run, and the environment they came from — so an
-  aborted conversion's remains stop outranking the install beside them. The same summary no longer reports a
-  bare-metal master as a Docker host with a blank address and an unknown certificate.
-- **Turn proxies stayed on the image they were first started from.** A node moved to a different build left
-  them running the old one indefinitely — the node checked that they were running, never what they were
-  running. A proxy on the wrong build is now noticed and restarted onto the right one.
-- **A failed certificate renewal was invisible until the certificate was nearly gone.** Renewal could fail
-  every hour for weeks while the console showed a healthy certificate, because the panel watched only the
-  expiry date — and the result it did compute was never shown anywhere. Renewal health is now reported in
-  Settings → Panel access, and it is judged on *this* panel's certificate: a store carried over from another
-  host can hold domains that have nothing to do with the panel, and one of those failing is not this
-  panel's problem. A converted panel also no longer floods its log with errors from the previous host's
-  paths on every renewal attempt.
-- **An unreachable panel could talk you into re-issuing a working peer.** A momentary connection failure
-  made the QR/config sheet report "No stored config — re-issue this peer" for a peer whose config was on
-  disk the whole time, and it *persisted* that verdict — it survived a reload, and the only thing that
-  cleared it was the very re-issue the message recommended, which destroys the config it was wrong about.
-  The sheet now tells "could not reach the panel" apart from "this peer has no config", records nothing for
-  a request it never completed, and the false markers an earlier build wrote are cleared once on upgrade.
-- **A full uninstall could leave pieces of the panel running.** On a bare-metal master it left the Docker
-  network-control units behind — one of them a *running* timer, polling for a panel that no longer existed —
-  along with an orphaned enablement symlink systemd then reported for ever, and our container images
-  (removal matched a single tag, not the repository). And an unattended Docker uninstall kept the panel data
-  and node configs it had been told to delete, because a local default shadowed the preset before it was
-  read. All of these are now cleared.
+### Исправлено
+- **Интерфейсы, собранные из исходников, не переживали перезагрузку** — на любой машине, где инструменты
+  компилировались, запустить их снова было нечем, и до самой перезагрузки все экраны показывали их здоровыми.
+  Это касалось как AmneziaWG, так и обычного WireGuard. Теперь панель сообщает про устойчивость к перезагрузке
+  для каждого интерфейса, каждый интерфейс включается под своим инструментом, а упавший интерфейс чинится из
+  панели, а не остаётся серой карточкой без причины и без кнопки.
+- **Поставленное в очередь удаление пира мог отменить сеанс синхронизации, не упомянувший ни одного
+  интерфейса.** Узел, который — недолго и по любой причине — не сообщил ничего, снимал работу, поставленную
+  панелью. Отсутствие интерфейса ничего не говорит о его пирах и больше не считается свидетельством.
+- **Установщик не принимал голый порт.** Ответ `8443` там, где спрашивали адрес, читался как имя хоста.
+  Голый порт — это порт.
+- **Docker-установка публиковала `:80` вслепую и могла уронить панель в момент переключения** на любой
+  машине, где порт 80 уже был чужим. Теперь она проверяет; `SWG_FORCE_PORT80=1` отменяет проверку.
+- **TLS, четыре случая.** Поверхности подписки может требоваться собственный сертификат; `skip` означал две
+  разные вещи, а четыре места читали только одну; «Существующие файлы сертификата» теперь покрывают и
+  сертификат, который панель отдаёт, но не выпускает; а неудавшийся заказ оставлял ключ, с которым не
+  проходила ни одна повторная попытка.
+- **`SWG_PANEL_WEB=.` отдавал одни 403**, а панель на обычном HTTP теперь так и говорит, вместо того чтобы
+  бросить `TypeError`.
+- **Панель, следящая за предрелизной веткой, откатывала себя при каждом обновлении.** Обновление в один клик
+  забирало установщик нужной ветки и затем ставило из него *стабильную*, потому что ветка существовала только
+  в адресе и никто её оттуда не читал. Теперь ветка берётся из того адреса, с которого пришёл установщик.
+- **Оставшийся каталог мог увести обычную установку по пути Docker.** `/opt/swg-panel-docker`, оставшийся от
+  прошлой конвертации, считался установкой, и обновление падало на сети контейнеров, так и не тронув панель,
+  которая на самом деле там стояла. Теперь и обновление, и итоговая сводка требуют настоящих доказательств —
+  контейнеров, которые действительно запускались, и окружения, из которого они пришли, — так что остатки
+  прерванной конвертации перестают перевешивать установку рядом с ними. Та же сводка больше не показывает
+  обычный мастер как Docker-хост с пустым адресом и неизвестным сертификатом.
+- **Turn-прокси оставались на том образе, с которого их запустили впервые.** Узел, переведённый на другую
+  сборку, бесконечно оставлял их на старой — он проверял, что они работают, но не то, на чём они работают.
+  Прокси на неверной сборке теперь замечается и перезапускается на нужной.
+- **Неудачное обновление сертификата было незаметно, пока сертификат почти не кончился.** Обновление могло
+  срываться каждый час неделями, пока консоль показывала здоровый сертификат, потому что панель следила
+  только за датой окончания — а то, что она всё-таки вычисляла, нигде не показывалось. Теперь состояние
+  обновления видно в «Настройки → Доступ к панели», и оно судится по сертификату *этой* панели: хранилище,
+  перенесённое с другой машины, может содержать домены, не имеющие к панели никакого отношения, и их сбой —
+  не проблема этой панели. Кроме того, сконвертированная панель больше не засыпает свой журнал ошибками о
+  путях предыдущей машины при каждой попытке обновления.
+- **Недоступная панель могла уговорить вас перевыпустить рабочий пир.** Кратковременный сбой связи заставлял
+  окно QR/конфигурации сообщать «Нет сохранённой конфигурации — перевыпустите этот пир» для пира, чья
+  конфигурация всё это время лежала на диске, и этот вердикт *сохранялся* — он переживал перезагрузку
+  страницы, а очищал его только тот самый перевыпуск, который советовало сообщение и который уничтожает
+  конфигурацию, о которой оно ошибалось. Теперь окно отличает «не удалось связаться с панелью» от «у этого
+  пира нет конфигурации», ничего не записывает по запросу, который не завершился, а ложные метки, записанные
+  более ранней сборкой, очищаются один раз при обновлении.
+- **Полное удаление могло оставить части панели работающими.** На bare-metal мастере оно оставляло блоки
+  управления сетью Docker — один из них *работающий* таймер, опрашивающий очередь для панели, которой больше
+  нет, — а также осиротевшую символьную ссылку включения, о которой systemd затем сообщал вечно, и наши
+  образы контейнеров (удаление совпадало по одному тегу, а не по репозиторию). А неинтерактивное удаление
+  Docker сохраняло данные панели и конфиги узла, которые ему велели удалить, потому что локальное значение по
+  умолчанию перекрывало пресет до того, как его прочитают. Теперь всё это очищается.
 
-### Security
-- **A sealed key is only escrow if the *current* vault can open it — and the browser now proves that.** The
-  panel stops asking nodes to seal keys it could never store, records the proof when a vault opens one, and
-  a re-install no longer severs the link to a key the panel holds escrow for. The check covers the WDTT
-  family too, which the first pass left behind.
+### Безопасность
+- **Запечатанный ключ является депонированным, только если его может открыть *текущее* хранилище — и теперь
+  браузер это доказывает.** Панель перестала просить узлы запечатывать ключи, которые она всё равно не
+  смогла бы хранить, записывает доказательство, когда хранилище открывает ключ, и повторная установка больше
+  не рвёт связь с ключом, депонированным у панели. Проверка охватывает и семейство WDTT, которое первый
+  проход оставил в стороне.
 
 ## [1.8.3-beta] — 2026-08-27
 
-### Added
-- **Private panel access — the console moves behind an SSH tunnel, and the fleet never notices.** Settings →
-  Panel URL can now serve the operator console on a loopback port you reach over `ssh -L`, leaving the public
-  address answering **node routes only**: a browser hitting it gets a 404 where the panel used to be, while
-  every node keeps syncing across the change. This is the answer to *"switch 0.0.0.0 to 127.0.0.1 without
-  hurting the nodes"* — the UI disappears from the internet without a second certificate, a second hostname
-  or a firewall rule, and nothing about the node connection changes. The move is **confirm-or-revert**: the
-  panel binds the new console alongside the old one, and unless your browser lands on it and confirms, the
-  timer puts everything back. A wrong port, a tunnel that never came up and a forgotten firewall rule are all
-  the same case, and none of them can lock you out.
-- **Docker and NixOS can wire the console port up front.** A fresh Docker install publishes
-  `127.0.0.1:8445` for it (set `CONSOLE_BIND`/`CONSOLE_PORT` in `.env`), and the NixOS module gains
-  `consolePort` / `consoleHost`. ⚠️ An **updated** Docker panel keeps its existing compose and therefore has
-  no console port — the panel says so in as many words and tells you to re-run the installer, which restages
-  `docker-compose.yml`.
+### Добавлено
+- **Приватный доступ к панели — консоль уходит за SSH-туннель, а узлы этого не замечают.** В «Настройки →
+  Адрес панели» консоль оператора теперь можно отдавать на локальный порт, к которому вы подключаетесь через
+  `ssh -L`, а публичный адрес продолжает отвечать **только на маршруты узлов**: браузер получает там 404 вместо
+  панели, но все узлы синхронизируются как раньше. Это ответ на вопрос *«как переключить 0.0.0.0 на 127.0.0.1
+  без ущерба для нод»* — интерфейс исчезает из интернета без второго сертификата, второго имени хоста и правил
+  файрвола, а соединение с узлами не меняется вовсе. Переключение работает по схеме **подтвердить-или-вернуть**:
+  панель поднимает новую консоль рядом со старой, и если ваш браузер на неё не попал и не подтвердил, таймер
+  всё возвращает. Неверный порт, непонявшийся туннель и забытое правило файрвола — это один и тот же случай,
+  и ни один из них не может вас запереть.
+- **Docker и NixOS могут подготовить порт консоли заранее.** Новая установка Docker публикует для неё
+  `127.0.0.1:8445` (параметры `CONSOLE_BIND`/`CONSOLE_PORT` в `.env`), а в модуле NixOS появились
+  `consolePort` / `consoleHost`. ⚠️ У **обновлённой** Docker-панели остаётся прежний compose, поэтому порта
+  консоли там нет — панель прямо об этом сообщает и предлагает перезапустить установщик, который заново
+  раскладывает `docker-compose.yml`.
 
-- **Updating the panel updates the fleet with it.** Update the panel from its own Update button and every
-  node that can update itself is asked to follow in the same pass, instead of you visiting each server.
-  Nodes that cannot are skipped with the reason said out loud: one that shares the box with the panel
-  updates *with* it, one may be already current, one may not have reported recently, and a declarative or
-  container node's installation belongs to the configuration that built it. Nothing is ever staged whose
-  only possible outcome is a red tag.
-  ⚠️ **This first takes effect on your _next_ update.** The sweep is run by the panel you are updating
-  **from**, and 1.8.2 does not have it — so updating *to* 1.8.3 still leaves each node to be updated on its
-  own, from that node's Update button. Updating 1.8.3 → 1.8.4 is the first one that carries the fleet along.
-### Security
-- **Brute force now costs the attacker time, and never costs you your panel.** Repeated failures on
-  `/api/login`, on a node token or on the external API token draw a growing, capped delay. The credential is
-  checked **first**, so a caller holding a working one is served no matter what the counters say — a node with
-  a valid token can never be delayed, refused or stranded by this, whatever else is happening to the panel.
-  The second factor is the one that is genuinely breakable by guessing, so it is hard-capped; recovery codes
-  are exempt, which is what stops the cap from becoming a lockout an attacker could arm on purpose. It is
-  deliberately **not** per-IP: most panels sit behind a reverse proxy or Cloudflare, where every request
-  carries the proxy address, so a per-IP bucket would be one bucket for everybody and a single attacker could
-  lock the operator out of their own panel.
+- **Обновление панели обновляет вместе с ней и парк серверов.** Обновите панель её собственной кнопкой
+  «Обновить» — и каждый узел, который умеет обновляться сам, получит запрос в том же проходе, вместо обхода
+  серверов вручную. Узлы, которые так не умеют, пропускаются с названной вслух причиной: узел на одной
+  машине с панелью обновляется *вместе* с ней, другой уже актуален, третий давно не выходил на связь, а
+  установка декларативного или контейнерного узла принадлежит той конфигурации, которая его собрала. Ничего
+  не ставится в очередь, если единственным исходом может быть красная метка.
+  ⚠️ **Это впервые сработает на _следующем_ обновлении.** Обход выполняет та панель, **с которой** вы
+  обновляетесь, а в 1.8.2 его нет — поэтому при обновлении *до* 1.8.3 каждый узел по-прежнему нужно обновить
+  отдельно, его собственной кнопкой «Обновить». Обновление 1.8.3 → 1.8.4 станет первым, которое поднимет
+  весь парк серверов.
+### Безопасность
+- **Перебор паролей теперь стоит атакующему времени и никогда не стоит вам панели.** Повторные неудачи на
+  `/api/login`, на токене узла или на токене внешнего API получают растущую, ограниченную сверху задержку.
+  Учётные данные проверяются **первыми**, поэтому владелец рабочего токена обслуживается независимо от
+  счётчиков — узел с действующим токеном не может быть задержан, отклонён или потерян из-за этого механизма,
+  что бы ещё ни происходило с панелью. Второй фактор действительно подбирается перебором, поэтому для него
+  введён жёсткий предел; коды восстановления из-под него выведены — именно это не даёт пределу превратиться в
+  блокировку, которую атакующий мог бы включить намеренно. Ограничение сознательно сделано **не по IP**:
+  большинство панелей стоят за обратным прокси или Cloudflare, где все запросы приходят с адреса прокси, так
+  что счётчик по IP был бы общим для всех и один атакующий мог бы запереть оператора в его же панели.
 
-### Fixed
-- **NixOS: removing a node left its WDTT and csqtt servers running.** On the native arm,
-  `services.swg-node.enable = false` followed by `nixos-rebuild switch` removed the node and left every WDTT
-  and csqtt server it managed still running and still bound to its public port — the reaper that stops them
-  knew only the turn-proxy unit names. Nothing was exposed that had not been exposed before, but the operator
-  had been told those servers were gone. The container arm was never affected (those run as children of the
-  node container and go with it), and bare metal is handled by the uninstaller.
-- **Certificates the panel issued itself had no renewer and expired silently at 90 days.** acme.sh keeps its
-  state under `$HOME`, and the panel's TLS helper runs from systemd with no `HOME` — so a certificate issued
-  from the Access screen went into a second store that the renewal cron never looked at. Every address change
-  made from the panel produced a certificate nothing would renew, and nothing said so. There is now one store,
-  pinned explicitly, and updating moves any domain the canonical store is missing into it. Nothing is deleted:
-  a domain present in both is left alone and the stray tree is kept, so a bad merge is reversible by hand.
-  ⚠️ **If you ever changed the panel's address from the Access screen, this update is what gives that
-  certificate a renewer.**
-- **A failed certificate order could be stored as though it had succeeded, and abort an install half-way.**
-  acme.sh 3.1.3 and older write the certificate authority's reply into the certificate file even when that
-  reply is an error, so a failed issuance left behind something shaped like a certificate. The installer
-  believed it, skipped the self-signed fallback it would otherwise have used, and then died on the chain that
-  was never there — leaving TLS unwired and a proxied panel answering 525. The check now insists on a real
-  certificate, a failed install step no longer aborts the run, and both the installer and the Docker image
-  require acme.sh 3.1.4 or newer.
-- **Reverting an address change could not be retried.** Dropping a certificate kept the domain registered, so
-  the second attempt was refused while the dialog told you to try again.
-- **On Docker, the check that reports how a certificate turned out gave up before the certificate arrived.**
-  It allowed a few seconds; a DNS-01 issuance takes a minute or more. It now waits for the mode it is watching.
-- **A hover bubble on a phone was a trap.** The node deployment bubble opened on tap and had no way out — no
-  Update button of its own and nothing to dismiss it but reloading. It now carries the action it describes and
-  closes when you tap outside it. The `+N` bubble also grew the row it was meant to float above.
-- **The update dialog could show a stale changelog.** A corrected release note could not reach the operator
-  until the panel restarted; checking for updates now refetches it.
+### Исправлено
+- **NixOS: при удалении узла его серверы WDTT и csqtt продолжали работать.** На нативной ветке
+  `services.swg-node.enable = false` и последующий `nixos-rebuild switch` удаляли узел, но каждый управляемый
+  им сервер WDTT и csqtt оставался запущенным и слушал свой публичный порт — процедура остановки знала только
+  имена юнитов turn-прокси. Ничего нового наружу при этом не открывалось, но оператору было сказано, что этих
+  серверов больше нет. Контейнерной ветки это никогда не касалось (там серверы — дочерние процессы контейнера
+  узла и уходят вместе с ним), а на bare-metal их убирает деинсталлятор.
+- **Сертификаты, выпущенные самой панелью, никто не продлевал — они молча истекали через 90 дней.** acme.sh
+  хранит состояние в `$HOME`, а помощник TLS запускается из systemd без `HOME` — поэтому сертификат, выпущенный
+  с экрана «Доступ», попадал во второе хранилище, куда cron продления никогда не заглядывал. Любая смена адреса
+  из панели давала сертификат, который никто не продлит, и об этом не сообщалось. Теперь хранилище одно, оно
+  задано явно, а обновление переносит в него каждый домен, которого в каноническом хранилище нет. Ничего не
+  удаляется: домен, присутствующий в обоих, остаётся нетронутым, а лишнее дерево сохраняется — неудачное
+  слияние всегда можно разобрать руками. ⚠️ **Если вы хоть раз меняли адрес панели с экрана «Доступ», именно
+  это обновление даёт тому сертификату продление.**
+- **Неудачный заказ сертификата мог сохраниться как успешный и оборвать установку на полпути.** acme.sh 3.1.3
+  и старше записывают ответ удостоверяющего центра в файл сертификата, даже когда этот ответ — ошибка, поэтому
+  после неудачного выпуска оставалось нечто похожее на сертификат. Установщик ему верил, пропускал
+  самоподписанный запасной путь и погибал на цепочке, которой не было, — TLS оставался не подключён, а панель
+  за прокси отвечала 525. Теперь проверка требует настоящий сертификат, неудачный шаг установки больше не
+  обрывает работу, а установщик и образ Docker требуют acme.sh 3.1.4 или новее.
+- **Откат смены адреса нельзя было повторить.** Отзыв сертификата оставлял домен зарегистрированным, и вторая
+  попытка отклонялась, пока диалог предлагал попробовать снова.
+- **В Docker проверка, сообщающая об исходе выпуска сертификата, сдавалась раньше, чем сертификат приходил.**
+  Она отводила несколько секунд, а выпуск через DNS-01 занимает минуту и больше. Теперь она ждёт столько,
+  сколько нужно выбранному режиму.
+- **Всплывающая подсказка на телефоне оказывалась ловушкой.** Подсказка о развёртывании узла открывалась по
+  касанию, и выйти из неё было нечем: ни своей кнопки «Обновить», ни способа закрыть, кроме перезагрузки
+  страницы. Теперь она несёт то действие, которое описывает, и закрывается по касанию вне её. Подсказка `+N`
+  заодно растягивала строку, над которой должна была висеть.
+- **Диалог обновления мог показывать устаревший список изменений.** Исправленное описание релиза не доходило
+  до оператора до перезапуска панели; теперь проверка обновлений забирает его заново.
 
 ## [1.8.2-beta] — 2026-08-26
 
-### Added
-- **A deployment is primary, backup, or neither — and the order follows.** The star on each deployment is a
-  three-state control (unmarked → primary → backup → unmarked) and the label is the operator's, not something
-  derived from position: a peer nobody has marked now shows no role at all, where its first deployment used to
-  be called "Primary" and every other one a "Backup" of it. Roles are deliberately not exclusive — a peer that
-  spans protocols can carry a primary in each family, since a turn proxy is no fallback for a WireGuard tunnel.
-  The panel and the subscription both order by it: primary first, unmarked next, backups last. The mark moves
-  on the click rather than after a poll.
-- **A server name for samosvalishe relays.** It labels the connection in the FreeTurn app's own list, and takes
-  the same `{fork}` / `{host}` / `{port}` templates every other fork's name does — "Frankfurt {port}"
-  becomes "Frankfurt 56009". The link already carried the field; there was simply no setting to fill it.
-- **A relay running a TCP tunnel says so in its link.** `mode` (udp = WireGuard, tcp = Xray/sing-box) and the
-  `kcp` ARQ profile it implies are mirrored from the relay's own flags, so a client can no longer be told a
-  different mode than the server is running.
+### Добавлено
+- **Развёртывание может быть главным, резервным или никаким — и порядок следует за меткой.** Звезда у каждого
+  развёртывания стала переключателем на три состояния (без метки → главное → резервное → без метки), и метку
+  ставит администратор, а не выводит порядок: у пира, которому ничего не назначили, роли теперь не
+  показываются вовсе — раньше его первое развёртывание называлось «Главным», а все прочие — его «Резервом».
+  Роли намеренно не взаимоисключающие: у пира с разными протоколами может быть главное в каждом семействе,
+  ведь turn-прокси не запасной вариант для туннеля WireGuard. И панель, и подписка сортируют по метке:
+  сначала главные, затем без метки, резервные последними. Метка переключается по нажатию, а не после опроса.
+- **Имя сервера для серверов samosvalishe.** Оно подписывает подключение в списке приложения FreeTurn и
+  принимает те же шаблоны `{fork}` / `{host}` / `{port}`, что и имена остальных форков: «Frankfurt
+  {port}» превращается в «Frankfurt 56009». Ссылка это поле уже несла — просто негде было его задать.
+- **Сервер с TCP-туннелем сообщает об этом в ссылке.** `mode` (udp = WireGuard, tcp = Xray/sing-box) и профиль
+  ARQ `kcp`, который из него следует, берутся из флагов самого сервера, так что клиенту больше нельзя выдать
+  режим, отличный от запущенного.
 
-### Fixed
-- **The VK call link never reached the FreeTurn app.** It was written under `link`/`links`, mirroring the CLI's
-  flags — keys the app's importer does not read — so the call dropped while the tunnel itself looked healthy.
-  It now rides in the field the client actually reads.
-- **A relay's obfuscation profile could disagree with the link it handed out.** The profile was fixed at
-  `rtpopus` in the link, the flag chip and the CLI command, while the setting that offered rtpopus2/rtpopus3
-  was honoured only for one app. A relay running rtpopus3 therefore gave its clients rtpopus, and the result
-  is the worst kind: the connection comes up, the tunnel reports healthy, and not one byte passes. The profile
-  now comes from the running relay itself.
-- **Only one of several identical relays was published.** Two samosvalishe relays fronting one interface are
-  two servers a user can choose between — different port, different key — but the subscription deduplicated by
-  fork and silently dropped all but the first. Where one fork appears more than once, its port now
-  distinguishes the entries.
-- **The subscription asked users to paste a VK link it had already sent them.**
-- **Switching theme or language on the subscription page threw the reader back to the first card.**
-- **The connections picker showed "Backup" but never "Primary"**, so a deployment marked primary looked
-  exactly like an unmarked one.
-- **The peer editor described a gear that was not there** when a peer's client config could not be rebuilt.
-- **Programming ligatures made correct text look wrong.** The mono font drew `https://` as `https: /` and
-  similar for `->`, `!=` and `::` — so a valid DoH URL read as corrupt and a key could not be transcribed by
-  eye. Ligatures are off wherever exact text is shown or typed, in the panel and the subscription page.
-- **URL and template fields no longer invite a phone keyboard to autocapitalise or autocorrect them.**
+### Исправлено
+- **Ссылка на звонок VK не доходила до приложения FreeTurn.** Она записывалась в поля `link`/`links` по
+  образцу флагов CLI — их импортёр приложения не читает, — поэтому звонок отваливался, хотя сам туннель
+  выглядел исправным. Теперь она едет в том поле, которое клиент действительно читает.
+- **Профиль обфускации сервера мог расходиться с выданной им ссылкой.** В ссылке, в поле флага и в команде CLI
+  он был жёстко задан как `rtpopus`, а настройка с rtpopus2/rtpopus3 учитывалась только для одного приложения.
+  Сервер на rtpopus3 выдавал клиентам rtpopus, а это худший случай: соединение поднимается, туннель
+  отчитывается исправным, и не проходит ни байта. Теперь профиль берётся с работающего сервера.
+- **Из нескольких одинаковых серверов публиковался только один.** Два сервера samosvalishe перед одним
+  интерфейсом — это два сервера на выбор (разные порт и ключ), но подписка отсеивала их по форку и молча
+  оставляла первый. Там, где форк встречается больше одного раза, записи теперь различает порт.
+- **Подписка просила вставить ссылку на звонок VK, которую уже передала сама.**
+- **Смена темы или языка на странице подписки отбрасывала читателя к первой карточке.**
+- **В выборе подключений показывался «Резерв», но никогда «Главный»** — помеченное главным развёртывание
+  выглядело точно так же, как непомеченное.
+- **Редактор пира описывал шестерёнку, которой там не было**, если конфигурацию клиента нельзя пересобрать.
+- **Программные лигатуры делали верный текст неверным на вид.** Моноширинный шрифт рисовал `https://` как
+  `https: /` и так же поступал с `->`, `!=` и `::`, поэтому корректный адрес DoH выглядел испорченным, а ключ
+  нельзя было переписать глазами. Лигатуры отключены везде, где показывают или вводят точный текст, — и в
+  панели, и на странице подписки.
+- **Поля URL и шаблонов больше не подставляются под автозамену и автозаглавные буквы экранной клавиатуры.**
 
 ## [1.8.1-beta] — 2026-08-25
 
-### Added
-- **`AGENTS.md` — an operating contract for automation.** The installers ask their questions on `/dev/tty`,
-  so an agent that pipes the curl one-liner gets a prompt it cannot answer rather than an error. The new file
-  writes down the environment variable behind every question — bare-metal, Docker and NixOS alike — together
-  with health checks that need no credentials and the short list of state nothing should ever write by hand.
+### Добавлено
+- **`AGENTS.md` — контракт работы для автоматики.** Установщики задают свои вопросы в `/dev/tty`, поэтому
+  агент, передающий curl-однострочник по конвейеру, получает не ошибку, а вопрос, на который не может
+  ответить. Новый файл фиксирует переменную окружения за каждым вопросом — одинаково для bare-metal, Docker и
+  NixOS — вместе с проверками состояния без учётных данных и коротким списком того, что нельзя править руками.
 
-### Fixed
-- **Every operator was signed out whenever the panel restarted.** The panel could not read its own
-  session-signing secret and fell back to a throwaway one without saying so, which is indistinguishable from
-  healthy. It now separates "no key yet" (first run) from "cannot read or replace it" (an error), reports the
-  second with the errno and a paste-able `chown`, and surfaces it in the panel's own service view.
-- **State outliving its service user.** An uninstall removes the panel's account but deliberately keeps
-  `/var/lib/swg-panel`, so its files were left holding a numeric uid that belongs to nobody — and the next
-  service account created on that box inherits it. Installing and uninstalling now leave the directory owned
-  correctly, which is what let the panel lose access to its own secret in the first place.
-- **On NixOS the panel owns its whole state directory**, not just the three files the module named. A box
-  whose state outlived a service user is handed the secret back on the next rebuild, and each file keeps its
-  own permissions.
-- **Two build notes under `forks/` pointed at design documents that are not published**, and one carried an
-  internal reference that meant nothing to a reader.
+### Исправлено
+- **Всех операторов выкидывало из системы при каждом перезапуске панели.** Панель не могла прочитать
+  собственный секрет подписи сессий и молча переходила на одноразовый — от исправной работы это не отличить.
+  Теперь она различает «ключа ещё нет» (первый запуск) и «не могу прочитать или заменить» (ошибка), сообщает
+  о второй с кодом ошибки и готовой командой `chown` и показывает это в собственном разделе служб.
+- **Состояние переживало своего служебного пользователя.** Удаление снимает учётную запись панели, но
+  намеренно сохраняет `/var/lib/swg-panel`, поэтому её файлы оставались с числовым uid, который никому не
+  принадлежит, — и его наследовала следующая созданная на машине служебная запись. Установка и удаление
+  теперь оставляют каталог с правильным владельцем; именно из-за этого панель и теряла доступ к своему секрету.
+- **На NixOS панель владеет всем каталогом состояния**, а не только тремя файлами, которые перечислял модуль.
+  Машине, чьё состояние пережило служебного пользователя, секрет возвращается на следующей пересборке, и при
+  этом у каждого файла сохраняются его собственные права.
+- **Две сборочные заметки в `forks/` ссылались на проектные документы, которые не публикуются**, а одна
+  содержала внутреннюю ссылку, ничего не значащую для читателя.
 
 ## [1.8.0-beta] — 2026-08-25
 
-### Added
-- **NixOS is now a first-class way to run swgPanel** — the panel, a node, the subscription surface, and a
-  master that is both. There is no installer to curl: your `configuration.nix` *is* the installation.
-  `services.swg-panel` and `services.swg-node` each offer two delivery methods that are equally supported —
-  `delivery = "container"` runs the published images, `delivery = "native"` runs the programs from your Nix
-  store — and a panel does not learn how a node was installed, so any panel still drives any node whatever
-  the mix. Ships as a flake (and a `default.nix` for channel users) with the module, the package, and a VM
-  test that stands a real panel and a real node up and watches them converge.
-- **The master role in a single rebuild.** One machine, one `nixos-rebuild`: the panel enrols its own node
-  from a token file you provide, and nothing is minted into the world-readable Nix store.
-- **The Update button works on a declarative host, as a rebuild.** Off unless you turn it on, honest about
-  being off, and when a rebuild fails the panel shows the reason instead of waiting for a version that never
-  arrives.
-- **The enrolment screen offers NixOS beside bare-metal and Docker** and hands you the config block to paste,
-  with the endpoint filled in — it has no default, so the block as it used to read failed the first rebuild.
-- **Moving an existing install onto NixOS keeps what your clients trust.** `nix/adopt.sh` reports what a box
-  carries, carries the server identities and password stores across, and releases the old units — reusing
-  the token the box already holds, because a re-minted one comes up as a second node and strips the first.
-- **The panel says what a node runs on.** A platform badge beside the run-model badge, a podman node that
-  says podman rather than Docker, and a declarative node whose controls stand down where the host owns them.
-- **One peer, any mix of protocols.** A peer used to be all WireGuard, or all WDTT, or all csqtt. It can now
-  hold wg, AmneziaWG, WDTT and csqtt deployments at once, and gets exactly the credentials its servers call
-  for — a keypair for the tunnels, one access password per turn family. A device that falls back from a
-  tunnel to a turn server is one entry in the roster now, not three that have to be kept in step by hand.
-- **Name your own WDTT and csqtt servers.** Creating one no longer forces `wdtt0`–`wdtt999` /
-  `csqtt0`–`csqtt9999`; any safe name works, as taking over someone else's server always has. That pattern
-  was standing in for "the name tells you what it is", and the panel no longer needs it to: what it knows
-  about an interface decides how it is treated, so a server you named yourself is no longer filed under
-  WireGuard in the filters, the dropdowns and the badges.
-- **Client settings belong to the deployment, not the peer.** DNS, MTU, allowed IPs and keepalive moved from
-  one block per peer to a gear on each WireGuard row — so two deployments of one peer can route differently,
-  and a peer that also has turn servers is no longer shown fields that mean nothing for them.
-- **A Group switch on the Peers screen** collapses the grid to one row per peer, its other deployments behind
-  the same +N the server and interface filters already produce. The grid lists deployments by default, which
-  is right when you are looking at where things run and wrong when you are looking for a device.
-- **The subscription page leads with Connections.** The picker moved off a floating pill into the action bar,
-  in turn-proxy colours, under a mark that draws one arrow per protocol in that protocol's own colour. Copy
-  went with it: Download and Share already cover the file and the text, and every config box on the page
-  keeps its own copy button.
+### Добавлено
+- **NixOS теперь полноценный способ запускать swgPanel** — панель, узел, страницу подписок и мастер, который
+  совмещает первое со вторым. Никакого установщика скачивать не нужно: ваш `configuration.nix` *и есть*
+  установка. У `services.swg-panel` и `services.swg-node` два равноправных способа доставки —
+  `delivery = "container"` запускает опубликованные образы, `delivery = "native"` запускает сами программы из
+  вашего Nix store, — а панель не знает, как был установлен узел, поэтому любая панель по-прежнему управляет
+  любым узлом в любом сочетании. Поставляется как flake (и `default.nix` для тех, кто на каналах) вместе с
+  модулем, пакетом и тестом в виртуальной машине, который поднимает настоящую панель и настоящий узел и
+  проверяет, что они сходятся.
+- **Роль мастера за одну пересборку.** Одна машина, один `nixos-rebuild`: панель принимает собственный узел
+  по файлу с токеном, который даёте вы, и ничего не создаётся внутри общедоступного Nix store.
+- **Кнопка «Обновить» работает на декларативном хосте — как пересборка.** Выключена, пока вы её не включите,
+  честно сообщает, что выключена, а если пересборка не удалась, панель показывает причину, вместо того чтобы
+  ждать версию, которая никогда не придёт.
+- **Экран подключения узла предлагает NixOS рядом с bare-metal и Docker** и выдаёт блок конфигурации для
+  вставки — с заполненным адресом узла: у него нет значения по умолчанию, поэтому блок в прежнем виде ронял
+  первую же пересборку.
+- **Перенос существующей установки на NixOS сохраняет то, чему доверяют клиенты.** `nix/adopt.sh` показывает,
+  что несёт машина, переносит личности серверов и хранилища паролей и снимает старые юниты — используя токен,
+  который у машины уже есть: заново выданный поднимает её как второй узел и обнуляет первый.
+- **Панель говорит, на чём работает узел.** Значок платформы рядом со значком модели запуска, узел на podman,
+  который так и пишет — podman, а не Docker, и декларативный узел, у которого отключены те органы управления,
+  которыми распоряжается хост.
+- **Один пир — любое сочетание протоколов.** Раньше пир был либо целиком WireGuard, либо целиком WDTT, либо
+  целиком csqtt. Теперь он может держать развёртывания wg, AmneziaWG, WDTT и csqtt одновременно и получает
+  ровно те учётные данные, которых требуют его серверы: пару ключей для туннелей и по одному паролю доступа
+  на каждое turn-семейство. Устройство, которое переключается с туннеля на turn-сервер, — это теперь одна
+  запись в реестре, а не три, которые приходилось согласовывать вручную.
+- **Свои имена для серверов WDTT и csqtt.** При создании больше не навязываются `wdtt0`–`wdtt999` /
+  `csqtt0`–`csqtt9999` — подходит любое безопасное имя, как это всегда было при принятии чужого сервера. Этот
+  шаблон подменял собой правило «имя говорит, что это такое», и панели он больше не нужен: как обращаться с
+  интерфейсом, решает то, что панель о нём знает. Сервер с вашим именем больше не попадает в фильтрах,
+  списках и метках в WireGuard.
+- **Клиентские настройки принадлежат развёртыванию, а не пиру.** DNS, MTU, разрешённые адреса и keepalive
+  переехали из одного блока на пира к шестерёнке в каждой строке WireGuard — так два развёртывания одного
+  пира могут маршрутизироваться по-разному, а пиру, у которого есть ещё и turn-серверы, больше не показывают
+  поля, для них бессмысленные.
+- **Переключатель «Объединить» на экране пиров** сворачивает таблицу до строки на пира, остальные его
+  развёртывания уходят за то же «+N», что уже дают фильтры по ноде и интерфейсу. По умолчанию таблица
+  перечисляет развёртывания: это верно, когда смотришь, где что работает, и неверно, когда ищешь устройство.
+- **На странице подписки главная кнопка — «Подключения».** Выбор переехал с плавающей пилюли в панель
+  действий, в цветах turn-прокси, со значком, который рисует по стрелке на протокол в его собственном цвете.
+  Вместе с ней ушло «Копировать»: «Скачать» и «Поделиться» и так покрывают файл и текст, а у каждого блока
+  конфига на странице своя кнопка копирования.
 
-### Changed
-- **Access & TLS is a read-only view on a declaratively managed host** — it shows the address the module
-  gave the panel, and a sample reverse-proxy configuration built from this panel's own values, rather than
-  offering changes the next rebuild would undo.
-- **The installers refuse to run on a declaratively managed host** instead of laying down a second install
-  that host's own tooling cannot see. Uninstall refuses the same way, and refuses to delete state whose
-  services it could not actually stop.
-- **A node's turn-proxy, WDTT and csqtt records moved in with the rest of its state**, so changing how a node
-  runs no longer leaves two copies to drift apart — a change to a proxy's port or wrap key used to be
-  silently reverted by the older one, which breaks every client of that proxy.
-- **Stored client configs are on by default**, matching every other installation method.
-- **A hover bubble no longer competes with the browser's own tooltip.** Anything that opens one sits inside
-  something that carries a tooltip, and often carries its own — so both appeared, and the native one covered
-  the bubble it duplicated.
+### Изменено
+- **«Доступ и TLS» на декларативном хосте — экран только для чтения**: он показывает адрес, который панели дал
+  модуль, и пример конфигурации обратного прокси, собранный из значений этой самой панели, вместо изменений,
+  которые следующая пересборка всё равно отменит.
+- **Установщики отказываются работать на декларативном хосте**, вместо того чтобы класть рядом вторую
+  установку, невидимую для его собственных средств. Удаление отказывается так же и не удаляет состояние,
+  службы которого не смогло остановить.
+- **Записи о turn-прокси, WDTT и csqtt переехали туда же, где лежит остальное состояние узла**, поэтому смена
+  модели запуска больше не оставляет две копии, расходящиеся между собой: изменённый порт прокси или ключ
+  обёртки прежде молча откатывался к старой копии, а это ломает всех клиентов этого прокси.
+- **Сохранение конфигураций клиентов включено по умолчанию** — как и во всех остальных способах установки.
+- **Всплывающая подсказка больше не спорит с системной.** Всё, что открывает пузырёк, находится внутри
+  элемента с подсказкой, а часто имеет и свою — появлялись обе, и системная закрывала тот самый пузырёк,
+  который дублировала.
 
-### Fixed
-- **Podman is recognised as a container runtime.** A node running under podman reported itself as though it
-  were running on bare metal, so the panel offered it host-level controls that could not work, and every
-  firewall rule the node writes failed for want of one capability Docker grants and podman does not.
-- **A plain WireGuard interface stays plain WireGuard.** Config files are collected into one directory
-  whenever a node changes how it runs, and the directory used to decide the protocol — so a converted or
-  adopted WireGuard interface came back as AmneziaWG: the panel re-badged it, the tools stopped reading it,
-  and setting obfuscation on it later would have broken every client. Each config now says what it is.
-- **An interface the panel manages is no longer stranded as "missing" while it is running.** The panel now
-  states which interfaces it owns, so a node that has lost a config file re-adopts the live interface instead
-  of offering a Restore that refuses because the device already exists.
-- **Moving a node to a different panel no longer leaves it unable to mesh.** The previous panel's mesh link
-  stayed on the box for ever, holding the address the new panel's link needs, and nothing in the interface
-  gave you a way to remove it.
-- **An interface's outbound NAT rule stops multiplying.** Every restart added another copy and a delete
-  removed only one, so an interface could accumulate dozens and deleting it left one behind, silently
-  masquerading traffic for a subnet that no longer existed.
-- **Taking a server over from another container no longer takes the node offline while it happens**, no
-  longer reports "nothing was changed" about a container that is in fact down, and finds containers under
-  podman as well as Docker.
-- **A container that shares the host's network no longer offers the host's own interfaces for adoption.**
-- **A WDTT server whose service file drifted heals itself** instead of restarting every three seconds for
-  ever, and one the panel expects to be running is started rather than only watched.
-- **Blocking a user from their own editor now offers to unblock them.** The button kept saying Block and
-  re-ran the block; you had to close the editor and reopen it before Unblock existed at all.
-- **Updating from the command line can report its errors again.** Every warning and failure this script can
-  raise had been going to nowhere since its lock landed, so a failed update looked like a silent one.
-- **A state directory the panel cannot read is no longer reported as another copy of the panel holding a
-  lock** — it names the directory, the owner, and the command that fixes it.
-- **A convert to Docker carries the settings your servers actually have.** It was reading them from where
-  they used to be kept, so on a recent installation it carried an out-of-date copy, or none at all — and for
-  WDTT and csqtt that means the owner password, without which the server comes back up rejecting every
-  client it already had. Removing the last such server now clears its record too, instead of leaving one the
-  node reinstalls from with a fresh identity.
-- **Adoption records which tool an adopted interface needs**, so an interface you adopted survives a later
-  convert; before, it came back under the wrong tool and every operation on it failed.
-- **A comment in the generated `.env` was running a command on every Docker install**, printing what looked
-  like a real failure over the installer's output and losing the words it was trying to explain.
-- **The subscription page is offered an address when you turn subscriptions on**, instead of asking you to
-  enable something that cannot serve anything yet.
-- **A port outside the firewall range a declarative host declares now says so** rather than silently
-  refusing connections.
-- **Four English nouns are pluralised correctly** in the panel's own messages.
-- **A peer can no longer be deployed to a turn server the panel does not manage.** A node can be running a
-  WDTT or csqtt server this panel knows nothing about — a machine that changed fleets brings its old panel's
-  servers with it — and those were offered as targets. Nothing was ever sent to them, because the password
-  set is derived from what the panel manages, yet the deployment reported Ready. Take the server over first.
+### Исправлено
+- **Podman распознаётся как среда контейнеров.** Узел под podman сообщал о себе так, будто работает на голом
+  железе, поэтому панель предлагала ему органы управления уровня хоста, которые не могли сработать, а все
+  правила брандмауэра, которые пишет узел, падали из-за одной привилегии, которую Docker даёт, а podman нет.
+- **Обычный интерфейс WireGuard остаётся обычным WireGuard.** При смене модели запуска конфигурации
+  собираются в один каталог, и раньше именно каталог определял протокол — поэтому перенесённый или принятый
+  интерфейс WireGuard возвращался как AmneziaWG: панель меняла ему метку, инструменты переставали его читать,
+  а включённая позже обфускация сломала бы всех клиентов. Теперь каждая конфигурация сама говорит, что она.
+- **Интерфейс, которым управляет панель, больше не остаётся «пропавшим», пока он работает.** Панель теперь
+  сообщает, какие интерфейсы принадлежат ей, поэтому узел, потерявший файл конфигурации, снова принимает
+  живой интерфейс, а не предлагает «Восстановить», что отказывает, раз устройство уже существует.
+- **Перенос узла на другую панель больше не лишает его меша.** Линк меша прежней панели навсегда оставался на
+  машине, занимая адрес, который нужен линку новой панели, и убрать его из интерфейса было нечем.
+- **Правило исходящего NAT интерфейса перестало размножаться.** Каждый запуск добавлял ещё одну копию, а
+  удаление снимало только одну, так что у интерфейса их накапливались десятки, а после удаления одна
+  оставалась — молча маскируя трафик подсети, которой больше нет.
+- **Перехват сервера из чужого контейнера больше не уводит узел в оффлайн на время операции**, больше не
+  сообщает «ничего не изменено» о контейнере, который на самом деле остановлен, и находит контейнеры не
+  только в Docker, но и в podman.
+- **Контейнер, разделяющий сеть с хостом, больше не предлагает к приёму интерфейсы самого хоста.**
+- **Сервер WDTT с разошедшимся файлом службы чинит себя сам**, вместо того чтобы вечно перезапускаться раз в
+  три секунды, а тот, который панель считает запущенным, теперь запускается, а не только наблюдается.
+- **Блокировка пользователя из его же карточки теперь предлагает разблокировать.** Кнопка продолжала писать
+  «Заблокировать» и повторяла блокировку; чтобы появилось «Разблокировать», карточку приходилось закрыть и
+  открыть заново.
+- **Обновление из командной строки снова может сообщать об ошибках.** Все предупреждения и отказы, которые
+  этот сценарий умеет выдавать, с момента появления в нём блокировки уходили в никуда, и неудачное обновление
+  выглядело просто молчаливым.
+- **Каталог состояния, который панель не может прочитать, больше не выдаётся за блокировку от второй копии
+  панели** — теперь называется каталог, владелец и команда, которая это чинит.
+- **Перевод на Docker переносит настройки, которые у ваших серверов есть на самом деле.** Он читал их там,
+  где они лежали раньше, поэтому на свежей установке переносил устаревшую копию или не переносил ничего — а
+  для WDTT и csqtt это пароль владельца, без которого сервер поднимается, отвергая всех своих прежних
+  клиентов. Удаление последнего такого сервера теперь стирает и его запись, а не оставляет ту, из которой
+  узел переустановит его с новой личностью.
+- **При приёме интерфейса записывается, каким инструментом его вести**, поэтому принятый интерфейс переживает
+  последующий перевод; раньше он возвращался под неверным инструментом, и любая операция с ним падала.
+- **Комментарий в создаваемом `.env` выполнял команду при каждой установке в Docker**, печатая поверх вывода
+  установщика то, что выглядело как настоящая ошибка, и теряя те самые слова, которые пояснял.
+- **Странице подписок предлагается адрес, когда вы включаете подписки**, вместо просьбы включить то, что пока
+  ничего не может отдать.
+- **Порт вне диапазона брандмауэра, объявленного декларативным хостом, теперь так и говорит**, а не молча
+  отклоняет подключения.
+- **Четыре английских существительных получают правильное множественное число** в сообщениях панели.
+- **Пира больше нельзя развернуть на turn-сервере, которым панель не управляет.** Нода может держать сервер
+  WDTT или csqtt, о котором эта панель ничего не знает: машина, сменившая фейт, приносит серверы прежней
+  панели с собой — и они предлагались как цели. Туда ничего не отправлялось, потому что набор паролей
+  выводится из того, чем панель управляет, но развёртывание показывало «Готов». Сначала примите сервер.
 
 ## [1.7.15-beta] — 2026-08-22
 
-### Added
-- **Any connection in two taps on the subscription page** — a device with several servers or proxies used to
-  be a dozen swipes away. Tap the device name, or the new **Connections** button, to get an index of every
-  device on the subscription; tap a device, tap a connection, and the page is already there. Levels with
-  nothing to choose are skipped, and a subscription holding a single config doesn't show the button at all.
-  Special thanx to @GoSSy4691 for ideas.
-- **An update now tells you when your `docker-compose.yml` is older than the release.** Compose is patched
-  key by key rather than replaced, because it carries settings nothing else records — so anything added to
-  the shipped file reaches only fresh installs. The update now names the difference instead of leaving you
-  to discover it.
-- **THIRD-PARTY notices in Russian**, kept in step with the English page by a check that fails if the two
-  ever disagree.
+### Добавлено
+- **Любое подключение в два касания на странице подписки.** Раньше до устройства с несколькими серверами или
+  прокси приходилось добираться десятком свайпов. Нажмите имя устройства или новую кнопку **Подключения** —
+  откроется список всех устройств подписки: касание по устройству, касание по подключению, и страница уже
+  там. Уровни, где выбирать не из чего, пропускаются, а если в подписке одна конфигурация, кнопки нет вовсе.
+  Отдельное спасибо @GoSSy4691 за идеи.
+- **Обновление теперь сообщает, что ваш `docker-compose.yml` старше выпуска.** Compose дополняется по
+  ключам, а не заменяется целиком, потому что хранит настройки, которых больше нигде нет, — поэтому всё
+  добавленное в поставляемый файл доходило только до новых установок. Теперь разница названа явно.
+- **Уведомления THIRD-PARTY на русском**, синхронные с английской страницей: проверка не даст им разойтись.
 
-### Changed
-- **On iPhone, VK TURN Proxy now opens the moment you tap.** Its app used to accept a connection only from
-  Settings → Import, so the page showed a screenshot of that screen and held the app back five seconds behind
-  a countdown so you had time to read it. The app imports from its main screen as of build 350, so the wait and
-  the screenshot are gone — both when the page already knows you have the app, and when you pick "Open" from
-  the two buttons it offers the first time.
-- **Up and down now feel like left and right on the subscription page.** Moving between devices tracks your
-  finger and lands on exactly one device per swipe, the same way moving between a device's servers always
-  has. A soft swipe used to do nothing at all.
-- **Full-screen hints close on a swipe in either direction**, up or down, following your finger the whole
-  way — let go short of the threshold and the card springs back.
-- **The connection list shows each app's real logo** and each connection's own colour, so you can pick one
-  without reading it.
-- **A blocked or expired device reads more clearly** — room around the status word, and the explanation on
-  two lines.
-- **The published guides were rewritten**: a plain-language subscriptions section, one command per copy
-  button, and the Russian pages now name the Settings tabs the way the Russian panel does.
+### Изменено
+- **На iPhone VK TURN Proxy теперь открывается сразу по нажатию.** Раньше приложение принимало подключение
+  только через Settings → Import, поэтому страница показывала снимок этого экрана и задерживала запуск на пять
+  секунд с обратным отсчётом, чтобы его успели прочитать. Начиная со сборки 350 приложение импортирует с
+  главного экрана, так что ожидание и снимок убраны — и когда страница уже знает, что приложение установлено,
+  и когда вы выбираете «Открыть» из двух кнопок, которые она предлагает в первый раз.
+- **Движение вверх и вниз на странице подписки стало таким же, как влево и вправо.** Переход между
+  устройствами следует за пальцем и переключает ровно на одно устройство за свайп — как это всегда работало
+  между серверами одного устройства. Раньше мягкий свайп не делал ничего.
+- **Полноэкранные подсказки закрываются свайпом в любую сторону**, вверх или вниз, следуя за пальцем: если
+  отпустить, не дойдя до порога, карточка возвращается на место.
+- **В списке подключений — настоящие логотипы приложений** и собственный цвет каждого подключения, чтобы
+  выбирать не читая.
+- **Заблокированное или истёкшее устройство читается яснее** — воздух вокруг статуса и пояснение в две
+  строки.
+- **Опубликованные руководства переписаны**: раздел о подписках простым языком, по одной команде на кнопку
+  копирования, а русские страницы называют вкладки настроек так же, как русская панель.
 
-### Fixed
-- **A WDTT or csqtt server installed in Docker is no longer read as a different install.** Every fork ships a
-  Docker option, and a containerised server's configuration directory is a path inside that container — but the
-  node looked for it on the host. On a machine that had ever run one on bare metal both sit at the same default
-  path, so the panel offered to adopt the containerised server while showing the OTHER install's users, and
-  adopting it would have taken over the wrong identity and password store, breaking every client of both. The
-  node now reads each server's configuration the way that server itself sees it. Taking one over reads and stops it the same
-  way: it copies the identity and passwords from inside the container, and stops the container rather than only
-  the process — a container set to restart simply came back, held the port, and the take-over timed out saying
-  the server was still running.
-- **A csqtt server can now be taken over whatever it is called.** Adoption reused the naming rule meant for
-  instances the panel creates, so a server someone else installed was refused with "invalid iface
-  (csqtt0..csqtt9999)" — for a server the panel had just listed as adoptable. Names we choose are still
-  `csqtt0`–`csqtt9999`; a server we adopt keeps the name it already has, exactly as WDTT already did.
-- **A card for an interface owned by a container no longer prints a path that doesn't exist on the node.** It
-  showed both the container and a "Found at" directory, but that directory is inside the container — the
-  container name is the thing you can act on, so it is now shown on its own.
-- **An unattended uninstall no longer throws away the interface keys and peers it offered to keep.** Every
-  keep-by-default question silently resolved to "no" whenever there was no terminal to ask on — so running
-  the uninstaller from a script, a pipe, or a non-interactive connection deleted `data/node-confs`, which is
-  exactly what that prompt promises to leave behind for a future re-install. The same defect also left a
-  container whose interface had been taken over switched off, reporting only "start one by hand".
-- **Re-installing after an uninstall that kept your data no longer leaves the Encryption Vault sealed.** The
-  uninstaller keeps `/var/lib/swg-panel` by default but removes the login the vault is wrapped under, so the
-  re-install minted a new password the vault could not follow — and the one prompt that accepts your
-  encryption key never appeared, while Settings went on showing a configured vault. Nothing was ever
-  destroyed; the panel now asks you to reconnect it at the next sign-in, with the old password or your
-  encryption key, and the uninstaller says so while you still have that password.
-- **The subscription page could go down exactly when its certificate arrived.** Serving without a
-  certificate yet, `swg-sub` waited for the panel to issue one — but the signal that says "it's ready" had
-  no handler installed until after that wait, so it killed the process instead. Subscribers went from a TLS
-  error to no server at all, and nothing restarted it.
-- **A Docker panel reported the subscription service healthy while every subscriber got a TLS error.** The
-  certificate check was switched off on Docker, and once switched on it was still discarded before it could
-  be shown. Both halves are fixed.
-- **The certificate alert now offers a remedy that can fix it** — Reissue certificate, rather than "Run
-  update", which reinstalls a service that is already installed and then reports success.
-- **Updating from the command line no longer raises a CRITICAL alert about the AmneziaWG module**, which was
-  true only because the update was rebuilding it — and sat next to a button that started a second update on
-  top of the first. Only one update can now run at a time.
-- **An update no longer leaves its "in progress" marker behind**, which made later runs think one was still
-  going.
-- **Re-running the installer on a master no longer unenrols the rest of the fleet.** Every other node kept
-  syncing, got rejected, and showed as never-enrolled while its peers still pointed at it.
-- **Re-installing a Docker node with a new key no longer locks it out permanently** with "invalid node
-  token" every five seconds.
-- **Taking over an AmneziaVPN container no longer breaks its clients.** The interface was brought up with
-  obfuscation settings the existing clients knew nothing about; handshakes still completed, so the server
-  looked healthy while traffic silently stopped.
-- **Uninstalling gives back a container whose interface was taken over**, on bare metal and on Docker,
-  instead of leaving the machine with no server at all.
-- **Adopting a running WDTT server no longer leaves the panel offering to adopt it again.**
-- **Container discovery stopped asking containers for tools their image doesn't have** — around 1,400
-  failed calls a day on a busy box, burying anything real in the logs.
-- **Uninstalling and converting now disable the units they delete**, instead of leaving a permanently
-  failing service behind.
-- **`bootstrap.sh` says why it stopped** instead of exiting silently when there's no terminal, and no longer
-  risks answering a destructive prompt on your behalf.
-- **A turn proxy is no longer labelled a backup of the tunnel it fronts.** Primary and Backup now compare
-  like with like, and a preferred deployment marked in the panel is finally honoured by the subscription
-  page.
-- **Two more English sentences on a Russian panel** — the irreversible half of the Reassign warning, and the
-  interface breakdown on the Overview.
+### Исправлено
+- **Сервер WDTT или csqtt, установленный в Docker, больше не читается как другая установка.** У каждого форка
+  есть вариант установки в Docker, и каталог конфигурации такого сервера — это путь внутри его контейнера, а
+  узел искал его на хосте. На машине, где когда-либо стоял такой сервер на «голом железе», оба лежат по одному
+  и тому же пути по умолчанию: панель предлагала принять контейнерный сервер, показывая пользователей ЧУЖОЙ
+  установки, а приём забрал бы не ту личность и не то хранилище паролей — сломав клиентов обоих. Теперь узел
+  читает конфигурацию каждого сервера так, как её видит сам сервер. Приём такого сервера читает и останавливает его так же:
+    личность и пароли копируются изнутри контейнера, а останавливается контейнер, а не только процесс —
+    контейнер с автоперезапуском просто поднимался снова, занимал порт, и приём завершался сообщением,
+    что сервер всё ещё работает.
+- **Сервер csqtt теперь можно принять под любым именем.** Приём использовал правило именования,
+  предназначенное для экземпляров, которые создаёт панель, поэтому сервер, установленный кем-то другим,
+  отклонялся с ошибкой «invalid iface (csqtt0..csqtt9999)» — хотя панель только что показала его как
+  доступный для приёма. Имена, которые выбираем мы, по-прежнему `csqtt0`–`csqtt9999`; принятый сервер
+  сохраняет своё имя — ровно так, как это уже работало для WDTT.
+- **Карточка интерфейса, которым владеет контейнер, больше не показывает путь, которого на узле нет.**
+  Раньше выводились и контейнер, и строка «Найден в», но этот каталог находится внутри контейнера —
+  действовать можно с именем контейнера, поэтому теперь показывается только оно.
+- **Автоматическое удаление больше не выбрасывает ключи интерфейсов и пиров, которые предлагало сохранить.**
+  Любой вопрос «сохранить?» с ответом «да» по умолчанию молча превращался в «нет», если спрашивать было не у
+  кого (нет терминала), — и запуск деинсталлятора из скрипта, конвейера или неинтерактивного соединения
+  удалял `data/node-confs`, то есть ровно то, что этот вопрос обещает оставить для будущей переустановки.
+  Та же ошибка оставляла выключенным контейнер, у которого забрали интерфейс, сообщая лишь «запустите
+  вручную».
+- **Повторная установка после удаления с сохранением данных больше не оставляет «Хранилище шифрования»
+  запечатанным.** Деинсталлятор по умолчанию оставляет `/var/lib/swg-panel`, но удаляет логин, которым
+  закрыто хранилище, — и новая установка создавала новый пароль, за которым хранилище последовать не могло,
+  а единственное окно, принимающее ключ шифрования, не появлялось: в настройках хранилище при этом
+  по-прежнему числилось настроенным. Ничего не терялось; теперь панель при следующем входе предлагает
+  переподключить хранилище — старым паролем или ключом шифрования, — а деинсталлятор предупреждает об этом,
+  пока старый пароль ещё у вас.
+- **Страница подписки могла падать ровно в момент выдачи сертификата.** Запустившись без сертификата,
+  `swg-sub` ждал, пока панель его выпустит, — но обработчик сигнала «готово» устанавливался только после
+  этого ожидания, и сигнал завершал процесс. Подписчики получали сначала ошибку TLS, а затем отсутствие
+  сервера, и ничто его не перезапускало.
+- **Панель в Docker считала службу подписки исправной, пока все подписчики получали ошибку TLS.** Проверка
+  сертификата была отключена в Docker, а после включения её всё равно отбрасывали до показа. Исправлены обе
+  половины.
+- **Оповещение о сертификате предлагает средство, которое действительно помогает** — «Перевыпустить
+  сертификат» вместо «Обновить», которое переустанавливает уже установленную службу и рапортует об успехе.
+- **Обновление из командной строки больше не поднимает критическое оповещение о модуле AmneziaWG**, которое
+  было верным лишь потому, что обновление его в этот момент пересобирало, — и стояло рядом с кнопкой,
+  запускавшей второе обновление поверх первого. Теперь одновременно идёт только одно обновление.
+- **Обновление больше не оставляет после себя отметку «выполняется»**, из-за которой следующие запуски
+  считали, что предыдущий ещё идёт.
+- **Повторная установка на мастере больше не исключает из панели остальные узлы.** Они продолжали
+  синхронизацию, получали отказ и выглядели как никогда не подключённые, хотя пиры по-прежнему на них
+  ссылались.
+- **Повторная установка узла в Docker с новым ключом больше не блокирует его навсегда** с «invalid node
+  token» каждые пять секунд.
+- **Перехват контейнера AmneziaVPN больше не ломает его клиентов.** Интерфейс поднимался с параметрами
+  обфускации, о которых клиенты ничего не знали; рукопожатие проходило, поэтому сервер выглядел исправным,
+  а трафик молча прекращался.
+- **Удаление возвращает контейнер, у которого был перехвачен интерфейс** — и на «голом железе», и в
+  Docker, — вместо того чтобы оставить машину вообще без сервера.
+- **Перехват работающего сервера WDTT больше не оставляет в панели предложение перехватить его снова.**
+- **Обнаружение контейнеров перестало спрашивать у контейнеров инструменты, которых нет в их образе** —
+  около 1400 неудачных вызовов в сутки на нагруженной машине, за которыми терялось всё существенное.
+- **Удаление и конвертация теперь отключают юниты, которые удаляют**, а не оставляют постоянно падающую
+  службу.
+- **`bootstrap.sh` объясняет, почему остановился**, вместо молчаливого выхода при отсутствии терминала, и
+  больше не рискует ответить за вас на опасный вопрос.
+- **Turn-прокси больше не помечается резервом того туннеля, перед которым он стоит.** «Основной» и «Резерв»
+  сравнивают однородное с однородным, а предпочитаемое размещение, отмеченное в панели, наконец учитывается
+  страницей подписки.
+- **Ещё две английские фразы на русской панели** — необратимая часть предупреждения о переназначении и
+  разбивка по интерфейсам на обзорной странице.
 
 ## [1.7.14-beta] — 2026-08-21
 
-### Changed
-- **New AmneziaWG interfaces are harder to fingerprint.** A new interface used to carry a single junk-packet
-  definition; it now carries all five, two of them timestamped, so the traffic that precedes a handshake varies
-  between sessions instead of repeating one fixed shape. This applies to interfaces you create from now on —
-  existing interfaces keep exactly the parameters they already have, and nobody needs a new config.
-- **Adopting an interface no longer copies a client's address into the server's configuration.** Rebuilding a
-  config from a running interface picked up whichever address each peer last spoke from — transient information
-  about a person, not configuration — and wrote it into a file that backups and the Docker/bare-metal conversion
-  then carry around. It is left out now, except where it genuinely is configuration: a node-to-node link that
-  dials out keeps its address.
+### Изменено
+- **Новые интерфейсы AmneziaWG сложнее распознать.** Раньше новый интерфейс получал одно описание мусорного
+  пакета — теперь все пять, два из них со временной меткой, поэтому трафик перед рукопожатием меняется от сеанса
+  к сеансу, а не повторяет одну и ту же форму. Это касается интерфейсов, которые вы создадите с этого момента:
+  у существующих параметры остаются ровно теми же, и новые конфигурации никому не нужны.
+- **При переносе интерфейса адрес клиента больше не попадает в конфигурацию сервера.** Восстанавливая
+  конфигурацию по работающему интерфейсу, панель забирала адрес, с которого пир в последний раз выходил на
+  связь, — сведения о человеке, а не настройка, — и записывала его в файл, который потом кочует по резервным
+  копиям и переносу между Docker и железом. Теперь он не записывается, кроме случая, когда это действительно
+  настройка: у связи между нодами, которая сама набирает адрес, он сохраняется.
 
-### Added
-- **The AmneziaWG obfuscation a new interface gets is now yours to set.** Panel settings → Interfaces →
-  Defaults holds the full parameter grid beside DNS, MTU and keepalive, and it behaves like they do: what you
-  fill in is applied to every new AmneziaWG interface, and you can still override it per interface afterwards.
-  A cell left blank keeps the built-in behaviour, which the placeholder text spells out — the constants for
-  Jc/Jmin/Jmax and I1–I5, and for S1–S4 and H1–H4 a fresh roll **per interface**, so two interfaces never
-  carry the same fingerprint and learning one server's headers tells an observer nothing about the rest.
-  Fill those in only if you want the whole fleet to share them. WireGuard interfaces ignore all of it.
+### Добавлено
+- **Обфускацию AmneziaWG для новых интерфейсов теперь можно задать самому.** В настройках панели →
+  Интерфейсы → «По умолчанию» рядом с DNS, MTU и keepalive появилась вся сетка параметров, и работает она так
+  же: заполненное применяется к каждому новому интерфейсу AmneziaWG, а переопределить его для конкретного
+  интерфейса по-прежнему можно. Пустая ячейка оставляет всё как было — подсказка в поле прямо об этом говорит:
+  для Jc/Jmin/Jmax и I1–I5 это постоянные значения, а S1–S4 и H1–H4 нода разыгрывает заново **для каждого
+  интерфейса**, поэтому два интерфейса никогда не несут одинаковый отпечаток и, узнав заголовки одного
+  сервера, об остальных вывод сделать нельзя. Заполняйте их, только если хотите один набор на весь флот.
+  Интерфейсы WireGuard всё это игнорируют.
 
-### Fixed
-- **A take-over the node never answered stayed pending for ever** — and on most nodes the timeout that was
-  supposed to end it never ran at all. It only ran on nodes that also happened to run a WDTT server, so a plain
-  server taking over a container, or one running only csqtt, kept a request open indefinitely: the panel went on
-  asking the node to stop a container that was long since back up, and you watched a row that said it was still
-  trying. A take-over that gets no answer now gives up after five minutes and says so, naming the container, and
-  you can start a fresh one.
-- **A peer that had never connected was reported as "Restricted".** That status means the client is reaching the
-  server and being stopped, and it sent people looking at DPI, MTU and obfuscation for someone who had simply
-  never connected. It was reached whenever the server's config already held an address for the peer, which
-  happens after a Docker-to-bare-metal conversion. The panel now requires that something actually arrived from
-  the peer, so a genuinely blocked client still reads as blocked and one that never connected reads as ready.
-- **An interface stuck on "Creating" now tells you when it is a dead end.** If the node holds a record for the
-  name but no such interface exists on it any more, it stayed silent while the panel asked again every five
-  seconds, so the card said "Creating" indefinitely with no reason given. The node now says what is wrong.
-  Re-creating the interface is left to you deliberately: it would mint a new server key and break every existing
-  client config, where Restore reuses the original key.
-- **A server's own outbound tunnel was offered for adoption.** WDTT-Plus can send its users out through
-  Cloudflare WARP, an imported WireGuard profile or another VPS; choosing one of those exits in its bot creates
-  a second interface (`wg-wdtt-exit`) that is your box dialling **out**, not a server anyone connects to. The
-  panel listed it as an orphan and offered to take it over — which would have handed it your server's egress
-  and presented its single upstream as though it were one of your users. Interfaces of that shape — a host
-  address, plus a peer with an endpoint that takes the default route — are no longer discovered at all. A
-  hand-rolled WARP or wgcf tunnel looks the same and is skipped for the same reason.
-- **A WDTT server's card counted live connections where the page it opens counted accounts.** The card showed
-  the peers currently programmed onto the kernel device, so a server with five users could read "1" and then
-  list five when opened. Both numbers were honest — WDTT puts a peer on the device when someone connects and
-  removes it when their password expires — but the card now counts accounts, which is what you are deciding
-  about when you adopt it.
-- **A create the node refused sat on "creating" for ever, next to its own error icon.** The card only cleared
-  when the node reported the interface — which a failed one never does. It now reads **failed** the moment the
-  node reports why, and the line beneath says to open the error rather than claiming work is still happening.
-- **The panel stopped telling you to run a command that cannot work.** When AmneziaWG tools were missing it
-  always named the Amnezia PPA, which is Ubuntu-only — and even on Ubuntu `add-apt-repository` ends in an
-  unreadable Python traceback whenever Launchpad is unreachable. Since the installer now builds from source on
-  any distribution, it simply says to re-run it.
-- **Messages from your nodes are translated.** Sixteen of them — including every "cannot create this
-  interface" reason — arrived as English inside an otherwise translated page.
-- **A take-over that could not succeed no longer stops the server first.** The tools needed to stand the
-  interface up were only checked once the container was already down, so a node without them took a working
-  VPN offline for the stop-fail-restart cycle just to discover a precondition. It is checked before anything
-  is touched now, and says which protocol and which two binaries are needed.
-- **Updating now installs AmneziaWG on a node that never got it.** The update already healed a kernel module
-  that failed to build, but it skipped any node where the tools were missing entirely — "this node doesn't use
-  AmneziaWG, nothing to heal" — which is exactly the node that needed it. That is how an install could report
-  success and leave a server permanently unable to create or take over an AmneziaWG interface. The update now
-  brings such a node up to what a fresh install would have given it: the package route where it works, a source
-  build where it doesn't, and the userspace datapath where no kernel module can load. It tells you which one you
-  ended up on, and stays a silent no-op on a node that is already fine.
-- **AmneziaWG now installs on Debian — and on anything else, not just Ubuntu.** The installer only ever knew
-  one way to get it: the Amnezia PPA, which is Ubuntu-only. Everywhere else it warned and carried on, so the
-  install "succeeded" onto a node that could not run AmneziaWG at all — and nothing said so until you tried
-  to create or take over an interface. It now builds the tools and the kernel module from source when the
-  package route is unavailable, so a Debian node gets the same fast kernel datapath an Ubuntu one does. If
-  the module genuinely cannot load — no headers for the running kernel, or a container-based VPS that cannot
-  load modules at all — it falls back to the userspace datapath instead of leaving you with nothing, and says
-  which one you ended up on and how to get the faster one.
-- **A container's interface could be labelled WG when it was AmneziaWG** — and taking it over then failed
-  asking for tools you had no reason to think you needed. The card named the protocol by whichever tool
-  answered inside the container, but on a host whose AmneziaWG module backs everything, `wg` lists AWG
-  interfaces too, and Amnezia names its AmneziaWG interface `wg0`. The card now reads the interface's own
-  config, which is what the take-over has always used.
-- **That failure then told you to run a command that cannot work on your system.** The install hint always
-  named the Amnezia PPA, which is Ubuntu-only — on anything else it is the very command that already failed
-  during install. It now says what applies to the system it is running on, and distinguishes "not installed"
-  from "installed, but `awg-quick` is missing", which looks identical from the panel and is not.
-- **…and the message was cut off mid-command**, at 120 characters, so the install line could not even be
-  copied. Node messages now travel whole.
-- **Taking over a second container that shares a subnet is refused, before anything is stopped.** Two
-  AmneziaVPN containers routinely use the same tunnel subnet: each has its own network namespace, so they
-  never meet. Taking both over moves them into one namespace where that stops being true, and the second
-  one's users break. Their names differ, so nothing caught it. The panel now explains the overlap and leaves
-  both servers running.
-- **A mesh link's graph used only a quarter of its width on Live and Hour.** The per-pair history is folded at
-  most once a minute, but those two ranges read a ring whose buckets are 15 seconds wide — so three out of
-  four slots were always empty and the chart, which deliberately fills from the right while a ring is still
-  filling, sat pinned at a quarter width no matter how long the link had been up. These graphs now size their
-  axis to the resolution the data actually has. A range that is genuinely still filling — a month view on a
-  ring only a few days old — still fills from the right, because that one is true.
-- **A line in the client-app sheet read "[object Object]".** The footer that tells you which app a platform's
-  users will be offered has rendered the app name and author as `[object Object], ,by ,[object Object]` since
-  1.7.11: the name is styled markup, and it was being pushed through plain text substitution. It reads properly
-  again — "iOS users will be offered VK TURN Proxy by anton48".
-- **"Device" and "Client" stopped sharing a row** as soon as their labels grew — a longer app name or the Russian
-  wording was enough to push the two pickers onto separate lines. The row no longer wraps at any width.
+### Исправлено
+- **Перенос, на который нода так и не ответила, висел вечно** — а на большинстве нод тайм-аут, который должен
+  был его прекратить, вообще не срабатывал. Он работал только там, где заодно был запущен сервер WDTT, поэтому
+  обычный сервер, перенимающий контейнер, или сервер только с csqtt держал запрос открытым бесконечно: панель
+  продолжала просить ноду остановить контейнер, который давно снова работал, а вы смотрели на строку, где
+  по-прежнему написано «переносим». Теперь перенос без ответа прекращается через пять минут, панель сообщает об
+  этом и называет контейнер, и можно начать заново.
+- **Пир, который ни разу не подключался, показывался как «ограничен».** Этот статус означает, что клиент
+  достучался до сервера и его останавливают, — и он отправлял людей разбираться с DPI, MTU и обфускацией
+  ради того, кто просто не подключался. Так выходило всегда, когда в конфигурации сервера уже был записан адрес
+  пира, а это бывает после переноса с Docker на железо. Теперь панель требует, чтобы от пира действительно
+  что-то пришло: по-настоящему заблокированный клиент так и остаётся заблокированным, а тот, кто не подключался,
+  показывается как готовый.
+- **Интерфейс, застрявший на «создаётся», теперь говорит, когда это тупик.** Если у ноды есть запись об имени,
+  но самого интерфейса на ней больше нет, она молчала, а панель продолжала просить каждые пять секунд — карточка
+  бесконечно показывала «создаётся» без всякой причины. Теперь нода объясняет, что не так. Пересоздание
+  оставлено вам намеренно: оно выпустит новый ключ сервера и сломает все существующие конфигурации клиентов,
+  тогда как «Восстановить» использует прежний ключ.
+- **Собственный исходящий туннель сервера предлагался к переносу.** WDTT-Plus умеет выпускать своих
+  пользователей через Cloudflare WARP, готовый WireGuard-профиль или другой VPS; при выборе такого выхода в его
+  боте создаётся второй интерфейс (`wg-wdtt-exit`) — это ваш сервер **сам подключается наружу**, а не сервер, к
+  которому подключаются. Панель показывала его как «сироту» и предлагала перенять, то есть забрать себе выход
+  сервера в интернет и показать его единственный апстрим как вашего пользователя. Интерфейсы такого вида —
+  хостовый адрес и пир с эндпоинтом, забирающим весь трафик, — больше не обнаруживаются вовсе. Собранный
+  вручную туннель WARP или wgcf выглядит так же и пропускается по той же причине.
+- **На карточке сервера WDTT считались активные подключения, а на его странице — учётные записи.** Карточка
+  показывала пиров, заведённых в ядро прямо сейчас, поэтому сервер с пятью пользователями мог показывать «1», а
+  при открытии перечислять пятерых. Оба числа были честными — WDTT заводит пира при подключении и убирает его,
+  когда истекает пароль, — но карточка теперь считает учётные записи: именно о них вы принимаете решение.
+- **Создание, в котором нода отказала, вечно висело в состоянии «создаётся» — рядом с собственным значком
+  ошибки.** Карточка исчезала только когда нода сообщала об интерфейсе, а при отказе этого не происходит
+  никогда. Теперь она показывает **не удалось**, как только нода сообщит причину, а строка под ней предлагает
+  открыть ошибку вместо того, чтобы уверять, будто работа идёт.
+- **Панель больше не советует команду, которая не может сработать.** При отсутствии инструментов AmneziaWG
+  она всегда называла PPA Amnezia, а он только для Ubuntu — да и на Ubuntu `add-apt-repository` завершается
+  нечитаемым traceback, если Launchpad недоступен. Теперь, когда установщик собирает всё из исходников на
+  любом дистрибутиве, она просто предлагает запустить его заново.
+- **Сообщения от нод переведены.** Шестнадцать штук, включая все причины «не могу создать этот интерфейс»,
+  приходили на английском внутри переведённой страницы.
+- **Перенос, который заведомо не может удаться, больше не останавливает сервер первым.** Инструменты, нужные
+  чтобы поднять интерфейс, проверялись только когда контейнер уже был остановлен, поэтому нода без них
+  уводила рабочий VPN в офлайн на цикл «стоп — ошибка — запуск» просто чтобы выяснить предусловие. Теперь
+  проверка идёт до того, как что-либо тронуто, и сообщает, какой это протокол и каких двух программ не хватает.
+- **Обновление теперь ставит AmneziaWG на ноду, которая его так и не получила.** Обновление и раньше чинило
+  модуль ядра, который не собрался, но пропускало ноду, где инструментов не было вовсе, — «эта нода не
+  использует AmneziaWG, чинить нечего», — то есть ровно ту, которой это было нужнее всего. Именно так установка
+  могла отчитаться об успехе и оставить сервер навсегда неспособным создать или перенять интерфейс AmneziaWG.
+  Теперь обновление доводит такую ноду до состояния свежей установки: пакеты там, где они работают, сборка из
+  исходников там, где нет, и датапас в пользовательском пространстве там, где модуль ядра не поднять. Панель
+  сообщает, что именно получилось, а на исправной ноде обновление по-прежнему ничего не делает.
+- **AmneziaWG теперь ставится и на Debian — и на всё остальное, не только на Ubuntu.** Установщик знал лишь
+  один способ его получить — PPA Amnezia, а он только для Ubuntu. Везде остальном он предупреждал и шёл
+  дальше, поэтому установка «удавалась» на ноду, которая вообще не может работать с AmneziaWG, и никто об
+  этом не сообщал, пока вы не пытались создать или перенять интерфейс. Теперь, когда пакетный путь недоступен,
+  инструменты и модуль ядра собираются из исходников, так что нода на Debian получает тот же быстрый
+  датапас ядра, что и на Ubuntu. Если модуль действительно не поднять — нет заголовков для текущего ядра или
+  это VPS в контейнере, где модули не грузятся вовсе, — используется датапас в пользовательском пространстве,
+  и панель сообщает, какой из них достался и как получить более быстрый.
+- **Интерфейс в контейнере мог отображаться как WG, хотя это AmneziaWG** — и перенос затем падал, требуя
+  инструменты, которых вы от него не ждали. Карточка определяла протокол по тому, какая утилита ответила
+  внутри контейнера, но на хосте, где всё держит модуль AmneziaWG, `wg` показывает и AWG-интерфейсы, а
+  Amnezia называет свой интерфейс AmneziaWG именно `wg0`. Теперь карточка читает саму конфигурацию
+  интерфейса — то же, чем перенос пользовался всегда.
+- **Дальше это сообщение предлагало команду, которая на вашей системе выполниться не может.** Подсказка по
+  установке всегда называла PPA Amnezia, а он только для Ubuntu — на остальных это ровно та команда, которая
+  уже не сработала при установке. Теперь подсказка соответствует системе, на которой запущена, и отличает
+  «не установлено» от «установлено, но нет `awg-quick`» — из панели это выглядит одинаково, хотя это разные
+  вещи.
+- **…а само сообщение обрывалось на середине команды**, на 120 символах, так что строку установки нельзя
+  было даже скопировать. Теперь сообщения ноды доходят целиком.
+- **Перенос второго контейнера с той же подсетью отклоняется — до того, как что-либо остановлено.** Два
+  контейнера AmneziaVPN сплошь и рядом используют одну и ту же подсеть туннеля: у каждого своё сетевое
+  пространство имён, поэтому они не пересекаются. Перенос обоих сводит их в одно пространство, где это
+  перестаёт быть правдой, и пользователи второго перестают работать. Имена у них разные, поэтому раньше
+  ничто этого не ловило. Теперь панель объясняет пересечение и оставляет оба сервера работать.
+- **График связи между нодами занимал лишь четверть ширины на «живом» и часовом диапазоне.** История по паре
+  нод складывается не чаще раза в минуту, а эти два диапазона читают кольцо с ячейками по 15 секунд — три
+  ячейки из четырёх всегда пустовали, и график, который намеренно заполняется справа, пока кольцо ещё
+  набирается, навсегда оставался прижатым к правому краю, сколько бы связь ни работала. Теперь ось таких
+  графиков строится по той детализации, которая на самом деле есть в данных. Диапазон, который действительно
+  ещё набирается — месяц на кольце возрастом в несколько дней, — по-прежнему заполняется справа: там это правда.
+- **Строка в окне клиентских приложений показывала «[object Object]».** Подпись, которая сообщает, какое
+  приложение получат пользователи этой платформы, начиная с 1.7.11 выводила название и автора как
+  «[object Object], ,by ,[object Object]»: название — оформленная разметка, а подставлялось оно как обычный
+  текст. Теперь читается нормально — «Пользователям iOS предложат VK TURN Proxy от anton48».
+- **«Устройство» и «Клиент» перестали помещаться в одну строку**, стоило подписям стать длиннее: хватало более
+  длинного названия приложения или русского текста, чтобы два поля разъехались на две строки. Теперь строка не
+  переносится ни при какой ширине.
 
 ## [1.7.13-beta] — 2026-08-20
 
-### Added
-- **Take over an AmneziaVPN server that runs in its own Docker container.** The panel could not see one at all:
-  it lives in a separate network namespace, with its config on a filesystem the node has no access to, so you
-  opened a node's page and saw an empty grid on a machine that was plainly running a VPN. Such servers now
-  appear there — with their subnet, listen port and peers, carrying the names you gave them in Amnezia itself.
-  **Take over** stops that container and stands the same server up natively: same key, same port, same
-  obfuscation, so the configs already on your users' devices keep working and nobody has to reinstall anything.
-  Its peers are imported with their names. The container is only stopped, never deleted — start it again to go
-  back. And it refuses, changing nothing, if the running interface does not match its own config or if the name
-  is already taken on that node, saying which and what to do about it; if anything fails after the container is
-  stopped, the node starts it again by itself.
+### Добавлено
+- **Перенять сервер AmneziaVPN, который работает в своём Docker-контейнере.** Панель его вообще не видела: он
+  живёт в отдельном сетевом пространстве имён, а его конфигурация — в файловой системе, к которой у ноды нет
+  доступа, поэтому вы открывали страницу ноды и видели пустоту на машине, где очевидно работает VPN. Теперь
+  такие серверы там появляются — с подсетью, портом и списком пиров, причём с теми именами, которые вы давали
+  им в самой Amnezia. **Перенять** останавливает тот контейнер и поднимает тот же сервер нативно: тот же ключ,
+  тот же порт, та же обфускация, поэтому конфигурации, уже стоящие у людей на устройствах, продолжают работать
+  и переустанавливать никому ничего не нужно. Пиры переносятся вместе с именами. Контейнер только
+  останавливается, но не удаляется — запустите его снова, чтобы вернуться назад. И перенос откажется работать,
+  ничего не тронув, если работающий интерфейс не совпадает со своей конфигурацией или если имя на ноде занято:
+  он скажет, что именно не так и что сделать; а если что-то сорвётся уже после остановки, нода поднимет
+  контейнер обратно сама.
 
-### Security
-- **Unassigning a peer did not revoke csqtt access.** Deleting a user unassigns every peer they hold precisely
-  so their saved configs stop working. That never applied to csqtt: it authenticates on a password alone, and
-  the password was left unchanged — the link kept working indefinitely while the panel showed the peer as
-  safely parked. The same applied to the explicit Unassign action. The password is now rotated with the
-  unassignment. If you unassigned or deleted anyone on an earlier version, update and unassign them again.
+### Безопасность
+- **Отвязка пира не отзывала доступ csqtt.** Удаление пользователя отвязывает все его пиры именно для того,
+  чтобы сохранённые у него конфигурации перестали работать. К csqtt это не относилось: он авторизует по одному
+  только паролю, а пароль оставался прежним — ссылка продолжала работать сколько угодно, пока панель показывала
+  пир отвязанным. То же и при ручной отвязке. Теперь пароль меняется вместе с отвязкой. Если вы кого-то
+  отвязывали или удаляли на прошлых версиях — обновитесь и отвяжите заново.
 
-### Fixed
-- **The subscription page returned nothing at all on 1.7.11–1.7.12.** The connection was accepted and no reply
-  ever came, so Cloudflare answered 520. What made it hard to spot is that the panel itself, its API and its
-  health check all answered normally throughout — nothing on the panel side looked wrong. Fixed, and the step
-  that caused it can no longer take the whole page down with it.
-- **The rotate-link button stuck for ever on a keyless peer** (csqtt, WDTT) and rotated nothing while it sat
-  there. It works now and reports what happened.
-- **VK links are authorised against the hash the link actually carries**, rather than the first one on record,
-  and the panel says plainly when the fallback link is the one in use.
-- **The client roster's "couldn't check" notice names the real cause** — a GitHub rate limit is reported once
-  for the whole check, together with how to raise it, and a client that is deliberately not tracked is now
-  described as exactly that.
+### Исправлено
+- **Страница подписки на 1.7.11–1.7.12 не отвечала вовсе.** Соединение принималось, а ответ не приходил, и
+  Cloudflare показывал 520. Сложнее всего было то, что сама панель, её API и проверка здоровья при этом
+  отвечали нормально — со стороны панели ничто не выглядело сломанным. Исправлено, и шаг, который к этому
+  привёл, больше не может уронить страницу целиком.
+- **Кнопка обновления ссылки у пира без ключей** (csqtt, WDTT) висела в «обновляется» навсегда и при этом
+  ничего не обновляла. Теперь работает и сообщает результат.
+- **Ссылки VK авторизуются по тому хешу, который ссылка реально несёт**, а не по первому записанному, и панель
+  прямо говорит, когда в ход пошла запасная ссылка.
+- **Уведомление «не удалось проверить» в списке клиентов называет настоящую причину**: про лимит GitHub
+  сообщается один раз на всю проверку — вместе с тем, как его поднять, — а клиент, который не отслеживается
+  намеренно, так и описан.
 
-### Changed
-- **Less needless work on your servers.** Panels no longer each walk GitHub for client build information — it
-  is published once, so a rate limit no longer hits everyone at the same time. A node's scan of foreign
-  containers got considerably cheaper. And the helper timer on Docker hosts stopped starting a unit every
-  second: it now waits for the queue to change instead, which is visible both in the journal and in load.
+### Изменено
+- **Меньше лишней работы на ваших серверах.** Панели больше не ходят в GitHub каждая за себя за сведениями о
+  сборках клиентов — они публикуются один раз, и лимит перестаёт задевать всех одновременно. Обход чужих
+  контейнеров на ноде стал заметно дешевле. А служебный таймер на Docker-хостах перестал запускать юнит раз в
+  секунду: теперь он просто ждёт изменений в очереди, и это видно и в журнале, и по нагрузке.
 
 ## [1.7.12-beta] — 2026-08-19
 
-### Added
-- **Name the server a VK TURN Proxy link creates on the phone.** Recent builds of the app keep a list of named
-  servers rather than one configuration, so importing two of our links left a subscriber with "Server1" and
-  "Server2" and nothing to tell them apart. There is now a **Server name** setting for that client: fill it in
-  and the imported connection appears under that name, and the servers already on the device are kept. Leave it
-  blank — as it is by default — and nothing changes: the app names it itself, as before.
+### Добавлено
+- **Имя сервера, который ссылка VK TURN Proxy создаёт на телефоне.** Свежие сборки приложения хранят список
+  именованных серверов, а не одну конфигурацию, — и после импорта двух наших ссылок у подписчика оставались
+  «Server1» и «Server2», которые нечем различить. Для этого клиента появилась настройка **Имя сервера**:
+  заполните её, и подключение попадёт в список под этим именем, а уже добавленные серверы останутся на месте.
+  Оставьте пустым — как и стоит по умолчанию — и ничего не изменится: приложение назовёт его само, как раньше.
 
-### Fixed
-- **A WireGuard interface went missing after updating a Docker node.** Only one directory inside a node
-  container survives a container being recreated, and a plain-WireGuard interface's config was not written
-  there. Updating the node destroyed the file while the interface itself kept running, so the node no longer
-  recognised an interface that was right in front of it: the panel showed it as missing, and every five
-  seconds after that the node was told to create an interface that already existed and could not be created
-  again. Three things now stop this. New interfaces are written where they survive. An update carries across
-  any config still in the old place, so nothing is lost in the first place. And a node that finds itself
-  running an interface the panel owns but it has no config for adopts it back — keeping its key, port and
-  peers, so the peers on it never notice. That last one also repairs nodes this already happened to.
-- **csqtt on a Docker node needed a file edited over SSH before it would start.** Its dataplane uses a set of
-  syscalls Docker's default security profile blocks, so it died the instant it started, with a message about
-  io_uring that named nothing an operator could act on. The panel has explained the fix for a while, but
-  applying it meant editing `.env` on the box by hand. Now it is applied for you — when converting a node
-  that already ran csqtt, when updating one, and when you add your first csqtt server to a node that is
-  already running. If you have set that value yourself, whatever it is, it is left alone.
-- **The client roster said "couldn't check" about a client it never checks.** Amurcanov's WDTT is
-  deliberately not watched — upstream stopped in August — but the roster had no way to say so and reported a
-  failed check instead. It now says "not watched", and both states explain which of the two happened.
-- **"Couldn't check" also meant GitHub was rate-limiting the panel.** The roster reads nineteen upstream
-  files against an hourly budget, and being refused for budget looked identical to a file that could not be
-  fetched — so there was no way to tell "wait a few minutes" from "this source is wrong". Rate-limiting is
-  now recognised and reported once for the whole check, with the option of setting a GitHub token to raise
-  the budget.
+### Исправлено
+- **Интерфейс WireGuard пропадал после обновления Docker-ноды.** Внутри контейнера ноды пересоздание
+  переживает только один каталог, а конфигурация обычного WireGuard-интерфейса записывалась не туда.
+  Обновление ноды уничтожало файл, тогда как сам интерфейс продолжал работать, — и нода переставала
+  узнавать интерфейс, который был прямо перед ней: панель показывала его как пропавший, а дальше каждые
+  пять секунд ноде приказывали создать интерфейс, который уже существует и создан быть не может. Теперь
+  этому мешают три вещи. Новые интерфейсы пишутся туда, где они переживут пересоздание. Обновление
+  переносит конфигурацию, оставшуюся в старом месте, — так что терять уже нечего. А нода, обнаружив у себя
+  работающий интерфейс, которым владеет панель, но конфигурации которого у неё нет, принимает его обратно —
+  сохраняя ключ, порт и пиров, так что пиры на нём ничего не замечают. Последнее чинит и те ноды, где это
+  уже случилось.
+- **csqtt на Docker-ноде не запускался, пока не отредактируешь файл по SSH.** Его датаплейн использует
+  системные вызовы, которые блокирует стандартный профиль безопасности Docker, поэтому он умирал сразу при
+  старте с сообщением про io_uring, не называвшим ничего, с чем оператор мог бы что-то сделать. Панель уже
+  какое-то время объясняла, что нужно исправить, но применить это значило править `.env` на сервере руками.
+  Теперь это делается за вас — при переводе ноды, которая уже работала с csqtt, при её обновлении и когда вы
+  добавляете первый csqtt-сервер на уже работающую ноду. Если вы задали это значение сами — любое, — его не
+  трогают.
+- **Список клиентов писал «не удалось проверить» о клиенте, который не проверяется.** WDTT от amurcanov
+  намеренно не отслеживается — разработка наверху прекратилась в августе, — но списку было нечем это
+  сказать, и он сообщал о неудачной проверке. Теперь он пишет «не отслеживается», и оба состояния поясняют,
+  что именно произошло.
+- **«Не удалось проверить» означало ещё и то, что GitHub ограничивает частоту запросов.** Список читает
+  девятнадцать файлов наверху в пределах часового лимита, и отказ по лимиту выглядел ровно как файл, который
+  не удалось получить, — отличить «подождите несколько минут» от «этот источник неверен» было невозможно.
+  Ограничение теперь распознаётся и сообщается один раз на всю проверку, вместе с возможностью задать токен
+  GitHub и поднять лимит.
 
 ## [1.7.11-beta] — 2026-08-19
 
-### Fixed
-- **PWDTT could not import the links the panel handed out.** ildarmaga's build stopped reading the older link
-  format in June and now takes a different one; the panel kept sending the old, so importing failed with
-  "the wdtt:// link is damaged — no ip/port/password inside" for a link every other WDTT app accepts. It sends
-  the format that build reads now. luminescq's PWDTT, a separate build of the same app, still takes the old one
-  and is unaffected — they are offered separately in the app picker for exactly this reason.
-- **A client setting that no client could receive.** "Workers per hash" and "Custom DNS" were offered for csqtt
-  and every WDTT server, saved, and then delivered to nobody: those apps take their settings on the device, and
-  no link format for them can carry either value. csqtt's app confirms it — the link it reads has room for the
-  server, the password and the VK hashes, and ignores anything else. The two boxes are gone, except the one that
-  IS delivered: qWDTT reads a worker count from its link, and now receives the one you set.
-- **A fork with servers running on it read "not yet used".** The node reported which csqtt servers were running
-  but not which fork they were, so the fork list on the Settings page could not match them up and showed csqtt as
-  never deployed on a node running two of them.
-- **A control panel could be found in a search engine.** Nothing told crawlers to leave it alone, so installs
-  were being indexed — a list of panels for anyone who goes looking. Both the panel and the subscription page now
-  ask to be left out. Sharing a link still shows a proper title and summary, in the panel's language and, for a
-  subscription, in the default language you chose for subscriptions.
-- **csqtt configs are handed over as a link, not a QR.** The csqtt app cannot scan one yet, so a QR was a dead
-  end. It will go back to a QR when the app gains a scanner.
-- **The app picker described every app as needing a pasted link**, including the ones that open the config on a
-  tap and the ones that scan a QR. It now says which of the three that app actually does.
+### Исправлено
+- **PWDTT не мог импортировать ссылки, которые выдавала панель.** Сборка ildarmaga ещё в июне перестала читать
+  прежний формат ссылок и перешла на другой, а панель продолжала слать старый — импорт падал с «Ссылка wdtt://
+  повреждена — нет ip/порта/пароля внутри» для ссылки, которую принимают все остальные приложения WDTT. Теперь
+  отправляется тот формат, который эта сборка читает. PWDTT от luminescq — отдельная сборка того же приложения —
+  по-прежнему принимает старый и не затронута: ровно поэтому они и предлагаются в выборе приложений по отдельности.
+- **Клиентская настройка, которую ни один клиент не мог получить.** «Воркеров на хеш» и «Свой DNS» предлагались
+  для csqtt и всех серверов WDTT, сохранялись — и не доходили ни до кого: эти приложения берут такие настройки на
+  устройстве, и ни один их формат ссылки не может передать ни то, ни другое. Приложение csqtt это подтверждает:
+  в его ссылке есть место для сервера, пароля и VK-хешей, а остальное игнорируется. Оба поля убраны — кроме того
+  единственного, что действительно доставляется: qWDTT читает количество воркеров из ссылки и теперь получает то,
+  что вы задали.
+- **Форк с работающими серверами показывался как «не используется».** Нода сообщала, какие серверы csqtt
+  запущены, но не сообщала, какого они форка, — и список форков в настройках не мог их сопоставить: csqtt
+  значился неиспользуемым на ноде, где их работало два.
+- **Панель управления могла попасть в поисковую выдачу.** Ничто не просило поисковики её не индексировать, и
+  установки попадали в индекс — готовый список панелей для того, кто их ищет. Теперь и панель, и страница
+  подписки просят себя не индексировать. При этом ссылка по-прежнему разворачивается в нормальный заголовок и
+  описание — на языке панели, а для подписки — на языке, выбранном для подписок по умолчанию.
+- **Конфиги csqtt выдаются ссылкой, а не QR-кодом.** Приложение csqtt пока не умеет сканировать QR, так что код
+  вёл в тупик. Вернём QR, когда в приложении появится сканер.
+- **Выбор приложений у всех писал, что нужно вставить скопированную ссылку** — в том числе у тех, что открывают
+  конфиг в одно касание, и у тех, что сканируют QR. Теперь написано, что именно умеет конкретное приложение.
 
-### Changed
-- **A deployment's badges now fade together when the peer is offline.** The interface tag dimmed and the
-  turn-proxy tag beside it stayed lit, which read as two different states for one deployment. The fade is
-  also lighter than it was, and a source you have switched off the subscription page keeps its own look
-  rather than being dimmed twice over.
-- **A config on a peer card is now the same copyable box used everywhere else** — click it to copy, with the copy
-  button in its corner. Cards, the alternatives sheet and the config panels all behave the same way.
-- **The Russian panel translates the parts of the app pickers that were still English** — every server and client
-  setting, their explanations, and the instruction line under each client. Fork names, protocol names and
-  blocklist providers stay as they are, which is what they are called everywhere.
+### Изменено
+- **Значки развёртывания теперь гаснут вместе, когда пир не в сети.** Значок интерфейса тускнел, а значок
+  turn-прокси рядом оставался ярким — и одно развёртывание выглядело как два разных состояния. Затемнение
+  стало мягче, а источник, отключённый вами от страницы подписки, сохраняет свой вид и не гасится дважды.
+- **Конфиг на карточке пира — тот же копируемый блок, что и везде:** клик по нему копирует, кнопка копирования в
+  углу. Карточки, лист «Другие варианты» и панели конфигов ведут себя одинаково.
+- **Русская панель перевела то, что оставалось английским в выборе приложений** — все настройки серверов и
+  клиентов, их пояснения и строку-подсказку под каждым клиентом. Названия форков, протоколов и списков блокировок
+  остаются как есть — так они и называются везде.
 
 ## [1.7.10-beta] — 2026-08-18
 
-### Fixed
-- **csqtt could not start on any Docker node installed before this week, and the fix the panel offered did not
-  exist.** csqtt's data path uses io_uring, which Docker blocks under its default security profile, so the server
-  died the instant it started and the node kept retrying it every few seconds. The panel diagnosed that correctly
-  and told you to set `SWG_NODE_SECCOMP=unconfined` — but that setting reads a line in the Docker configuration
-  file, an update never rewrites that file, and the line only exists in installations created after it was added.
-  So the instruction was right and impossible to follow. Updating now adds the setting to an existing installation.
-  It stays **off** by default, which is Docker's own default and today's behaviour: turning it off is your
-  decision and is only needed on a node that runs csqtt.
-- **The container log limit from 1.7.9 reached only brand-new installations.** It lived in the same Docker
-  configuration file, so an update never delivered it — leaving it inapplicable to exactly the installations that
-  had been running long enough to fill a disk. It is now added on update, and applies to each container as it is
-  recreated.
+### Исправлено
+- **csqtt не запускался ни на одной Docker-ноде, установленной раньше этой недели, а предлагаемого панелью
+  решения не существовало.** Канал данных csqtt использует io_uring, который Docker блокирует своим профилем
+  безопасности по умолчанию, поэтому сервер умирал сразу после старта, а нода перезапускала его каждые несколько
+  секунд. Панель определяла причину верно и предлагала задать `SWG_NODE_SECCOMP=unconfined` — но эта настройка
+  читает строку в файле конфигурации Docker, обновление этот файл не переписывает, а сама строка есть только в
+  установках, созданных после её появления. То есть указание было правильным и невыполнимым. Теперь обновление
+  добавляет настройку в существующую установку. По умолчанию она **выключена** — это и есть собственное
+  умолчание Docker и нынешнее поведение: отключать защиту решаете вы, и нужно это только на ноде с csqtt.
+- **Ограничение размера логов контейнеров из 1.7.9 доходило только до совершенно новых установок.** Оно лежало в
+  том же файле конфигурации Docker, поэтому обновление его не доставляло — и не действовало ровно там, где
+  установка работала достаточно долго, чтобы забить диск. Теперь оно добавляется при обновлении и применяется к
+  каждому контейнеру при его пересоздании.
 
 ## [1.7.9-beta] — 2026-08-18
 
-### Fixed
-- **A csqtt server the panel didn't create was invisible on Docker nodes.** Adopting one has been possible since
-  1.7.8, but only on bare metal: on Docker the node looks for such servers by name, and it did not know the name
-  csqtt's own installer gives the program. So the node page showed nothing while a hand-installed server ran on
-  that machine — in the case that brought this to light, one that had pinned every CPU for hours and was filling
-  the disk. It is now found there too, and offered for adoption like any other.
-- **A server the panel didn't create could have its tunnel deleted underneath it.** Before starting a csqtt server
-  the node clears a tunnel device left behind by a previous one, and skips that when a server it does not manage
-  is holding the name. On a Docker node that check relied on the search above, so it never triggered — and the
-  device was deleted out from under a running third-party server, which then spun on its own errors without
-  carrying traffic. Two things now prevent it: a search that does not complete is no longer read as "nothing is
-  there", so nothing destructive follows an answer the node never got; and the panel no longer offers or accepts
-  an interface name such a server already holds, pointing you at adopting it instead.
-- **Adopting one could take it over and serve nobody.** The node read the server's password store from a path that,
-  inside a Docker node, is its own rather than the machine's — so every user would have been reported as none, and
-  the take-over would have stopped a working server and replaced it with an empty one. It now reads the real store.
-  Where it genuinely cannot reach it, the panel says so and asks you to confirm losing those users, rather than
-  promising they are kept.
-- **Adopting one that runs as its own container never completed.** Stopping it signalled the program, which Docker
-  simply started again a moment later, so the panel could never take the port. The container is now stopped as a
-  container.
-- **A runaway server could fill the disk with its own log.** Docker keeps a container's output forever unless told
-  otherwise, and nothing told it to: one server logging an error on every pass wrote 9.6G of a single repeated
-  line. Every container the panel runs now keeps at most 30MB, and the logs of servers running inside a node are
-  rotated the same way. Applies as each container is recreated, which updating does.
+### Исправлено
+- **Сервер csqtt, созданный не панелью, не находился на Docker-нодах.** Принимать такие серверы можно с 1.7.8, но
+  только на bare metal: на Docker нода ищет их по имени и не знала того имени, которое даёт программе собственный
+  установщик csqtt. Поэтому страница ноды показывала пустоту, пока на машине работал поставленный вручную сервер —
+  в случае, из-за которого это и вскрылось, он часами держал все ядра занятыми и забивал диск. Теперь он
+  находится и там и предлагается к приёму, как любой другой.
+- **У чужого сервера могли удалить туннель прямо под ним.** Перед запуском сервера csqtt нода убирает устройство
+  туннеля, оставшееся от предыдущего, и пропускает это, если имя занято сервером вне её управления. На Docker-ноде
+  та проверка опиралась на поиск выше, поэтому не срабатывала никогда — и устройство удалялось из-под работающего
+  чужого сервера, который после этого крутился на собственных ошибках, не пропуская трафика. Теперь этому мешают
+  две вещи: незавершившийся поиск больше не читается как «рядом никого нет», поэтому за так и не полученным
+  ответом ничего разрушительного не следует; и панель больше не предлагает и не принимает имя интерфейса, которое
+  такой сервер уже занимает, а предлагает принять его.
+- **Приём такого сервера мог забрать его и не обслуживать никого.** Нода читала хранилище паролей сервера по пути,
+  который внутри Docker-ноды принадлежит ей самой, а не машине, — поэтому все пользователи оказались бы «ни
+  одного», а приём остановил бы рабочий сервер и заменил его пустым. Теперь читается настоящее хранилище. Там, где
+  добраться до него действительно нельзя, панель прямо об этом говорит и просит подтвердить потерю пользователей,
+  а не обещает, что они сохранятся.
+- **Приём сервера, работающего собственным контейнером, не доводился до конца.** Его остановка была сигналом
+  программе, которую Docker тут же запускал снова, так что панель не могла занять порт. Теперь контейнер
+  останавливается как контейнер.
+- **Разогнавшийся сервер мог забить диск собственным логом.** Docker хранит вывод контейнера вечно, если не
+  сказано иного, а сказано не было: один сервер, писавший ошибку на каждом проходе, записал 9.6G одной
+  повторяющейся строки. Теперь каждый контейнер панели хранит не больше 30MB, и логи серверов, работающих внутри
+  ноды, ротируются так же. Применяется при пересоздании контейнеров, что и делает обновление.
 
 ## [1.7.8-beta] — 2026-08-18
 
-### Added
-- **Every third-party licence in one place.** [THIRD-PARTY.md](THIRD-PARTY.md) now lists everything swgPanel
-  builds, bundles or distributes — each server fork with its upstream, licence, pinned commit and the patch we
-  apply, plus what the Docker images and the browser app carry. One item affects what you may do: **csqtt is
-  noncommercial-only**, and running one commercially needs a separate licence from its author. Everything else
-  the panel supports is free of that restriction.
-- **csqtt servers.** csqtt is amurcanov's rewrite of WDTT and its successor: a raw-IP tunnel with no
-  WireGuard inside it, which makes it markedly faster over the same VK relay. It is now a first-class kind
-  in the panel, not a special case — you create one like any other interface, it carries its own routing,
-  filtering and egress, its users appear in Peers with everyone else, and each one gets a one-tap
-  `csqtt://` link on their subscription page. A csqtt user's whole credential is a password the panel
-  issues, so there is no key to hand out and nothing for them to import.
-- **Adopting a csqtt server the panel didn't create.** If csqtt is already running on a node — installed by
-  hand, or left behind when a panel's records were lost — the node now finds it and offers it on the node
-  page. Adopting keeps every user: the panel takes the server over on its own address and port, keeps
-  serving the passwords it already had so nobody is disconnected, and imports each user as a peer you can
-  see and manage. Without this the only way back was to delete the server, which would have destroyed
-  every user on it.
-- **csqtt runs on Docker nodes, not only bare metal.** A container has no systemd, so each server runs as a
-  supervised process inside the node and is started again if it ever dies. One thing you set yourself: csqtt's
-  dataplane is io_uring, which Docker's default syscall profile blocks outright, so a Docker node that will run
-  csqtt needs `SWG_NODE_SECCOMP=unconfined` in its `.env`. Miss it and the panel names that as the reason rather
-  than leaving you with a server that silently won't start.
-- **Moving or removing a node keeps its csqtt servers straight.** Converting between bare metal and Docker carries
-  each server's password store across and takes the old one down before the new one comes up, instead of leaving
-  both to fight over the same port and interface. Uninstalling lists every csqtt server, asks per server before
-  deleting its password store — the one step that cannot be undone — and on Docker says up front which servers are
-  about to leave with the node.
-- **qWDTT servers** (SpaceNeuroX's fork) can be created and adopted like the other WDTT forks, including
-  its **RAW-IP mode** — a second listener that carries traffic without WireGuard for roughly six times the
-  throughput, at the cost of forward secrecy. It is off by default, one switch to turn on, and the panel
-  says plainly what you give up.
-- **Choose what each peer publishes.** The protocol tag on a deployment is now a switch: click it and that
-  kind of config stops appearing on the holder's subscription page. Turn off the direct WireGuard config
-  and leave the turn-proxies, or the reverse. The deployment keeps running either way — this is about what
-  the holder is offered — and a peer can never be left publishing nothing.
+### Добавлено
+- **Все сторонние лицензии в одном месте.** В [THIRD-PARTY.md](THIRD-PARTY.md) теперь перечислено всё, что
+  swgPanel собирает, включает в себя или распространяет: каждый форк сервера с его источником, лицензией,
+  зафиксированным коммитом и накладываемым патчем, а также содержимое docker-образов и браузерного приложения.
+  Один пункт касается и вас: **csqtt только для некоммерческого использования**, и для коммерческого нужна
+  отдельная лицензия от автора. На остальное, что поддерживает панель, это ограничение не распространяется.
+- **Серверы csqtt.** csqtt — это переписанный amurcanov'ым WDTT и его преемник: raw-IP туннель без
+  WireGuard внутри, за счёт чего он заметно быстрее через то же реле VK. Теперь это полноценный вид в
+  панели, а не частный случай: создаётся как любой другой интерфейс, несёт собственные маршрутизацию,
+  фильтры и выход в интернет, его пользователи стоят в «Пирах» рядом со всеми, и каждый получает ссылку
+  `csqtt://` в одно касание на своей странице подписки. Все учётные данные пользователя csqtt — это пароль,
+  который выпускает панель, поэтому выдавать ключ и что-то импортировать не нужно.
+- **Приём сервера csqtt, созданного не панелью.** Если csqtt уже работает на ноде — поставлен вручную или
+  остался после потери записей панели — нода находит его и предлагает на странице ноды. Приём сохраняет всех
+  пользователей: панель забирает сервер на его же адресе и порту, продолжает обслуживать уже выданные пароли,
+  так что никого не отключает, и импортирует каждого как пира, которого вы видите и которым управляете.
+  Раньше вернуть такой сервер можно было только удалив его — вместе со всеми пользователями.
+- **csqtt работает и на docker-нодах, а не только на bare-metal.** В контейнере нет systemd, поэтому каждый
+  сервер запускается как дочерний процесс ноды под присмотром и поднимается заново, если когда-нибудь упадёт.
+  Одно нужно задать самому: датаплейн csqtt — это io_uring, а стандартный профиль системных вызовов Docker
+  прямо его запрещает, поэтому docker-ноде, на которой будет csqtt, нужен `SWG_NODE_SECCOMP=unconfined` в её
+  `.env`. Если забыть, панель прямо назовёт причину, а не оставит вас с сервером, который молча не стартует.
+- **Перенос и удаление ноды не путают её серверы csqtt.** Перевод между bare-metal и docker переносит
+  хранилище паролей каждого сервера и опускает старый до того, как поднимется новый, а не оставляет их драться
+  за один порт и интерфейс. При удалении перечисляется каждый сервер csqtt, по каждому отдельно спрашивают,
+  удалять ли его хранилище паролей — единственный шаг, который нельзя отменить, — а на docker заранее
+  сообщается, какие серверы уйдут вместе с нодой.
+- **Серверы qWDTT** (форк SpaceNeuroX) создаются и принимаются наравне с остальными форками WDTT, включая
+  **режим RAW-IP** — второй слушатель, который несёт трафик без WireGuard и даёт примерно шестикратную
+  скорость ценой прямой секретности. По умолчанию выключен, включается одним переключателем, и панель прямо
+  говорит, чем вы за это платите.
+- **Выбор того, что публикует каждый пир.** Значок протокола на развёртывании стал переключателем: нажмите —
+  и конфиги этого вида перестанут появляться на странице подписки владельца. Можно отключить прямой конфиг
+  WireGuard и оставить turn-прокси или наоборот. Само развёртывание при этом продолжает работать — речь
+  только о том, что предлагается владельцу, — а пир никогда не останется совсем без публикаций.
 
-### Changed
-- **A node can fetch a server binary itself when the panel can't.** WDTT and csqtt binaries came only through the
-  panel's mirror, so anything that stopped the panel reaching GitHub stopped every node installing or updating one
-  of those servers. Nodes now fall back to the release directly, and to any mirror you have configured — and say
-  in their log when they had to, because a mirror that has quietly stopped working should not look like health.
-- **Server fork binaries are current again.** The WDTT forks ship at their latest upstream releases
-  (ildarmaga 1.5.40, WDTT-Plus 14, XXcipherX 2.0.0.68), and qWDTT and csqtt are now published like the
-  rest — before this, a fresh install had no way to get either of them.
-- **RAW-IP is a switch, not a port.** The app it talks to resolves that port from a single app-wide setting
-  and ignores whatever a link says, so a port you chose could only ever reach users who had edited their
-  app by hand. The panel now fixes it, keeps it free on every node, and allows one RAW server per address —
-  turning it on elsewhere on the same address moves it, and says so first.
+### Изменено
+- **Нода может забрать бинарник сама, если панель не может.** Бинарники WDTT и csqtt приходили только через
+  зеркало панели, поэтому всё, что мешало панели достучаться до GitHub, останавливало установку и обновление таких
+  серверов на всех нодах. Теперь нода отступает к самому выпуску, а также к зеркалам, если вы их настроили, — и
+  пишет в журнал, что ей пришлось это сделать: молча переставшее работать зеркало не должно выглядеть здоровым.
+- **Сборки серверных форков снова актуальны.** Форки WDTT идут на последних выпусках авторов
+  (ildarmaga 1.5.40, WDTT-Plus 14, XXcipherX 2.0.0.68), а qWDTT и csqtt теперь публикуются наравне с
+  остальными — до этого на свежей установке их было неоткуда взять.
+- **RAW-IP — это переключатель, а не порт.** Приложение берёт этот порт из одной общей настройки и не
+  читает его из ссылки, поэтому выбранный вами порт мог дойти только до тех, кто правил приложение руками.
+  Теперь панель фиксирует порт, держит его свободным на каждой ноде и разрешает один RAW-сервер на адрес —
+  включение на другом сервере того же адреса переносит его туда и сначала предупреждает об этом.
 
-### Fixed
-- **Reusing the name of a deleted csqtt server broke it permanently.** The panel remembered every deletion for the
-  life of the node and never forgot one, so creating a new server with the same interface name — `csqtt1` is the
-  name the first one gets — left the node being told to delete it and to run it in the same breath, every few
-  seconds. It was stopped, wiped and rebuilt on a loop with a new owner password each time, so no connection ever
-  lasted: the server showed no online peers, and clients connected to something that was already gone. Deletions
-  are now forgotten once carried out, and a server you have asked for is never also queued for deletion.
-- **csqtt servers restarted every few seconds on bare metal.** The service definition tried to permit the io_uring
-  system calls csqtt's data path depends on, but named a permission group that does not exist — so it was quietly
-  ignored and those calls were refused. The server could not carry traffic, the node kept restarting it, and every
-  connected client dropped with it. Docker installs were never affected. Updating repairs the service definition of
-  any csqtt server you already have, restarting it once.
-- **A server's own address now wins over the node's.** On a node with several public IPs, a WDTT or csqtt server
-  binds the one you picked for it — but both the panel and the subscription page published the node's address with
-  that server's port, a pair nothing listens on. The address the server actually binds now takes precedence, and
-  the node's endpoint applies only where a server is bound to every address. This is the rule interfaces already
-  followed, where a per-interface endpoint beats the node's.
-- **Two delete dialogs could not open at all.** Deleting a turn-proxy, or deleting an interface, failed before the
-  confirmation window appeared: the "type the name to confirm" label the delete dialogs share had been left private
-  to one screen when the interface was split into modules, so the code was present but unreachable from the other
-  two. Deleting a peer or a user was never affected, and nothing was ever removed by accident — the window simply
-  never opened.
-- **A csqtt server could never install.** The panel resolved a node's request for the csqtt binary to amurcanov's
-  own repository — asking for a file only we build, at a tag he spells differently — so it was a 404 every time,
-  on every install, from the day csqtt shipped. A node has no other source for that binary, so the server simply
-  never appeared: no files, no service, and an error saying the build had not been published yet. It had.
-- **The one-click update on a Docker master updated only the node.** The panel and subscription containers were
-  left on their old images while the update reported success, so the panel never changed version and its own
-  Update button sat on "updating…" indefinitely. The updater was reading a marker written at install time, which
-  says `node` on a box converted from bare metal; it now goes by what is actually running.
-- **A stopped WDTT or csqtt server still read "starting".** Stopping one from the panel worked, but its card kept
-  the same tag it wears before a server has ever come up — so an intentional stop looked identical to one that
-  never started, on both the interface and the turn-proxy card. It now reads "stopped", like a stopped interface.
-- **Traffic charts that sat at zero.** Fleet throughput, turn-proxy throughput and Online peers had been
-  flat for days on a panel whose history files were left owned by another user — every write failed
-  silently and nothing said why. A file the panel cannot write is now replaced and logged.
-- **csqtt and qWDTT traffic was missing from the graphs**, and their peers showed no rate or total at all:
-  a keyless server has no WireGuard peer to read counters from, so the numbers were there but nothing
-  looked for them.
-- **A csqtt server's card did nothing when clicked.** Its settings sheet referenced a control that only
-  exists for WDTT, so the whole dialog failed to open.
-- **Adopting a server could pick the wrong fork.** qWDTT stores its files exactly like amurcanov's, so the
-  panel guessed wrong and would have managed it with another fork's binary, hiding its RAW mode. It is now
-  identified by a flag only that fork has.
-- **A stopped server offered up no ports or fork on adoption.** The scan that reads them gave up at the
-  first unreadable file in the system's service directory — and on a stock Debian that file sorts second,
-  so it almost always gave up, and the operator was asked for values the server's own service file spells
-  out.
+### Исправлено
+- **Повторное использование имени удалённого сервера csqtt ломало его окончательно.** Панель помнила каждое
+  удаление всю жизнь ноды и не забывала ни одного, поэтому новый сервер с тем же именем интерфейса — а первый
+  получает имя `csqtt1` — приводил к тому, что ноде одновременно велели его удалить и запустить, и так каждые
+  несколько секунд. Его останавливали, стирали и собирали заново по кругу, каждый раз с новым паролем владельца,
+  так что ни одно подключение не жило: сервер не показывал онлайн-пиров, а клиенты подключались к тому, чего уже
+  нет. Теперь выполненные удаления забываются, а сервер, который вы запросили, никогда не стоит в очереди на
+  удаление одновременно.
+- **Серверы csqtt на железе перезапускались каждые несколько секунд.** Описание службы пыталось разрешить
+  системные вызовы io_uring, на которых держится передача данных csqtt, но называло несуществующую группу
+  разрешений — её молча игнорировали, а сами вызовы запрещались. Сервер не мог пропускать трафик, нода
+  перезапускала его снова и снова, и вместе с ним отваливались все подключённые клиенты. Установки в Docker это
+  не затрагивало. Обновление чинит описание службы у уже созданных серверов csqtt, перезапустив их один раз.
+- **Собственный адрес сервера теперь важнее адреса ноды.** Если у ноды несколько публичных IP, сервер WDTT или
+  csqtt слушает тот адрес, который вы для него выбрали, — но и панель, и страница подписки выдавали адрес ноды
+  вместе с портом этого сервера: пару, на которой никто не слушает. Теперь приоритет у адреса, на котором сервер
+  действительно слушает, а адрес ноды применяется только там, где сервер слушает на всех адресах. Так же уже
+  ведут себя интерфейсы: адрес интерфейса важнее адреса ноды.
+- **Два диалога удаления вообще не открывались.** Удаление turn-прокси и удаление интерфейса падали до появления
+  окна подтверждения: общая для диалогов удаления подпись «введите имя для подтверждения» осталась приватной в
+  одном экране, когда интерфейс разделили на модули, — код был на месте, но недоступен двум другим. Удаления пира
+  и пользователя это не касалось, и ничего лишнего не удалялось — окно просто не открывалось.
+- **Сервер csqtt не мог установиться в принципе.** Запрос ноды за бинарником csqtt панель превращала в ссылку на
+  собственный репозиторий amurcanov'а — за файлом, который собираем только мы, да ещё и по тегу, который у него
+  пишется иначе. Каждый раз 404, при каждой установке, с первого дня csqtt. Другого источника у ноды нет, поэтому
+  сервер просто не появлялся: ни файлов, ни службы, а в ошибке значилось, что сборка ещё не опубликована. Она была.
+- **Обновление в один клик на docker-мастере обновляло только ноду.** Контейнеры панели и подписок оставались
+  на старых образах, хотя обновление отчитывалось об успехе, — версия панели не менялась, и её собственная
+  кнопка обновления бесконечно висела на «обновляется…». Обновление читало метку, записанную при установке,
+  а на машине, переведённой с bare-metal, там стоит `node`; теперь оно смотрит на то, что реально запущено.
+- **Остановленный сервер WDTT или csqtt всё равно показывал «запуск».** Остановка из панели срабатывала, но
+  карточка продолжала носить тот же значок, что и до первого запуска сервера, — намеренная остановка выглядела
+  ровно так же, как сервер, который так и не поднялся, и на карточке интерфейса, и на карточке turn-прокси.
+  Теперь пишется «остановлен», как у остановленного интерфейса.
+- **Графики трафика, застывшие на нуле.** Трафик флота, трафик turn-прокси и «Пиры онлайн» несколько суток
+  показывали пусто на панели, чьи файлы истории остались во владении другого пользователя: каждая запись
+  молча не удавалась, и ничто об этом не сообщало. Файл, в который панель не может писать, теперь
+  пересоздаётся, и об этом пишется в журнал.
+- **Трафик csqtt и qWDTT не попадал в графики**, а у их пиров не показывались ни скорость, ни объём:
+  у сервера без ключей нет пира WireGuard, с которого читаются счётчики, — цифры были, но их никто не искал.
+- **Карточка сервера csqtt не открывалась по нажатию.** Её окно настроек ссылалось на элемент, который есть
+  только у WDTT, и весь диалог не открывался.
+- **Приём сервера мог определить не тот форк.** qWDTT хранит файлы точно так же, как форк amurcanov, поэтому
+  панель угадывала неверно и стала бы управлять им чужой сборкой, скрыв режим RAW. Теперь он определяется по
+  флагу, который есть только у него.
+- **Остановленный сервер не отдавал при приёме ни портов, ни форка.** Разбор, который их читает, сдавался на
+  первом нечитаемом файле в системном каталоге служб — а на обычном Debian такой файл идёт вторым, поэтому
+  сдавался он почти всегда, и у оператора спрашивали значения, которые прописаны в его же файле службы.
 
 ## [1.7.1-beta] — 2026-08-10
 
-### Added
-- **The panel speaks Russian.** Every screen, every message, every confirmation — about 2,400 strings,
-  including the panel's own error messages and the activity log, which stays readable for records written
-  months ago because verbs are stored in English and translated on display. Switch with the **EN / РУ**
-  button in the app bar; the choice is remembered per browser, and the release notes shown in the panel
-  follow it too. Dates and numbers follow the panel's language rather than the machine's.
-- **Cyrillic in the panel's own typefaces.** The bundled faces carried only Latin, so Russian text fell back
-  to whatever the operating system had — a different look on every machine. Both families now ship Cyrillic
-  cuts, matched to the Latin x-height so a translated screen keeps its rhythm.
+### Добавлено
+- **Панель говорит по-русски.** Все экраны, все сообщения, все подтверждения — около 2 400 строк, включая
+  собственные сообщения об ошибках и журнал действий: он остаётся читаемым и для записей, сделанных месяцы
+  назад, потому что действия хранятся по-английски и переводятся при показе. Переключение — кнопкой
+  **EN / РУ** в шапке; выбор запоминается в браузере, и заметки к выпуску в панели следуют за ним.
+  Даты и числа тоже следуют языку панели, а не системы.
+- **Кириллица в собственных шрифтах панели.** Во встроенных начертаниях была только латиница, поэтому
+  русский текст подставлялся системными шрифтами — на каждой машине свой вид. Теперь оба семейства везут
+  кириллические начертания, подогнанные по высоте строчных к латинице, так что переведённый экран сохраняет
+  ритм.
 
-### Changed
-- **Settings: "System mesh" and "Nodes egress" are now one section, "Mesh & egress".** They were two
-  per-node forms with identical chrome, and egress was two fields; they also interact, since traffic that
-  exits through another node travels the mesh to get there. Existing links to the mesh settings still work.
-- **The interface is delivered as ES modules** instead of one large file. It loads in a single wave rather
-  than three, and the panel can now tell you *which* file is missing if an update is interrupted.
+### Изменено
+- **Настройки: «Системный меш» и «Выходы нод» объединены в раздел «Меш и выходы».** Это были две формы по
+  нодам с одинаковым устройством, а в выходах было всего два поля; к тому же они связаны — трафик, который
+  выходит через другую ноду, добирается до неё по мешу. Прежние ссылки на настройки меша работают.
+- **Интерфейс отдаётся модулями ES** вместо одного большого файла. Он загружается в одну волну вместо трёх,
+  и панель теперь может сказать, *какого* файла не хватает, если обновление прервалось.
 
-### Fixed
-- **A panel that could not come back after a restart.** If the TLS key was left owned by root alone, the
-  panel could not read it and the service died on the next start — a reboot, or the restart at the end of an
-  update, which made a years-old permission problem look like the update had broken the install. It stayed
-  invisible until then, because a running panel holds the certificate it already loaded. Updating now
-  repairs the ownership before the restart that would have exposed it.
-- **Every update on a Docker install failed.** The step that refreshes the host's addresses built a `sed`
-  command whose separator also appears in the value, so the update aborted part-way — after reporting the
-  new version, before any of the repair steps ran. It had failed this way since the first Docker release;
-  bare-metal was never affected.
-- **A failed install could report success.** When the chosen port was already in use, the unattended
-  installer printed "Host install complete" and a panel URL over a service that never started. It now
-  checks that the panel actually answers, and if it doesn't, says which port is taken and by what.
-- **A broken or partial deploy showed a blank page.** If one of the interface's files went missing or
-  arrived damaged, nothing rendered and the only trace was a line in the browser console. The panel now
-  names the files that failed to load and offers a reload; installs verify the interface after copying it,
-  and a Docker image build fails outright rather than shipping an incomplete one. An unsupported browser
-  gets its own message instead of the same blank page — the interface needs Safari 16.4+, Firefox 108+ or
-  Chrome/Edge 89+.
-- **Status colours were missing.** Since `1.6.0-beta` most peer and user statuses were drawn in plain grey,
-  so a lost peer read like a ready one. Green, blue, amber and red are back across the roster.
-- **Deleting a user or peer left its editor open** behind the confirmation, showing something that no longer
-  existed.
-- **The subscription page's images never reached the server.** The import-hint screenshot and the
-  AmneziaVPN / AmneziaWG / WireGuard logos were tracked and served, but no installer copied them — so the
-  iOS import instructions rendered with a blank space where the screenshot should be, and the client logos
-  were missing, on every install since they were added. One shared list now drives every copy site, so an
-  asset added to the subscription page can't drift out of the installers again.
-- **The subscription page's app-open countdown could run under the close button** on a narrow phone. The
-  card reserved less room than the fixed × actually occupies; a longer translation pushed it into the
-  overlap reliably, where the English text mostly escaped it.
-- **A WDTT interface page showed no turn section at all.** A WDTT server is a turn-family server that owns
-  its own transport, so nothing "forwards to" it and the section hid itself. Its card now appears there,
-  without the add-proxy button, since nothing can be pointed at that interface.
-- **Long names no longer break a row.** A peer title that didn't fit is cut with an ellipsis instead of
-  pushing its warning icon onto a line of its own, and the widest editor's buttons fit on one row.
-- Subscription pages no longer log an error for a peer that simply has no stored config yet.
-- **A panel that fails while drawing a screen says so too.** The message above covers files that never
-  arrived; a panel whose files are all present but which throws while drawing a screen used to leave
-  "connecting…" on screen forever with nothing else. It now says which case it is: the files that didn't
-  load, by name — or that all of them loaded and the interface failed while drawing, with where to find
-  the error.
+### Исправлено
+- **Панель могла не подняться после перезапуска.** Если TLS-ключ оставался доступным только root, панель не
+  могла его прочитать и служба падала при следующем старте — при перезагрузке или при перезапуске в конце
+  обновления, из-за чего давняя проблема с правами выглядела так, будто установку сломало обновление. До
+  этого момента она была не видна: работающая панель держит уже загруженный сертификат. Теперь обновление
+  чинит права до того перезапуска, который бы это вскрыл.
+- **Любое обновление установки в Docker завершалось ошибкой.** Шаг, который обновляет адреса хоста, собирал
+  команду `sed` с разделителем, который встречается и в самом значении, поэтому обновление обрывалось на
+  середине — уже сообщив новую версию, но не выполнив ни одного шага починки. Так было с первого выпуска в
+  Docker; на железо это не влияло.
+- **Неудачная установка могла отчитаться об успехе.** Если выбранный порт был занят, установщик в
+  автоматическом режиме печатал «Установка хоста завершена» и адрес панели поверх службы, которая так и не
+  запустилась. Теперь он проверяет, что панель действительно отвечает, а если нет — говорит, какой порт
+  занят и кем.
+- **Сломанная или неполная выкладка показывала пустую страницу.** Если один из файлов интерфейса пропадал
+  или приходил повреждённым, не отрисовывалось ничего, а единственным следом была строка в консоли браузера.
+  Теперь панель называет файлы, которые не загрузились, и предлагает перезагрузку; установка проверяет
+  интерфейс после копирования, а сборка образа Docker падает сразу, вместо того чтобы выпустить неполный.
+  Устаревший браузер получает своё сообщение вместо той же пустой страницы — интерфейсу нужны Safari 16.4+,
+  Firefox 108+ или Chrome/Edge 89+.
+- **Пропали цвета статусов.** С версии `1.6.0-beta` большинство статусов пиров и пользователей рисовались
+  серым, и потерянный пир читался как готовый. Зелёный, синий, янтарный и красный вернулись по всему списку.
+- **Удаление пользователя или пира оставляло открытым его редактор** за подтверждением — с тем, чего уже нет.
+- **Картинки страницы подписок не доезжали до сервера.** Скриншот с подсказкой по импорту и логотипы
+  AmneziaVPN / AmneziaWG / WireGuard лежали в репозитории и отдавались, но ни один установщик их не
+  копировал — поэтому инструкция по импорту на iOS показывалась с пустым местом вместо скриншота, а
+  логотипы клиентов не отображались, и так на каждой установке с момента их появления. Теперь все места
+  копирования берут один общий список, и файл, добавленный к странице подписок, больше не может из них
+  выпасть.
+- **Обратный отсчёт на странице подписок мог оказаться под кнопкой закрытия** на узком телефоне. Карточка
+  резервировала меньше места, чем реально занимает фиксированный ×; более длинный перевод делал наложение
+  воспроизводимым там, где английский текст чаще всего проскакивал.
+- **На странице интерфейса WDTT не было раздела turn.** Сервер WDTT — это turn-сервер со своим
+  транспортом, поэтому на него ничто «не ведёт», и раздел прятался целиком. Теперь его карточка там есть —
+  без кнопки добавления прокси, потому что направить что-либо на этот интерфейс нельзя.
+- **Длинные названия больше не ломают строку.** Не поместившееся название пира обрезается многоточием, а
+  не выталкивает значок предупреждения на отдельную строку; кнопки самого широкого редактора помещаются в
+  один ряд.
+- Страницы подписок больше не пишут ошибку для пира, у которого просто ещё нет сохранённого конфига.
+- **Если панель падает при отрисовке экрана, она тоже об этом говорит.** Сообщение выше — про файлы,
+  которые не доехали; а панель, у которой все файлы на месте, но которая падает при отрисовке экрана,
+  раньше навсегда оставляла «подключаемся…» и больше ничего. Теперь она различает случаи: какие файлы не
+  загрузились — или что загрузились все, а интерфейс упал при отрисовке, и где искать ошибку.
 
 ## [1.6.4-beta] — 2026-08-08
 
-### Security
-- **A queued host request could run commands as root (Docker installs only).** Two places in the Docker host
-  helper built a shell command out of values taken from the panel's own request queue, so a crafted port
-  could have run arbitrary commands on the host. Neither place needed a shell — both now pass every value as
-  an argument, and a port is checked where it is used rather than once per action. The queue itself is also
-  verified for the first time: a request is acted on only if it is an ordinary file belonging to the panel,
-  which is the rule the bare-metal helper has always applied. Reported by
-  [@anupamme](https://github.com/anupamme) (OrbisAI Security).
+### Безопасность
+- **Запрос из очереди мог выполнить команды с правами root (только установки в Docker).** В двух местах
+  хост-помощник Docker собирал команду оболочки из значений, взятых из очереди запросов самой панели,
+  поэтому специально составленный порт мог выполнить на хосте произвольные команды. Оболочка там не нужна
+  ни в одном из случаев — теперь все значения передаются как аргументы, а порт проверяется в месте
+  использования, а не по одному разу на действие. Впервые проверяется и сама очередь: запрос выполняется,
+  только если это обычный файл, принадлежащий панели, — то самое правило, которое всегда применял
+  bare-metal-помощник. Сообщил [@anupamme](https://github.com/anupamme) (OrbisAI Security).
 
-### Added
-- **"Don't offer" a server on a given operating system.** Each server already lets you choose which app its
-  users are handed per platform; now you can also choose to offer **nothing**. The server then simply doesn't
-  appear on those users' subscription pages — no card, no download link — instead of offering an app that
-  can't connect to it. Useful when a server has no sensible client on a platform: iOS users of a
-  Windows-only server now see nothing for it, rather than something that fails.
+### Добавлено
+- **«Не предлагать» сервер на выбранной операционной системе.** Для каждого сервера уже можно выбрать, какое
+  приложение получают его пользователи на каждой платформе; теперь можно выбрать и **ничего**. Тогда сервер
+  просто не появляется на страницах подписки этих пользователей — ни карточки, ни ссылки на загрузку —
+  вместо того чтобы предлагать приложение, которое к нему не подключится. Полезно, когда у сервера нет
+  подходящего клиента для платформы: пользователи iOS сервера только под Windows теперь не увидят ничего,
+  а не то, что не работает.
 
 ## [1.6.3-beta] — 2026-08-06
 
-### Fixed
-- **A node with a pinned dial source reported an error every few seconds.** Mesh links that pin which
-  outbound address they dial from made the node log a `dial-src` fault on every sync and show as erroring
-  in the panel — while the routing itself was applied correctly the whole time. The same fault stopped the
-  node recording what it had pinned, so **clearing** a dial source afterwards left its route in place until
-  the machine was rebooted.
-- **The colour previews in settings were see-through.** Hovering a colour swatch shows how that colour reads
-  against each theme's real background; the preview had lost its backdrop, so the page behind it showed
-  through and the colour was impossible to judge.
-- **A node could report "SNI parser down — host routing degraded" while working correctly.** Picking an
-  SNI routing mode before any interface has a routing category assigned leaves nothing to classify, so the
-  classifier is deliberately never started — and the health badge read that deliberate absence as a failure.
-  It now tells *idle by design* apart from *down*, which the kernel-SNI engine already did.
+### Исправлено
+- **Узел с закреплённым исходящим адресом сообщал об ошибке каждые несколько секунд.** Из-за связей mesh,
+  у которых закреплён исходящий адрес, узел записывал ошибку `dial-src` при каждой синхронизации и выглядел
+  в панели неисправным — хотя маршрутизация всё это время применялась правильно. Та же неполадка мешала узлу
+  запомнить, что именно он закрепил, поэтому после **снятия** закреплённого адреса его маршрут оставался
+  на месте до перезагрузки машины.
+- **Предпросмотр цвета в настройках был прозрачным.** При наведении на образец цвета показывается, как этот
+  цвет читается на настоящем фоне каждой темы; предпросмотр потерял свою подложку, поэтому сквозь него
+  просвечивала страница и оценить цвет было невозможно.
+- **Узел мог сообщать «SNI parser down — host routing degraded», работая при этом правильно.** Если выбрать
+  режим маршрутизации SNI до того, как хотя бы одному интерфейсу назначена категория маршрутизации,
+  классифицировать нечего — поэтому классификатор намеренно не запускается, а индикатор состояния считал это
+  отсутствие сбоем. Теперь он отличает «простаивает по замыслу» от «не работает», как уже делал движок kernel-SNI.
 
-### Changed
-- **Settings → Authentication is a single panel again.** The password form and two-factor sat in two separate
-  boxes; they are now two sections of one card, like every other settings screen.
+### Изменено
+- **«Настройки → Аутентификация» снова одна панель.** Форма пароля и двухфакторная защита занимали две
+  отдельные карточки; теперь это два раздела одной карточки, как на всех остальных экранах настроек.
 
 ## [1.6.1-beta] — 2026-08-01
 
-### Fixed
-- **Adopting a WDTT server this machine had run before deleted all of its users.** If the box had hosted that
-  server in an earlier life — after a re-install, or with a panel restored from an older backup — the take-over
-  quietly did nothing and the server was then emptied: every user removed, and the owner password replaced.
-  Adoption now runs whenever the panel doesn't already manage the server, whatever the machine has left over.
-- **A server's users are never deleted just because the panel hasn't heard of them yet.** Until the panel has
-  actually held a password for a server, its existing users are handed up and imported instead of removed —
-  which also covers creating a server on top of an older install's directory, and a node that lost its records
-  while the server's own store survived. Removing a user now requires you to remove it.
-- **Adopting a server no longer resets its clients' addresses.** Each device kept the address it had.
-- **The panel could report its TLS type as self-signed while serving a real certificate.** On a fresh install's
-  first start it guessed before it had anything to go on, then never corrected itself — so Settings → Access
-  read "self-signed" over a working Let's Encrypt certificate for the life of the box. It now reads the
-  certificate, and repairs the stored value when a real certificate contradicts it.
-- **WDTT configs that import by link were unreadable**, printed one character per line beside the "no VK call
-  link" notice. **WDTT-Plus** was also offered a QR code its app can't scan — it takes a link, like the others.
-- **The VK call link field was missing for users who only have a WDTT server.** Their config needs the link,
-  but the field only appeared for users behind a turn-proxy.
+### Исправлено
+- **Принятие сервера WDTT, который эта машина уже запускала раньше, удаляло всех его пользователей.** Если
+  сервер работал на этой машине в прошлой жизни — после переустановки или с панелью, восстановленной из
+  старой резервной копии, — принятие тихо ничего не делало, а затем сервер опустошался: все пользователи
+  удалялись, а пароль владельца заменялся. Теперь принятие выполняется всегда, когда панель ещё не управляет
+  этим сервером, что бы ни осталось на машине.
+- **Пользователи сервера больше не удаляются лишь потому, что панель о них ещё не знает.** Пока панель
+  действительно не держала пароль для сервера, его существующие пользователи передаются наверх и импортируются,
+  а не удаляются — это относится и к созданию сервера поверх каталога прежней установки, и к узлу, потерявшему
+  свои записи при уцелевшем хранилище сервера. Чтобы удалить пользователя, теперь нужно его удалить.
+- **Принятие сервера больше не сбрасывает адреса его клиентов.** Каждое устройство сохраняет свой адрес.
+- **Панель могла показывать тип TLS «самоподписанный», обслуживая при этом настоящий сертификат.** При первом
+  запуске новой установки она гадала, ещё не имея данных, и затем себя не исправляла — поэтому «Настройки →
+  Доступ» всю жизнь машины показывали «самоподписанный» поверх рабочего сертификата Let's Encrypt. Теперь она
+  читает сам сертификат и исправляет сохранённое значение, если настоящий сертификат ему противоречит.
+- **Конфигурации WDTT, которые импортируются ссылкой, было невозможно прочитать** — ссылка печаталась по одному
+  символу в строке рядом с предупреждением об отсутствии ссылки на звонок VK. Кроме того, для **WDTT-Plus**
+  предлагался QR-код, который его приложение не умеет сканировать, — он принимает ссылку, как и остальные.
+- **Поле ссылки на звонок VK не показывалось пользователям, у которых есть только сервер WDTT.** Их конфигурации
+  ссылка нужна, но поле появлялось лишь у пользователей за turn-прокси.
 
 ## [1.6.0-beta] — 2026-08-01
 
-The **WDTT** release: a third kind of server you can run from the panel, and the ability to **adopt
-servers you already have** instead of rebuilding them.
+Выпуск **WDTT**: третий вид сервера, которым можно управлять из панели, и возможность **принять уже
+существующие серверы** вместо того, чтобы поднимать их заново.
 
-### Added
-- **WDTT servers — a self-contained, disguised VPN server, run from the panel.** WDTT carries a
-  WireGuard tunnel inside a stream shaped like a VK video call, so to a network watching the wire it
-  doesn't look like a VPN at all. Unlike a turn-proxy (which fronts an interface you already have), a
-  WDTT server *is* the interface — it owns its own tunnel — so you create it exactly like a WireGuard
-  or AmneziaWG interface, on its own name, subnet and ports, several per server if you like.
-- **Four WDTT server forks to choose from** — **amurcanov** (the original), **ildarmaga**,
-  **Ivan4537** and **XXcipherX** — each with its own client apps. Pick the fork when you
-  create the server; all four are offered by default.
-- **WDTT users work like everyone else.** A WDTT user is an ordinary peer in the panel with a
-  password instead of a key: add, block, expire, rotate and delete them the same way, on the same
-  screens, and the server picks the change up **without dropping anyone's tunnel**.
-- **WDTT on subscription pages and in the QR modal.** Each user's page shows their WDTT server
-  alongside their WireGuard / AmneziaWG configs, with a one-tap **import link** for the client apps
-  that support it, a QR for the ones that scan, and a **download row** for getting the app itself —
-  picked per operating system from the client you set as the default for that fork.
-- **Routing, content filters and egress apply to WDTT too** — the same per-interface controls as
-  wg/awg, and its traffic is counted everywhere: the flow map (as its own relay), per-node totals,
-  the protocol and turn-proxy breakdowns, and the interface tags on the nodes list.
-- **WDTT builds are versioned, and roll back.** The panel tracks which build each server runs, ships
-  new ones as they're published, and lets you pin an older build per server if a new one misbehaves.
-- **Adopt the interfaces a server already has.** The node reports every WireGuard / AmneziaWG
-  interface and WDTT install it finds that the panel didn't create, and each one shows up on the node
-  page as a card you can **Adopt** or **Ignore**. Adopting takes it over **as it is** — same keys,
-  same port, same subnet, and its existing peers come across — so nobody re-imports anything and
-  nothing goes down. This is how you move an existing hand-rolled server onto the panel.
-- **Stopped installs are found too.** A WDTT install that isn't running still shows up (with what it
-  knows about itself — fork, ports, subnet, and its users), so you can adopt a server that's been
-  switched off, and **Adopt existing** takes a path directly for an install that was moved or renamed.
-- **Adopted WDTT users are imported.** Their passwords come across into the roster as peers, so the
-  links people already have **keep working** — and the server keeps serving throughout the take-over.
-- **Ignored interfaces are remembered**, listed under Settings, and can be un-ignored later; one that
-  later becomes managed drops off the list on its own.
-- **Rotate every key a user has, in one action.** New in the user editor: re-key all their WireGuard
-  peers *and* re-issue their WDTT passwords at once, with each config re-rendering as it flips over.
-- **The subscription page tells you when its certificate is wrong** — missing, expired, or issued for
-  a different address — as a proper alert, re-issues it when you save the address (even if nothing
-  changed), and re-checks it as part of the ongoing self-heal. Only for direct HTTPS: behind a reverse
-  proxy the certificate stays the administrator's business.
-- **A native arm64 Docker node image.** Both images are now built natively for amd64 *and* arm64, so
-  ARM boxes (Ampere, Graviton, Pi-class hardware) run the node image without emulation.
+### Добавлено
+- **Серверы WDTT — самодостаточный замаскированный VPN-сервер прямо из панели.** WDTT несёт туннель
+  WireGuard внутри потока, похожего на видеозвонок VK, поэтому для сети, наблюдающей за трафиком, он
+  вообще не выглядит как VPN. В отличие от turn-прокси (который «прикрывает» уже имеющийся интерфейс),
+  сервер WDTT **сам является** интерфейсом — он владеет собственным туннелем, — поэтому создаётся точно
+  так же, как интерфейс WireGuard или AmneziaWG: со своим именем, подсетью и портами, при желании
+  несколько на одном сервере.
+- **Четыре форка сервера WDTT на выбор** — **amurcanov** (оригинал), **ildarmaga**,
+  **Ivan4537** и **XXcipherX** — у каждого свои клиентские приложения. Форк выбирается при
+  создании сервера; все четыре предлагаются по умолчанию.
+- **Пользователи WDTT ничем не отличаются от остальных.** Пользователь WDTT — это обычный пир в панели,
+  только с паролем вместо ключа: добавляйте, блокируйте, задавайте срок, перевыпускайте и удаляйте их
+  так же и на тех же экранах, а сервер подхватывает изменение **не разрывая ничей туннель**.
+- **WDTT на страницах подписки и в окне QR.** На личной странице пользователя сервер WDTT показывается
+  рядом с его конфигами WireGuard / AmneziaWG: ссылка-импорт **в одно касание** для приложений, которые
+  это умеют, QR — для тех, которые сканируют, и строка **загрузки самого приложения**, подобранного под
+  операционную систему из клиента, назначенного вами по умолчанию для этого форка.
+- **Маршрутизация, фильтры контента и точка выхода работают и для WDTT** — те же настройки на интерфейс,
+  что у wg/awg, а его трафик учитывается везде: на карте потоков (отдельным ретранслятором), в итогах по
+  узлам, в разбивках по протоколам и turn-прокси и в тегах интерфейсов в списке узлов.
+- **Сборки WDTT версионируются и откатываются.** Панель знает, какая сборка работает на каждом сервере,
+  выкатывает новые по мере их публикации и позволяет закрепить прежнюю сборку на отдельном сервере, если
+  новая ведёт себя плохо.
+- **Приём интерфейсов, которые уже есть на сервере.** Узел сообщает о каждом интерфейсе WireGuard /
+  AmneziaWG и установке WDTT, которые нашёл и которые панель не создавала, и каждый из них появляется на
+  странице узла карточкой с кнопками **Принять** и **Игнорировать**. Приём забирает его **как есть** — те
+  же ключи, порт и подсеть, вместе с существующими пирами, — поэтому никому не нужно ничего
+  переимпортировать и ничто не выключается. Так собранный вручную сервер переезжает под панель.
+- **Остановленные установки тоже находятся.** Неработающая установка WDTT всё равно показывается (со всем,
+  что о себе знает: форк, порты, подсеть и пользователи), так что принять можно и выключенный сервер, а
+  **«Принять существующий»** берёт путь напрямую — для установки, которую перенесли или переименовали.
+- **Пользователи принятого WDTT импортируются.** Их пароли переносятся в реестр как пиры, поэтому ссылки,
+  которые у людей уже на руках, **продолжают работать**, — а сервер обслуживает их всё время приёма.
+- **Игнорируемые интерфейсы запоминаются**, перечислены в настройках, и их можно вернуть; тот, который
+  позже стал управляемым, уходит из списка сам.
+- **Перевыпуск всех ключей пользователя одним действием.** В редакторе пользователя: перевыпустить все его
+  пиры WireGuard **и** пароли WDTT сразу, с перерисовкой каждого конфига по мере готовности.
+- **Страница подписки сообщает, если с её сертификатом что-то не так** — отсутствует, просрочен или выписан
+  на другой адрес — обычным предупреждением, перевыпускает его при сохранении адреса (даже если ничего не
+  менялось) и перепроверяет в рамках постоянного самовосстановления. Только для прямого HTTPS: за обратным
+  прокси сертификатом по-прежнему занимается администратор.
+- **Нативный образ узла для arm64.** Оба образа теперь собираются нативно под amd64 **и** arm64, поэтому
+  ARM-серверы (Ampere, Graviton, устройства класса Pi) работают без эмуляции.
 
-### Changed
-- **The installers no longer ask about VPN configuration.** They install the software, stand the
-  service up, and stop there — interfaces, turn-proxies and WDTT servers are created in the panel,
-  where you can see what you're doing. Anything the box already had is offered for adoption instead
-  of being asked about at a prompt. WireGuard and AmneziaWG are always installed, so a fresh panel is
-  ready to create an interface the moment you log in.
-- **Client apps are chosen per operating system.** Turn-proxy and WDTT settings now show a per-OS
-  matrix of the apps that work with each fork — named by their author, coloured, and marked by how
-  well they fit — and the default you pick there is what users get offered on their subscription page.
-- **Uninstall says exactly what it will remove**, including Docker turn-proxies and WDTT servers on a
-  node, and labels interfaces plainly as "AmneziaWG/WireGuard interfaces".
-- **One panel password, plus a recovery key.** Resetting the login no longer destroys the encryption
-  vault; the recovery key is what restores access to escrowed keys.
+### Изменено
+- **Установщики больше не спрашивают про настройку VPN.** Они ставят программы, поднимают службу и на этом
+  останавливаются — интерфейсы, turn-прокси и серверы WDTT создаются в панели, где видно, что вы делаете.
+  Всё, что на сервере уже было, предлагается принять, а не выясняется вопросами в консоли. WireGuard и
+  AmneziaWG ставятся всегда, поэтому на свежей панели можно создать интерфейс сразу после входа.
+- **Клиентские приложения выбираются под операционную систему.** В настройках turn-прокси и WDTT теперь
+  матрица приложений по ОС для каждого форка — с именем автора, цветом и отметкой, насколько приложение
+  подходит, — а выбранное по умолчанию и предлагается пользователям на странице подписки.
+- **Удаление точно говорит, что именно уберёт**, включая turn-прокси и серверы WDTT в Docker на узле, и
+  называет интерфейсы понятно: «интерфейсы AmneziaWG/WireGuard».
+- **Один пароль панели и ключ восстановления.** Сброс пароля больше не уничтожает хранилище шифрования;
+  доступ к депонированным ключам возвращает ключ восстановления.
 
-### Fixed
-- **Converting between bare-metal and Docker no longer loses things.** A convert used to leave behind
-  the WireGuard configs that only existed inside the container, the node's pulled routing lists
-  (which showed up afterwards as "SNI scanner down"), the subscription service's port and bind (every
-  subscription link silently pointed at a dead port), the reverse proxy (left un-reloadable), and — on
-  docker→bare — the panel's own roster. Each of those is carried across now, and the conversion never
-  tears the old side down before proving the new one starts.
-- **Adoption on Docker nodes.** An interface whose config file lives only inside the container is
-  rebuilt from the live device (keys, peers, port, MTU) so it can be adopted at all; a foreign WDTT
-  server is now identified by its own process — including which fork it is, and its real subnet read
-  off the live interface — instead of being guessed at and mislabelled.
-- **A Docker node restart no longer un-manages plain-WireGuard interfaces.**
-- **Deleting a WDTT server removes its users** from the roster, so a server created afterwards on the
-  same name can't inherit the previous one's peers.
-- **An uninstall on a box with a WDTT server used to die mid-run**, leaving the install half-removed.
-- **The panel could come up with no login at all** on Docker when the subscription service's auth
-  mount pre-created an empty file.
-- **A WDTT link with an empty password**, a WDTT subnet change that left clients online but without
-  internet, and WDTT servers that vanished from the panel while being created, deleted or adopted —
-  an operation in flight now shows as a card with its state, not as an empty space.
-- **Certificates on Docker** are no longer issued for a domain the panel isn't advertising, and the
-  subscription page can now get a Let's Encrypt certificate there at all.
-- **Typing in turn-proxy settings is no longer wiped** by the background poll mid-edit.
+### Исправлено
+- **Переход между bare-metal и Docker больше ничего не теряет.** Раньше конвертация оставляла позади
+  конфиги WireGuard, существовавшие только внутри контейнера, скачанные узлом списки маршрутизации (что
+  потом выглядело как «SNI scanner down»), порт и привязку службы подписок (все ссылки на подписки молча
+  указывали на мёртвый порт), обратный прокси (оставался без возможности перезагрузки) и — при переходе
+  docker→bare — собственный реестр панели. Теперь всё это переносится, и конвертация никогда не сносит
+  старую сторону, не убедившись, что новая запускается.
+- **Приём интерфейсов на узлах в Docker.** Интерфейс, конфиг которого существует только внутри контейнера,
+  восстанавливается по живому устройству (ключи, пиры, порт, MTU) — иначе принять его было нельзя; чужой
+  сервер WDTT теперь определяется по собственному процессу, включая форк и настоящую подсеть, прочитанную
+  с живого интерфейса, вместо угадывания и неверной подписи.
+- **Перезапуск узла в Docker больше не «разуправляет» интерфейсы обычного WireGuard.**
+- **Удаление сервера WDTT удаляет и его пользователей** из реестра, чтобы сервер, созданный после под тем
+  же именем, не унаследовал чужие пиры.
+- **Удаление на сервере с WDTT раньше обрывалось на середине**, оставляя установку наполовину удалённой.
+- **Панель могла подняться вообще без входа** в Docker, если монтирование файла аутентификации службы
+  подписок создавало пустой файл.
+- **Ссылка WDTT с пустым паролем**, смена подсети WDTT, после которой клиенты были онлайн, но без
+  интернета, и серверы WDTT, пропадавшие из панели во время создания, удаления или приёма — операция «в
+  полёте» теперь показывается карточкой со своим состоянием, а не пустым местом.
+- **Сертификаты в Docker** больше не выписываются на домен, который панель не публикует, а страница
+  подписки наконец может получить там сертификат Let's Encrypt.
+- **Ввод в настройках turn-прокси больше не затирается** фоновым опросом посреди редактирования.
 
 ## [1.5.1-beta] — 2026-07-26
 
-The big one: **content filtering** and a live **Protection** dashboard on the Overview.
+Большой выпуск: **фильтрация контента** и живая панель **«Защита»** на обзорном экране.
 
-### Added
-- **Content filtering (blocking).** Block **ads, trackers, malware, adult content, gambling** and more —
-  per interface, from curated category lists. Filtering runs on the **entry node** (where the client's tunnel
-  lands); domain filters enforce in **Force-DNS** and **Hybrid-SNI** modes, and IP / threat-IP lists enforce in
-  **every** mode. Every enabled feed merges into **one set per node** for an O(1) match, and the panel builds
-  those lists with a **streaming resolver** so even multi-million-domain lists won't run a small box out of
-  memory. Each category ships a small, Force-DNS-safe **default** list — add bigger ones when the server has the RAM.
-- **Overview "Protection" card.** A live, range-aware view of what filtering is doing: **Blocked** (packets
-  dropped, plus distinct sites broken down **per category**), **Torrents caught**, and **Scanners flagged** — each
-  with a hover **"who"** bubble that attributes torrents and scanners to the **user · peer** behind them, newest first.
-- **Memory-aware filtering.** The node gates the Force-DNS list fill against available RAM so a large list can
-  never thrash a small node offline (it degrades honestly and reports it), and the panel **warns** — with a rough
-  "≈130 MB per 1M domains" estimate — before you turn on a big list.
+### Добавлено
+- **Фильтрация контента (блокировка).** Блокируйте **рекламу, трекеры, вредоносное ПО, контент для взрослых,
+  азартные игры** и другое — по каждому интерфейсу, из курируемых списков категорий. Фильтрация работает на
+  **входном узле** (куда приходит туннель клиента); доменные фильтры действуют в режимах **Force-DNS** и
+  **Hybrid-SNI**, а списки IP / угроз-IP — в **любом** режиме. Все включённые списки объединяются в **один набор
+  на узел** для сопоставления за O(1), а панель собирает их **потоковым резолвером**, поэтому даже списки на
+  миллионы доменов не исчерпают память небольшого сервера. Для каждой категории есть небольшой безопасный для
+  Force-DNS **список по умолчанию** — добавляйте крупнее, когда на сервере хватает ОЗУ.
+- **Карточка «Защита» на обзоре.** Живой обзор с учётом диапазона того, что делает фильтрация: **Заблокировано**
+  (отброшенные пакеты плюс различимые сайты **по категориям**), **Пойманные торренты** и **Отмеченные сканеры** —
+  каждый со всплывающей подсказкой **«кто»**, которая связывает торренты и сканеры с **пользователем · пиром**,
+  новейшие сверху.
+- **Учёт памяти при фильтрации.** Узел ограничивает заполнение списков Force-DNS доступной ОЗУ, чтобы большой
+  список не увёл небольшой узел в оффлайн (он честно деградирует и сообщает об этом), а панель **предупреждает** —
+  с грубой оценкой «≈130 МБ на 1 млн доменов» — прежде чем вы включите большой список.
 
-### Changed
-- **The flow map's card height is now rock-stable** — it no longer resizes on every poll (which used to scroll
-  the page out from under you). Denser fleets get a little more vertical room.
-- **The Overview now shows both** *Top nodes by peers* (online, range-aware) **and** *Top nodes by traffic*.
-- **Routing / Blocking mode card** tidied up — the lists line sits under the four mode buttons, the info popover
-  is clamped to the screen, and **Reset routing** is a compact red icon.
-- **Toasts last a little longer (5.5 s), and saving an interface now confirms with a toast.**
+### Изменено
+- **Высота карточки карты потоков теперь стабильна** — она больше не меняется при каждом опросе (из-за чего
+  страница «уезжала» из-под читателя). Более плотные развёртывания получают чуть больше вертикального места.
+- **На обзоре теперь показываются оба списка** — *Топ узлов по пирам* (онлайн, с учётом диапазона) **и**
+  *Топ узлов по трафику*.
+- **Карточка режима маршрутизации / блокировки** приведена в порядок — строка списков под четырьмя кнопками
+  режимов, всплывающая подсказка удерживается в пределах экрана, а **Сброс маршрутизации** — компактный красный значок.
+- **Уведомления держатся чуть дольше (5.5 с), а сохранение интерфейса теперь подтверждается уведомлением.**
 
-### Fixed
-- **Panel out-of-memory when resolving large block lists.** The block-union builder now **streams and
-  external-sorts** to disk instead of holding the whole union in RAM — a multi-million-domain list no longer
-  OOM-kills a 1 GB panel.
-- **Hybrid content-blocking could stop dropping learned destinations** after a brief per-source-counter
-  experiment; reverted to the known-good path, enforcement verified.
-- **Kernel-SNI** now steers domain blocks to the DNS/SNI path (they can't match by destination IP), and block
-  sets no longer leak into **Top destinations**.
+### Исправлено
+- **Нехватка памяти в панели при обработке больших списков блокировки.** Сборщик объединённого списка теперь
+  **потоково сортирует на диск** вместо хранения всего объединения в ОЗУ — список на миллионы доменов больше не
+  убивает по OOM панель с 1 ГБ ОЗУ.
+- **Гибридная блокировка контента могла перестать отбрасывать выученные адреса** после кратковременного
+  эксперимента со счётчиком по источникам; возвращено к известному рабочему пути, применение проверено.
+- **Kernel-SNI** теперь направляет доменные блокировки на путь DNS/SNI (они не сопоставляются по IP назначения),
+  а наборы блокировок больше не попадают в **Топ назначений**.
 
 ## [1.4.2-beta] — 2026-07-24
 
-A follow-up to 1.4.1: the AmneziaWG datapath now **actually rebuilds** on repair, and you can trigger a
-repair from the panel **even when there's no new version**.
+Продолжение 1.4.1: датапат AmneziaWG теперь **действительно пересобирается** при починке, а запустить
+починку из панели можно **даже когда нет новой версии**.
 
-### Fixed
-- **The AmneziaWG kernel-module heal now forces a DKMS rebuild.** 1.4.1 installed the build dependencies but,
-  on a box where the `amneziawg` package was already present, `apt install` was a no-op and never compiled the
-  module — so the interface still failed to come up. The installers and the updater now run `dkms autoinstall`
-  (with an `amneziawg-dkms` reinstall fallback) to actually build and load the module for the running kernel.
+### Исправлено
+- **Починка модуля ядра AmneziaWG теперь принудительно пересобирает DKMS.** В 1.4.1 ставились зависимости
+  для сборки, но на машине, где пакет `amneziawg` уже был установлен, `apt install` ничего не делал и модуль
+  не компилировался — интерфейс всё равно не поднимался. Установщики и апдейтер теперь выполняют
+  `dkms autoinstall` (с запасным переустановлением `amneziawg-dkms`), чтобы реально собрать и загрузить
+  модуль под работающее ядро.
 
-### Changed
-- **The panel's Update repairs even when you're already up to date.** The "up to date" indicator is now a
-  button that re-runs the updater — reinstalling anything missing, re-enabling services, and rebuilding the
-  datapath (e.g. the AmneziaWG module) — so you can fix a broken node without waiting for a new release. The
-  update dialog spells this out.
+### Изменено
+- **Кнопка «Обновить» в панели чинит, даже когда вы уже на последней версии.** Индикатор «up to date» стал
+  кнопкой, которая перезапускает апдейтер — переустанавливает отсутствующее, включает сервисы и пересобирает
+  датапат (например, модуль AmneziaWG), — так что сломанный узел можно починить, не дожидаясь нового выпуска.
+  Диалог обновления это поясняет.
 
 ## [1.4.1-beta] — 2026-07-24
 
-A maintenance release that makes **AmneziaWG install reliably on a fresh box**, and lets the panel's
-**Update** button repair a broken datapath on its own.
+Сервисный выпуск: **AmneziaWG теперь надёжно ставится на свежей машине**, а кнопка **Обновить** в панели
+сама чинит сломанный датапат.
 
-### Fixed
-- **AmneziaWG interfaces failing to come up** — `ip link add … type amneziawg → Unknown device type`.
-  Installing the `amneziawg` package only lays down the `awg` *tool*; the datapath is a **DKMS kernel
-  module** that has to compile against your running kernel. The installers now also install `dkms` +
-  `linux-headers-$(uname -r)` and verify the module actually loads (success is no longer "the CLI exists").
-  When you create an interface from the panel, the node now reports the **real cause — with the exact fix —**
-  instead of the misleading "a port or subnet may be in use".
+### Исправлено
+- **Интерфейсы AmneziaWG не поднимались** — `ip link add … type amneziawg → Unknown device type`.
+  Установка пакета `amneziawg` кладёт только *инструмент* `awg`; сам датапат — это **модуль ядра DKMS**,
+  который должен собраться под ваше работающее ядро. Установщики теперь дополнительно ставят `dkms` +
+  `linux-headers-$(uname -r)` и проверяют, что модуль реально загружается (успех — это больше не «утилита
+  на месте»). При создании интерфейса из панели узел теперь сообщает **настоящую причину — с точной
+  командой исправления —** вместо вводящего в заблуждение «порт или подсеть уже заняты».
 
-### Changed
-- **Update now rebuilds the AmneziaWG kernel module when it's missing or stale** — e.g. after a kernel
-  upgrade left the previous DKMS build behind, so awg interfaces silently stopped coming up. Clicking
-  **Update** in the panel (or running `swg-update`) repairs the node automatically.
-- **Turn-proxy platform chips** in the fork list get a cleaner solid-neon look, filled by client kind.
+### Изменено
+- **Обновление теперь пересобирает модуль ядра AmneziaWG, если он отсутствует или устарел** — например,
+  после обновления ядра, когда прежняя сборка DKMS осталась от старого ядра и awg-интерфейсы перестали
+  подниматься. Нажатие **Обновить** в панели (или `swg-update`) чинит узел автоматически.
+- **Чипы платформ у turn-прокси** в списке форков получили более чистый solid-neon вид, с заливкой по типу
+  клиента.
 
-### Docs
-- The install one-liner now **asks the method** (bare-metal / Docker) **and role** instead of silently
-  installing a panel with no node.
-- Noted that on a root shell without `sudo` (common on fresh Debian / VPS images) you simply drop the `sudo`.
+### Документация
+- Однострочник установки теперь **спрашивает метод** (bare-metal / Docker) **и роль** вместо тихой
+  установки панели без узла.
+- Отмечено, что на root-сессии без `sudo` (частый случай на свежих образах Debian / VPS) достаточно убрать
+  `sudo`.
 
 ## [1.4.0-beta] — 2026-07-23
 
-The headline of this release is **client apps for turn proxies**: the panel now manages the whole client
-side, so end-users get a ready-to-use connection from their subscription page with nothing to assemble.
+Главное в этом выпуске — **клиентские приложения для turn-прокси**: панель теперь управляет всей клиентской
+частью, поэтому конечный пользователь получает готовое подключение со страницы подписки, ничего не собирая
+вручную.
 
-### Added
-- **Client apps for turn proxies.** For each fork, choose which app your end-users get on each platform
-  (Android / iOS / desktop) — VK TURN Proxy, WINGS V, FreeTurn, WireGuard-TURN, or the CLI sidecar — with
-  the compatible choices ranked (native · cross-fork · plain). The subscription page then hands out exactly
-  that app's config, matched to the visitor's device: a tap-to-open deep link, a scannable QR, a config
-  file, or a ready-to-paste command. Adds the **MYSOREZ** fork, typed per-proxy obfuscation settings,
-  panel-mirrored fork binaries with one-click version rollback, and drift detection for the app formats.
-- **Reworked subscription page.** One **Start** button per connection that does the right thing for the
-  chosen app, an OS picker that re-generates the config and downloads for the selected platform, per-app
-  "Get the app" install links, and one-tap **Amnezia VPN** import for WireGuard / AmneziaWG.
-- **Expiry dates** for a peer or a subscription — expired and blocked peers are clearly flagged throughout.
-- **Multiple VK call links per user**, handed to each app in the form it supports.
-- **Redesigned add-peers** — a two-panel layout (this user's peers · the unassigned pool) and a
-  primary / backup connection picker.
-- **`swg-passwd` — reset the panel login from the shell.** `sudo swg-passwd` resets the admin username and
-  password and re-keys the Encryption Vault in place; you're signed back in on the next login, and stored
-  configs / subscription links keep working (no re-issue).
+### Добавлено
+- **Клиентские приложения для turn-прокси.** Для каждого форка выберите, какое приложение получат ваши
+  пользователи на каждой платформе (Android / iOS / десктоп) — VK TURN Proxy, WINGS V, FreeTurn,
+  WireGuard-TURN или CLI-сайдкар — с ранжированием совместимых вариантов (родной · кросс-форк · plain).
+  Страница подписки затем отдаёт готовую конфигурацию именно этого приложения под устройство посетителя:
+  ссылку-открытие в приложении, QR-код, файл конфигурации или готовую команду. Добавлены форк **MYSOREZ**,
+  типизированные настройки обфускации на каждый прокси, зеркалирование бинарников форков панелью с откатом
+  версии в один клик и обнаружение расхождений в форматах приложений.
+- **Переработанная страница подписки.** Одна кнопка **Start** на подключение, делающая нужное действие для
+  выбранного приложения, выбор ОС (перегенерирует конфиг и загрузки под платформу), ссылки «Установить
+  приложение» для каждого приложения и импорт в **Amnezia VPN** в один клик для WireGuard / AmneziaWG.
+- **Даты истечения** для пира или подписки — истёкшие и заблокированные пиры наглядно помечаются везде.
+- **Несколько ссылок VK-звонка на пользователя**, передаваемых каждому приложению в поддерживаемом им виде.
+- **Переработанное добавление пиров** — двухпанельная раскладка (пиры этого пользователя · пул
+  нераспределённых) и выбор основного / резервного подключения.
+- **`swg-passwd` — сброс входа в панель из консоли.** `sudo swg-passwd` сбрасывает имя администратора и
+  пароль и перешифровывает Шифрованное хранилище на месте; вы входите снова при следующем логине, а
+  сохранённые конфиги / ссылки подписок продолжают работать (без перевыпуска).
 
-### Changed
-- **Updating now self-heals a panel or node that's missing pieces** — a lost service, unit, or root helper
-  is reinstalled in place (never re-created), so a plain update fixes it with no reinstall. A server that
-  lost a keyless interface now has it recreated and re-keyed, and service-health problems are surfaced
-  under a new *needs attention* panel.
-- **Interface-key escrow is now on by default** (previously off) and moved into the Interfaces screen —
-  each node seals its interface private keys to a vault key only you hold, so a wiped node's keys can be
-  restored without the panel ever seeing them.
-- The peer and turn-proxy status model was reworked for clearer at-a-glance state.
+### Изменено
+- **Обновление теперь само чинит панель или узел, у которых чего-то не хватает** — потерянная служба, unit
+  или привилегированный помощник переустанавливаются на месте (никогда не пересоздаются), поэтому обычное
+  обновление всё исправляет без переустановки. Сервер, потерявший интерфейс без ключей, теперь
+  пересоздаёт и перевыпускает его ключи, а проблемы со здоровьем служб выводятся в новой панели
+  «требует внимания».
+- **Эскроу ключей интерфейсов теперь включён по умолчанию** (ранее выключен) и перенесён в раздел
+  «Интерфейсы» — каждый узел запечатывает приватные ключи интерфейсов на ключ хранилища, которым владеете
+  только вы, поэтому ключи стёртого узла можно восстановить, а панель их никогда не видит.
+- Модель статусов пиров и turn-прокси переработана для более наглядного состояния.
 
-### Fixed
-- A fresh **Docker** install no longer fails to start the subscription container.
-- Each device is now offered only an app that actually connects to its server, with the right obfuscation —
-  plain servers use the plain transport, obfuscated forks use their own — and blocked / expired peers no
-  longer show as *dangling*.
-- Stopped a background flood of 404s from the subscription surface.
+### Исправлено
+- Свежая установка через **Docker** больше не падает при запуске контейнера подписок.
+- Каждому устройству теперь предлагается только приложение, которое действительно подключается к его серверу,
+  с правильной обфускацией — plain-серверы используют обычный транспорт, обфусцированные форки — свою —
+  а заблокированные / истёкшие пиры больше не показываются как «висящие».
+- Устранён фоновый поток ошибок 404 от сервиса подписок.
 
 ## [1.3.13-beta] — 2026-07-20
 
-### Fixed
-- **Updating now repairs a panel that was missing its subscription server.** If a box ended up with the
-  subscription files but no `swg-sub` service — an older install, or one where the unit was lost — the
-  panel could not start or move the subscription server, and Settings → Subscriptions failed with
-  "couldn't bind the subscription server" and rolled back. An update now installs the service (and its
-  own unprivileged user) when it's absent, the same way it already heals the privileged network helper —
-  so a plain update fixes it, with no need to reinstall. The panel's configured subscription address is
-  preserved.
+### Исправлено
+- **Обновление теперь чинит панель, у которой пропал сервер подписок.** Если на сервере остались файлы
+  подписок, но не было службы `swg-sub` — старая установка или случай, когда unit был потерян — панель не
+  могла запустить или сменить адрес сервера подписок, и раздел «Настройки → Подписки» падал с ошибкой
+  «не удалось привязать сервер подписок» и откатывал изменения. Теперь обновление устанавливает службу
+  (и её собственного непривилегированного пользователя), если её нет, — так же, как оно уже чинит
+  привилегированный сетевой помощник. Обычное обновление всё исправляет, переустановка не нужна.
+  Настроенный в панели адрес подписок сохраняется.
 
 ## [1.3.12-beta] — 2026-07-19
 
-### Added
-- **Restore a missing or broken interface — keys and all.** If a server loses an interface (its config
-  wiped, or the whole box rebuilt), the panel flags it as *dangling* and offers a one-click **Restore**
-  that recreates the interface with the **same keys** and re-adds every peer — clients keep working, with
-  no configs to redistribute. A peer whose address has drifted out of its interface's subnet shows as
-  *broken* with a **Fix** button that corrects the address in place. Both work on a single peer or as a
-  batch across a whole node, including rebuilding a node from scratch.
-- **Optional interface-key escrow.** Turn on escrow and each node seals its interface private keys to a
-  vault key that only you hold; the panel keeps only the ciphertext. A wiped node's keys can then be
-  restored from the vault — the panel never sees a private key. Off by default.
+### Добавлено
+- **Восстановление пропавшего или сломанного интерфейса — вместе с ключами.** Если сервер теряет
+  интерфейс (конфиг стёрт или пересобрана вся машина), панель помечает его как *dangling* и предлагает
+  восстановление в один клик, которое пересоздаёт интерфейс с **теми же ключами** и возвращает всех пиров —
+  клиенты продолжают работать, конфиги раздавать заново не нужно. Пир, чей адрес вышел за пределы подсети
+  интерфейса, показывается как *broken* с кнопкой **Исправить**, которая правит адрес на месте. Оба действия
+  работают как по одному пиру, так и пакетно по всему узлу, включая пересборку узла с нуля.
+- **Опциональное хранилище ключей интерфейсов.** Включите хранилище — и каждый узел запечатывает приватные
+  ключи своих интерфейсов ключом хранилища, который есть только у вас; панель хранит только шифротекст. Ключи
+  стёртого узла можно восстановить из хранилища — панель никогда не видит приватный ключ. По умолчанию выключено.
 
-### Fixed
-- **Switching the panel between a subpath reverse proxy and its own HTTPS now works both ways.** A reverse
-  proxy mounted under a path (e.g. `/panel`) can be flipped to built-in TLS at the root — and back —
-  without the confirmation failing, and remote nodes re-point themselves to the new address during the
-  switch instead of stranding on the old one.
-- **A peer's address is validated against its interface subnet before it's applied**, so a bad or
-  multi-range address can't quietly break a peer.
-- **Converting between Docker and bare-metal keeps your panel address and settings** and no longer trips a
-  port collision on the co-located node.
-- Assorted robustness fixes to the address-change flow — out-of-range ports are rejected instead of
-  silently clamped, and cancel / confirm now report their outcome clearly.
+### Исправлено
+- **Переключение панели между reverse-proxy с подпутём и собственным HTTPS теперь работает в обе стороны.**
+  Reverse-proxy, смонтированный на пути (например, `/panel`), можно переключить на встроенный TLS в корне —
+  и обратно — без сбоя подтверждения, а удалённые узлы сами переходят на новый адрес во время переключения,
+  а не остаются на старом.
+- **Адрес пира проверяется по подсети интерфейса перед применением**, поэтому неверный или много-диапазонный
+  адрес не может незаметно сломать пира.
+- **Конвертация между Docker и bare-metal сохраняет адрес и настройки панели** и больше не приводит к
+  конфликту портов на совмещённом узле.
+- Различные улучшения надёжности процесса смены адреса — порты вне диапазона отклоняются, а не молча
+  обрезаются, а отмена / подтверждение теперь понятно сообщают результат.
 
-### Changed
-- The peer status model and the "needs attention" and missing-interface cards were reworked for clearer
-  at-a-glance state — *online / partial / broken / dangling*.
+### Изменено
+- Модель статусов пиров, карточки «требует внимания» и карточки пропавших интерфейсов переработаны для
+  более наглядного состояния — *online / partial / broken / dangling*.
 
 ## [1.3.11-beta] — 2026-07-18
 
-### Added
-- **Change the panel's own address from the UI.** Switch the panel between a reverse proxy
-  (nginx / Cloudflare) and its own built-in HTTPS, or change its path, port, or domain — no SSH
-  needed. Connected nodes follow the new address automatically, and the old address keeps serving
-  during the switch, so a wrong value can never lock you out.
-- **Address-migration ribbon with one-click undo.** A banner appears when you're viewing a previous
-  panel address; for moves the panel fully controls (built-in TLS), a single click cancels the move.
+### Добавлено
+- **Смена собственного адреса панели прямо из интерфейса.** Переключайте панель между обратным
+  прокси (nginx / Cloudflare) и её собственным встроенным HTTPS, либо меняйте путь, порт или домен —
+  без SSH. Подключённые узлы автоматически переходят на новый адрес, а старый продолжает работать во
+  время перехода, поэтому неверное значение не заблокирует вам доступ.
+- **Лента миграции адреса с отменой в один клик.** Баннер появляется, когда вы открыли панель по
+  прежнему адресу; для переходов, которые панель контролирует полностью (встроенный TLS), отмена
+  выполняется одним нажатием.
 
-### Fixed
-- **"The root helper is not available."** Older installs missing the privileged helper now get it
-  installed automatically on `update`, so setting the subscription address and other Access changes
-  work again.
-- **Address no longer reverts when converting to Docker or re-installing.** A confirmed address change
-  is now written to the install config (and the Docker `.env`), so a later convert/re-install keeps
-  your current address instead of the one from first install.
-- **Docker: a path or port change survives a container restart.** Previously a `docker restart` or a
-  reboot could quietly roll the panel back to its old address.
-- **Switching a Docker panel to its own built-in HTTPS is now safe.** The panel issues *and verifies* the
-  certificate before committing; if it can't be issued (missing/blocked credential, DNS not ready), it
-  **rolls back automatically** to the working address instead of going down. A stale self-signed certificate
-  left by an earlier failed attempt no longer shadows re-issuance, and switching to a mode that needs a
-  Cloudflare token is refused up front when the token is missing.
+### Исправлено
+- **«Root helper недоступен».** На старых установках, где отсутствовал привилегированный помощник, он
+  теперь устанавливается автоматически при `update`, поэтому задание адреса подписки и другие изменения
+  раздела Access снова работают.
+- **Адрес больше не откатывается при конвертации в Docker или переустановке.** Подтверждённое изменение
+  адреса теперь записывается в конфигурацию установки (и в Docker `.env`), поэтому последующая
+  конвертация/переустановка сохраняет ваш текущий адрес, а не тот, что был при первой установке.
+- **Docker: изменение пути или порта переживает перезапуск контейнера.** Раньше `docker restart` или
+  перезагрузка могли незаметно вернуть панель на прежний адрес.
+- **Переключение Docker-панели на собственный встроенный HTTPS теперь безопасно.** Панель выпускает *и
+  проверяет* сертификат перед фиксацией; если выпустить его не удаётся (нет/заблокирован ключ, DNS не готов),
+  она **автоматически откатывается** на рабочий адрес, а не падает. Устаревший самоподписанный сертификат от
+  прошлой неудачной попытки больше не мешает повторному выпуску, а переключение в режим, которому нужен токен
+  Cloudflare, отклоняется заранее, если токена нет.
 
-### Changed
-- On Docker, TLS and address changes apply through a container-aware path and are made restart-safe.
+### Изменено
+- В Docker переключение TLS и смена адреса применяются через путь, учитывающий контейнер, и устойчивы к
+  перезапуску.

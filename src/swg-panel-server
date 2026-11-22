@@ -1320,31 +1320,7 @@ def _why_fetch_failed(url, e):
     return perr("Couldn't reach {v1} to check for updates — {v2}.", v1=host, v2=type(e).__name__)
 
 
-# One GitHub GET, as patient as the rest of the product already is. Everything else here that fetches from
-# GitHub retries — swg-noded downloads with `curl --retry 3 --retry-all-errors`, the routing catalogue goes
-# through _http_retry(tries=4) — because, in the words of that helper, "the whole product targets networks
-# where GitHub is flaky/throttled". The update check was the one that never got it: a single urlopen with an
-# 8s timeout and no second attempt, so one injected reset or one TLS EOF became "couldn't reach the repo" on
-# a path that a retrying `curl` walks in the console without complaint.
-#
-# `deadline` is what keeps that patience honest. An operator is WAITING on the on-demand check, so the retry
-# budget has to be the whole check's, not per-fetch: without it three fetches x four tries x a 20s timeout is
-# minutes of spinner. _http_retry stops retrying once the deadline passes, and the per-attempt timeout is
-# clamped to what is left, so the button answers inside its budget whatever the network does.
-#
-# ── and a SECOND DOOR onto the same file ────────────────────────────────────────────────────────────────
-# raw.githubusercontent.com resolves into 185.199.108-111.x, the range actually filtered in the networks this
-# product is most used in. api.github.com does not: measured from two vantage points it answered on
-# 140.82.121.6 and 4.225.11.201 — which is the point, and also why no single address is named as a promise.
-# Same repo, same commit, same TLS, same trust: only the infrastructure differs, so
-# this adds no party to trust, which is why it can ship well ahead of the signing work that every OTHER
-# mirror would need first (docs/UPDATE-RESILIENCE-PLAN.md, Phase 0a).
-#
-# ⚠️ IT IS THE MASTER THAT MAKES THIS URGENT rather than merely nice. A `master` install is the panel AND a
-# node on one box, so when that box is the filtered one there is no healthy control plane to fall back on —
-# the panel cannot see the version and nothing on the box can. And note what this does NOT do: the UPDATE
-# itself is still `curl raw.githubusercontent.com/.../bootstrap.sh | bash`, untouched here. This makes the
-# CHECK work; the plan's later phases are what make the update work.
+# Повторы делят срок всей проверки обновлений. При сбое чтения проверяем тот же файл через GitHub API.
 def _api_contents_url(url):
     """The same file, through the GitHub API's contents endpoint instead of raw. "" for anything that is not
     a github raw URL — an operator's own mirror (SWG_LATEST_URL) has no such second door, and guessing one
@@ -11356,36 +11332,9 @@ def node_fingerprint(deps, nodes, nid, roster=None, snaps=None, sections=("resid
                      "residue_paths": _residue_paths, "residue_dropped": _residue_dropped}}
 
 
-# ── the delta table: is this change allowed, and what does the reset do? ─────────────────────────
-# ONE table, two functions over it. `fp_transform` applies it to a RECORD (the §1.5 reset IS this call);
-# `fp_diff` applies it to a DIFF. They must not become two lists — half of NODE-TRANSFER-PLAN's Part I was
-# a clear-list and a check-list disagreeing about the same field.
-#
-# A row is (CHECK PATH, verb, why, RESET PATHS). The check path is a DIFF path, `<section>.<path…>`; the
-# reset paths are RECORD paths, and default to the check path with its section prefix stripped.
-#
-# They are two columns of one row rather than two tables, and they differ where the thing you reset is not
-# the thing you check. `endpoint_host` is the case that forced this: it is CONSUMED by `render`, so it
-# does not appear in the residue tree at all and a rule keyed `residue.endpoint_host` matches nothing —
-# the first version of this table had exactly that dead rule and reported zero blocks on three nodes whose
-# addresses had all gone stale. What a client dials is the RENDERED endpoint, so that is what gets checked;
-# what an operator stores is `endpoint_host`, so that is what gets reset.
-#
-# THE DEFAULT IS BLOCK. Only the exceptions are listed. Anything unmatched that changed stops the
-# operation, so forgetting to classify a field fails safe and loudly, the same inversion `residue` uses.
-#
-#   any                    change freely — this is expected to differ and nobody needs to look
-#   cleared                the reset removes it; afterwards it must be absent
-#   cleared_if_ip_literal  the reset removes it only when it holds an IP; a hostname survives untouched
-#   host_swap              §1.5, in full (see _host_swap_*). The check is AFFIRMATIVE on the AFTER value
-#   to:<value>             the reset sets it; afterwards it must equal that
-#   review                 allowed, but SURFACED — ticked by a human, never silently passed
-# Which sections each operation is judged on, and the order a diff walks them.
-#
-# §2's table has had four columns since round 1 and only two of them existed, correctly: a rebuild moves
-# neither the roster nor the panel's settings, so `intent` cannot change and `external` guarded nid-keyed
-# state that keeping the nid (§1.2) made safe by construction. A TRANSFER moves both, and they are the two
-# sections that can prove the roster landed and name what stayed behind.
+# Одна таблица задаёт сброс полей (fp_transform) и проверку изменений (fp_diff).
+# Пути проверки относятся к результату рендеринга, пути сброса — к сохранённой записи.
+# При отсутствии правила изменение блокируется.
 _FP_SECTION_ORDER = ("residue", "render", "intent", "external")
 _FP_SECTIONS = {"rebuild":  ("residue", "render"),
                 "transfer": ("residue", "render", "intent", "external")}
@@ -18707,29 +18656,9 @@ def _clean_tlds(raw):
     return out
 
 
-# ── the routing-target classifier ────────────────────────────────────────────────────────────────
-# THE AUTHORITY. js/classify.js is the same grammar in the browser (it decides the badge the operator sees
-# while typing); this one decides what is stored and how cascade_plan buckets patterns for the node.
-# swg-noded deliberately has NO third copy — it receives pre-bucketed lists, so a node can never disagree
-# about what a string meant. The two that exist are pinned together by .campaign/classify-vectors.json,
-# written before either of them, and checked by .campaign/classify-audit.mjs.
-#
-# Syntax is LOCKED in docs/PATTERNS-AND-EXTRA-FLAGS-PLAN.md §1.1: `*X` ends with · `X*` starts with ·
-# `*X*` contains · a bare `X.Y` is the name and everything under it · `*.X.Y` is its alias. No regex ever
-# (§0: a pathological pattern backtracks 2.6s in the packet path), and no `?`.
-#
-# THE KIND IS DECIDED BY THE DOT, NOT THE STAR. A star against a dot lands on a label boundary, so the
-# matcher answers with a hash lookup — ~1 µs whether there are 10 patterns or 2000. A star inside a label
-# forces a character scan: 148 µs at 2000, 139x worse (§1.2). Same-looking syntax, two different engines,
-# so they are different kinds and the operator is told which one they wrote.
-#
-# POLICY IS NOT HERE — with ONE exception, and it marks where the line is. The per-interface cap and the
-# per-engine capability gate both take a kind that has already been decided and ask about CONTEXT (which
-# interface, which engine); folding those in would make one function answer two questions. The Tier-2
-# length FLOOR asks nothing about context — it is a fact about the token alone, like the `idn_tier2`
-# refusal it sits beside, and for the same reason: a two-byte substring does not mean what was written, it
-# means "every ClientHello carrying these bytes". Kept outside, it would be a FOURTH reader of a
-# token-level rule across two languages; in here the shared vector table pins it for free.
+# Панель классифицирует цели перед сохранением и отправкой на узел. Синтаксис должен совпадать с js/classify.js.
+# Звёздочка у границы метки допускает поиск по меткам, внутри метки нужен поиск по символам.
+# Ограничения конкретного интерфейса и движка проверяются после классификации.
 CLASSIFY_TIER = {"site": 1, "zone": 1, "first": 1, "any": 1, "starts": 2, "ends": 2, "contains": 2}
 # A Tier-2 operand's blast radius is set by its LENGTH and nothing else: `*ru*` catches ruble.com,
 # brutal.io and truecaller.com. Three is the floor (plan §12.1); the browser additionally cautions
@@ -24060,56 +23989,10 @@ def hrrd_read(path, ring=0, want=HRRD_VIEW, slim=False, since=None, until=None):
     return out
 
 
-# ───────────────── the per-peer traffic ledger (docs/TRAFFIC-HISTORY-PLAN.md, P1) ─────────────────
-# The one record in the panel nothing can rebuild: a per-peer byte accumulator that survives counter resets, and closed
-# local days to answer "how much did this peer use between 1 and 30 April". Derived from the cumulative counters every
-# snapshot already carries — wg/awg `rx_bytes`/`tx_bytes`, WDTT/csqtt `up_bytes`/`down_bytes` — so no node change, and
-# every node version counts from the day the panel updates.
-#
-# THE MODEL (§1–§5). A SLOT is a peer id under ONE owner: it opens the first time the ledger sees the pid, and again
-# whenever the pid's user_id changes (assign, unassign and reassign all happen on the same pid); the old slot closes
-# (`until`) and keeps its owner, so a device handed on never carries its history to the new owner. A RECORD is one
-# deployment's counter, keyed (node, iface, pid) — never by the credential, so a rekey, a password rotation, the PSK
-# re-apply of every unassign or an endpoint change is a counter that RESTARTED on the same record, credited once by the
-# reset branch. A counter is resolved to its pid through (node, iface, credential) from the roster's targets — a
-# password can belong to two peers on two instances, and an all-keyless peer's pubkey is "" — rebuilt only when the
-# roster changes (roster_mark). The same map keeps mesh links out: a link's peer is the far node's own key, which no
-# target names, even in the one sync a retired link is still reported.
-#
-# THE FILES, under <state_dir>/history/ — never stats_dir, which a bare-metal uninstall deletes unconditionally:
-#   index.json           the slot table, {pid, owner, name, since, until, o} per slot, APPEND-ONLY (a slot number is
-#                        never reused, so a day file written last year still means the same peers), save_critical'd
-#                        with its backups. `o` is the OPENING balance: taken when a never-seen pid is first observed
-#                        (and, on a new ledger's first start only, added to by `imports`, below), credited to no
-#                        bucket. It lives HERE rather than in base.bin (operator, 2026-09-23):
-#                        base.bin is written at bucket closes, so a restart before the first close would have lost
-#                        every imported lifetime for good, and a corrupt base.bin all of them. `imports` — only until
-#                        each is first read — the deployments that existed when this ledger was created: every one of
-#                        them adds its counter to its peer's opening, not just the first a pid happens to be seen on.
-#                        A slot's `name` follows its peer's title while it is open, so a deleted peer keeps its last.
-#   base.bin             THE durability unit: every record's last reading and every slot's credited cumulative C,
-#                        replaced atomically together. A crash rolls both back to the same instant; the next reading
-#                        re-credits exactly cur − last, nothing twice. The previous generation stays as base.bin.prev
-#                        and is read when base.bin is not.
-#   day-YYYY-MM.bin      closed local days: one row per day, every slot's C at that day's end. Rows are appended and
-#                        self-describing (date, offset, width) because the slot table grows during a month.
-#   fine-YYYY-MM-DD.bin  that day's buckets at the history resolution: only the slots that moved, sorted, stored by
-#                        column — so one peer's series is a bisect per bucket, not a scan of the fleet.
-#   diag.json            resets, clamps and the spans each node was observed (the gaps), write errors — §2.4.
-# total(A..B) = C(end of B) − C(end of A−1): two positioned reads, however wide the window.
-#
-# ⚠️ WRITE ORDER, one direction only: index.json → the closed day's row → base.bin → the fine append. base.bin never
-# gets ahead of index.json (a slot's C with no slot to name it) nor of the day it closed (it names the next day, so a
-# crash between the two lost the day for good); the fine tier is the graph, not the truth, so a crash can make it miss
-# a bucket and never count one twice. A failed write is counted and retried after a pause (30 s–5 min, never on every
-# sync), never swallowed, and the in-memory ledger carries on — readers see a pending day row too.
-# ⚠️ ABSENT IS NOT ZERO. A down interface's `"peers": []`, a dropped interface key, an await_restore instance's
-# `"passwords": {}`, a busy SQLite or a torn JSON read are NO observation — only entries that are present are read, so
-# none of them can become `cur = 0` or a prune. Keep it that way.
-# ⚠️ ORDER IS NOT GUARANTEED. A node's syncs are sequential, but one it gave up on (20 s) can still be running here when
-# the next, newer one overtakes it; read second, the older snapshot's smaller counters are a "restart" on every peer
-# that moved, and each one's WHOLE counter is credited again. Every sync carries its arrival number (_SYNC_SEQ) and an
-# older one than a node's newest is dropped — lossless, the counters are cumulative.
+# История хранится в state_dir/history. Смена владельца открывает новый слот, ротация ключа сохраняет запись счётчика.
+# index.json хранит слоты и начальные балансы. base.bin атомарно сохраняет последнее чтение и суммы.
+# Порядок записи при закрытии дня: индекс, строка дня, база, детальные точки графика.
+# Отсутствующая запись в снимке пропускается. Порядковый номер синхронизации защищает от повторного учёта старого снимка.
 
 import array as _larr
 import bisect as _lbis

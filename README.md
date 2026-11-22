@@ -35,5 +35,5 @@ sudo bash update.sh
 - [Руководство пользователя](docs/guide.md)
 - [Установка и эксплуатация](docs/operations.md)
 - [API](docs/api.md)
-- [История изменений](CHANGELOG.ru.md)
-- [Лицензия](LICENSE) и [сторонние компоненты](docs/THIRD-PARTY.ru.md)
+- [История изменений](CHANGELOG.md)
+- [Лицензия](LICENSE) и [сторонние компоненты](docs/THIRD-PARTY.md)

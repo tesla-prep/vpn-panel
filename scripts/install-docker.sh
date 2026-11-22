@@ -1,43 +1,7 @@
 #!/usr/bin/env bash
-# install-docker.sh — one-line Docker installer for swg-panel.
-#
-#   Panel (host):      sudo bash -c "$(curl -fsSL …/bootstrap.sh)" -- docker host   -pass SECRET -domain panel.example.net
-#   Node only:         sudo bash -c "$(curl -fsSL …/bootstrap.sh)" -- docker node   -key KEY -host https://panel.example.net -endpoint 203.0.113.7
-#
-# `docker host` is the panel entry point: Step 1 asks the role — master or host — exactly
-# like bare-metal (install-host.sh):
-#   master  panel + this box also runs WG/AWG (a co-located node container), auto-enrolled
-#           in ONE pass — no "add the node in the panel first". (compose profile: master)
-#   host    panel only; WG/AWG nodes are deployed separately with `docker node` (the panel's
-#           Nodes → Add node screen prints the command). (compose profile: host)
-# `docker node` is the entry point for a separate node box. Pass -role master|host to skip
-# the Step 1 prompt; the bare word `master` also forces the master role.
-#
-# Ensures Docker is present, stages the project under /opt/swg-panel-docker, writes a
-# .env, and brings up the chosen compose profile. Run as root. --dry-run renders the
-# .env under ./dryrun and runs no Docker commands.
-#
-#   -role master|host               role for the `host` entry (skips the Step 1 prompt)
-#   --profile host|node|master      pick the compose profile directly (host-node = master alias)
-#   -pass <pw>      panel admin password     (-> PANEL_PASSWORD)
-#   -domain <host>  panel domain/IP for cert (-> PANEL_DOMAIN)
-#   -port <n>       host port for the panel  (-> PANEL_PORT, default 8443)
-#   -key <tok>      node enrollment key      (-> NODE_TOKEN)
-#   -host <url>     panel URL the node dials (-> PANEL_URL)
-#   -endpoint <ip>  public IP clients dial   (-> NODE_ENDPOINT)
-#   -iface <name>   node interface name      (-> NODE_IFACE, default awg0)
+# Установка панели или узла через Docker Compose. См. docs/operations.md.
 set -euo pipefail
-# ⚠️ ONLY THE TERMINAL'S FOREGROUND CAN READ IT. Under `curl … | sudo bash`, sudo-rs (Ubuntu 26.04's sudo) runs the
-# script in the BACKGROUND of its own terminal: /dev/tty still opens, and the first read STOPS the process (SIGTTIN) with
-# nothing on screen — the installer "hung at the TLS question" (client report 2026-10-06; sudo-rs issue #1263). So every
-# question reads SWG_TTY: /dev/tty while this process group is the terminal's foreground, /dev/null otherwise (an EOF,
-# which each question already answers with its no-terminal default) — no terminal at all, or the background under sudo-rs.
-# ⚠️ NOT UNDER CLASSIC SUDO. It backgrounds the script the same way (≥ 1.9.13 with use_pty: Ubuntu 24.04, Debian 12/13) but
-# brings it to the foreground at that first read, so `curl … | sudo bash` asked its questions there, as in 1.8.8 — taking
-# every background start as unreadable took them all away (1.8.9 qualification IN-2). Which sudo it is: the first sudo up
-# the chain, by its binary's path (sudo-rs, cargo), else by its --version. No sudo above (a job the operator put in the
-# background): the terminal, as ever. /proc/<pid>/stat after the command name: state ppid pgrp session tty_nr tpgid.
-# Without /proc: as before.
+# sudo-rs может оставить скрипт в фоне. В этой группе процессов чтение /dev/tty вызовет SIGTTIN.
 _swg_tty_fg(){ local s f p e i IFS=' '; { read -r s </proc/$$/stat; } 2>/dev/null || return 0; read -ra f <<< "${s##*) }"
   [ "${f[2]:-}" = "${f[5]:-}" ] && return 0; [ "${f[5]:-0}" -gt 0 ] 2>/dev/null || return 1
   for i in 1 2 3 4; do p="${f[1]:-0}"; [ "$p" -gt 1 ] 2>/dev/null || return 0; e="$(readlink "/proc/$p/exe" 2>/dev/null)" || e=""

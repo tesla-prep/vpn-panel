@@ -1,34 +1,5 @@
-// reconcile.js — desired-state reconciliation for swg-panel.
-//
-// Inputs:
-//   roster (desired) — the users.json envelope:
-//     { version, users:{ "<uid>": {id,name,tag,note,...} },
-//                peers:{ "<pid>": {id,user_id,pubkey,psk,overrides?,
-//                                  targets:[{node,iface,ip,type,overrides?}], created_at} } }
-//   stats  (observed) — node snapshots keyed by node:
-//     { "<node>": { generated_at, interfaces:{ "<iface>":{ peers:[
-//         { public_key, online, handshake_age, endpoint, allowed_ips } ] } },
-//                   turn_proxies:[{connect,...}] } }
-//
-// A Peer is one credential deployed to one or more TARGETS, where a target is one
-// (node, iface, ip). We compute a status PER TARGET and roll it up per peer, then
-// per user. Status is derived every refresh, never stored:
-//   online   ≥1 target online, and present on every live target
-//   ready    present on every live target, none online yet
-//   partial  present on some live targets, missing on others — redundancy gap
-//   pending  brand new, still inside the grace window, not yet seen anywhere
-//   dangling missing on every live target, past grace (the interface is GONE from the node -> Restore recreates it)
-//   broken   the interface IS present but the peer's IP is outside its subnet -> the node can't add it; the
-//            record is wrong, not the interface (-> Correct fixes the record; distinct from dangling)
-//   unknown  every target's node is stale -> can't assert anything
-// A peer with no user (user_id null) is flagged `unassigned` (rendered grey); its
-// deployment status is still computed so you can see whether it is live.
-// Stale nodes never count as "missing" (they're unknown, not absent), so a peer
-// stays "online" while a replica is briefly unreachable.
-//
-// Every time window here (node staleness, the creating/pending grace, the restoring window, expiry) is measured
-// between two readings of the PANEL's clock: `now` is panelNow() and the timestamps come from the panel. Never
-// compare a node-stamped time (a snapshot's `generated_at`) with a browser-stamped one — see nodeStatus below.
+// Статус рассчитывается по целям, затем по пирам и пользователям.
+// Для оценки давности используются метки времени панели. Недоступная цель считается неизвестной.
 
 import { T } from "./js/i18n.js";
 
