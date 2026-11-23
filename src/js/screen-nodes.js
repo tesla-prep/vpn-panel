@@ -20,8 +20,7 @@ import { Sparkline, MiniArea, MultiRing, RingLegend, TrendArea, TrendSpark, Rank
          RangedHistory, ThroughputChart, OnlineBlocks, cpuColor, histTime, ChartHover, IfaceThroughput,
          RANGE_CAP, axisCap, lossColorMesh } from "./charts.js";
 import { orphCount, OnlinePeersTag, OnlineUsersTag, MeshStat, meshHealth, DropsPop, DropsFigure, dropsEnough, LossPop, onlineUserRows, onlinePeerRows,
-         serviceIssues, recentActivity, evItem, evAction, evClick, evDecorate, dashState, DASH_RANGES, reachSkipText, reachStaleText,
-         promotedAt, promotedBy } from "./views.js";
+         serviceIssues, recentActivity, evItem, evAction, evClick, evDecorate, dashState, DASH_RANGES, reachSkipText, reachStaleText } from "./views.js";
 import { TurnProxiesBlock, turnEnabled, WdttCard, WDTT_COLOR, ForkTag, ifaceTurnBadges, openEditWdtt, openEditCsqtt,
          openSetupTurn, wdttRecreateFresh, wdttRestoreIdentity, WdttDeleteSheet, csqttRunLine } from "./turn.js";
 import { PeerGrid, NodeRail, NodesRailPanel } from "./grids.js";
@@ -124,7 +123,7 @@ export function NodeDetail({ node: rawName }) {
   const live = Store.recon.nodeStatus[name] === "live";
   const blocked = !live || inProc(nrec.proc_status);
   const snap = Store.stats[name];
-  const hasTurns = !!((snap && (snap.turn_proxies || []).length) || Object.keys(nrec.turn_pending || {}).length || (nrec.turn_onboarding || []).length);
+  const hasTurns = !!((snap && (snap.turn_proxies || []).length) || Object.keys(nrec.turn_pending || {}).length);
   const wdttIfaces = (snap && snap.wdtt || []).filter(w => w && w.iface);
   const hasWdtt = wdttIfaces.length > 0;
   const csqttIfaces = (snap && snap.csqtt || []).filter(c => c && c.iface);
@@ -328,21 +327,9 @@ export function NodeDetail({ node: rawName }) {
                 onClick=${e => { e.preventDefault(); e.stopPropagation(); openModal(html`<${WdttDeleteSheet} node=${name} iface=${ifn}/>`); }}><${Ic} i="trash"/> ${T("Delete")}</button>
               <${StatusTag} cls="tg-del" icon="warn" label=${never ? T("not installed") : "missing"} title=${never ? nerr : T("This WDTT server is gone from the node")}/></div>
             <div class="ifcard-rows"><div class="mi-text">${sentence}</div></div></a>`; };
-        const wacard = (ifn, wc) => { const fork = wc.fork || "amurcanov";
-          const dtls = String(wc.listen || "").split(":").pop() || "";
-          const ifn0 = ifn;
-          return html`<div class="ifcard down" key=${"wdtt-adopting:" + ifn}>
-            <div class="ifcard-top"><span class="iftype wdtt">WDTT</span><span class="ifname">${ifn}</span><span class="grow"></span>
-              <${ForkTag} fork=${fork}/><${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|adopting")} title=${T("The node takes it over on its next sync")}/></div>
-            <div class="ifcard-rows">
-              <div class="ifrow"><span class="l">${T("Listen (local)")}</span><span class="r addr">${ifn0}${dtls ? ":" + dtls : ""}</span></div>
-              <div class="ifrow"><span class="l">${T("Subnet")}</span><span class="r addr">${wc.wg_addr || "—"}</span></div>
-              <div class="ifrow"><span class="l faint">${T("taking it over…")}</span></div>
-            </div></div>`; };
-        const _wAdopting = new Set(nrec.wdtt_adopting || []);
         const wmcards = Object.entries(nrec.wdtt_cfg || {})
           .filter(([ifn]) => !wdttIfaces.some(w => w.iface === ifn) && !pending.includes(ifn))
-          .map(([ifn, wc]) => _wAdopting.has(ifn) ? wacard(ifn, wc || {}) : wmcard(ifn, wc || {}));
+          .map(([ifn, wc]) => wmcard(ifn, wc || {}));
         const mcards = Object.entries(nrec.missing_ifaces || {})
           .filter(([ifn, mi]) => mi.key_source && !(meta && meta[ifn]) && !pending.includes(ifn) && !isSysName(ifn))
           .map(([ifn, mi]) => mcard(ifn, mi));
@@ -375,7 +362,7 @@ export function NodeDetail({ node: rawName }) {
                 : awaiting
                 ? html`<${StatusTag} cls="tg-busy del" icon="shield" label=${T("Restore")} title=${T("Server wiped — its identity is escrowed; open to Restore or Recreate fresh")}/>`
                 : restoring ? html`<span class="tg tg-busy"><${Ic} i="clock"/>${T("tag|restoring")}</span>`
-                : !(nrec.wdtt_cfg || {})[w.iface] ? html`<span class="tg tg-pending" title=${T("This panel holds no record of this {v1} server, though the node still has it — so nothing starts it, its users aren't in the roster, and a rebuild can't bring it back. Open it and Reclaim it to take it back, users and all.", { v1: "WDTT" })}><${Ic} i="info"/>${T("tag|unclaimed")}</span>`
+                : !(nrec.wdtt_cfg || {})[w.iface] ? html`<span class="tg tg-pending" title=${T("This panel holds no record of this {v1} server, though the node still has it — so nothing starts it, its users aren't in the roster, and a rebuild can't bring it back.", { v1: "WDTT" })}><${Ic} i="info"/>${T("tag|unclaimed")}</span>`
                 : active ? null
                 : wcfg.stopped ? html`<span class="tg-off" title=${T("Stopped by you — open to Start it")}><${Ic} i="stop"/>${T("tag|stopped")}</span>`
                 : html`<span class="tg tg-busy"><${Ic} i="clock"/>${T("tag|starting")}</span>`}</div>
@@ -389,11 +376,9 @@ export function NodeDetail({ node: rawName }) {
                     trigger=${() => html`<b class=${"oncount" + (onlc ? " on" : "")}>${onlc}</b><span class="faint">/${ps.length}</span>`}/>`
                 : html`<span class="faint">${T("None")}</span>`}</span></div>
             </div></a>`; };
-        const _cAdopting = new Set(nrec.csqtt_adopting || []);
         const cmcard = (ifn, cc) => (html`<a class="ifcard down" key=${"csqtt-cfg:" + ifn} href=${"#/node/" + encodeURIComponent(name) + "/" + encodeURIComponent(ifn)} title=${T("Open the csqtt server — details and settings")}>
           <div class="ifcard-top"><span class="iftype csqtt">CSQTT</span><span class="ifname">${(cc.title || "").trim() || ifn}</span><span class="grow"></span>
-            ${_cAdopting.has(ifn) ? html`<${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|adopting")} title=${T("The node applies the take-over on its next sync")}/>`
-              : cc.stopped ? html`<span class="tg-off" title=${T("Stopped by you — open to Start it")}><${Ic} i="stop"/>${T("tag|stopped")}</span>`
+            ${cc.stopped ? html`<span class="tg-off" title=${T("Stopped by you — open to Start it")}><${Ic} i="stop"/>${T("tag|stopped")}</span>`
               : html`<${StatusTag} cls="tg tg-pending" icon="clock" label="starting" title=${T("The node brings it up on its next sync")}/>`}</div>
           <div class="ifcard-rows">
             <div class="ifrow"><span class="l">${T("Listen (local)")}</span><span class="r addr">${ifn + (portOf(cc.listen) ? ":" + portOf(cc.listen) : "")}</span></div>
@@ -401,8 +386,7 @@ export function NodeDetail({ node: rawName }) {
             <div class="ifrow"><span class="l faint">${T("waiting for the node to bring it up…")}</span></div>
           </div></a>`);
         const cmcards = Object.entries(nrec.csqtt_cfg || {})
-          .filter(([ifn]) => !csqttIfaces.some(c => c.iface === ifn) && !pending.includes(ifn)
-                             && !(_cAdopting.has(ifn) && (nrec.csqtt_candidates || []).some(c => c && c.iface === ifn)))
+          .filter(([ifn]) => !csqttIfaces.some(c => c.iface === ifn) && !pending.includes(ifn))
           .map(([ifn, cc]) => cmcard(ifn, cc || {}));
         const csqCard = c => {
           const active = c.active === "active";
@@ -421,7 +405,7 @@ export function NodeDetail({ node: rawName }) {
               : html`<button class="ifc-edit" title=${T("Edit csqtt server · {v1}", { v1: c.iface })} onClick=${e => { e.preventDefault(); e.stopPropagation(); openEditCsqtt(name, c.iface); }}>${badge}<span class="ifc-pic"><${Ic} i="pencil"/></span></button>`}<span class="grow"></span><${ForkTag} fork=${c.fork || "csqtt"} suffix=${" " + csqttRunLine(name, c.iface)}/>${cconverting
                 ? html`<${StatusTag} cls="tg-convert" icon="clock" label="converting" title=${T("The node is converting between bare-metal and docker")}/>`
                 : _copTag ? _copTag
-                : !(nrec.csqtt_cfg || {})[c.iface] ? html`<span class="tg tg-pending" title=${T("This panel holds no record of this {v1} server, though the node still has it — so nothing starts it, its users aren't in the roster, and a rebuild can't bring it back. Open it and Reclaim it to take it back, users and all.", { v1: "csqtt" })}><${Ic} i="info"/>${T("tag|unclaimed")}</span>`
+                : !(nrec.csqtt_cfg || {})[c.iface] ? html`<span class="tg tg-pending" title=${T("This panel holds no record of this {v1} server, though the node still has it — so nothing starts it, its users aren't in the roster, and a rebuild can't bring it back.", { v1: "csqtt" })}><${Ic} i="info"/>${T("tag|unclaimed")}</span>`
                 : active ? null
                 : ccfg.stopped ? html`<span class="tg-off" title=${T("Stopped by you — open to Start it")}><${Ic} i="stop"/>${T("tag|stopped")}</span>`
                 : html`<span class="tg tg-busy"><${Ic} i="clock"/>${T("tag|starting")}</span>`}</div>
@@ -505,8 +489,7 @@ export function reachChip(node, iface, lv) {
   const snap = Store.stats[node] || {};
   const st = snap.dev_reach;
   const live = Store.recon.nodeStatus[node] === "live";
-  const promoted = lv === "everyone" && promotedAt(node, iface);
-  const guarded = live && (lv !== "everyone" || promoted);
+  const guarded = live && lv !== "everyone";
   const off = guarded && !((snap.net_deps || {}).reach >= 2);
   const stale = guarded && !off && !!(st && st.ok === false && st.stale);
   const failed = guarded && !off && !stale && !!(st && st.ok === false && (st.ifaces || []).includes(iface));
@@ -518,15 +501,11 @@ export function reachChip(node, iface, lv) {
   if (off || failed || skipped) return html`<span class="egb egb-reach-bad" title=${off ? T("Not enforced on {node} — update it", { node: Store.nodeName(node) })
     : failed ? T("Couldn't apply on {node}: {detail}", { node: Store.nodeName(node), detail: st.detail || st.why || "" })
     : reachSkipText(Store.nodeName(node), skipped)}><${Ic} i="warn"/>${T("reach|not enforced")}</span>`;
-  if (promoted) {
-    return html`<span class="egb egb-reach-everyone" title=${T("Everyone on this node can open connections to devices here, except Private ones, which only their user's own devices reach. Private here: {n}",
-      { n: promotedBy(node, iface).length })}><${Ic} i="globe"/>${T("reach|everyone")}</span>`;
-  }
   return lv === "everyone" ? html`<span class="egb egb-reach-everyone" title=${T("Everyone on this node can open connections to devices here")}><${Ic} i="globe"/>${T("reach|everyone")}</span>`
     : lv === "none" || unv ? html`<span class="egb egb-reach-none" title=${unv ? T("This server build can't prove which user a device belongs to, so no other device can reach any device here.")
       : T("Nobody can open connections to devices here")}><${Ic} i="stop"/>${T("reach|nobody")}</span>`
     : html`<span class="egb egb-reach-user" title=${unvRaw ? T("This server build can't prove which user a device connected over RAW belongs to, so no other device can reach those devices.")
-      : T("Only the same user's devices and their groups can open connections to devices here")}><${Ic} i="users"/>${T("reach|user + groups")}</span>`;
+      : T("Only the same user's devices can open connections to devices here")}><${Ic} i="users"/>${T("reach|same user")}</span>`;
 }
 const REACH_NOTICE_KEY = "swg_reach_notice_dismissed";
 let reachNoticeGone = (() => { try { return localStorage.getItem(REACH_NOTICE_KEY) === "1"; } catch (_) { return false; } })();
@@ -536,7 +515,7 @@ function ReachNotice() {
     return a + (st && (st.ok || st.stale) ? Object.values(st.blocked || {}).reduce((x, v) => x + (v || 0), 0) : 0); }, 0);
   if (!n) return null;
   const dismiss = () => { reachNoticeGone = true; try { localStorage.setItem(REACH_NOTICE_KEY, "1"); } catch (_) {   } Store.apply(); };
-  return html`<div class="notice reach-notice"><${Ic} i="info"/><span>${T("Devices now reach only their own user's devices and their groups' — {n} packets to other devices have been stopped. Put users who should reach each other in a group, or set an interface to Everyone.", { n })}</span>
+  return html`<div class="notice reach-notice"><${Ic} i="info"/><span>${T("Access to devices follows each interface's settings. Packets blocked so far: {n}.", { n })}</span>
     <button type="button" class="iconbtn" title=${T("Dismiss")} aria-label=${T("Dismiss")} onClick=${dismiss}><${Ic} i="x"/></button></div>`;
 }
 export function NodesScreen() {

@@ -113,23 +113,9 @@ export function rotateOnePeerKeys(peer) {
     } });
 }
 
-function _netsLost(peer, block) {
-  const p = (peer && peer.id && Store.peer(peer.id)) || peer || {};
-  const nets = p.routes || [];
-  if (!nets.length) return "";
-  const v = { device: p.title || p.name || T("This device"), nets: nets.join(", ") };
-  return " " + (block ? T("{device} carries {nets} — everyone who reaches them through it loses access until it's unblocked.", v)
-    : T("{device} carries {nets} — everyone who reaches them through it loses access.", v));
-}
-function _userNetsLost(user) {
-  const gws = Store.peersOfUser(user.id).filter(p => (p.routes || []).length);
-  return gws.length ? " " + T("Their devices that carry networks ({devices}) take them down too — everyone who reaches them through those devices loses access until the user is unblocked.",
-    { devices: gws.map(p => p.title || T("Untitled")).join(", ") }) : "";
-}
-
 export function confirmUnassign(peer, back) {
   openConfirm({ title: peer.name ? T("Unassign peer · {name}", { name: peer.name }) : T("Unassign peer"), confirmLabel: T("Unassign"), danger: true, back,
-    body: T("This revokes access immediately and is irreversible — the keys change, so re-assigning later means sending the user a brand-new QR / config to import.") + _netsLost(peer),
+    body: T("This revokes access immediately and is irreversible — the keys change, so re-assigning later means sending the user a brand-new QR / config to import."),
     onConfirm: () => mutate({ key: "peer:" + peer.id,
       patch: s => { const p = s.roster.peers[peer.id]; if (p) p.user_id = null; },
       call: () => api.peerUnassign({ peer_id: peer.id }),
@@ -137,7 +123,7 @@ export function confirmUnassign(peer, back) {
 }
 export function confirmDeletePeer(peer, back, closeOwner) {
   openConfirm({ title: T("Delete peer"), confirmLabel: T("Delete"), danger: true, back,
-    body: T("This is irreversible — the peer's key is removed from every interface it's deployed on.") + _netsLost(peer),
+    body: T("This is irreversible — the peer's key is removed from every interface it's deployed on."),
     onConfirm: () => { if (closeOwner) closeModals(2);
       return mutate({ key: "peer:" + peer.id, patch: s => { delete s.roster.peers[peer.id]; },
         call: () => api.peerDelete({ peer_id: peer.id }) }); } });
@@ -275,7 +261,7 @@ export const now_s = () => Math.floor(Date.now() / 1000);
 const _peerName = p => p.title ? " · " + p.title : p.name ? " · " + p.name : "";
 export function confirmBlockPeer(peer, back) {
   openConfirm({ title: T("Block access") + _peerName(peer), confirmLabel: T("Block"), danger: true, back,
-    body: T("This removes the peer from every server it's deployed on, cutting its connection within a sync. The keys are unchanged, so unblocking later restores the same config — no new QR needed.") + _netsLost(peer, true),
+    body: T("This removes the peer from every server it's deployed on, cutting its connection within a sync. The keys are unchanged, so unblocking later restores the same config — no new QR needed."),
     onConfirm: () => mutate({ key: "peer:" + peer.id,
       patch: s => { const p = s.roster.peers[peer.id]; if (p) p.disabled = true; },
       call: () => api.peerBlock({ peer_id: peer.id }) }) });
@@ -289,7 +275,7 @@ export function confirmUnblockPeer(peer, back) {
 }
 export function confirmBlockUser(user, back) {
   openConfirm({ title: T("Block access · {name}", { name: user.name || T("kind|user") }), confirmLabel: T("Block"), danger: true, back,
-    body: T("This blocks every peer of this user and, if they have a subscription, disables its page — the link still resolves but shows “Subscription disabled”. Nothing is deleted: unblocking restores connectivity and the same subscription URL.") + _userNetsLost(user),
+    body: T("This blocks every peer of this user and, if they have a subscription, disables its page — the link still resolves but shows “Subscription disabled”. Nothing is deleted: unblocking restores connectivity and the same subscription URL."),
     onConfirm: () => mutate({ key: "user:" + user.id,
       patch: s => { const u = s.roster.users[user.id]; if (u) u.disabled = true; },
       call: () => api.userBlock({ user_id: user.id }) }) });
@@ -349,33 +335,15 @@ export function PubTag({ peer, src, label, kind, dim, gen3 }) {
     title=${st.title} aria-pressed=${!st.hidden} onClick=${e => { e.preventDefault(); e.stopPropagation(); st.flip(); }}>${label}${st.hidden ? html`<${Ic} i="off"/>` : null}</button>`;
 }
 
-export const DAY_S = 86400;
-export const expiryWarnDays = () => { const d = +((Store.panelSettings || {}).expiry_warn_days); return (d >= 0 && d <= 365) ? d : 3; };
 export function fmtDate(sec) { if (!sec) return ""; try { return new Date(sec * 1000).toLocaleDateString(locale(), { year: "numeric", month: "short", day: "numeric" }); } catch (_) { return ""; } }
-export function expiryInputVal(sec) { if (!sec) return ""; const d = new Date(sec * 1000); if (isNaN(d.getTime())) return ""; const p = n => String(n).padStart(2, "0"); return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()); }
-export function expiryFromInput(str) { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || "").trim()); if (!m) return 0; const d = new Date(+m[1], +m[2] - 1, +m[3], 23, 59, 59); const s = Math.floor(d.getTime() / 1000); return s > 0 ? s : 0; }
 export function subState(user) {
-  const now = now_s(), u = user || {}, exp = +(u.expiry || 0);
-  if (u.disabled) return { cls: "s-blocked", text: T("Subscription was blocked") + (u.disabledAt ? " " + fmtDate(u.disabledAt) : "") };
-  if (exp && now >= exp) return { cls: "s-expired", text: T("Subscription expired on {v1}", { v1: fmtDate(exp) })};
-  if (exp && now >= exp - expiryWarnDays() * DAY_S) return { cls: "s-expiring", text: T("Subscription is about to expire on {v1}", { v1: fmtDate(exp) })};
-  return { cls: "s-active", text: exp ? T("Subscription is active until {v1}", { v1: fmtDate(exp) }) : T("Subscription is active") };
-}
-export function peerState(peer) {
-  const now = now_s(), p = peer || {}, exp = +(p.ownExpiry || 0);
-  if (p.selfDisabled) return { cls: "s-blocked", text: T("Peer was blocked") + (p.disabledAt ? " " + fmtDate(p.disabledAt) : "") };
-  if (exp && now >= exp) return { cls: "s-expired", text: T("Peer expired on {v1}", { v1: fmtDate(exp) })};
-  if (exp && now >= exp - expiryWarnDays() * DAY_S) return { cls: "s-expiring", text: T("Peer is about to expire on {v1}", { v1: fmtDate(exp) })};
-  if (exp) return { cls: "s-active", text: T("Peer is active until {v1}", { v1: fmtDate(exp) })};
-  return null;
+  return user?.disabled
+    ? { cls: "s-blocked", text: T("Subscription was blocked") + (user.disabledAt ? " " + fmtDate(user.disabledAt) : "") }
+    : { cls: "s-active", text: T("Subscription is active") };
 }
 const _statCls = pos => pos ? " substat-" + pos : "";
-export function userState(user) {
-  const now = now_s(), u = user || {}, exp = +(u.expiry || 0);
-  if (u.disabled) return { cls: "s-blocked", text: T("User was blocked") + (u.disabledAt ? " " + fmtDate(u.disabledAt) : "") };
-  if (exp && now >= exp) return { cls: "s-expired", text: T("User expired on {v1}", { v1: fmtDate(exp) })};
-  if (exp && now >= exp - expiryWarnDays() * DAY_S) return { cls: "s-expiring", text: T("User is about to expire on {v1}", { v1: fmtDate(exp) })};
-  return null;
+function userState(user) {
+  return user?.disabled ? { cls: "s-blocked", text: T("User was blocked") + (user.disabledAt ? " " + fmtDate(user.disabledAt) : "") } : null;
 }
 export function SubStatusLine({ user, pos }) {
   useStore();
@@ -389,16 +357,15 @@ export function SubStatusLine({ user, pos }) {
 export function PeerStatusLine({ peer, pos }) {
   useStore();
   const rp = (Store.recon.peers || []).find(p => p.id === peer.id) || peer;
-  const st = peerState(rp);
-  if (!st) return null;
-  return html`<span class=${"substat " + st.cls + _statCls(pos)}>${st.text}</span>`;
+  if (!rp.selfDisabled) return null;
+  return html`<span class=${"substat s-blocked" + _statCls(pos)}>${T("Peer was blocked")}${rp.disabledAt ? " " + fmtDate(rp.disabledAt) : ""}</span>`;
 }
 
 export function UserCombo({ onPick, placeholder }) {
   const [q, setQ] = useState(""); const [open, setOpen] = useState(false);
   const users = Store.recon.users.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const ql = q.toLowerCase();
-  const shown = users.filter(u => searchMatch(u.name + " " + (u.tag || ""), ql)).slice(0, 8);
+  const shown = users.filter(u => searchMatch(u.name, ql)).slice(0, 8);
   const { wrapRef, listRef, pos, popStyle } = useAnchoredList(open, setOpen, [q]);
   const pick = uid => { setOpen(false); setQ(""); onPick(uid); };
   return html`<div class="usercombo" ref=${wrapRef}>
@@ -406,7 +373,7 @@ export function UserCombo({ onPick, placeholder }) {
       onInput=${e => { setQ(e.target.value); setOpen(true); }}
       onKeyDown=${e => { if (e.key === "Enter" && shown.length === 1) { e.preventDefault(); pick(shown[0].id); } else if (e.key === "Escape") setOpen(false); }}/>
     ${open && pos ? html`<${Portal}><div class="uc-list uc-pop" ref=${listRef} style=${popStyle}>${shown.length ? shown.map(u => html`<button class="uc-opt" key=${u.id}
-      onClick=${() => pick(u.id)}><span>${u.name}</span>${u.tag ? html`<span class="tagchip">${u.tag}</span>` : null}</button>`)
+      onClick=${() => pick(u.id)}><span>${u.name}</span></button>`)
       : html`<div class="uc-empty">${users.length ? T("no match") : T("no users yet")}</div>`}</div><//>` : null}
   </div>`;
 }
@@ -421,33 +388,31 @@ export function ucKeyStep(key, { open, q, act, opts, n }) {
   return { prevent: !!q };
 }
 
-export function UserPicker({ value, onChange, allowUnassigned, placeholder, exclude, groups, onGroup, devices, onDevice }) {
+export function UserPicker({ value, onChange, allowUnassigned, placeholder, exclude, devices, onDevice }) {
   const [q, setQ] = useState(""); const [open, setOpen] = useState(false);
   const [act, setAct] = useState(-1);
   const users = Store.recon.users.slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const sel = users.find(u => u.id === value);
-  const selText = sel ? sel.name + (sel.tag ? " · " + sel.tag : "") : "";
+  const selText = sel ? sel.name : "";
   const ql = q.toLowerCase();
   const skip = exclude ? new Set(exclude) : null;
   const pool = skip ? users.filter(u => !skip.has(u.id)) : users;
   const named = {}; users.forEach(u => { named[u.name] = (named[u.name] || 0) + 1; });
-  const shown = pool.filter(u => searchMatch(u.name + " " + (u.tag || ""), ql)).slice(0, 8);
-  const gshown = groups ? groups.filter(g => searchMatch(g.name, ql)).slice(0, 4) : [];
+  const shown = pool.filter(u => searchMatch(u.name, ql)).slice(0, 8);
   const dshown = devices ? devices.filter(d => searchMatch(d.name + " " + (d.sub || ""), ql)).slice(0, 6) : [];
   const { wrapRef, listRef, pos, popStyle } = useAnchoredList(open, setOpen, [q]);
   const pick = uid => { setOpen(false); setQ(""); setAct(-1); onChange(uid); };
-  const pickGroup = gid => { setOpen(false); setQ(""); setAct(-1); onGroup(gid); };
   const pickDevice = pid => { setOpen(false); setQ(""); setAct(-1); onDevice(pid); };
-  const opts = [...(allowUnassigned ? [["u", ""]] : []), ...gshown.map(g => ["g", g.id]), ...shown.map(u => ["u", u.id]), ...dshown.map(d => ["d", d.id])];
+  const opts = [...(allowUnassigned ? [["u", ""]] : []), ...shown.map(u => ["u", u.id]), ...dshown.map(d => ["d", d.id])];
   const at = act < opts.length ? act : -1;
   const isAct = (kind, id) => at >= 0 && opts[at][0] === kind && opts[at][1] === id;
   const onKey = e => {
-    const r = ucKeyStep(e.key, { open, q, act: at, opts, n: gshown.length + shown.length + dshown.length });
+    const r = ucKeyStep(e.key, { open, q, act: at, opts, n: shown.length + dshown.length });
     if (r.prevent) e.preventDefault();
     if (r.close) { setOpen(false); setAct(-1); return; }
     if (r.open && !open) { setOpen(true); setQ(""); }
     if (r.act !== undefined) setAct(r.act);
-    if (r.pick) { const [k, id] = r.pick; if (k === "g") pickGroup(id); else if (k === "d") pickDevice(id); else pick(id); }
+    if (r.pick) { const [k, id] = r.pick; if (k === "d") pickDevice(id); else pick(id); }
   };
   useEffect(() => {
     const el = at >= 0 && listRef.current && listRef.current.querySelector(".uc-opt.act");
@@ -460,13 +425,11 @@ export function UserPicker({ value, onChange, allowUnassigned, placeholder, excl
       onKeyDown=${onKey}/>
     ${open && pos ? html`<${Portal}><div class="uc-list uc-pop" ref=${listRef} style=${popStyle}>
       ${allowUnassigned ? html`<button class=${"uc-opt" + (isAct("u", "") ? " act" : "")} onClick=${() => pick("")}><span class="faint">${T("— unassigned —")}</span></button>` : null}
-      ${gshown.map(g => html`<button class=${"uc-opt uc-group" + (isAct("g", g.id) ? " act" : "")} key=${"g:" + g.id} onClick=${() => pickGroup(g.id)}><${Ic} i="users"/><span>${g.name}</span><span class="faint">${plural(g.users.length, "member")}</span></button>`)}
-      ${shown.length || gshown.length || dshown.length ? shown.map(u => html`<button class=${"uc-opt" + (isAct("u", u.id) ? " act" : "")} key=${u.id} onClick=${() => pick(u.id)}><span>${u.name}</span>${u.tag ? html`<span class="tagchip">${u.tag}</span>`
-          : named[u.name] > 1 ? html`<span class="faint">${u.created_at
+      ${shown.length || dshown.length ? shown.map(u => html`<button class=${"uc-opt" + (isAct("u", u.id) ? " act" : "")} key=${u.id} onClick=${() => pick(u.id)}><span>${u.name}</span>${named[u.name] > 1 ? html`<span class="faint">${u.created_at
             ? T("{devices}, added {date}", { devices: plural(Store.peersOfUser(u.id).length, "device"), date: fmtDate(u.created_at) })
             : plural(Store.peersOfUser(u.id).length, "device")}</span>` : null}</button>`)
-        : html`<div class="uc-empty">${pool.length || (groups || []).length || (devices || []).length ? T("no match") : users.length ? T("everyone is already added") : T("no users yet")}</div>`}
-      ${dshown.map(d => html`<button class=${"uc-opt uc-group" + (isAct("d", d.id) ? " act" : "")} key=${"d:" + d.id} onClick=${() => pickDevice(d.id)}><${Ic} i="device"/><span>${d.name}</span>${d.sub ? html`<span class="faint">${d.sub}</span>` : null}</button>`)}
+        : html`<div class="uc-empty">${pool.length || (devices || []).length ? T("no match") : users.length ? T("everyone is already added") : T("no users yet")}</div>`}
+      ${dshown.map(d => html`<button class=${"uc-opt uc-device" + (isAct("d", d.id) ? " act" : "")} key=${"d:" + d.id} onClick=${() => pickDevice(d.id)}><${Ic} i="device"/><span>${d.name}</span>${d.sub ? html`<span class="faint">${d.sub}</span>` : null}</button>`)}
     </div><//>` : null}
   </div>`;
 }

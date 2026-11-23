@@ -57,7 +57,7 @@ export function portsCover(a, b) {
 export const portsReach = (p, pr, n) => !p || ((p.proto === "both" || p.proto === pr)
   && (!p.list || p.list.split(",").some(t => { const [a, b] = t.split("-").map(Number); return a <= n && n <= (b || a); })));
 const whoList = v => Array.isArray(v) ? v.filter(x => typeof x === "string") : [];
-export const canonWho = w => ({ users: [...new Set(whoList(w && w.users))].sort(), groups: [...new Set(whoList(w && w.groups))].sort(),
+export const canonWho = w => ({ users: [...new Set(whoList(w && w.users))].sort(),
                                 peers: [...new Set(whoList(w && w.peers))].sort() });
 export const rowCovers = (a, b) => (!(a && a.aud) || a.aud === (b && b.aud))
   && (!(a && a.who) || (!!(b && b.who) && JSON.stringify(canonWho(a.who)) === JSON.stringify(canonWho(b.who))));

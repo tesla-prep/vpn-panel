@@ -14,7 +14,7 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-export const reachOpts = () => [["everyone", T("Everyone on this node")], ["user", T("Same user and their groups")], ["none", T("Nobody")]];
+export const reachOpts = () => [["everyone", T("Everyone on this node")], ["user", T("Same user")], ["none", T("Nobody")]];
 export const reachSkipText = (nname, why) => why === "overlap"
   ? T("Not enforced on {node} — this interface's subnet overlaps another interface's.", { node: nname })
   : why === "no_address" ? T("Not enforced on {node} — the node can't read this interface's address.", { node: nname })
@@ -33,8 +33,7 @@ export function ReachField({ node, iface, value, onChange, create, unvouched, un
   const skipped = st && st.skipped ? st.skipped[iface] : null;
   const when = fmtWhen;
   let status = null;
-  const _promoted = value === "everyone" && !create && node && promotedAt(node, iface);
-  if (!create && node && (value !== "everyone" || _promoted) && Store.recon.nodeStatus[node] === "live") {
+  if (!create && node && value !== "everyone" && Store.recon.nodeStatus[node] === "live") {
     if (!((snap.net_deps || {}).reach >= 2)) status = html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Not enforced on {node} — it runs an older version. Update it.", { node: nname })}</span></div>`;
     else if (st && st.ok === false && st.stale) status = html`<div class="formmsg err">${reachStaleText(nname, st)}</div>`;
     else if (st && st.ok === false && mine) status = html`<div class="formmsg err">${T("Couldn't apply on {node}: {detail}", { node: nname, detail: st.detail || st.why || "" })}</div>`;
@@ -46,20 +45,18 @@ export function ReachField({ node, iface, value, onChange, create, unvouched, un
     <label>${label}</label>
     <div class="dpsw netsw-share" role="radiogroup" aria-label=${label}>${reachOpts().map(([m, l]) => html`<button type="button" role="radio"
       aria-checked=${value === m} class=${value === m ? "on" : ""} onClick=${() => onChange(m)}>${l}</button>`)}</div>
-    <div class="hint">${value === "everyone" && _promoted
-      ? T("Any device on this node can open connections to devices here, except the ones marked Private — only their user's own devices reach those.")
-      : value === "everyone"
-      ? T("Any device on this node can open connections to devices here. Internet access and networks behind devices are not affected.")
+    <div class="hint">${value === "everyone"
+      ? T("Any device on this node can open connections to devices here.")
       : value === "none"
-      ? T("No other device can open connections to devices here; their own connections still work. Internet access and networks behind devices are not affected.")
-      : T("A device here can be reached by its user's other devices on this node and by users who share a group with them. Internet access and networks behind devices are not affected.")}</div>
+      ? T("No other device can open connections to devices here; their own connections still work.")
+      : T("A device here can be reached by its user's other devices on this node.")}</div>
     ${unvouched && value === "user" ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("This server build can't prove which user a device belongs to, so no other device can reach any device here.")}</span></div>` : null}
     ${unvouchedRaw && !unvouched && value === "user" ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("This server build can't prove which user a device connected over RAW belongs to, so no other device can reach those devices.")}</span></div>` : null}
     ${status}
   </div>`;
 }
 
-const PEER_STATUS_KEYS = ["", "online", "ready", "unassigned", "disabled", "expired", "expiring", "blocking",
+const PEER_STATUS_KEYS = ["", "online", "ready", "unassigned", "disabled", "blocking",
   "restoring", "dangling", "broken", "partial", "blocked", "faulty", "pending", "unknown"];
 export const pageSizeOpts = () => [20, 30, 50, 100].map(n => ({ value: n, label: String(n) }));
 export const peerStatusFilters = () => PEER_STATUS_KEYS.map(k => ({ value: k, label: k ? statusLabel(k) : T("All statuses") }));
@@ -87,7 +84,7 @@ export function ifaceFilterOptions(names, allVal) {
 }
 
 const _ipKey = ip => String(ip || "").split(/[./]/).map(n => String((+n) || 0).padStart(3, "0")).join(".");
-export const PEER_STATUS_RANK = { online: 10, faulty: 9, ready: 8, expiring: 8, blocked: 7, partial: 6, pending: 5, creating: 5, rotating: 5, restoring: 4, unassigned: 3, unknown: 2, dangling: 1, broken: 1, blocking: 0, disabled: 0, expired: 0 };
+export const PEER_STATUS_RANK = { online: 10, faulty: 9, ready: 8, blocked: 7, partial: 6, pending: 5, creating: 5, rotating: 5, restoring: 4, unassigned: 3, unknown: 2, dangling: 1, broken: 1, blocking: 0, disabled: 0 };
 export const PEER_SORT = {
   status: ({ p, t }) => PEER_STATUS_RANK[t.status || p.status] || 0,
   server: ({ t }) => Store.nodeName(t.node).toLowerCase() + "|" + t.iface,
@@ -162,10 +159,8 @@ export function pageScroll(e, dir) {
 
 
 export const usersView = { q: "", status: "", node: "", iface: "", page: 1, pageSize: 20, sort: "status", dir: -1, expanded: {},
-  mode: "users", group: "", online: false,
-  gq: "", gpage: 1, gpageSize: 20, gsort: "name", gdir: 1, gexpanded: {} };
-export function clearUserFilters() { usersView.group = ""; usersView.node = ""; usersView.iface = ""; usersView.online = false; usersView.status = ""; }
-export const groupMemberViews = {};
+  online: false };
+export function clearUserFilters() { usersView.node = ""; usersView.iface = ""; usersView.online = false; usersView.status = ""; }
 export const unassignedView = { node: "", iface: "", q: "", page: 1, pageSize: 20, sort: "status", dir: -1 };
 export const userPeerViews = {};
 
@@ -193,7 +188,7 @@ export function peerMatchesQ(p, q) {
     + p.targets.map(t => (t.ip || "") + " " + Store.nodeName(t.node) + " " + t.iface).join(" ");
   return searchMatch(hay, q);
 }
-export function userIdentityMatchesQ(u, q) { return searchMatch((u.name || "") + " " + (u.tag || "") + " " + (u.note || ""), q); }
+export function userIdentityMatchesQ(u, q) { return searchMatch(u.name || "", q); }
 export function userMatchesQ(u, q) {
   if (!q) return true;
   if (userIdentityMatchesQ(u, q)) return true;
@@ -227,47 +222,6 @@ export function userPageOf(uid) {
   const idx = users.findIndex(u => u.id === uid);
   return idx < 0 ? 1 : Math.floor(idx / (usersView.pageSize || 20)) + 1;
 }
-export function groupShares(gid) { return Store.sharesByGroup(gid); }
-export function groupTraffic(td, gid) {
-  const g = td && Store.group(gid);
-  let out = null;
-  for (const uid of (g ? g.users : [])) {
-    const a = td.user.get(uid); if (!a) continue;
-    out = out || { rx: 0, tx: 0, lifetime_rx: 0, lifetime_tx: 0, opening_rx: 0, opening_tx: 0, since: 0 };
-    out.rx += a.rx || 0; out.tx += a.tx || 0; out.lifetime_rx += a.lifetime_rx || 0; out.lifetime_tx += a.lifetime_tx || 0;
-    out.opening_rx += a.opening_rx || 0; out.opening_tx += a.opening_tx || 0;
-    if (a.since && (!out.since || a.since < out.since)) out.since = a.since;
-  }
-  return out;
-}
-export function groupStats(g) {
-  let online = 0, peers = 0, peersOn = 0, rx = 0, tx = 0;
-  const nodes = new Set();
-  for (const uid of g.users) {
-    const mine = Store.peersByUser(uid);
-    let on = 0;
-    for (const p of mine) { if (p.online) on++; for (const t of p.targets) nodes.add(t.node); }
-    peers += mine.length; peersOn += on; if (on) online++;
-    const s = userStats(uid);
-    rx += s.rx; tx += s.tx;
-  }
-  return { members: g.users.length, online, peers, peersOn, nodes: nodes.size, nets: groupShares(g.id).length, rx, tx,
-    traffic: isMobile() ? null : groupTraffic(trafficData(), g.id) };
-}
-export const GROUP_SORT = {
-  name: g => g.name.toLowerCase(), members: (g, s) => s.members, peers: (g, s) => s.peers, nodes: (g, s) => s.nodes,
-  nets: (g, s) => s.nets, rate: (g, s) => s.rx + s.tx,
-  rtotal: (g, s) => s.traffic ? s.traffic.rx + s.traffic.tx : 0,
-};
-export const GROUP_DEFDIR = { name: 1, members: -1, peers: -1, nodes: -1, nets: -1, rate: -1, rtotal: -1 };
-export function sortGroups(groups, st, sort, dir) {
-  const byName = (a, b) => a.name.localeCompare(b.name);
-  if (!GROUP_SORT[sort] || sort === "name") return groups.slice().sort((a, b) => byName(a, b) * (dir || 1));
-  const key = GROUP_SORT[sort];
-  const cmp = (a, b) => ((x, y) => x < y ? -1 : x > y ? 1 : 0)(key(a, st(a)), key(b, st(b))) * (dir || 1) || byName(a, b);
-  return stableOrder("groups|" + sort + "|" + dir + rtotalTag(sort), groups, g => g.id, cmp);
-}
-export const shareDeviceName = p => p.title || (p.user_id && Store.user(p.user_id) ? Store.user(p.user_id).name : T("Untitled"));
 export function deviceLabel(peer) {
   if (!peer) return T("Untitled");
   if (peer.title) return peer.title;
@@ -282,32 +236,6 @@ export function deviceNameAt(peer, node) {
   const ip = t && t.ip ? String(t.ip).split("/")[0] : "";
   return ip && nm !== ip ? nm + " (" + ip + ")" : nm;
 }
-export function ownerNameAt(peer, node) {
-  const u = peer && peer.user_id ? Store.user(peer.user_id) : null;
-  if (!u) return deviceNameAt(peer, node);
-  const t = (peer.targets || []).find(x => x && (!node || x.node === node) && x.ip) || null;
-  const ip = t && t.ip ? String(t.ip).split("/")[0] : "";
-  return ip ? u.name + " (" + ip + ")" : u.name;
-}
-
-export function privateUnenforced(peer) {
-  if (!peer || peer.disabled || peer.expired) return [];
-  const out = [], seen = new Set();
-  for (const t of (peer.targets || [])) {
-    if (!t || !t.node) continue;
-    if (!nodeEnforces(t.node)) {
-      if (!seen.has(t.node)) { seen.add(t.node); out.push({ node: t.node, why: "old" }); }
-    } else if (ifaceLevelOf(t) === "everyone" && (!Store.user(peer.user_id) || unvouchedTarget(t))) {
-      out.push({ node: t.node, iface: t.iface, why: Store.user(peer.user_id) ? "unvouched" : "no_user" });
-    }
-  }
-  return out;
-}
-export function privateOffOpens(peer) {
-  const p = { ...(peer || {}), private: false };
-  const everyoneAt = [...new Set((p.targets || []).filter(t => t && t.node && targetOpen(t) === "everyone").map(t => t.node))];
-  return { everyoneAt, nets: (p.routes || []).length ? peerAudience(p) : null };
-}
 const ifaceLevelOf = t => {
   const nr = (Store.nodes || []).find(x => x.id === t.node) || {};
   const c = (nr.wdtt_cfg || {})[t.iface] || (nr.csqtt_cfg || {})[t.iface];
@@ -319,10 +247,6 @@ const unvouchedTarget = t => {
   if ((nr.reach_unvouched || []).includes(t.iface)) return true;
   return (nr.reach_unvouched_raw || []).some(ifn => ((nr.wdtt_cfg || {})[ifn] || {}).raw_iface === t.iface);
 };
-export const promotedAt = (node, iface) =>
-  (((Store.nodes || []).find(x => x.id === node) || {}).reach_promoted || []).includes(iface);
-export const promotedBy = (node, iface) => (Store.recon.peers || []).filter(p => p.private && !p.disabled && !p.expired
-  && Store.user(p.user_id) && (p.targets || []).some(t => t && t.node === node && t.iface === iface));
 const targetOpen = t => {
   if (!nodeEnforces(t.node)) return "everyone";
   const lv = ifaceLevelOf(t);
@@ -332,72 +256,47 @@ const targetOpen = t => {
 let _reachOf = null, _reachIdx = null;
 function reachIndex() {
   if (_reachOf === Store.recon && _reachIdx) return _reachIdx;
-  const open = new Map(), lvl = new Map(), here = new Map();
+  const open = new Map(), here = new Map();
   const put = (m, k, v) => (m.get(k) || m.set(k, new Set()).get(k)).add(v);
   for (const p of Store.recon.peers) {
     const u = p.user_id ? Store.user(p.user_id) : null;
-    if (!u || p.unassigned || p.disabled || p.expired || u.disabled) continue;
+    if (!u || p.unassigned || p.disabled || u.disabled) continue;
     for (const t of p.targets || []) {
       if (!t || !t.node) continue;
       put(here, t.node, p.user_id);
       const lv = targetOpen(t);
       if (lv === "everyone") put(open, t.node, p.user_id);
-      else if (lv === "user") put(lvl, t.node, p.user_id);
     }
   }
   const out = new Map();
   const add = (uid, other) => { if (other !== uid) put(out, uid, other); };
   for (const [nid, users] of here) {
     for (const uid of users) for (const o of open.get(nid) || []) add(uid, o);
-    const atUser = lvl.get(nid) || new Set();
-    for (const g of Store.groups()) {
-      const mates = g.users.filter(x => users.has(x));
-      if (mates.length < 2) continue;
-      for (const a of mates) for (const b of mates) if (atUser.has(b)) add(a, b);
-    }
   }
   _reachOf = Store.recon; _reachIdx = out;
   return out;
 }
 export const reachOwners = uid => reachIndex().get(uid) || new Set();
 
-export function reachableByGroup(uid) {
-  const u = Store.user(uid);
-  if (!u || u.disabled) return [];
-  const out = [];
-  for (const p of Store.peersByUser(uid)) {
-    if (p.disabled || p.expired || p.unassigned) continue;
-    const t = (p.targets || []).find(x => x && x.node && !(p.private && nodeEnforces(x.node))
-      && (targetOpen(x) === "everyone" || targetOpen(x) === "user"));
-    if (t) out.push({ peer: p, node: t.node, online: (p.targets || []).some(x => x && x.online) });
-  }
-  return out.sort((a, b) => (b.online ? 1 : 0) - (a.online ? 1 : 0) || deviceLabel(a.peer).localeCompare(deviceLabel(b.peer)));
-}
-
 let _urOf = null, _urCache = new Map();
 export function userReach(uid) {
   if (_urOf !== Store.recon) { _urOf = Store.recon; _urCache = new Map(); }
   const hit = _urCache.get(uid);
   if (hit) return hit;
-  const mates = new Set(Store.groupsByUser(uid).flatMap(g => g.users));
   const myNodes = new Set();
   for (const p of Store.peersByUser(uid)) {
-    if (p.disabled || p.expired || p.unassigned) continue;
+    if (p.disabled || p.unassigned) continue;
     for (const t of p.targets || []) if (t && t.node) myNodes.add(t.node);
   }
-  const allows = (t, owner) => {
-    if (!t || !t.node || !myNodes.has(t.node)) return false;
-    const lv = targetOpen(t);
-    return lv === "everyone" || (lv === "user" && mates.has(owner));
-  };
+  const allows = t => t && myNodes.has(t.node) && targetOpen(t) === "everyone";
   const rows = [];
   for (const other of reachOwners(uid)) {
     const u = Store.user(other);
     if (!u) continue;
     const devices = [];
     for (const p of Store.peersByUser(other)) {
-      if (p.disabled || p.expired) continue;
-      const t = (p.targets || []).find(x => allows(x, other) && !(p.private && nodeEnforces(x.node)));
+      if (p.disabled) continue;
+      const t = (p.targets || []).find(allows);
       if (!t) continue;
       devices.push({ peer: p, online: !!t.online, node: t.node, ip: t.ip ? String(t.ip).split("/")[0] : "" });
     }
@@ -416,57 +315,14 @@ export function askSig() {
   const parts = [];
   for (const p of (Store.recon && Store.recon.peers) || []) {
     const tg = (p.targets || []).map(t => t.node + "/" + t.iface).join(",");
-    const dead = (p.disabled ? 1 : 0) + (p.expired ? 2 : 0) + (p.userDisabled ? 4 : 0) + (p.private ? 8 : 0);
-    if ((p.routes || []).length) parts.push("R" + p.id + ":" + (p.routes || []).join("|") + ":" + JSON.stringify(p.share || null) + ":" + tg + ":" + dead);
-    else parts.push("P" + p.id + ":" + (p.user_id || "") + ":" + tg + ":" + dead);
+    parts.push("P" + p.id + ":" + (p.user_id || "") + ":" + tg + ":" + (p.disabled ? 1 : 0));
   }
-  for (const g of (Store.groups ? Store.groups() : [])) parts.push("G" + g.id + ":" + (g.users || []).join("|"));
   for (const n of (Store.nodes || [])) parts.push("N" + n.id + ":" + (n.lan_share === false ? 0 : 1) + ":" + ((n.lans || []).length) + ":" + (n.net_capable ? 1 : 0));
   parts.push("S" + ((Store.panelSettings || {}).show_node_lans === false ? 0 : 1));
   SIG_KEY = Store.recon; SIG = parts.join(";");
   return SIG;
 }
 export const askFresh = e => !!(e && e.sig === askSig() && Date.now() - e.at < ASK_TTL);
-
-export function peerAudience(peer) {
-  const sh = peer && peer.share && typeof peer.share === "object" ? peer.share : null;
-  const owner = peer && peer.user_id ? Store.user(peer.user_id) : null;
-  const nodes = [...new Set((peer.targets || []).map(t => t && t.node).filter(Boolean))];
-  if (peer && peer.private) return { mode: "owner", nodes, owner, users: [], groups: [], private: true };
-  const now = Math.floor(Date.now() / 1000);
-  const live = u => typeof u === "number" && u >= 0 && (!u || u > now);
-  const here = uid => Store.peersByUser(uid).filter(q => !q.disabled && !q.expired
-    && (q.targets || []).some(t => t && nodes.includes(t.node))).length;
-  if (!sh) return { mode: "everyone", nodes, owner, users: [], groups: [] };
-  const users = [], groups = [];
-  for (const [uid, until] of Object.entries(sh.users || {})) {
-    const u = live(until) ? Store.user(uid) : null;
-    if (!u || u.disabled || uid === (peer.user_id || "")) continue;
-    users.push({ id: uid, name: u.name, devices: here(uid), until: until || 0 });
-  }
-  for (const [gid, until] of Object.entries(sh.groups || {})) {
-    const g = live(until) ? Store.group(gid) : null;
-    if (!g) continue;
-    groups.push({ id: gid, name: g.name, members: (g.users || []).length, until: until || 0 });
-  }
-  users.sort((a, b) => b.devices - a.devices || String(a.name).localeCompare(String(b.name)));
-  groups.sort((a, b) => String(a.name).localeCompare(String(b.name)));
-  return { mode: users.length || groups.length ? "shared" : "owner", nodes, owner, users, groups };
-}
-const AUD = new Map();
-export const peerAudCached = pid => { const e = AUD.get(pid); return e && e.rep && askFresh(e) ? e.rep : null; };
-export async function peerAudFetch(pid) {
-  const e = AUD.get(pid);
-  if (e && (e.busy || (e.rep && askFresh(e)))) return;
-  AUD.set(pid, { ...(e || {}), busy: true });
-  let rep = { targets: [] };
-  try {
-    const r = await api.peerNetworks({ peer_id: pid });
-    rep = (r && r.data) || { targets: [] };
-  } catch (_) { rep = { targets: [] }; }
-  AUD.set(pid, { at: Date.now(), sig: askSig(), rep });
-  bus.emit();
-}
 
 export function reachTally(uid) {
   let total = 0, online = 0;
@@ -485,12 +341,7 @@ export async function netsFetch(uid) {
     const r = await api.userNetworks({ user_id: uid });
     const rank = c => (c === true ? 2 : c == null ? 1 : 0);
     const seen = new Map();
-    for (const p of ((r && r.data && r.data.peers) || []).filter(x => !x.blocked)) for (const t of p.targets || []) {
-      for (const n of t.networks || []) {
-        const k = t.node + "|" + n.prefix, cur = seen.get(k);
-        if (!cur) seen.set(k, { node: t.node, prefix: n.prefix, via: n.via || "", restricted: !!n.restricted, until: n.until || 0, covered: n.covered });
-        else if (rank(n.covered) > rank(cur.covered)) cur.covered = n.covered;
-      }
+    for (const p of ((r && r.data && r.data.peers) || [])) for (const t of p.targets || []) {
       if (t.lan && (t.lan.addrs || []).length) {
         const k = t.node + "|lan", cur = seen.get(k);
         if (!cur) seen.set(k, { node: t.node, prefix: t.lan.addrs.join(", "), lan: t.lan, covered: t.lan.covered });
@@ -498,11 +349,11 @@ export async function netsFetch(uid) {
       }
     }
     rows = [...seen.values()].sort((a, b) => String(Store.nodeName(a.node)).localeCompare(String(Store.nodeName(b.node)))
-      || (a.lan ? 1 : 0) - (b.lan ? 1 : 0) || String(a.prefix).localeCompare(String(b.prefix)));
+);
   } catch (_) { rows = []; }
   NETS.set(uid, { at: Date.now(), sig: askSig(), rows });
   COUNTS.set(uid, { sig: askSig(), at: Date.now(), n: rows.length,
-    rows: rows.map(r => ({ node: r.node, via: r.via || "", lan: !!r.lan, covered: r.covered })) });
+    rows: rows.map(r => ({ node: r.node, covered: r.covered })) });
   bus.emit();
 }
 
@@ -510,23 +361,15 @@ const COUNTS = new Map();
 export const netsCount = uid => { const e = COUNTS.get(uid); return e ? e.n : null; };
 export const netsBrief = uid => { const e = COUNTS.get(uid); return e && Array.isArray(e.rows) ? e.rows : null; };
 
-let _pbOf = null, _pb = null;
-const peerById = id => {
-  if (_pbOf !== Store.recon) { _pbOf = Store.recon; _pb = new Map(Store.recon.peers.map(p => [p.id, p])); }
-  return _pb.get(id);
-};
-export function netRowOnline(r) {
-  if (!r || r.covered === false || r.covered == null) return false;
-  if (r.lan) return (Store.recon.nodeStatus || {})[r.node] === "live";
-  const dev = r.via ? peerById(r.via) : null;
-  return !!(dev && (dev.targets || []).some(t => t && t.node === r.node && t.online));
+export function netRowOnline(row) {
+  return !!(row && row.covered === true && Store.recon.nodeStatus[row.node] === "live");
 }
 export function netTally(uid) {
   const hit = netsCached(uid);
   const rows = hit ? hit.rows : netsBrief(uid);
   const n = netsCount(uid);
   if (!rows) {
-    const total = n != null ? n : new Set(userNets(uid).map(x => x.prefix)).size;
+    const total = n ?? 0;
     return { total, online: 0, shown: total, known: n != null };
   }
   const online = rows.filter(netRowOnline).length;
@@ -554,22 +397,6 @@ async function flushNetsCounts() {
   } catch (_) {   }
 }
 
-export function userNets(uid) {
-  const gids = new Set(Store.groupsByUser(uid).map(g => g.id));
-  const out = [];
-  for (const p of Store.recon.peers) {
-    if (!(p.routes || []).length) continue;
-    const sh = p.share && typeof p.share === "object" ? p.share : null;
-    const own = p.user_id === uid;
-    if (p.private && !own) continue;
-    const named = !!(sh && sh.users && Object.prototype.hasOwnProperty.call(sh.users, uid));
-    const via = sh && sh.groups && !own && !named ? Object.keys(sh.groups).find(g => gids.has(g)) : null;
-    if (!own && !named && !via) continue;
-    const vname = via ? (Store.group(via) || {}).name || "" : "";
-    for (const prefix of p.routes) out.push({ prefix, peer: p, own, via: vname });
-  }
-  return out.sort((a, b) => (a.own === b.own ? 0 : a.own ? -1 : 1) || a.prefix.localeCompare(b.prefix));
-}
 export function namedFew(names) {
   if (names.length <= 3) return names.join(", ");
   return T("{names} and {n} more", { names: names.slice(0, 3).join(", "), n: names.length - 3 });
@@ -577,7 +404,7 @@ export function namedFew(names) {
 
 export function revealUser(userId, peerId) {
   if (!userId) return;
-  usersView.mode = "users"; usersView.q = ""; clearUserFilters(); usersView.expanded[userId] = true;
+  usersView.q = ""; clearUserFilters(); usersView.expanded[userId] = true;
   go("#/users");
   setTimeout(() => {
     usersView.page = userPageOf(userId);
@@ -1037,7 +864,6 @@ export function evItem(e) {
   const v = e.verb || "";
   if (e.kind === "peer") return "Peer";
   if (e.kind === "user") return "User";
-  if (e.kind === "group") return "User";
   if (e.kind === "panel") return v === "Panel updated" ? "Update" : "Settings";
   if (e.kind === "settings") return "Settings";
   if (/interface/i.test(v)) return "Interface";
@@ -1055,7 +881,6 @@ export function evAction(e) {
 export function evClick(e) {
   const item = evItem(e), v = e.verb || "", gone = /\bdeleted\b/i.test(v);
   if (item === "Peer") return gone ? { href: "#/users" } : { href: "#/users", on: () => revealPeer((Store.recon.peers || []).find(p => p.id === e.id)) };
-  if (e.kind === "group") return { href: "#/users", on: () => { usersView.mode = "groups"; usersView.gq = ""; usersView.gpage = 1; clearUserFilters(); go("#/users"); Store.apply(); } };
   if (item === "User") return gone ? { href: "#/users" } : { href: "#/users", on: () => revealUser(e.id) };
   if (item === "Settings") return { href: "#/panel/settings", on: () => { setPendingSection((e.id && e.id !== "settings") ? e.id : null); go("#/panel/settings"); } };
   if (item === "Update") return null;

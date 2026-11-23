@@ -68,7 +68,6 @@ import hashlib
 import hmac
 import ipaddress
 import http.client
-import io
 import json
 import mmap
 import os
@@ -78,7 +77,6 @@ import secrets
 import shlex
 import select
 import shutil
-import tarfile
 import signal
 import socket
 import ssl
@@ -1874,64 +1872,6 @@ def _devexit_gw(e, detected=None):
 
 _PANEL_PEER = {"addr": ""}
 
-RESOLV_CONF = "/etc/resolv.conf"
-RESOLVED_UPSTREAM = "/run/systemd/resolve/resolv.conf"
-_RESERVED_V4 = ("0.0.0.0/8", "127.0.0.0/8", "169.254.0.0/16", "224.0.0.0/4", "240.0.0.0/4")
-_TUNNEL_DEV_PREFIXES = ("wg", "awg", "dawg", "wdtt", "csqtt")
-_RT_TYPES = ("local", "broadcast", "unicast", "multicast", "blackhole", "unreachable", "prohibit", "throw")
-
-
-def _resolvers(_path=None, _upstream=None):
-    import ipaddress
-    def _ns(text):
-        return [t[1] for t in (ln.split() for ln in text.splitlines()) if len(t) >= 2 and t[0] == "nameserver"]
-    def _v4(s):
-        with contextlib.suppress(ValueError):
-            a = ipaddress.ip_address(s.split("%")[0])
-            if a.version == 4:
-                return a
-        return None
-    try:
-        with open(_path or RESOLV_CONF) as f:
-            text = f.read()
-    except OSError:
-        return [], False
-    servers = _ns(text)
-    if not servers:
-        return [], False
-    out, known = set(), True
-    for s in servers:
-        a = _v4(s)
-        if a is None:
-            continue
-        if not a.is_loopback:
-            out.add(str(a))
-            continue
-        if str(a) == "127.0.0.53":
-            try:
-                with open(_upstream or RESOLVED_UPSTREAM) as f:
-                    ups = _ns(f.read())
-            except OSError:
-                known = False
-                continue
-        elif str(a) == "127.0.0.11":
-            m = re.search(r"(?m)^#\s*ExtServers:\s*\[([^\]]*)\]", text)
-            if not m:
-                known = False
-                continue
-            ups = [u for u in m.group(1).split() if not u.startswith("host(")]
-        else:
-            known = False
-            continue
-        for u in ups:
-            b = _v4(u)
-            if b is not None and b.is_loopback:
-                known = False
-            elif b is not None:
-                out.add(str(b))
-    return sorted(out), known
-
-
 def _default_gateways(_proc="/proc/net/route"):
     out = []
     try:
@@ -2153,116 +2093,6 @@ def _env_listen(path):
     return ""
 
 
-def network_route_refusal(prefix, local=(), gateways=(), panel=(), resolvers=(), resolvers_known=True):
-    import ipaddress
-    try:
-        net = ipaddress.ip_network(str(prefix).strip(), strict=False)
-    except ValueError:
-        return "invalid", ""
-    if net.version != 4:
-        return "not_v4", ""
-    if net.prefixlen == 0:
-        return "default_route", ""
-    if any(net.overlaps(ipaddress.ip_network(r)) for r in _RESERVED_V4):
-        return "reserved", ""
-    for dev, ip, sub in local:
-        with contextlib.suppress(ValueError):
-            if net.overlaps(ipaddress.ip_network(str(sub), strict=False)):
-                if dev.startswith("swg_"):
-                    return "mesh", ip
-                return ("iface_subnet" if dev.startswith(_TUNNEL_DEV_PREFIXES) else "node_lan"), ip
-    for why, addrs in (("node_gateway", gateways), ("node_panel", panel or ()), ("node_resolver", resolvers)):
-        for a in addrs:
-            with contextlib.suppress(ValueError):
-                if ipaddress.ip_address(a) in net:
-                    return why, a
-    if panel is None:
-        return "panel_unknown", ""
-    if not resolvers_known:
-        return "resolver_unknown", ""
-    return None, ""
-
-
-def _route_paths(addrs):
-    addrs = [a for a in addrs if a]
-    if not addrs:
-        return {}
-    r = run(["ip", "-4", "-force", "-batch", "-"], input_text="".join("route get %s\n" % a for a in addrs))
-    out = {a: "unreachable" for a in addrs}
-    seen = False
-    for ln in (r.stdout or "").splitlines():
-        if not ln or ln[0].isspace():
-            continue
-        t = ln.split()
-        kind = ""
-        if t[0] in _RT_TYPES and len(t) > 1:
-            kind, t = t[0] + " ", t[1:]
-        if t[0] not in out:
-            continue
-        seen = True
-        out[t[0]] = kind + " ".join(k + " " + t[t.index(k) + 1] for k in ("via", "dev") if k in t[:-1])
-    if not seen and r.returncode != 0:
-        return None
-    return out
-
-
-def _net_guard_deps():
-    local, gws = _local_addrs(), _default_gateways()
-    if local is None or gws is None:
-        return None
-    res, known = _resolvers()
-    pa = _PANEL_PEER.get("addr") or ""
-    return {"local": local, "gateways": gws, "resolvers": res, "resolvers_known": known,
-            "panel": None if not pa else [a for a in (pa,) if ":" not in a and not a.startswith("127.")]}
-
-
-def net_route_install(prefix, dev, table="", _guard=True, _verify=True):
-    tbl = ["table", str(table)] if table else []
-    deps = _net_guard_deps()
-    if deps is None:
-        return False, "guard_unreadable", ""
-    if _guard:
-        why, addr = network_route_refusal(prefix, **deps)
-        if why:
-            return False, why, addr
-    cur = run(["ip", "-4", "route", "show", "exact", str(prefix)] + tbl)
-    if cur.returncode != 0:
-        return False, "guard_unreadable", ""
-    foreign = [t for t in (ln.split() for ln in (cur.stdout or "").splitlines())
-               if t and ("dev" not in t[:-1] or t[t.index("dev") + 1] != dev)]
-    if _guard and foreign:
-        t = foreign[0]
-        return False, "route_exists", (t[t.index("dev") + 1] if "dev" in t[:-1] else t[0])
-    watch = sorted(set(deps["gateways"]) | set(deps["panel"] or ()) | set(deps["resolvers"]))
-    before = _route_paths(watch) if _verify else {}
-    if before is None:
-        return False, "verify_unreadable", ""
-    r = run(["ip", "route", "replace", str(prefix), "dev", dev] + tbl)
-    if r.returncode != 0:
-        return False, "install_failed", (r.stderr or "").strip()[:160]
-    if _verify:
-        after = _route_paths(watch)
-        moved = [a for a in watch if after is None or after.get(a) != before.get(a)]
-        if moved:
-            run(["ip", "route", "del", str(prefix), "dev", dev] + tbl)
-            for t in foreign:
-                run(["ip", "route", "add"] + [w for w in t if w not in (
-                    "linkdown", "dead", "pervasive", "offload", "trap", "rt_offload", "rt_trap",
-                    "rt_offload_failed", "notify")] + tbl)
-            return False, "rolled_back", moved[0]
-    return True, None, ""
-
-
-def net_deps():
-    res, known = _resolvers()
-    return {"panel": _PANEL_PEER.get("addr") or "", "resolvers": res, "resolvers_known": known, "share": 1, "carried": 1,
-            "reach": 2}
-
-
-
-_NET = {"refused": {}, "seen": set(), "sig": [], "kept": []}
-
-
 def _net_prefix(s):
     import ipaddress
     with contextlib.suppress(ValueError):
@@ -2274,421 +2104,6 @@ def _net_prefix(s):
 
 def _net_kernel_dst(prefix):
     return prefix[:-3] if prefix.endswith("/32") else prefix
-
-
-def _net_members(node_cfg, desired):
-    import ipaddress
-    out = {}
-    ifs = node_cfg.get("interfaces") or {}
-    for iface, plist in (desired or {}).items():
-        if iface not in ifs or iface.startswith("swg_"):
-            continue
-        multi = [p for p in (plist or []) if "," in str(p.get("allowed_ips") or "")]
-        if not multi:
-            continue
-        sub = _iface_subnet(node_cfg, iface)
-        if not sub or _iface_is_mesh(node_cfg, iface, sub):
-            continue
-        net = ipaddress.ip_network(sub)
-        for p in multi:
-            for m in str(p.get("allowed_ips")).split(","):
-                pre = _net_prefix(m)
-                if pre and not ipaddress.ip_network(pre).subnet_of(net):
-                    out.setdefault(iface, {}).setdefault(pre, []).append(p.get("public_key"))
-    return out
-
-
-def _net_live_main(node_cfg, _proc="/proc/net/route"):
-    import ipaddress
-    try:
-        with open(_proc) as f:
-            rows = f.read().splitlines()[1:]
-    except OSError:
-        return None
-    ifs = node_cfg.get("interfaces") or {}
-    subs, out = {}, {}
-    for line in rows:
-        t = line.split()
-        if len(t) < 8 or t[0] not in ifs or t[0].startswith("swg_"):
-            continue
-        with contextlib.suppress(ValueError):
-            d, m = int(t[1], 16), int(t[7], 16)
-            plen = bin(m).count("1")
-            if not plen:
-                continue
-            pre = _net_prefix("%d.%d.%d.%d/%d" % (d & 0xFF, (d >> 8) & 0xFF, (d >> 16) & 0xFF, (d >> 24) & 0xFF, plen))
-            if t[0] not in subs:
-                s = _iface_subnet(node_cfg, t[0])
-                subs[t[0]] = None if (not s or _iface_is_mesh(node_cfg, t[0], s)) else ipaddress.ip_network(s)
-            if subs[t[0]] is not None and pre and not ipaddress.ip_network(pre).subnet_of(subs[t[0]]):
-                out.setdefault(t[0], set()).add(pre)
-    return out
-
-
-def net_filter_desired(node_cfg, desired):
-    members = _net_members(node_cfg, desired)
-    _NET["sig"] = sorted((i, p) for i, m in members.items() for p in m)
-    if not members:
-        _NET["seen"].clear()
-        return desired
-    allp = {p for m in members.values() for p in m}
-    _NET["seen"] &= allp
-    new = sorted(allp - _NET["seen"] - set(_NET["refused"]))
-    if new:
-        deps = _net_guard_deps()
-        for p in new:
-            why, addr = network_route_refusal(p, **deps) if deps is not None else ("guard_unreadable", "")
-            if why:
-                _NET["refused"][p] = {"why": why, "addr": addr}
-            _NET["seen"].add(p)
-    out = None
-    for iface, nets in members.items():
-        drop = set(nets) & set(_NET["refused"])
-        if not drop:
-            continue
-        out = out or dict(desired)
-        out[iface] = [dict(p, allowed_ips=",".join(m for m in str(p.get("allowed_ips")).split(",")
-                                                   if _net_prefix(m) not in drop))
-                      if "," in str(p.get("allowed_ips") or "") else p
-                      for p in desired[iface]]
-    return desired if out is None else out
-
-
-def reconcile_net_routes(node_cfg, desired, res, _proc="/proc/net/route"):
-    members = _net_members(node_cfg, desired)
-    live = _net_live_main(node_cfg, _proc)
-    if not members and not live:
-        _NET["refused"] = {}
-        _NET["kept"] = []
-        return []
-    if live is None:
-        res["errors"].append("networks: cannot read the routing table — nothing changed")
-        return []
-    deps = _net_guard_deps()
-    if deps is None:
-        res["errors"].append("networks: cannot read this node's addresses — nothing changed")
-        _NET["kept"] = sorted((p, i) for i, ps in live.items() for p in ps if p in (members.get(i) or {}))
-        return _NET["kept"]
-    for iface, ps in sorted(live.items()):
-        gone = {p for p in ps if p not in (members.get(iface) or ())
-                and any(p in (nets or ()) for i2, nets in members.items() if i2 != iface)}
-        for p in sorted(gone):
-            run(["ip", "route", "del", p, "dev", iface])
-            res["changed"] += 1
-        live[iface] = set(ps) - gone
-    refused, kept = {}, []
-    for iface, nets in sorted(members.items()):
-        carried = {_net_prefix(m) for v in (current_allowed(node_cfg, iface) or {}).values()
-                   for m in str(v).split(",")}
-        for p in sorted(nets):
-            key = "netroute|%s|%s" % (iface, p)
-            why, addr = network_route_refusal(p, **deps)
-            if why:
-                refused[p] = {"why": why, "addr": addr, "iface": iface}
-                continue
-            if not _op_ready(key):
-                refused[p] = dict(_NET["refused"].get(p) or {"why": "rolled_back", "addr": ""}, iface=iface)
-                continue
-            if p not in carried:
-                continue
-            if p in (live.get(iface) or ()):
-                kept.append((p, iface))
-                continue
-            ok, why, addr = net_route_install(p, iface)
-            if ok:
-                _op_ok(key)
-                kept.append((p, iface))
-                res["changed"] += 1
-            else:
-                _op_fail(key, base=15.0, err=why)
-                refused[p] = {"why": why, "addr": addr, "iface": iface}
-                res["errors"].append(("network %s on %s: %s %s" % (p, iface, why, addr)).strip())
-    keep = set(kept)
-    for iface, ps in sorted(live.items()):
-        for p in sorted(ps):
-            if (p, iface) not in keep:
-                run(["ip", "route", "del", p, "dev", iface])
-                res["changed"] += 1
-    _NET["refused"] = refused
-    _NET["kept"] = kept
-    return kept
-
-
-
-_NETSNAT = {"checked": False, "have": 0}
-NETSNAT_TAG = "swg-net-snat:"
-
-
-def _net_snat_rules(node_cfg, kept):
-    out = {}
-    for prefix, iface in kept or ():
-        sub = _iface_subnet(node_cfg, iface)
-        if sub and re.match(r"^[A-Za-z0-9_.@-]{1,15}$", str(iface)):
-            out["%s%s:%s" % (NETSNAT_TAG, iface, prefix)] = (iface, prefix, sub)
-    return out
-
-
-def reconcile_net_snat(node_cfg, kept, res):
-    want = _net_snat_rules(node_cfg, kept)
-    if not want and _NETSNAT["checked"] and not _NETSNAT["have"]:
-        return
-    r = run(["iptables", "-t", "nat", "-S", "POSTROUTING"])
-    if r.returncode != 0:
-        res["errors"].append("networks: cannot read the NAT table — clients of other interfaces keep their own address this pass")
-        return
-    lines = [l.strip() for l in (r.stdout or "").splitlines() if l.startswith("-A POSTROUTING") and NETSNAT_TAG in l]
-    have, stuck = {}, 0
-    for ln in lines:
-        m = re.search(r'--comment "?(' + re.escape(NETSNAT_TAG) + r'[^"\s]+)"?', ln)
-        if m:
-            have.setdefault(m.group(1), []).append(ln)
-    for tag, lns in sorted(have.items()):
-        w = want.get(tag)
-        good = None
-        if w:
-            iface, prefix, sub = w
-            for ln in lns:
-                if (re.search(r"(?:^|\s)-o %s(?:\s|$)" % re.escape(iface), ln) and re.search(r"(?:^|\s)-d %s(?:\s|$)" % re.escape(prefix), ln)
-                        and re.search(r"(?:^|\s)! -s %s(?:\s|$)" % re.escape(sub), ln) and re.search(r"-j MASQUERADE(?:\s|$)", ln)):
-                    good = ln
-                    break
-        for ln in lns:
-            if ln != good:
-                if _ipt_del_listed(["-t", "nat"], "POSTROUTING", ln):
-                    res["changed"] += 1
-                else:
-                    stuck += 1
-                    res["errors"].append("networks: could not remove a stale translation (%s)" % tag[len(NETSNAT_TAG):])
-        if good:
-            want.pop(tag)
-    for tag, (iface, prefix, sub) in sorted(want.items()):
-        a = run(["iptables", "-t", "nat", "-I", "POSTROUTING", "1", "!", "-s", sub, "-d", prefix, "-o", iface,
-                 "-m", "comment", "--comment", tag, "-j", "MASQUERADE"])
-        if a.returncode == 0:
-            res["changed"] += 1
-        else:
-            res["errors"].append("networks: cannot translate other interfaces' clients to %s on %s: %s"
-                                 % (prefix, iface, (a.stderr or "").strip()[:120]))
-    _NETSNAT["checked"] = True
-    _NETSNAT["have"] = len(_net_snat_rules(node_cfg, kept)) + stuck
-
-
-
-NET_PROBE_WAIT_S = 4.0
-NET_PROBE_KEEP_S = 60
-_PROBE = {"id": "", "result": None, "at": 0.0}
-_PROBE_LOCK = threading.Lock()
-_PROBE_ID_RE = re.compile(r"^[A-Za-z0-9]{8,32}$")
-
-
-def _iface_own_addr(node_cfg, iface):
-    ic = (node_cfg.get("interfaces") or {}).get(iface) or {}
-    try:
-        with open(ic.get("conf", "")) as f:
-            return conf_v4_address(parse_interface_section(f.read()).get("Address")).split("/")[0]
-    except Exception:
-        return ""
-
-
-def net_probe_check(node_cfg, req, desired):
-    import ipaddress
-    rid = str(req.get("id") or "")
-    base = {"id": rid, "addr": str(req.get("addr") or "")[:64]}
-    port = req.get("port")
-    try:
-        addr = ipaddress.ip_address(str(req.get("addr") or "").strip())
-    except ValueError:
-        return dict(base, verdict="bad_request"), None
-    if addr.version != 4 or (port is not None and (isinstance(port, bool) or not isinstance(port, int)
-                                                   or not 1 <= port <= 65535)):
-        return dict(base, verdict="bad_request"), None
-    iface = str(req.get("iface") or "")
-    sub = _iface_subnet(node_cfg, iface) if iface in (node_cfg.get("interfaces") or {}) and not iface.startswith("swg_") else ""
-    peer, prefix = None, ""
-    if sub and ipaddress.ip_network(sub).version == 4 and not _iface_is_mesh(node_cfg, iface, sub):
-        peer = next((p for p in (desired or {}).get(iface) or [] if p.get("public_key") == req.get("pubkey")), None)
-        tun = ipaddress.ip_network(sub)
-        for m in str((peer or {}).get("allowed_ips") or "").split(",")[1:]:
-            pre = _net_prefix(m)
-            if pre and not ipaddress.ip_network(pre).subnet_of(tun) and addr in ipaddress.ip_network(pre):
-                prefix = pre
-                break
-    if not prefix:
-        return dict(base, verdict="not_carried"), None
-    base["prefix"] = prefix
-    net = ipaddress.ip_network(prefix)
-    if net.prefixlen <= 30 and addr in (net.network_address, net.broadcast_address):
-        return dict(base, verdict="network_address"), None
-    r = _NET["refused"].get(prefix)
-    if r:
-        return dict(base, verdict="no_route", why=str(r.get("why") or ""), raddr=str(r.get("addr") or "")), None
-    src = _iface_own_addr(node_cfg, iface)
-    if not src:
-        return dict(base, verdict="no_source"), None
-    return None, {"id": rid, "iface": iface, "pubkey": peer.get("public_key"), "addr": str(addr), "port": port,
-                  "prefix": prefix, "src": src}
-
-
-def _net_icmp(dst, src, wait=NET_PROBE_WAIT_S, count=3):
-    import errno
-    def _ck(d):
-        if len(d) % 2:
-            d += b"\0"
-        x = sum(struct.unpack("!%dH" % (len(d) // 2), d))
-        x = (x >> 16) + (x & 0xFFFF); x += x >> 16
-        return ~x & 0xFFFF
-    s = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_ICMP)
-    try:
-        s.bind((src, 0))
-        ident, sent, pl = secrets.randbelow(0xFFFF) + 1, {}, b"swg-net-probe"
-        t0 = time.monotonic()
-        end, gap = t0 + wait, wait / (count + 1)
-        while True:
-            now = time.monotonic()
-            if len(sent) < count and now >= t0 + len(sent) * gap:
-                seq = len(sent) + 1
-                try:
-                    s.sendto(struct.pack("!BBHHH", 8, 0, _ck(struct.pack("!BBHHH", 8, 0, 0, ident, seq) + pl), ident, seq)
-                             + pl, (dst, 0))
-                except OSError as e:
-                    return ("send_error", errno.errorcode.get(e.errno, str(e.errno)))
-                sent[seq] = time.monotonic()
-                continue
-            if now >= end:
-                return ("no_answer",)
-            nxt = t0 + len(sent) * gap if len(sent) < count else end
-            if not select.select([s], [], [], max(0.0, min(end, nxt) - now))[0]:
-                continue
-            data, frm = s.recvfrom(2048)
-            ihl = (data[0] & 0x0F) * 4
-            if len(data) < ihl + 8:
-                continue
-            if data[ihl] == 0 and frm[0] == dst:
-                rid, seq = struct.unpack("!HH", data[ihl + 4:ihl + 8])
-                if rid == ident and seq in sent:
-                    return ("answered", round((time.monotonic() - sent[seq]) * 1000, 1))
-            elif data[ihl] == 3 and len(data) >= ihl + 36:
-                inner = data[ihl + 8:]
-                iihl = (inner[0] & 0x0F) * 4
-                if (len(inner) >= iihl + 8 and inner[9] == 1 and socket.inet_ntoa(inner[16:20]) == dst
-                        and struct.unpack("!H", inner[iihl + 4:iihl + 6])[0] == ident):
-                    return ("unreachable", round((time.monotonic() - t0) * 1000, 1), frm[0])
-    finally:
-        s.close()
-
-
-def _net_tcp(dst, port, src, wait=NET_PROBE_WAIT_S):
-    import errno
-    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        s.bind((src, 0))
-        s.settimeout(wait)
-        t0 = time.monotonic()
-        try:
-            rc = s.connect_ex((dst, port))
-        except socket.timeout:
-            return ("no_answer",)
-        except OSError as e:
-            rc = e.errno
-        ms = round((time.monotonic() - t0) * 1000, 1)
-        if rc == 0:
-            return ("answered", ms)
-        if rc == errno.ECONNREFUSED:
-            return ("refused_port", ms)
-        if rc in (errno.EHOSTUNREACH, errno.ENETUNREACH):
-            return ("unreachable", ms, "")
-        if rc in (errno.ETIMEDOUT, errno.EAGAIN, errno.EWOULDBLOCK, errno.EINPROGRESS):
-            return ("no_answer",)
-        return ("send_error", errno.errorcode.get(rc, str(rc)))
-    finally:
-        s.close()
-
-
-def _net_route_dev(addr, src):
-    r = run(["ip", "-4", "route", "get", addr, "from", src])
-    if r.returncode in (124, 127):
-        return None
-    t = (r.stdout or "").split() if r.returncode == 0 else []
-    return t[t.index("dev") + 1] if "dev" in t[:-1] else ""
-
-
-def net_probe_run(node_cfg, ctx, online_max=180, _icmp=None, _tcp=None):
-    out = {"id": ctx["id"], "addr": ctx["addr"], "prefix": ctx["prefix"], "src": ctx["src"],
-           "kind": "tcp" if ctx["port"] else "icmp"}
-    if ctx["port"]:
-        out["port"] = ctx["port"]
-    dev = _net_route_dev(ctx["addr"], ctx["src"])
-    if dev is None:
-        return dict(out, verdict="error", detail="cannot read the routing table")
-    if dev != ctx["iface"]:
-        return dict(out, verdict="route_elsewhere", dev=dev)
-    def _row():
-        d = _iface_dump(node_cfg, ctx["iface"])
-        return None if d is None else next((p for p in d[1] if p["public_key"] == ctx["pubkey"]), {})
-    row = _row()
-    if row is None:
-        return dict(out, verdict="error", detail="cannot read " + ctx["iface"])
-    if ctx["prefix"] not in {_net_prefix(m) for m in str(row.get("allowed_ips") or "").split(",")}:
-        return dict(out, verdict="no_acl")
-    got = ((_tcp or _net_tcp)(ctx["addr"], ctx["port"], ctx["src"]) if ctx["port"]
-           else (_icmp or _net_icmp)(ctx["addr"], ctx["src"]))
-    if got[0] in ("answered", "refused_port"):
-        return dict(out, verdict=got[0], ms=got[1])
-    if got[0] == "unreachable" and got[2]:
-        return dict(out, verdict="unreachable", ms=got[1], **{"from": got[2]})
-    if got[0] == "send_error" and got[1] == "ENOKEY":
-        return dict(out, verdict="no_acl")
-    hs = (_row() or row).get("last_handshake") or 0
-    age = int(time.time() - hs) if hs else None
-    if got[0] == "send_error" and got[1] != "EDESTADDRREQ" and age is not None and age <= online_max:
-        return dict(out, verdict="error", detail=got[1])
-    if age is None or age > online_max:
-        return dict(out, verdict="gateway_offline", handshake_age=age)
-    if got[0] == "unreachable":
-        return dict(out, verdict="unreachable", ms=got[1])
-    return dict(out, verdict="no_answer", handshake_age=age)
-
-
-def _net_probe_done(rid, result):
-    with _PROBE_LOCK:
-        if _PROBE["id"] == rid:
-            _PROBE.update(result=dict(result, at=int(time.time())), at=time.time())
-
-
-def _net_probe_thread(node_cfg, ctx, online_max):
-    try:
-        res = net_probe_run(node_cfg, ctx, online_max)
-    except Exception as e:
-        res = {"id": ctx["id"], "addr": ctx["addr"], "prefix": ctx["prefix"], "verdict": "error", "detail": str(e)[:160]}
-    _net_probe_done(ctx["id"], res)
-
-
-def net_probe_take(node_cfg, req, desired, online_max=180):
-    with _PROBE_LOCK:
-        rid = req.get("id") if isinstance(req, dict) else ""
-        rid = rid if isinstance(rid, str) else ""
-        if not rid:
-            if _PROBE["id"]:
-                _PROBE.update(id="", result=None, at=0.0)
-            return
-        if rid == _PROBE["id"]:
-            if _PROBE["result"] is not None and time.time() - _PROBE["at"] > NET_PROBE_KEEP_S:
-                _PROBE["result"] = None
-            return
-        if not _PROBE_ID_RE.match(rid):
-            return
-        _PROBE.update(id=rid, result=None, at=time.time())
-    refusal, ctx = net_probe_check(node_cfg, req, desired)
-    if refusal is not None:
-        _net_probe_done(rid, refusal)
-        return
-    threading.Thread(target=_net_probe_thread, args=(node_cfg, ctx, online_max), daemon=True).start()
-
-
-def net_probe_status():
-    with _PROBE_LOCK:
-        return dict(_PROBE["result"]) if _PROBE["result"] is not None else None
-
 
 
 LAN_NFT_TABLE = "swg_lan"
@@ -2857,193 +2272,8 @@ def _gtable_load(swap, declare):
     return run(["nft", "-f", "-"], input_text=text), gen, False
 
 
-SHARE_NFT_TABLE = "swg_share"
-SHARE_HOOK_PRI = "mangle - 5"
-SHARE_TIMEOUT_CAP = 7 * 86400
-_SHARE = {"probed": False, "installed": False, "declared": False, "gen": "a", "names": None, "sig": None, "plan": None, "status": None}
-_SHARE_IFNAME_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,15}$")
-
-
-def _share_by_peer(node_cfg, desired, only=None):
-    by_peer = {}
-    for _iface, m in _net_members(node_cfg, desired).items():
-        for pre, pks in m.items():
-            for pk in pks:
-                if only is None or pk in only:
-                    by_peer.setdefault(pk, set()).add(pre)
-    return by_peer
-
-
-def _share_plan(node_cfg, desired, share):
-    import ipaddress
-    by_peer = _share_by_peer(node_cfg, desired)
-    plan, seen = [], set()
-    for ent in (share if isinstance(share, list) else []):
-        pk = ent.get("peer") if isinstance(ent, dict) else None
-        if not isinstance(pk, str) or pk in seen or not by_peer.get(pk):
-            continue
-        seen.add(pk)
-        els = {}
-        for e in (ent.get("from") if isinstance(ent.get("from"), list) else []):
-            if not (isinstance(e, list) and len(e) == 3):
-                continue
-            ifn, pre, until = e
-            pre = _net_prefix(pre) if isinstance(pre, str) else ""
-            if not (isinstance(ifn, str) and _SHARE_IFNAME_RE.match(ifn) and pre
-                    and isinstance(until, int) and not isinstance(until, bool) and until >= 0):
-                continue
-            k = (ifn, pre)
-            els[k] = 0 if (until == 0 or els.get(k) == 0) else max(until, els.get(k) or 0)
-        plan.append((pk, sorted(by_peer[pk], key=ipaddress.ip_network),
-                     [(i, x, els[(i, x)]) for i, x in sorted(els, key=lambda k: (k[0], ipaddress.ip_network(k[1])))]))
-    return sorted(plan)
-
-
-def _share_live(els, now):
-    return [(i, x, (u - now) if (u and u - now <= SHARE_TIMEOUT_CAP) else 0) for i, x, u in els if not u or u > now]
-
-
-def _share_sig(plan, now):
-    return json.dumps([[pk, nets, [[i, x, (u if (u and u - now <= SHARE_TIMEOUT_CAP) else ("far" if u else 0))]
-                                   for i, x, u in els if not u or u > now]] for pk, nets, els in plan])
-
-
-def _share_nets(plan):
-    import ipaddress
-    return sorted({x for _pk, nets, _e in plan for x in nets}, key=ipaddress.ip_network)
-
-
-def _share_ranges(items):
-    import ipaddress
-    bounds = sorted({int(n.network_address) for n, _t in items} | {int(n.broadcast_address) + 1 for n, _t in items})
-    runs = []
-    for lo, nxt in zip(bounds, bounds[1:]):
-        cover = [t for n, t in items if int(n.network_address) <= lo and nxt - 1 <= int(n.broadcast_address)]
-        if not cover:
-            continue
-        t = 0 if 0 in cover else max(cover)
-        if runs and runs[-1][1] == lo - 1 and runs[-1][2] == t:
-            runs[-1][1] = nxt - 1
-        else:
-            runs.append([lo, nxt - 1, t])
-    return [(p, t) for lo, hi, t in runs
-            for p in ipaddress.summarize_address_range(ipaddress.IPv4Address(lo), ipaddress.IPv4Address(hi))]
-
-
-def _share_generation(plan, now, g):
-    import ipaddress
-    sets, vm, chains, names_c, names_s = [], [], [], [], []
-    for n, (_pk, nets, els) in enumerate(plan):
-        vm += ["%s : jump p%d_%s" % (x, n, g) for x in nets]
-        live = _share_live(els, now)
-        hosts = ['"%s" . %s%s' % (i, x[:-3], (" timeout %ds" % t) if t else "") for i, x, t in live if x.endswith("/32")]
-        pref = {}
-        for i, x, t in live:
-            if not x.endswith("/32"):
-                pref.setdefault(i, []).append((ipaddress.ip_network(x), t))
-        sets.append("  set a%d_%s { type ifname . ipv4_addr; flags timeout;%s }" % (n, g, (" elements = { %s }" % ", ".join(hosts)) if hosts else ""))
-        names_s.append("a%d_%s" % (n, g))
-        rules = ["iifname . ip saddr @a%d_%s accept" % (n, g)]
-        for m, i in enumerate(sorted(pref)):
-            sets.append("  set a%dn%d_%s { typeof ip saddr; flags interval, timeout; elements = { %s } }"
-                        % (n, m, g, ", ".join("%s%s" % (p, (" timeout %ds" % t) if t else "") for p, t in _share_ranges(pref[i]))))
-            names_s.append("a%dn%d_%s" % (n, m, g))
-            rules.append('iifname "%s" ip saddr @a%dn%d_%s accept' % (i, n, m, g))
-        chains.append("  chain p%d_%s { %s; counter drop; }" % (n, g, "; ".join(rules)))
-        names_c.append("p%d_%s" % (n, g))
-    lines = sets + ["  map nets_%s { typeof ip daddr : verdict; flags interval; elements = { %s } }" % (g, ", ".join(vm))] + chains
-    return {"lines": lines, "map": "nets_" + g, "chains": names_c, "sets": names_s}
-
-
-def _share_strip(desired, plan):
-    drop = {pk: set(nets) for pk, nets, _e in plan}
-    out = dict(desired)
-    for iface, plist in desired.items():
-        if not any(isinstance(q, dict) and q.get("public_key") in drop for q in plist or []):
-            continue
-        out[iface] = [dict(q, allowed_ips=",".join(m for m in str(q.get("allowed_ips") or "").split(",")
-                                                   if _net_prefix(m) not in drop[q["public_key"]]))
-                      if isinstance(q, dict) and q.get("public_key") in drop else q for q in plist]
-    return out
-
-
-def _share_drop_table(res):
-    r = run(["nft", "delete", "table", "inet", SHARE_NFT_TABLE])
-    if r.returncode == 0 or "No such file" in (r.stderr or ""):
-        _SHARE["installed"] = False
-        res["changed"] += 1
-        return
-    res["errors"].append("sharing: could not remove %s: %s" % (SHARE_NFT_TABLE, (r.stderr or "").strip()[:120]))
-
-
-def _share_strip_named(node_cfg, desired, share):
-    named = {e["peer"] for e in (share if isinstance(share, list) else []) if isinstance(e, dict) and isinstance(e.get("peer"), str)}
-    return _share_strip(desired, [(pk, sorted(nets), []) for pk, nets in _share_by_peer(node_cfg, desired, named).items()])
-
-
-def reconcile_net_share(node_cfg, desired, share, res, now=None):
-    try:
-        return _share_converge(node_cfg, desired, share, res, now)
-    except Exception as e:
-        detail = ("%s: %s" % (type(e).__name__, e))[:160]
-        res["errors"].append("sharing: " + detail)
-        _SHARE.update(probed=False, declared=False, sig=None, plan=None, names=None,
-                      status={"ok": False, "why": "exception", "detail": detail, "peers": []})
-        return _share_strip_named(node_cfg, desired, share)
-
-
-def _share_converge(node_cfg, desired, share, res, now):
-    if not _SHARE["probed"]:
-        _SHARE["installed"] = run(["nft", "list", "table", "inet", SHARE_NFT_TABLE]).returncode == 0
-        _SHARE.update(probed=True, declared=False)
-    plan = _share_plan(node_cfg, desired, share) if share else []
-    if not plan:
-        if _SHARE["installed"]:
-            _share_drop_table(res)
-        _SHARE.update(sig=None, plan=None, status=None, declared=False, gen="a", names=None)
-        return desired
-    now = int(time.time()) if now is None else now
-    sig = _share_sig(plan, now)
-    if not _SHARE["installed"] or sig != _SHARE["sig"]:
-        def declare():
-            gen = _share_generation(plan, now, "a")
-            return _gtable_declare(SHARE_NFT_TABLE, SHARE_HOOK_PRI, _share_nets(plan), [], gen), gen
-        swap = None
-        if _SHARE["installed"] and _SHARE["declared"] and _SHARE["plan"] and _SHARE["names"]:
-            gen = _share_generation(plan, now, "b" if _SHARE["gen"] == "a" else "a")
-            swap = (_gtable_swap(SHARE_NFT_TABLE, _share_nets(_SHARE["plan"]), _share_nets(plan), [], gen, _SHARE["names"]), gen)
-        r, gen, _swapped = _gtable_load(swap, declare)
-        if r.returncode != 0:
-            detail = (r.stderr or "").strip()[:160]
-            _SHARE.update(probed=False, declared=False, sig=None, plan=None, names=None,
-                          status={"ok": False, "why": "nft_failed", "detail": detail, "peers": [x[0] for x in plan]})
-            res["errors"].append("sharing: " + detail)
-            return _share_strip(desired, plan)
-        _SHARE.update(installed=True, declared=True, sig=sig, gen=gen["map"].rsplit("_", 1)[1], names=_gen_names(gen))
-        res["changed"] += 1
-    _SHARE["plan"] = plan
-    _SHARE["status"] = {"ok": True, "peers": [x[0] for x in plan]}
-    return desired
-
-
-def net_share_verify(res, now=None):
-    if not _SHARE["plan"] or not _SHARE["installed"]:
-        return
-    if _gtable_intact(SHARE_NFT_TABLE):
-        return
-    now = int(time.time()) if now is None else now
-    gen = _share_generation(_SHARE["plan"], now, "a")
-    r = run(["nft", "-f", "-"], input_text=_gtable_declare(SHARE_NFT_TABLE, SHARE_HOOK_PRI, _share_nets(_SHARE["plan"]), [], gen))
-    if r.returncode == 0:
-        _SHARE.update(sig=_share_sig(_SHARE["plan"], now), declared=True, gen="a", names=_gen_names(gen))
-        res["changed"] += 1
-        return
-    _SHARE.update(installed=False, declared=False, sig=None, names=None)
-    res["errors"].append("sharing: the table was gone and could not be rebuilt: " + (r.stderr or "").strip()[:120])
-
-
-
 REACH_NFT_TABLE = "swg_reach"
+_REACH_IFNAME_RE = re.compile(r"^[A-Za-z0-9_.@-]{1,15}$")
 REACH_HOOK_PRI = "mangle - 4"
 _REACH = {"probed": False, "installed": False, "declared": False, "sig": None, "plan": None, "gen": "a", "names": None,
           "status": None, "seen": {}, "loaded": [], "base": {}, "live": {}, "since": 0, "skipped": {}, "stale": None}
@@ -3104,7 +2334,7 @@ def _reach_names(wire):
     if not isinstance(wire, dict):
         return []
     return sorted({n for n in (wire.get("ifaces") if isinstance(wire.get("ifaces"), list) else [])
-                   if isinstance(n, str) and _SHARE_IFNAME_RE.match(n)})
+                   if isinstance(n, str) and _REACH_IFNAME_RE.match(n)})
 
 
 def _reach_plan(node_cfg, wire, devices=None):
@@ -3112,7 +2342,6 @@ def _reach_plan(node_cfg, wire, devices=None):
     if not isinstance(wire, dict):
         return None, {}
     names = _reach_names(wire)
-    opened = {n for n in (wire.get("open") if isinstance(wire.get("open"), list) else []) if isinstance(n, str)}
     devices = _reach_devices(node_cfg, names) if devices is None else devices
     ifaces, nets, skipped = [], [], {}
     for name in names:
@@ -3131,9 +2360,9 @@ def _reach_plan(node_cfg, wire, devices=None):
     def elements(lst):
         out = set()
         for e in (lst if isinstance(lst, list) else []):
-            if isinstance(e, list) and len(e) == 2 and isinstance(e[0], str) and _SHARE_IFNAME_RE.match(e[0]):
+            if isinstance(e, list) and len(e) == 2 and isinstance(e[0], str) and _REACH_IFNAME_RE.match(e[0]):
                 pre = _net_prefix(e[1]) if isinstance(e[1], str) else ""
-                if pre:
+                if pre.endswith("/32"):
                     out.add((e[0], pre))
         return out
     users = [elements(u) for u in wire["users"]] if isinstance(wire.get("users"), list) else []
@@ -3170,10 +2399,9 @@ def _reach_plan(node_cfg, wire, devices=None):
     elems = []
     for net, own, j in sorted(nets, key=lambda x: x[0]):
         lo, hi = int(net.network_address), int(net.broadcast_address)
-        rest = "accept" if ifaces[j] in opened else "jump n%d" % j
+        rest = "jump n%d" % j
         marks = sorted([(int(ip), "jump z%di%d" % (sidx[v[0]], v[1])) for ip, v in where.items()
-                        if v and v[1] == j and ip in net] + [(int(own), "accept")]
-                       + ([(int(ip), "jump n%d" % j) for ip, v in where.items() if v is None and ip in net] if rest == "accept" else []))
+                        if v and v[1] == j and ip in net] + [(int(own), "accept")])
         cur = lo
         for n, verdict in marks:
             if n > cur:
@@ -3194,23 +2422,14 @@ def _reach_counter(name):
 def _reach_generation(plan, g):
     import ipaddress
     ip4 = lambda n: str(ipaddress.IPv4Address(n))
-    sets, chains, names_s, names_c, zrules = [], [], [], [], {}
+    sets, chains, names_s, names_c = [], [], [], []
     for k, s in enumerate(plan["sets"]):
-        hosts = ['"%s" . %s' % (d, p[:-3]) for d, p in s if p.endswith("/32")]
-        pref = {}
-        for d, p in s:
-            if not p.endswith("/32"):
-                pref.setdefault(d, []).append(ipaddress.ip_network(p))
+        hosts = ['"%s" . %s' % (d, p[:-3]) for d, p in s]
         sets.append("  set f%d_%s { type ifname . ipv4_addr;%s }" % (k, g, (" elements = { %s }" % ", ".join(hosts)) if hosts else ""))
         names_s.append("f%d_%s" % (k, g))
-        zrules[k] = ["iifname . ip saddr @f%d_%s accept" % (k, g)]
-        for m, d in enumerate(sorted(pref)):
-            sets.append("  set f%dn%d_%s { typeof ip saddr; flags interval; elements = { %s } }"
-                        % (k, m, g, ", ".join(str(x) for x in ipaddress.collapse_addresses(pref[d]))))
-            names_s.append("f%dn%d_%s" % (k, m, g))
-            zrules[k].append('iifname "%s" ip saddr @f%dn%d_%s accept' % (d, k, m, g))
     for k, j in plan["chains"]:
-        chains.append('  chain z%di%d_%s { %s; counter name "%s" drop; }' % (k, j, g, "; ".join(zrules[k]), _reach_counter(plan["ifaces"][j])))
+        chains.append('  chain z%di%d_%s { iifname . ip saddr @f%d_%s accept; counter name "%s" drop; }'
+                      % (k, j, g, k, g, _reach_counter(plan["ifaces"][j])))
         names_c.append("z%di%d_%s" % (k, j, g))
     for j, name in enumerate(plan["ifaces"]):
         chains.append('  chain n%d_%s { counter name "%s" drop; }' % (j, g, _reach_counter(name)))
@@ -3359,7 +2578,7 @@ def _reach_read_counters():
             continue
         with contextlib.suppress(ValueError, UnicodeDecodeError, TypeError):
             name = bytes.fromhex(m.group(1)).decode()
-            if _SHARE_IFNAME_RE.match(name):
+            if _REACH_IFNAME_RE.match(name):
                 out[name] = int(pk or 0)
     return out
 
@@ -5357,7 +4576,7 @@ _S5X_NFT = {"sig": None, "dns": None, "arr": None, "arr_bad": None}
 S5X_ARR_DNS_PRI = 6870
 
 
-def _s5x_rules(devexit, nets, res):
+def _s5x_rules(devexit, res):
     socks = _EXITS.get("socks") or {}
     _ifc = [e for e in devexit if e.get("dev") in socks and e.get("subnet")
             and (e.get("scope") or "iface") != "rule"
@@ -5367,7 +4586,7 @@ def _s5x_rules(devexit, nets, res):
     whole = sorted({e["subnet"] for e in _ifc if (not e.get("part") or str(e["subnet"]) in _fell)
                     and _devexit_state(e["dev"]) == "up"})
     if whole or _S5X_NFT["dns"] is not False:
-        _p, _had = _dns_dnat(whole, res, [p for p, _i in (nets or ())], S5X_DNS_TAG, S5X_DNS_NET_TAG, S5X_DNS + ":53", ("udp",))
+        _p, _had = _dns_dnat(whole, res, (), S5X_DNS_TAG, S5X_DNS_NET_TAG, S5X_DNS + ":53", ("udp",))
         _S5X_NFT["dns"] = bool(whole) or _had
     rej = sorted(d for d, ok in socks.items() if not ok and _WANIF_RE.match(str(d or "")))
     unm = sorted({int(e["table"]) for e in devexit if e.get("dev") in socks and not socks[e["dev"]]
@@ -6206,18 +5425,6 @@ def _p2p_link_nets(node_cfg):
     return sorted(out)
 
 
-def _p2p_nofan(node_cfg, routers=()):
-    nets = _p2p_link_nets(node_cfg)
-    have = [ipaddress.ip_network(n) for n in nets]
-    out = set(nets)
-    for a in routers if isinstance(routers, list) else []:
-        with contextlib.suppress(Exception):
-            n = ipaddress.ip_network(str(a), strict=False)
-            if n.version == 4 and n.prefixlen == 32 and not any(n.subnet_of(h) for h in have):
-                out.add(str(n))
-    return sorted(out)
-
-
 def _p2p_iface_entries(p2p):
     ok, bad, taken = [], [], set()
     for e in (p2p.get("entries") if isinstance(p2p, dict) and isinstance(p2p.get("entries"), list) else []):
@@ -6264,7 +5471,7 @@ def _p2p_groups(p2p, strict):
     return groups
 
 
-def _ensure_p2p(p2p, mech, node_cfg, res, routers=(), portok=None, fwd=None):
+def _ensure_p2p(p2p, mech, node_cfg, res, portok=None, fwd=None):
     def retire():
         if not _P2P["retired"]:
             _retire_swgp(res)
@@ -6319,7 +5526,7 @@ def _ensure_p2p(p2p, mech, node_cfg, res, routers=(), portok=None, fwd=None):
             _P2P.update(route="down" if _down else "up", route_dev=(_down or [_rts[0][1]])[0], route_devs=[d for _, d in _rts],
                         route_down=_down)
         logged = log_level() >= LOG_INFO and not _P2P["nolog"]
-        nofan = _p2p_nofan(node_cfg, routers)
+        nofan = _p2p_link_nets(node_cfg)
         _pok = _p2p_portok(portok)
         _P2P["fwd"] = _p2p_fwd_take(fwd, mode, strict, groups)
         text = _p2p_nft(mode, strict, oif, nofan, ih, route, logged=logged, groups=groups, portok=_pok, fwdin=bool(_P2P["fwd"]))
@@ -8538,7 +7745,7 @@ def exit_test_take(req):
             if _EXIT_TEST["result"] is not None and time.time() - _EXIT_TEST["at"] > EXIT_TEST_KEEP_S:
                 _EXIT_TEST["result"] = None
             return
-        if not _PROBE_ID_RE.match(rid):
+        if not re.fullmatch(r"[A-Za-z0-9]{8,32}", rid):
             return
         _EXIT_TEST.update(id=rid, result=None, at=time.time())
     sk = _s5x_socks({"socks": req})
@@ -9316,7 +8523,7 @@ def _prepare_static_guard(plan, node_cfg):
     _STATIC_EGRESS.update(active=[], blocked=sorted({e["key"] for e in guard}), ready=[])
 
 
-def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_conn=None, panel_cfg=None, nets=()):
+def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_conn=None, panel_cfg=None):
     res = {"changed": 0, "errors": []}
     plan = plan or {}
     fwd = plan.get("forward") or []
@@ -9403,15 +8610,13 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     else:
         _RPF["bad"] = []
     _tbls = sorted({str(e["table"]) for e in fwd + smart_exit} | {str(e["table"]) for e in _dxguard})
-    _troutes = list(nets)
-    if _tbls:
-        _taken = {p for p, _ in _troutes} | {e["subnet"] for e in exit_}
-        _troutes += [(p, dev) for p, dev in _cascade_local_routes(node_cfg) if p not in _taken]
+    _taken = {e["subnet"] for e in exit_}
+    _troutes = [(p, dev) for p, dev in _cascade_local_routes(node_cfg) if p not in _taken] if _tbls else []
     _net_tables = _tbls if _troutes else []
     _cut = _dialin_cut(fwd + smart_exit + arr_exit, exit_, _troutes if _net_tables else (), set(_net_tables))
     want_sig = _cascade_want_sig(fwd, exit_, smart_exit, guard=_dxguard,
                                  nets=_troutes, net_tables=_net_tables, arr=arr_exit, cut=_cut, static=static)
-    local_nets = ([p for p, _ in (*nets, *_cascade_local_routes(node_cfg))] +
+    local_nets = ([p for p, _ in _cascade_local_routes(node_cfg)] +
                   [e["subnet"] for e in exit_]) if static_entries else []
     if not _ensure_static_egress(static_entries, local_nets, res):
         _STATIC_EGRESS.update(active=[], blocked=sorted({e["key"] for e in static_entries}), ready=[])
@@ -9487,7 +8692,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                 run(["ip", "rule", "add", "fwmark", str(_u), "lookup", str(_t), "priority", str(_u)])
                 res["changed"] += 1
     _ensure_fwd_iptables(fwd, exit_, _detect_wan(), res, default_egress_ip, devexit=devexit)
-    _s5x_rules(devexit, nets, res)
+    _s5x_rules(devexit, res)
     blocked = {e["key"] for e in static_entries if not e.get("dev")}
     ready = set()
     if static:
@@ -9547,7 +8752,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                           host_engine, insig=dom_sig, allow=_nb_allow)
     _arr = ({"subnets": arr_subs, "entries": arr_e, "legs": list(_relay_links(node_cfg)),
              "cln": _collapse4([p for p, _d in _cascade_local_routes(node_cfg)] + [e["subnet"] for e in exit_]
-                               + [p for p, _d in (nets or ())])} if arr_e else None)
+                              )} if arr_e else None)
     _name_cats = {c for c, v in domains.items() if v} | {c for k, byc in _pats.items() for c, v in (byc or {}).items() if v}
     set_counts = _ensure_smart_nft(smart_e, smart_cats, res, pin=is_sni, v6_ifaces=smart_ifs,
                                     reset_mark=(SNI_RESET_MARK if is_sni else 0), queue=(host_engine == "sni_user"),
@@ -9572,7 +8777,6 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     _ensure_doh_block([], sorted(_doh_mech), res)
     _ensure_mech_block(_mech, res, scan_allow=(smart or {}).get("scan_allow") or [])
     _ensure_p2p((smart or {}).get("p2p"), _mech, node_cfg, res,
-                routers=(smart or {}).get("p2p_routers") or [],
                 portok=(smart or {}).get("p2p_portok"),
                 fwd=(smart or {}).get("p2p_fwd"))
     _ensure_p2pfwd(_P2P["fwd"], node_cfg, res)
@@ -11619,7 +10823,6 @@ WG_SOCK_DIRS  = ("/var/run/wireguard", "/run/wireguard")
 WDTT_CFG_DIRS = ("/etc/wdtt", "/opt/wdtt", "/var/lib/wdtt", "/usr/local/etc/wdtt")
 WDTT_DEFAULT_IFACE = "wdtt0"
 _WDTT_HOSTPROC = {"at": 0.0, "walked": 0.0, "rows": [], "ok": True, "cfg": None}
-_WDTT_CFGPROBE = {}
 _WDTT_HOST_TTL = 120
 _WDTT_HOST_FLOOR = 5
 
@@ -11667,16 +10870,6 @@ def _wdtt_iface_of(flags):
     return (flags.get("iface") or "").strip() or WDTT_DEFAULT_IFACE
 
 
-def _wdtt_foreign_proc(iface):
-    ours = set()
-    with contextlib.suppress(Exception):
-        ours = {p.pid for p in _WDTT_PROCS.values() if p is not None}
-    for pid, flags in _wdtt_procs():
-        if pid not in ours and _wdtt_iface_of(flags) == iface:
-            return pid, flags
-    return None, {}
-
-
 def _wdtt_foreign_pid(iface):
     ours = set()
     with contextlib.suppress(Exception):
@@ -11716,21 +10909,6 @@ def _wdtt_cmdline_flags(pid):
     return out
 
 
-def _wdtt_unit_of_pid(pid, host_ns=False):
-    txt = ""
-    if host_ns or NODE_KIND == "docker":
-        txt = (host_sh("cat /proc/%d/cgroup 2>/dev/null; :" % int(pid), timeout=20).stdout or "")
-    else:
-        with contextlib.suppress(Exception):
-            with open("/proc/%d/cgroup" % int(pid)) as f:
-                txt = f.read()
-    for ln in txt.splitlines():
-        seg = ln.strip().rsplit("/", 1)[-1]
-        if seg.endswith(".service"):
-            return seg
-    return ""
-
-
 _CTR_CLI = {"v": None}
 _CTR_CLI_DIRS = ("/run/current-system/sw/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/snap/bin")
 
@@ -11748,6 +10926,9 @@ def _ctr_cli():
     return _CTR_CLI["v"] or "docker"
 
 _CTR_NAMES = {"at": 0.0, "map": {}}
+
+
+_CTR_IF_TTL = 120
 
 
 def _ctr_name_map(timeout=15):
@@ -11780,10 +10961,6 @@ def _proc_container(pid):
         return ""
     cid = m.group(0)
     return _ctr_name_map().get(cid) or cid[:12]
-
-
-def _wdtt_flags_host(pid):
-    return _host_proc_ident(pid)[0]
 
 
 _HOST_STARTTIME_SH = "st(){ read -r l < /proc/$1/stat 2>/dev/null || return 1; r=${l##*') '}; set -- $r; echo \"${20}\"; }; "
@@ -11852,7 +11029,7 @@ def _wdtt_hostproc_flush(force=False):
 def _foreign_on(lookup):
     hit = lookup()
     if NODE_KIND == "docker" and (hit is not None or _csqtt_scan_ok()):
-        if _wdtt_hostproc_fresh(CSQTT_ADOPT_LOOK_S if hit is not None else 0):
+        if _wdtt_hostproc_fresh(15 if hit is not None else 0):
             hit = lookup()
     return hit
 
@@ -11863,182 +11040,6 @@ def _wdtt_hostproc_fresh(max_age):
         return True
     return False
 
-
-def _wdtt_unit_ports(execstart):
-    with contextlib.suppress(Exception):
-        parts = [p for p in shlex.split(execstart or "") if p]
-        f = _wdtt_flags_from_argv(parts)
-        return (f.get("listen") or "").strip(), str(f.get("wg-port") or "").strip()
-    return "", ""
-
-
-def _wdtt_inbound_ports_local(cfgdir):
-    dbp = os.path.join(cfgdir, "panel.db")
-    if not os.path.isfile(dbp):
-        return "", ""
-    with contextlib.suppress(Exception):
-        import sqlite3
-        c = sqlite3.connect(dbp, timeout=5)
-        try:
-            for d, w in c.execute("SELECT dtls_port, wg_port FROM wdtt_inbound LIMIT 1"):
-                return (str(d or "").strip(), str(w or "").strip())
-        finally:
-            c.close()
-    return "", ""
-
-
-def _wdtt_users_local(cfgdir):
-    out = []
-    dbp = os.path.join(cfgdir, "panel.db")
-    if os.path.isfile(dbp):
-        with contextlib.suppress(Exception):
-            import sqlite3
-            c = sqlite3.connect(dbp, timeout=5)
-            try:
-                for lbl, did, exp, deact, dn, up, vkh, seen, ports in c.execute(
-                        "SELECT comment, device_id, expires_at, is_deactivated, down_bytes, up_bytes,"
-                        " vk_hash, last_seen_at, ports FROM wdtt_users"):
-                    out.append({"label": (lbl or "").strip()[:60], "bound": bool((did or "").strip()),
-                                "last_seen": int(seen or 0), "expires_at": int(exp or 0),
-                                "disabled": bool(deact), "vk": bool((vkh or "").strip()),
-                                "down_bytes": int(dn or 0), "up_bytes": int(up or 0), "ports": str(ports or "")})
-            finally:
-                c.close()
-        return out
-    pj = os.path.join(cfgdir, "passwords.json")
-    if os.path.isfile(pj):
-        with contextlib.suppress(Exception):
-            with open(pj) as f:
-                raw = json.load(f) or {}
-            devs = raw.get("devices") or {}
-            for _pw, e in (raw.get("passwords") or {}).items():
-                e = e if isinstance(e, dict) else {}
-                _did = str(e.get("device_id") or "").strip()
-                out.append({"label": str(e.get("name") or e.get("comment") or "").strip()[:60],
-                            "bound": bool(_did), "last_seen": int(e.get("last_seen_at") or 0),
-                            "expires_at": int(e.get("expires_at") or 0),
-                            "disabled": bool(e.get("is_deactivated")), "vk": bool(str(e.get("vk_hash") or "").strip()),
-                            "down_bytes": int(e.get("down_bytes") or 0), "up_bytes": int(e.get("up_bytes") or 0),
-                            "ports": str(e.get("ports") or ""),
-                            "ip": str(((devs.get(_did) or {}) if _did else {}).get("ip") or "")})
-    return out
-
-
-def _listdir_safe(path):
-    try:
-        return os.listdir(path)
-    except OSError:
-        return []
-
-
-def _proc_cfg_root(pid, reader_init="/proc/self"):
-    if not pid:
-        return ""
-    with contextlib.suppress(Exception):
-        if os.readlink("/proc/%d/ns/mnt" % int(pid)) != os.readlink(reader_init + "/ns/mnt"):
-            return "/proc/%d/root" % int(pid)
-    return ""
-
-
-def _wdtt_cfg_probe(cfg, pid=None):
-    now = time.time()
-    _root = _proc_cfg_root(pid)
-    _ck = (_root, cfg)
-    hit = _WDTT_CFGPROBE.get(_ck)
-    if hit and now - hit[0] < _WDTT_HOST_TTL:
-        return hit[1]
-    _cfgr = _root + cfg
-    if NODE_KIND != "docker":
-        res = {"id": os.path.isfile(os.path.join(_cfgr, "wg-keys.dat")),
-               "store": ("panel.db" if os.path.isfile(os.path.join(_cfgr, "panel.db")) else
-                         ("passwords.json" if os.path.isfile(os.path.join(_cfgr, "passwords.json")) else "")),
-               "users": _wdtt_users_local(_cfgr), "inbound_ports": _wdtt_inbound_ports_local(_cfgr),
-               "unit_listen": "", "unit_wg_port": "", "unit_fork": ""}
-        _udir = "" if _root else "/etc/systemd/system"
-        for _un in sorted(x for x in _listdir_safe(_udir) if x.endswith(".service")):
-            with contextlib.suppress(Exception):
-                _u = os.path.join(_udir, _un)
-                _txt = open(_u, errors="replace").read()
-                if ("config-dir " + cfg) not in _txt:
-                    continue
-                for _l in _txt.splitlines():
-                    if _l.startswith("ExecStart="):
-                        _ex = _l.split("=", 1)[1]
-                        res["unit_listen"], res["unit_wg_port"] = _wdtt_unit_ports(_ex)
-                        for _fl, _fk in _WDTT_FORK_BY_FLAG:
-                            if (" -" + _fl) in _ex:
-                                res["unit_fork"] = _fk; break
-                        break
-                break
-    else:
-        res = {"id": False, "store": "", "users": [], "inbound_ports": ("", ""), "unit_listen": "", "unit_wg_port": "", "unit_fork": ""}
-        with contextlib.suppress(Exception):
-            _pfxsh = ("R=''; P=%s; [ -n \"$P\" ] && [ -e /proc/$P/ns/mnt ] && "
-                      "[ \"$(readlink /proc/$P/ns/mnt)\" != \"$(readlink /proc/1/ns/mnt)\" ] && R=/proc/$P/root; "
-                      % shlex.quote(str(int(pid)) if pid else ""))
-            _cmd = _pfxsh + (("cd \"$R\"%s 2>/dev/null && { [ -f wg-keys.dat ] && echo id; [ -f panel.db ] && echo panel.db; "
-                     "[ -f passwords.json ] && echo passwords.json; "
-                     "for f in passwords.json panel.db panel.db-wal; do [ -f \"$f\" ] || continue; "
-                     "[ $(stat -c %%s \"$f\") -gt 8388608 ] && continue; "
-                     "printf 'B64:%%s ' \"$f\"; base64 -w0 < \"$f\"; echo; done; }; "
-                     "[ -n \"$R\" ] || for u in /etc/systemd/system/*.service; do [ -f \"$u\" ] || continue; "
-                     "grep -q -- %s \"$u\" 2>/dev/null || continue; "
-                     "printf 'EXEC:'; grep -h '^ExecStart=' \"$u\" | head -1; done; :")
-                    % (shlex.quote(cfg), shlex.quote("config-dir " + cfg)))
-            raw = (host_sh(_cmd, timeout=40).stdout or "")
-            flags = [ln for ln in raw.split() if not ln.startswith("B64:") and not ln.startswith("EXEC:")]
-            for _ln in raw.splitlines():
-                if _ln.startswith("EXEC:"):
-                    res["unit_listen"], res["unit_wg_port"] = _wdtt_unit_ports(_ln[5:].split("=", 1)[-1])
-                    break
-            res["id"] = "id" in flags
-            res["store"] = "panel.db" if "panel.db" in flags else ("passwords.json" if "passwords.json" in flags else "")
-            _blobs = {}
-            for _ln in raw.splitlines():
-                if not _ln.startswith("B64:"):
-                    continue
-                _name, _, _b64 = _ln[4:].partition(" ")
-                if _name and _b64:
-                    with contextlib.suppress(Exception):
-                        _blobs[_name] = base64.b64decode(_b64)
-            if _blobs:
-                _tmp = "/tmp/swg-wdtt-probe-" + hashlib.sha1(cfg.encode()).hexdigest()[:8]
-                shutil.rmtree(_tmp, ignore_errors=True)
-                os.makedirs(_tmp, mode=0o700, exist_ok=True)
-                try:
-                    for _n, _b in _blobs.items():
-                        with open(os.path.join(_tmp, _n), "wb") as _fh:
-                            _fh.write(_b)
-                    res["users"] = _wdtt_users_local(_tmp)
-                    res["inbound_ports"] = _wdtt_inbound_ports_local(_tmp)
-                finally:
-                    shutil.rmtree(_tmp, ignore_errors=True)
-    _WDTT_CFGPROBE[_ck] = (now, res)
-    return res
-
-_WDTT_FORK_BY_FLAG = (("listen-direct", "qwdtt"), ("admin-addr", "ildarmaga"), ("no-panel", "wdttplus"))
-
-
-def _wdtt_guess_fork(exe, cfgdir, flags=None, pid=None):
-    for fk in WDTT_FORK_OWNER:
-        if ("/" + fk + "/") in (exe or ""):
-            return fk
-    for _fl, _fk in _WDTT_FORK_BY_FLAG:
-        if _fl in (flags or {}):
-            return _fk
-    _store = _wdtt_cfg_probe(cfgdir, pid)["store"] if cfgdir else ""
-    if _store == "panel.db":
-        return "ildarmaga"
-    if not exe or NODE_KIND == "docker":
-        return "amurcanov" if _store == "passwords.json" else ""
-    h = ""
-    with contextlib.suppress(Exception):
-        _r = run([exe, "-h"], timeout=6)
-        h = (_r.stderr or "") + (_r.stdout or "")
-    for _fl, _fk in _WDTT_FORK_BY_FLAG:
-        if ("-" + _fl) in h:
-            return _fk
-    return "amurcanov" if _store == "passwords.json" else ""
 
 def _wdtt_procs():
     out = []
@@ -12058,90 +11059,6 @@ def _wdtt_procs():
     return [(p, f) for p, f in out if _wdtt_is_server(f)]
 
 
-def _wdtt_live_cfgdirs():
-    dirs = set()
-    with contextlib.suppress(Exception):
-        for ifn in (_wdtt_load() or {}):
-            dirs.add(os.path.realpath(_wdtt_dir(ifn)))
-    for _pid, flags in _wdtt_procs():
-        cd = (flags.get("config-dir") or "").strip()
-        if cd and not _proc_cfg_root(_pid):
-            with contextlib.suppress(Exception):
-                dirs.add(os.path.realpath(cd))
-    return dirs
-
-
-def wdtt_dormant():
-    live = _wdtt_live_cfgdirs()
-    out = []
-    dirs = WDTT_CFG_DIRS
-    if NODE_KIND == "docker":
-        _wdtt_host_procs()
-        dirs = [d for d in WDTT_CFG_DIRS if d in (_WDTT_HOSTPROC.get("cfg") or ())]
-    for d in dirs:
-        with contextlib.suppress(Exception):
-            probe = _wdtt_cfg_probe(d)
-            if not probe["id"] or os.path.realpath(d) in live:
-                continue
-            store = probe["store"]
-            lp = wp = 0
-            with contextlib.suppress(Exception):
-                _ul = str(probe.get("unit_listen") or "").rsplit(":", 1)[-1]
-                if _ul.isdigit():
-                    lp = int(_ul)
-                if str(probe.get("unit_wg_port") or "").isdigit():
-                    wp = int(probe["unit_wg_port"])
-            with contextlib.suppress(Exception):
-                if not (lp and wp):
-                    _d, _w = probe.get("inbound_ports") or ("", "")
-                    if not lp and str(_d).isdigit(): lp = int(_d)
-                    if not wp and str(_w).isdigit(): wp = int(_w)
-            with contextlib.suppress(Exception):
-                if not (lp and wp):
-                    for _e in (probe.get("users") or []):
-                        _ports = [p for p in str((_e or {}).get("ports") or "").split(",") if p.strip().isdigit()]
-                        if len(_ports) >= 2:
-                            lp, wp = lp or int(_ports[0]), wp or int(_ports[1]); break
-            _at = 0
-            with contextlib.suppress(Exception):
-                _at = int(os.path.getmtime(os.path.join(d, "wg-keys.dat")))
-            out.append({"config_dir": d, "store": store,
-                        "fork": probe.get("unit_fork") or _wdtt_guess_fork("", d),
-                        "listen_port": lp, "wg_port": wp,
-                        "users": probe.get("users") or [],
-                        "at": _at})
-    return out
-
-
-def wdtt_foreign_probe(iface):
-    pid, f = _wdtt_foreign_proc(iface)
-    if not pid:
-        return None
-    cfg = (f.get("config-dir") or "").strip()
-    if not cfg:
-        for cand in list(WDTT_CFG_DIRS) + [f.get("_cwd") or ""]:
-            if cand and _wdtt_cfg_probe(cand, pid)["id"]:
-                cfg = cand; break
-        else:
-            cfg = WDTT_CFG_DIRS[0]
-    probe = _wdtt_cfg_probe(cfg, pid)
-    _wa = (f.get("wg-addr") or "").strip()
-    if not _wa:
-        with contextlib.suppress(Exception):
-            for ln in (run(["ip", "-4", "-o", "addr", "show", iface]).stdout or "").splitlines():
-                _p = ln.split()
-                if len(_p) >= 4 and _p[2] == "inet":
-                    _wa = _p[3]; break
-    return {"pid": pid, "container": _proc_container(pid),
-            "fork": _wdtt_guess_fork(f.get("_exe") or "", cfg, f, pid), "config_dir": cfg,
-            "listen": f.get("listen") or "", "wg_port": f.get("wg-port") or "", "wg_addr": _wa,
-            "raw_listen": f.get("listen-raw") or "",
-            "dns": f.get("dns") or "",
-            "max_passwords": f.get("max-passwords") or "", "has_identity": probe["id"], "adoptable": bool(probe["id"]),
-            "users": probe.get("users") or [],
-            "store": probe["store"]}
-
-_CTR_IF_TTL = 120
 def _outbound_client_tunnel(conf, addr, live_peers):
     host = False
     for part in str(addr or "").split(","):
@@ -12679,7 +11596,7 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
             "ether_ifaces": list_ether_ifaces(_addrs),
             "ether_gws": {d: _dev_gateway(d) for d in list_ether_ifaces(_addrs)},
             "wan_iface": _detect_wan(),
-            "net_deps": net_deps(),
+            "net_deps": {"reach": 2},
             "node_ip_ifaces": list_node_ip_ifaces(_addrs), "lans": _node_lans_report(_addrs, _own_tunnel_devs(node_cfg)),
             "smartroute": smart_status(),
             **({"log": dict(_LOG_BUDGET["status"], live=1, range=1)} if _LOG_BUDGET["status"] else {}),
@@ -12737,19 +11654,10 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
                 _x["src_ips"] = sorted(_cmap.get(_lp, ()))
     if _LAN["status"]:
         snap["lan_block"] = dict(_LAN["status"])
-    if _SHARE["status"]:
-        snap["net_share"] = dict(_SHARE["status"])
     if _REACH["status"]:
         snap["dev_reach"] = dict(_REACH["status"])
-    if _NET["refused"]:
-        snap["net_refused"] = {p: dict(v) for p, v in _NET["refused"].items()}
-    if _NET["kept"]:
-        snap["net_carried"] = sorted({p for p, _i in _NET["kept"]})
     if _P2PFWD["report"]:
         snap["p2p_fwd"] = {i: dict(v) for i, v in _P2PFWD["report"].items()}
-    _probe = net_probe_status()
-    if _probe:
-        snap["net_probe"] = _probe
     _xt = exit_test_status()
     if _xt:
         snap["exit_test"] = _xt
@@ -12757,8 +11665,6 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
     snap["exits"] = list(_EXITS["list"])
     snap["exit_kinds"] = list(EXIT_KINDS)
     snap["static_egress"] = {"v": 1, **{k: _STATIC_EGRESS[k] for k in ("active", "blocked", "ready")}}
-    snap["wdtt_dormant"] = wdtt_dormant()
-    snap["csqtt_candidates"] = csqtt_candidates()
     if hcfg.get("enabled", True):
         snap["health"] = collect_health(mounts=hcfg.get("mounts"))
     snap["inet"] = sample_inet(node_cfg, now)
@@ -14376,11 +13282,11 @@ def _turn_verify(svc):
     nd = log_no_detail()
     return "service didn't stay up: " + reason[:150] + (" — " + nd if nd else "")
 
-def apply_turn(turn, turn_onboard):
+def apply_turn(turn):
     res = {"done": [], "errors": []}
-    if not turn and not turn_onboard:
+    if not turn:
         return res
-    keys = set(turn or {}) | set(turn_onboard or [])
+    keys = set(turn)
     log(LOG_INFO, "turn: applying " + str(sorted(keys)) + " manage_on=" + str(TURN_MANAGE_ON)
           + " kind=" + NODE_KIND)
     def fail(k, m):
@@ -14626,16 +13532,6 @@ def apply_turn(turn, turn_onboard):
             good(svc, act + ":" + svc)
         except Exception as e:
             fail(svc, str(e))
-    for sp in (turn_onboard or []):
-        try:
-            unit = host_sh("cat " + shlex.quote(sp) + " 2>/dev/null", probe=True).stdout
-            if not unit:
-                fail(sp, "unit not found at that path"); continue
-            base = os.path.basename(sp)
-            svc = base[:-8] if base.endswith(".service") else base
-            rec[svc] = _parse_tp(svc, _exec_of(unit)); changed = True; good(sp, "onb:" + svc)
-        except Exception as e:
-            fail(sp, str(e))
     if changed:
         if TURN_DOCKER:
             for _s, _t in rec.items():
@@ -14867,25 +13763,9 @@ def _wdtt_desired_body(passwords):
     out = {}
     for pw, e in (passwords or {}).items():
         e = e or {}
-        out[pw] = {"expires_at": int(e.get("expires_at") or 0), "vk_hash": str(e.get("vk_hash") or ""),
+        out[pw] = {"expires_at": 0, "vk_hash": str(e.get("vk_hash") or ""),
                    "ports": str(e.get("ports") or ""), "is_deactivated": bool(e.get("is_deactivated"))}
     return json.dumps({"passwords": out})
-
-def _wdtt_serve_adopted(inst):
-    au = inst.get("adopt_users") or {}
-    if not au:
-        return
-    dtls = (str(inst.get("listen") or "").rsplit(":", 1)[-1]) or "56000"
-    ports = dtls + "," + str(inst.get("wg_port") or 56001) + ",9000"
-    pwds = dict(inst.get("passwords") or {})
-    for pw, m in au.items():
-        if pw in pwds:
-            continue
-        m = m if isinstance(m, dict) else {}
-        pwds[pw] = {"expires_at": int(m.get("expires_at") or 0), "vk_hash": str(m.get("vk_hash") or ""),
-                    "ports": ports, "is_deactivated": bool(m.get("is_deactivated"))}
-    inst["passwords"] = pwds
-
 
 def _wdtt_env_text(inst):
     cfgdir = _wdtt_dir(inst["iface"])
@@ -15188,35 +14068,6 @@ def _wdtt_maxpw_for(wg_addr, cap=4000):
     return 200
 
 
-def _wdtt_stage_foreign(cfgdir, pid=None):
-    if not cfgdir:
-        return ""
-    _root = _proc_cfg_root(pid)
-    if NODE_KIND != "docker":
-        return (_root + cfgdir) if _root else ""
-    dst = "/tmp/swg-wdtt-adopt"
-    with contextlib.suppress(Exception):
-        shutil.rmtree(dst, ignore_errors=True)
-        os.makedirs(dst, mode=0o700, exist_ok=True)
-        _pfx = ("R=''; P=%s; [ -n \"$P\" ] && [ -e /proc/$P/ns/mnt ] && "
-                "[ \"$(readlink /proc/$P/ns/mnt)\" != \"$(readlink /proc/1/ns/mnt)\" ] && R=/proc/$P/root; "
-                % shlex.quote(str(int(pid)) if pid else ""))
-        b64 = (host_sh(_pfx + "tar -C \"$R\"%s -cf - wg-keys.dat passwords.json panel.db panel.db-wal panel.db-shm "
-                       "dtls-cert.pem dtls-key.pem 2>/dev/null | base64 -w0" % shlex.quote(cfgdir), timeout=60).stdout or "").strip()
-        if b64:
-            with tarfile.open(fileobj=io.BytesIO(base64.b64decode(b64))) as _t:
-                for _m in _t.getmembers():
-                    if _m.isfile() and "/" not in _m.name and not _m.name.startswith("."):
-                        _f = _t.extractfile(_m)
-                        if _f:
-                            with open(os.path.join(dst, _m.name), "wb") as _o:
-                                _o.write(_f.read())
-                            os.chmod(os.path.join(dst, _m.name), 0o600)
-            if os.listdir(dst):
-                return dst
-    return ""
-
-
 def _wdtt_identity_ok(path):
     with contextlib.suppress(Exception):
         lines = [l.strip() for l in open(path, "rb").read().decode("utf-8", "replace").splitlines() if l.strip()]
@@ -15228,159 +14079,6 @@ def _wdtt_identity_ok(path):
         return True
     return False
 
-
-def _wdtt_adopt_seed(inst):
-    iface = inst["iface"]
-    if not _WDTT_NAME_RE.match(iface or ""):
-        return "refused: unsafe interface name"
-    probe = wdtt_foreign_probe(iface)
-    dormant_src = (inst.pop("adopt_config_dir", "") or "").strip()
-    if not probe and not dormant_src:
-        return "no foreign WDTT server found for " + iface + " (already gone?)"
-    idpath = (inst.pop("identity_path", "") or "").strip()
-    _stage = _wdtt_stage_foreign(os.path.dirname(idpath) if idpath else
-                                 (dormant_src or ((probe or {}).get("config_dir") or "")),
-                                 pid=(None if idpath else (probe or {}).get("pid")))
-    if _stage:
-        if idpath:
-            idpath = os.path.join(_stage, os.path.basename(idpath))
-        elif dormant_src:
-            dormant_src = _stage
-        else:
-            probe = dict(probe or {}); probe["config_dir"] = _stage
-    if idpath:
-        if not os.path.isfile(idpath):
-            return "refused: no key file at " + idpath + " — nothing was changed"
-        if not _wdtt_identity_ok(idpath):
-            return "refused: " + idpath + " doesn't look like a WDTT key file (four base64 keys) — nothing was changed"
-        try:
-            with open(idpath, "rb") as _f: _f.read(1)
-        except OSError as e:
-            return ("refused: can't read " + idpath + " (" + str(e) + ") — nothing was changed")[:200]
-    elif probe and not probe.get("has_identity"):
-        return "refused: the foreign server's identity (wg-keys.dat) can't be found — adopting would mint a new key and break every existing client"
-    src = os.path.dirname(idpath) if idpath else (dormant_src or probe["config_dir"])
-    if not _wdtt_identity_ok(os.path.join(src, "wg-keys.dat")):
-        return "refused: no usable server identity (wg-keys.dat) in " + src + " — adopting would mint a new key and break every client; nothing was changed"
-    if not _wdtt_valid(dict(inst, iface=iface)):
-        return "refused: bad/unsafe WDTT instance parameters — the foreign server was left running"
-    _want_fork = (inst.get("fork") or "").strip()
-    if _want_fork and _want_fork not in WDTT_FORK_OWNER:
-        return "refused: unknown WDTT fork '" + _want_fork + "' — the foreign server was left running"
-    _fk = _wdtt_fork(inst); _bs = _wdtt_bin_shared(_fk)
-    if not os.path.exists(_bs):
-        _e = ""
-        with contextlib.suppress(Exception):
-            _e = _wdtt_fetch_bin(_fk, inst, _bs)
-        if not os.path.exists(_bs):
-            return "refused: " + (_e or ("no " + _fk + " build available for this node yet")) + " — the foreign server was left running"
-    dst = _wdtt_dir(iface)
-    try:
-        os.makedirs(dst, exist_ok=True)
-        if idpath and os.path.basename(idpath) != "wg-keys.dat":
-            shutil.copy2(idpath, os.path.join(dst, "wg-keys.dat"))
-            with contextlib.suppress(Exception): os.chmod(os.path.join(dst, "wg-keys.dat"), 0o600)
-        for fn in ("wg-keys.dat", "passwords.json", "panel.db", "dtls-cert.pem", "dtls-key.pem"):
-            s = os.path.join(src, fn)
-            if os.path.isfile(s) and os.path.abspath(s) != os.path.abspath(os.path.join(dst, fn)):
-                shutil.copy2(s, os.path.join(dst, fn))
-                with contextlib.suppress(Exception): os.chmod(os.path.join(dst, fn), 0o600)
-    except Exception as e:
-        return ("couldn't copy the foreign server's data: " + str(e))[:160]
-    if not os.path.isfile(_wdtt_keyfile(iface)):
-        return "refused: the server identity didn't copy across — not adopting (clients would break)"
-    _srcdb = os.path.join(src, "panel.db")
-    if os.path.isfile(_srcdb):
-        _stage = os.path.join(dst, ".dbstage")
-        try:
-            os.makedirs(_stage, exist_ok=True)
-            for _f in ("panel.db", "panel.db-wal", "panel.db-shm"):
-                _p = os.path.join(src, _f)
-                if os.path.isfile(_p):
-                    shutil.copy2(_p, os.path.join(_stage, _f))
-            import sqlite3
-            _s = sqlite3.connect(os.path.join(_stage, "panel.db"), timeout=10)
-            _d = sqlite3.connect(os.path.join(dst, "panel.db"))
-            try:
-                with _d:
-                    _s.backup(_d)
-            finally:
-                _s.close(); _d.close()
-            with contextlib.suppress(Exception): os.chmod(os.path.join(dst, "panel.db"), 0o600)
-        except Exception as e:
-            return ("couldn't capture the foreign server's user store: " + str(e))[:160]
-        finally:
-            shutil.rmtree(_stage, ignore_errors=True)
-    _found = _wdtt_adopted_users(dst)
-    if _found:
-        inst["adopt_users"] = _found
-        inst["adopt_users_at"] = int(time.time())
-    if not probe:
-        return ""
-    flags = _wdtt_cmdline_flags(probe["pid"])
-    if not _wdtt_is_server(flags) and NODE_KIND == "docker":
-        flags = _wdtt_flags_host(probe["pid"])
-    pw = (flags.get("password") or "").strip()
-    if pw:
-        inst["password"] = pw
-    for k, fk in (("listen", "listen"), ("wg_addr", "wg-addr")):
-        if not (inst.get(k) or "").strip() and (flags.get(fk) or "").strip():
-            inst[k] = flags[fk].strip()
-    if not str(inst.get("wg_port") or "").strip() and str(flags.get("wg-port") or "").strip():
-        inst["wg_port"] = flags["wg-port"].strip()
-    _flags_now = _wdtt_cmdline_flags(probe["pid"]); _host_pid = False
-    if not _wdtt_is_server(_flags_now) and NODE_KIND == "docker":
-        _flags_now = _wdtt_flags_host(probe["pid"]); _host_pid = True
-    if not _wdtt_is_server(_flags_now) or _wdtt_iface_of(_flags_now) != iface:
-        return "the foreign server exited while we were preparing — nothing was changed, re-try the adoption"
-    _unit = _wdtt_unit_of_pid(probe["pid"], _host_pid)
-    if _unit and not _unit.startswith("swg-wdtt-"):
-        host_sh(sc_disable_now(_unit) + " >/dev/null 2>&1; :")
-    _cid, _rt = _csqtt_container_of(probe["pid"])
-    if _cid:
-        _ok, _why = _ctr_stop_foreign(_cid, _rt)
-        _wdtt_hostproc_flush()
-        _after = _wdtt_flags_host(probe["pid"]) if _host_pid else _wdtt_cmdline_flags(probe["pid"])
-        if not _wdtt_is_server(_after):
-            with contextlib.suppress(Exception):
-                run(["ip", "link", "delete", "dev", iface])
-            if _host_pid:
-                host_sh("ip link delete dev %s 2>/dev/null; :" % shlex.quote(iface))
-            _WDTT_HOSTPROC["at"] = 0.0
-            return ""
-        return ("couldn't stop the container that runs the existing WDTT server (" + (_why or "it kept running") +
-                ") — nothing was taken over; adopt again once it is down")
-    if _host_pid:
-        _p = int(probe["pid"])
-        host_sh("kill -TERM %d 2>/dev/null; i=0; while [ $i -lt 30 ] && kill -0 %d 2>/dev/null; do sleep 0.15; "
-                "i=$((i+1)); done; kill -0 %d 2>/dev/null && kill -KILL %d 2>/dev/null; :" % (_p, _p, _p, _p))
-    else:
-        with contextlib.suppress(Exception):
-            os.kill(probe["pid"], signal.SIGTERM)
-            for _ in range(30):
-                if not _pid_alive(probe["pid"]):
-                    break
-                time.sleep(0.15)
-            else:
-                os.kill(probe["pid"], signal.SIGKILL)
-                for _ in range(10):
-                    if not _pid_alive(probe["pid"]):
-                        break
-                    time.sleep(0.1)
-    _wdtt_hostproc_flush(force=True)
-    _back = _wdtt_foreign_pid(iface)
-    if _back is not None or not _csqtt_scan_ok():
-        if _back is None:
-            return "couldn't confirm the existing WDTT server stopped (the process scan did not complete) — nothing was taken over"
-        if _back != int(probe["pid"]):
-            return "couldn't stop the existing WDTT server: it " + _csqtt_came_back(_back) + " — nothing was taken over"
-        return "couldn't stop the existing WDTT server (it is still running after TERM and KILL) — nothing was taken over"
-    with contextlib.suppress(Exception):
-        run(["ip", "link", "delete", "dev", iface])
-    if _host_pid:
-        host_sh("ip link delete dev %s 2>/dev/null; :" % shlex.quote(iface))
-    _WDTT_HOSTPROC["at"] = 0.0
-    return ""
 
 def _wdtt_install(inst):
     if not _wdtt_valid(inst):
@@ -15574,7 +14272,6 @@ def _wdtt_remove(iface):
                 + ("" if _theirs else "ip link del " + shlex.quote(iface) + " 2>/dev/null; ") +
                 "rm -rf " + shlex.quote(_wdtt_dir(iface)))
     _WDTT_HOSTPROC["at"] = 0.0
-    _WDTT_CFGPROBE.pop(_wdtt_dir(iface), None)
     _wdtt_del_iptables_comment("nat", "POSTROUTING", "swg-egress:" + iface)
     _wdtt_del_iptables_comment("filter", "FORWARD", "swg-egress-acl:" + iface)
     _wdtt_del_iptables_comment("mangle", "FORWARD", "swg-egress-mss:" + iface)
@@ -15706,43 +14403,8 @@ def reconcile_wdtt(want, remove=None):
             sealed_id = inst.pop("sealed_identity", None)
             key_blob = inst.pop("key_blob", None)
             pw = (prev.get("password") or inst.get("password") or "").strip()
-            _pw_seen = bool(prev.get("pw_seen") or (inst.get("passwords") or {}))
-            if _pw_seen:
-                inst["pw_seen"] = True
-            _au = prev.get("adopt_users") or {}
-            if _au:
-                _have = set((inst.get("passwords") or {}).keys())
-                if _have and not (set(_au) - _have):
-                    _au = {}
-                elif int(time.time()) - int(prev.get("adopt_users_at") or 0) > 900:
-                    _au = {}
-            if _au:
-                inst["adopt_users"] = _au
-                inst["adopt_users_at"] = prev.get("adopt_users_at") or int(time.time())
-                _wdtt_serve_adopted(inst)
             unit_missing = not _wdtt_present(iface)
-            if (prev.get("adopt_failed") and not os.path.exists(_wdtt_keyfile(iface))
-                    and not inst.get("adopt_foreign") and not sealed_id):
-                inst["await_restore"] = True; inst["adopt_failed"] = prev["adopt_failed"]; have[iface] = inst
-                res.setdefault("await", []).append(iface); continue
             provisioned = os.path.exists(_wdtt_keyfile(iface))
-            if not prev and inst.pop("adopt_foreign", None):
-                aerr = _wdtt_adopt_seed(inst)
-                if aerr:
-                    inst["await_restore"] = True; inst["adopt_failed"] = aerr[:200]
-                    inst.pop("_restore_wg_keys", None); have[iface] = inst
-                    res["errors"].append(iface + ": " + aerr)
-                    res.setdefault("await", []).append(iface)
-                    continue
-                pw = (inst.get("password") or "").strip() or pw
-                _wdtt_serve_adopted(inst)
-                provisioned = os.path.exists(_wdtt_keyfile(iface))
-            if not _pw_seen and not inst.get("adopt_users"):
-                _pre = _wdtt_adopted_users(_wdtt_dir(iface))
-                if _pre:
-                    inst["adopt_users"] = _pre
-                    inst["adopt_users_at"] = int(time.time())
-                    _wdtt_serve_adopted(inst)
             if unit_missing and not provisioned:
                 ident = _wdtt_unseal_identity(sealed_id) if sealed_id else None
                 if ident:
@@ -15760,8 +14422,6 @@ def reconcile_wdtt(want, remove=None):
                 if _fw is not None or not _csqtt_scan_ok():
                     if _fw is None:
                         _e = "the process scan did not complete, so this server is not installed on %s yet" % iface
-                    elif (req or {}).get("adopt_foreign"):
-                        _e = "the server being taken over is still running (pid %d) — stop it, and what restarts it, and the take-over completes" % _fw
                     else:
                         _e = ("another WDTT server, not this panel's, is running on %s (pid %d), so this one is not "
                               "installed over it. Stop that server, or remove this one." % (iface, _fw))
@@ -15828,41 +14488,8 @@ def reconcile_wdtt(want, remove=None):
         except Exception as e:
             res["errors"].append(iface + ": " + str(e))
     if not _wdtt_save(have):
-        res["errors"].append("couldn't write the WDTT record (" + WDTT_RECORD + ") — adoption/hold state may not survive a restart")
+        res["errors"].append("couldn't write the WDTT record (" + WDTT_RECORD + ") — state may not survive a restart")
     return res
-
-def _wdtt_adopted_users(cfgdir):
-    out = {}
-    dbp = os.path.join(cfgdir, "panel.db")
-    if os.path.isfile(dbp):
-        with contextlib.suppress(Exception):
-            import sqlite3
-            c = sqlite3.connect(dbp, timeout=5)
-            try:
-                for pw, vkh, exp, deact, comment in c.execute(
-                        "SELECT password, vk_hash, expires_at, is_deactivated, comment FROM wdtt_users"):
-                    if pw:
-                        out[pw] = {"vk_hash": (vkh or "").strip(), "expires_at": int(exp or 0),
-                                   "is_deactivated": bool(deact), "comment": (comment or "").strip()[:80]}
-            finally:
-                c.close()
-    pj = os.path.join(cfgdir, "passwords.json")
-    if os.path.isfile(pj):
-        with contextlib.suppress(Exception):
-            with open(pj) as f:
-                raw = json.load(f)
-            src = raw.get("passwords") if isinstance(raw, dict) and isinstance(raw.get("passwords"), dict) else raw
-            if isinstance(src, dict):
-                for pw, meta in src.items():
-                    if not pw or pw in out:
-                        continue
-                    meta = meta if isinstance(meta, dict) else {}
-                    out[pw] = {"vk_hash": str(meta.get("vk_hash") or "").strip(),
-                               "expires_at": int(meta.get("expires_at") or 0),
-                               "is_deactivated": bool(meta.get("is_deactivated")),
-                               "comment": str(meta.get("name") or meta.get("comment") or "").strip()[:80]}
-    return out
-
 
 def _wdtt_read_paneldb(cfgdir):
     pwds, devs = {}, {}
@@ -15873,10 +14500,10 @@ def _wdtt_read_paneldb(cfgdir):
         import sqlite3
         c = sqlite3.connect(dbp, timeout=2)
         try:
-            for pw, did, deact, exp, down, up in c.execute(
-                    "SELECT password, device_id, is_deactivated, expires_at, down_bytes, up_bytes FROM wdtt_users"):
+            for pw, did, deact, down, up in c.execute(
+                    "SELECT password, device_id, is_deactivated, down_bytes, up_bytes FROM wdtt_users"):
                 pwds[pw] = {"device_id": did or "", "up_bytes": up or 0, "down_bytes": down or 0,
-                            "is_deactivated": bool(deact), "expires_at": exp or 0}
+                            "is_deactivated": bool(deact)}
             for did, ip, pub in c.execute("SELECT device_id, ip, pub_key FROM wdtt_devices"):
                 devs[did] = {"ip": ip or "", "pub_key": pub or ""}
         finally:
@@ -15967,8 +14594,7 @@ def wdtt_snapshot():
             for pw, e in (pj.get("passwords") or {}).items():
                 e = e or {}
                 pwds[pw] = {"device_id": e.get("device_id", ""), "up_bytes": e.get("up_bytes", 0),
-                            "down_bytes": e.get("down_bytes", 0), "is_deactivated": bool(e.get("is_deactivated")),
-                            "expires_at": e.get("expires_at", 0)}
+                            "down_bytes": e.get("down_bytes", 0), "is_deactivated": bool(e.get("is_deactivated"))}
             devs = {}
             for did, d in (pj.get("devices") or {}).items():
                 d = d or {}
@@ -16015,7 +14641,6 @@ def wdtt_snapshot():
                     "dns": _wdtt_applied_dns(iface, inst), "dns_unsupported": _wdtt_takes_dns(_wdtt_fork(inst)) is False,
                     **({"dns_server": _own} if _own is not OWN_DNS_UNKNOWN else {}),
                     "rx_bytes": _rxb, "tx_bytes": _txb, "rx_speed": _rxs, "tx_speed": _txs,
-                    "adopt_users": inst.get("adopt_users") or {},
                     "passwords": pwds, "devices": devs})
     return out
 
@@ -16108,7 +14733,7 @@ def _csqtt_desired_body(inst):
     out = []
     for pw, e in (inst.get("passwords") or {}).items():
         e = e or {}
-        rec = {"password": pw, "expires_at": int(e.get("expires_at") or 0),
+        rec = {"password": pw, "expires_at": 0,
                "vk_hash": str(e.get("vk_hash") or ""), "name": str(e.get("name") or ""),
                "is_deactivated": bool(e.get("is_deactivated"))}
         ix = e.get("ar")
@@ -16632,9 +15257,6 @@ def _csqtt_remove(iface):
     _wdtt_del_iptables_comment("filter", "FORWARD", "swg-egress-acl:" + iface)
     _wdtt_del_iptables_comment("mangle", "FORWARD", "swg-egress-mss:" + iface)
 
-_CSQTT_STOREPROBE = {}
-_CSQTT_STORE_MAX = 8 << 20
-_CSQTT_DB_FILES = ("csqtt.db", "csqtt.db-wal", "csqtt.db-shm")
 
 def _csqtt_read_store(cfgdir, line=""):
     jp = os.path.join(cfgdir, "passwords.json")
@@ -16653,141 +15275,24 @@ def _csqtt_read_store(cfgdir, line=""):
         try:
             cols = {r[1] for r in c.execute("PRAGMA table_info(passwords)")}
             if "device_id" in cols and ((line or "2.1") == "2.1" or "ip" not in cols):
-                for pw, did, exp, up, dn, deact, name, vkh in c.execute(
-                        "SELECT password, device_id, expires_at, up_bytes, down_bytes, is_deactivated, name, vk_hash "
+                for pw, did, up, dn, deact, name, vkh in c.execute(
+                        "SELECT password, device_id,  down_bytes, is_deactivated, name, vk_hash "
                         "FROM passwords"):
-                    pwds[str(pw)] = {"device_id": did or "", "expires_at": exp or 0,
+                    pwds[str(pw)] = {"device_id": did or "",
                                      "up_bytes": up or 0, "down_bytes": dn or 0,
                                      "is_deactivated": bool(deact), "name": name or "", "vk_hash": vkh or ""}
                 for did, ip, pub in c.execute("SELECT device_id, ip, pub_key FROM devices"):
                     devs[str(did)] = {"ip": ip or "", "pub_key": pub or ""}
             else:
-                for pw, ip, exp, up, dn, deact, name, vkh in c.execute(
-                        "SELECT password, ip, expires_at, up_bytes, down_bytes, is_deactivated, name, vk_hash "
+                for pw, ip, up, dn, deact, name, vkh in c.execute(
+                        "SELECT password, ip,  down_bytes, is_deactivated, name, vk_hash "
                         "FROM passwords"):
-                    pwds[str(pw)] = {"device_id": "", "ip": ip or "", "expires_at": exp or 0,
+                    pwds[str(pw)] = {"device_id": "", "ip": ip or "",
                                      "up_bytes": up or 0, "down_bytes": dn or 0,
                                      "is_deactivated": bool(deact), "name": name or "", "vk_hash": vkh or ""}
         finally:
             c.close()
     return {"passwords": pwds, "devices": devs}
-
-
-def _csqtt_users_from_text(raw):
-    out = {}
-    with contextlib.suppress(Exception):
-        data = json.loads(raw)
-        src = data.get("passwords") if isinstance(data, dict) and isinstance(data.get("passwords"), dict) else data
-        if isinstance(src, dict):
-            for pw, e in src.items():
-                if not pw or not isinstance(e, dict):
-                    continue
-                out[str(pw)] = {"vk_hash": str(e.get("vk_hash") or "").strip(),
-                                "expires_at": int(e.get("expires_at") or 0),
-                                "is_deactivated": bool(e.get("is_deactivated")),
-                                "comment": str(e.get("name") or e.get("comment") or "").strip()[:80]}
-    return out
-
-
-def _csqtt_users_from_db(dbpath):
-    stage = None
-    try:
-        stage = tempfile.mkdtemp(prefix="csqttdb-")
-        for _f in _CSQTT_DB_FILES:
-            _src = os.path.join(os.path.dirname(dbpath), _f)
-            if os.path.isfile(_src):
-                shutil.copy2(_src, os.path.join(stage, _f))
-        return _csqtt_db_users(stage)
-    except Exception:
-        return {}, False
-    finally:
-        if stage:
-            shutil.rmtree(stage, ignore_errors=True)
-
-
-def _csqtt_users_from_db_tar(blob):
-    stage = None
-    try:
-        stage = tempfile.mkdtemp(prefix="csqttdb-")
-        with tarfile.open(fileobj=io.BytesIO(blob), mode="r:") as tf:
-            for m in tf.getmembers():
-                if m.isfile() and os.path.basename(m.name) in _CSQTT_DB_FILES:
-                    m.name = os.path.basename(m.name)
-                    tf.extract(m, stage)
-        return _csqtt_db_users(stage)
-    except Exception:
-        return {}, False
-    finally:
-        if stage:
-            shutil.rmtree(stage, ignore_errors=True)
-
-
-def _csqtt_db_users(stage):
-    dbp = os.path.join(stage, "csqtt.db")
-    if not os.path.isfile(dbp):
-        return {}, False
-    try:
-        import sqlite3
-        c = sqlite3.connect(dbp, timeout=10)
-        try:
-            out = {}
-            for pw, vkh, exp, deact, name in c.execute(
-                    "SELECT password, vk_hash, expires_at, is_deactivated, name FROM passwords"):
-                if not pw:
-                    continue
-                out[str(pw)] = {"vk_hash": str(vkh or "").strip(), "expires_at": int(exp or 0),
-                                "is_deactivated": bool(deact), "comment": str(name or "").strip()[:80]}
-            return out, True
-        finally:
-            c.close()
-    except Exception:
-        return {}, False
-
-
-def _csqtt_store_probe(cfgdir, fresh=False, pid=None):
-    if not cfgdir:
-        return {}, False
-    now = time.time()
-    _root = _proc_cfg_root(pid)
-    _ck = (_root, cfgdir)
-    hit = _CSQTT_STOREPROBE.get(_ck)
-    if hit and not fresh and now - hit[0] < _WDTT_HOST_TTL:
-        return hit[1]
-    res = ({}, False)
-    _cfgr = _root + cfgdir
-    pj = os.path.join(_cfgr, "passwords.json")
-    _dbp = os.path.join(_cfgr, "csqtt.db")
-    if os.path.isfile(pj):
-        with contextlib.suppress(Exception):
-            with open(pj) as f:
-                res = (_csqtt_users_from_text(f.read()), True)
-    elif os.path.isfile(_dbp):
-        res = _csqtt_users_from_db(_dbp)
-    elif NODE_KIND == "docker":
-        with contextlib.suppress(Exception):
-            _pfxsh = ("R=''; P=%s; [ -n \"$P\" ] && [ -e /proc/$P/ns/mnt ] && "
-                      "[ \"$(readlink /proc/$P/ns/mnt)\" != \"$(readlink /proc/1/ns/mnt)\" ] && R=/proc/$P/root; "
-                      % shlex.quote(str(int(pid)) if pid else ""))
-            _cmd = _pfxsh + ("cd \"$R\"%s 2>/dev/null || exit 0; "
-                    "if [ -f passwords.json ]; then printf 'F:'; "
-                    "[ $(stat -c %%s passwords.json) -le %d ] && base64 -w0 < passwords.json; "
-                    "elif [ -f csqtt.db ]; then printf 'D:'; "
-                    "[ $(stat -c %%s csqtt.db) -le %d ] && { for f in csqtt.db csqtt.db-wal csqtt.db-shm; do "
-                    "[ -f \"$f\" ] && echo \"$f\"; done | tar -cf - -T - 2>/dev/null | base64 -w0; }; fi; :"
-                    % (shlex.quote(cfgdir), _CSQTT_STORE_MAX, _CSQTT_STORE_MAX))
-            raw = (host_sh(_cmd, timeout=40).stdout or "").strip()
-            if raw.startswith("F:"):
-                b64 = raw[2:].strip()
-                res = ((_csqtt_users_from_text(base64.b64decode(b64).decode("utf-8", "replace")) if b64 else {}), True)
-            elif raw.startswith("D:"):
-                b64 = raw[2:].strip()
-                res = (_csqtt_users_from_db_tar(base64.b64decode(b64)) if b64 else ({}, True))
-    _CSQTT_STOREPROBE[_ck] = (now, res)
-    return res
-
-
-def _csqtt_adopted_users(cfgdir, fresh=False, pid=None):
-    return _csqtt_store_probe(cfgdir, fresh, pid)[0]
 
 
 def _csqtt_iface_of(fl):
@@ -16797,74 +15302,6 @@ def _csqtt_iface_of(fl):
 def _csqtt_foreign_pid(iface, procs=None):
     return next((p for p, f in (_csqtt_procs() if procs is None else procs)
                  if _csqtt_iface_of(f) == iface and not (f.get("config-dir") or "").startswith(CSQTT_ROOT + "/")), None)
-
-
-def _csqtt_parent_of(pid):
-    pp, parts = "", []
-    if NODE_KIND == "docker":
-        out = (host_sh("p=$(sed 's/.*) //' /proc/%d/stat 2>/dev/null | cut -d' ' -f2); [ -n \"$p\" ] && echo \"$p\" && "
-                       "base64 -w0 < /proc/$p/cmdline 2>/dev/null | head -c 8192; :" % int(pid), timeout=20).stdout or "")
-        pp, _, rest = out.partition("\n")
-        rest = rest.strip(); rest = rest[:len(rest) // 4 * 4]
-        with contextlib.suppress(Exception):
-            parts = [x.decode(errors="replace") for x in base64.b64decode(rest).split(b"\0")[:2]]
-        pp = pp.strip()
-    else:
-        with contextlib.suppress(Exception):
-            with open("/proc/%d/stat" % int(pid)) as f:
-                pp = f.read().rsplit(")", 1)[1].split()[1]
-            with open("/proc/%s/cmdline" % pp, "rb") as f:
-                parts = [x.decode(errors="replace") for x in f.read().split(b"\0")[:2]]
-    if not pp.isdigit() or int(pp) <= 1:
-        return ""
-    shown = (parts[0] if parts and parts[0] else "?")
-    if len(parts) > 1 and parts[1]:
-        _p1 = parts[1]
-        shown += " " + _p1 if not (_p1.startswith("-") or "=" in _p1 or any(c.isspace() for c in _p1)) else " …"
-    return "pid %s `%s`" % (pp, shown[:120])
-
-
-def _csqtt_came_back(pid):
-    _by = _csqtt_parent_of(pid)
-    return "came back right after it was stopped (pid %d)%s — stop what restarts it" % (pid, ", restarted by " + _by if _by else "")
-
-
-_CSQTT_VER_RE = re.compile(rb'aria-label="v(\d{1,3}\.\d{1,3}[0-9A-Za-z.+~-]{0,24}) by amurcanov"')
-_CSQTT_EXEVER = {}
-_CSQTT_EXEVER_TTL = 600
-_CSQTT_EXEVER_FAIL_TTL = 60
-
-def _csqtt_exe_version(pid):
-    now = time.time()
-    hit = _CSQTT_EXEVER.get(pid)
-    if hit and now - hit[0] < (_CSQTT_EXEVER_TTL if hit[1] is not None else _CSQTT_EXEVER_FAIL_TTL):
-        return hit[1]
-    for k in [k for k, v in _CSQTT_EXEVER.items() if now - v[0] >= _CSQTT_EXEVER_TTL]:
-        _CSQTT_EXEVER.pop(k, None)
-    ver = None
-    with contextlib.suppress(Exception):
-        if NODE_KIND == "docker":
-            r = host_sh("grep -a -o -m1 -E 'aria-label=\"v[0-9][^\"]{0,30} by amurcanov\"' /proc/%d/exe "
-                        "2>/dev/null | head -c 200; [ -r /proc/%d/exe ] && echo CSQTT_EXE_READ; :" % (int(pid), int(pid)),
-                        timeout=20)
-            out = (r.stdout or "").encode()
-            if r.returncode == 0 and b"CSQTT_EXE_READ" in out:
-                m = _CSQTT_VER_RE.search(out)
-                ver = m.group(1).decode() if m else ""
-        else:
-            with open("/proc/%d/exe" % int(pid), "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-                m = _CSQTT_VER_RE.search(mm)
-                ver = m.group(1).decode() if m else ""
-    _CSQTT_EXEVER[pid] = (now, ver)
-    return ver
-
-
-def _csqtt_line_of_version(ver):
-    m = re.match(r"(\d+)\.(\d+)", ver or "")
-    if not m:
-        return ""
-    mm = "%d.%d" % (int(m.group(1)), int(m.group(2)))
-    return CSQTT_DEFAULT_LINE if mm in ("2.0", "2.1") else mm
 
 
 def _csqtt_procs():
@@ -16894,142 +15331,10 @@ def _csqtt_is_server(fl):
     return bool((fl.get("tun-addr") or "").strip() or "csqtt" in (fl.get("_exe") or "").lower())
 
 
-def csqtt_candidates():
-    mine = set(_csqtt_load().keys())
-    out = []
-    for pid, f in _csqtt_procs():
-        iface = _csqtt_iface_of(f)
-        cfg = (f.get("config-dir") or "").strip()
-        if iface in mine or not cfg:
-            continue
-        if cfg.startswith(CSQTT_ROOT + "/"):
-            continue
-        users, store_found = _csqtt_store_probe(cfg, pid=pid)
-        ver = _csqtt_exe_version(pid)
-        out.append({"iface": iface, "pid": pid, "config_dir": cfg,
-                    "version": ver or "", "line": _csqtt_line_of_version(ver),
-                    "container": _proc_container(pid),
-                    "store_found": store_found,
-                    "listen": (f.get("listen") or "").strip(),
-                    "tun_addr": (f.get("tun-addr") or "").strip() or CSQTT_DEFAULT_TUNADDR,
-                    "max_passwords": (f.get("max-passwords") or "").strip(),
-                    "users": [{"comment": v["comment"], "vk_hash": v["vk_hash"], "expires_at": v["expires_at"],
-                               "is_deactivated": v["is_deactivated"]} for v in users.values()],
-                    "adoptable": True})
-    return out
-
-
 def _csqtt_scan_ok():
     return True if NODE_KIND != "docker" else bool(_WDTT_HOSTPROC.get("ok", True))
 
 
-def _csqtt_container_of(pid):
-    txt = ""
-    if NODE_KIND == "docker":
-        txt = (host_sh("cat /proc/%d/cgroup 2>/dev/null; :" % int(pid), timeout=20).stdout or "")
-    else:
-        with contextlib.suppress(Exception):
-            with open("/proc/%d/cgroup" % int(pid)) as f:
-                txt = f.read()
-    m = re.search(r"(docker|libpod)[-/]([0-9a-f]{12,64})", txt)
-    return (m.group(2), "podman" if m.group(1) == "libpod" else "docker") if m else ("", "")
-
-
-def _ctr_stop_foreign(cid, runtime):
-    if NODE_KIND == "docker":
-        r = host_sh("docker stop " + shlex.quote(cid), timeout=60)
-    else:
-        cli = _ctr_cli_named(runtime) or (_ctr_cli_named("docker") if runtime == "podman" else None)
-        if not cli:
-            return False, "no %s command on this node to stop container %s with" % (runtime or "docker", cid[:12])
-        r = run([cli, "stop", cid], timeout=60)
-    if r.returncode == 0:
-        return True, ""
-    tail = [ln for ln in ((r.stderr or "") + "\n" + (r.stdout or "")).splitlines() if ln.strip()]
-    return False, ("%s stop %s failed: %s" % (runtime or "docker", cid[:12], tail[-1].strip() if tail else "exit %d" % r.returncode))[:240]
-
-
-def _csqtt_stop_foreign(iface, cfgdir):
-    _host = (NODE_KIND == "docker")
-
-    def _foreign(after_stop=False):
-        _wdtt_hostproc_flush(force=after_stop)
-        return next(((p, f) for p, f in _csqtt_procs() if _it(f)), None)
-
-    def _it(f):
-        return (_csqtt_is_server(f) and _csqtt_iface_of(f) == iface
-                and (not cfgdir or os.path.normpath((f.get("config-dir") or "").strip() or "/") == os.path.normpath(cfgdir))
-                and not (f.get("config-dir") or "").startswith(CSQTT_ROOT + "/"))
-
-    def _drop_tun():
-        with contextlib.suppress(Exception):
-            run(["ip", "link", "delete", "dev", iface])
-        if _host:
-            host_sh("ip link delete dev %s 2>/dev/null; :" % shlex.quote(iface))
-
-    hit = _foreign()
-    if not hit:
-        return (True, "") if _csqtt_scan_ok() else (False, "the process scan did not complete")
-    pid, _f = hit
-    unit = _wdtt_unit_of_pid(pid, _host)
-    if unit and not unit.startswith(("swg-csqtt-", "swg-wdtt-")):
-        host_sh(sc_disable_now(unit) + " >/dev/null 2>&1; :")
-    cid, runtime = _csqtt_container_of(pid)
-    if cid:
-        ok, why = _ctr_stop_foreign(cid, runtime)
-        if not _foreign(after_stop=True) and _csqtt_scan_ok():
-            _drop_tun()
-            return True, ""
-        return False, why or ("container %s was stopped but the server is still running" % cid[:12])
-    if NODE_KIND == "docker":
-        _fl, _st = _host_proc_ident(pid)
-        _sent = bool(_st and _it(_fl))
-        if _sent:
-            host_sh(_HOST_STARTTIME_SH + "s(){ [ \"$(st %d)\" = %s ]; }; "
-                    "s || exit 0; kill -TERM %d 2>/dev/null; i=0; while [ $i -lt 30 ] && s; do sleep 0.15; i=$((i+1)); done; "
-                    "s && kill -KILL %d 2>/dev/null; :" % (pid, shlex.quote(_st), pid, pid))
-    else:
-        _sent = True
-        with contextlib.suppress(Exception):
-            os.kill(pid, signal.SIGTERM)
-            for _ in range(30):
-                if not _pid_alive(pid):
-                    break
-                time.sleep(0.15)
-            else:
-                os.kill(pid, signal.SIGKILL)
-                for _ in range(10):
-                    if not _pid_alive(pid):
-                        break
-                    time.sleep(0.1)
-    back = _foreign(after_stop=True)
-    if not (not back and _csqtt_scan_ok()):
-        if back and back[0] != pid:
-            return False, "it " + _csqtt_came_back(back[0])
-        if not _sent:
-            return False, "the host could not be read to confirm pid %d is still that server before stopping it — tried again" % pid
-        return False, "it is still running after TERM and KILL"
-    _drop_tun()
-    return True, ""
-
-
-def _csqtt_serve_adopted(inst):
-    au = inst.get("adopt_users") or {}
-    if not au:
-        return
-    pwds = dict(inst.get("passwords") or {})
-    for pw, m in au.items():
-        if pw in pwds:
-            continue
-        m = m if isinstance(m, dict) else {}
-        pwds[pw] = {"expires_at": int(m.get("expires_at") or 0), "vk_hash": str(m.get("vk_hash") or ""),
-                    "is_deactivated": bool(m.get("is_deactivated"))}
-    inst["passwords"] = pwds
-
-
-_CSQTT_ADOPT_LATER = {}
-CSQTT_ADOPT_RETRY_S = 60
-CSQTT_ADOPT_LOOK_S = 15
 _CSQTT_FETCH_LATER = {}
 CSQTT_FETCH_RETRY_S = 300
 
@@ -17043,8 +15348,6 @@ def reconcile_csqtt(want, remove=None):
         res["errors"].append("panel sent a malformed csqtt set (%s) — ignored" % type(want).__name__)
         return res
     have = _csqtt_load()
-    for _i in [i for i in _CSQTT_ADOPT_LATER if i not in want]:
-        _CSQTT_ADOPT_LATER.pop(_i, None)
     if not want and not have:
         return res
     _sw_pass = [False]
@@ -17081,56 +15384,9 @@ def reconcile_csqtt(want, remove=None):
             inst["password"] = (prev.get("password") or inst.get("password") or "").strip() or _gen_csqtt_password()
             inst["web_pass"] = (prev.get("web_pass") or _gen_csqtt_password() + _gen_csqtt_password())
             inst["web_port"] = prev.get("web_port") or _csqtt_webport(inst.get("listen") or "")
-            _pw_seen = bool(prev.get("pw_seen") or (inst.get("passwords") or {}))
+            _pw_seen = bool(prev.get("pw_seen") or inst.get("passwords"))
             if _pw_seen:
                 inst["pw_seen"] = True
-            if not _pw_seen and not inst.get("adopt_users"):
-                _pre = _csqtt_adopted_users(_csqtt_dir(iface))
-                if _pre:
-                    inst["adopt_users"] = _pre
-                    inst["adopt_users_at"] = int(time.time())
-                    _au = _pre
-            _au = prev.get("adopt_users") or {}
-            if _au:
-                _have = set((inst.get("passwords") or {}).keys())
-                if (_have and not (set(_au) - _have)) or int(time.time()) - int(prev.get("adopt_users_at") or 0) > 900:
-                    _au = {}
-            if _au:
-                inst["adopt_users"] = _au
-                inst["adopt_users_at"] = prev.get("adopt_users_at") or int(time.time())
-            _later = _CSQTT_ADOPT_LATER.get(iface)
-            if _later and (not inst.get("adopt_foreign") or _csqtt_present(iface)):
-                _CSQTT_ADOPT_LATER.pop(iface, None); _later = None
-            _waiting = bool(_later) and time.monotonic() < _later[0]
-            if _waiting and NODE_KIND == "docker":
-                _wdtt_hostproc_fresh(CSQTT_ADOPT_LOOK_S)
-            if _waiting and (_csqtt_foreign_pid(iface) is not None or not _csqtt_scan_ok()):
-                res["errors"].append(iface + ": " + _later[1])
-                if prev:
-                    have[iface] = inst
-                continue
-            if inst.get("adopt_foreign") and not _csqtt_present(iface):
-                _src = (inst.get("adopt_config_dir") or "").strip()
-                if not _src:
-                    _src = next((c["config_dir"] for c in csqtt_candidates() if c["iface"] == iface), "")
-                _spid = next((pid for pid, f in _csqtt_procs()
-                              if _csqtt_iface_of(f) == iface
-                              and (not _src or os.path.normpath((f.get("config-dir") or "").strip() or "/") == os.path.normpath(_src))), None)
-                _pre = _csqtt_adopted_users(_src, fresh=True, pid=_spid) if _src else {}
-                if _pre:
-                    inst["adopt_users"] = _pre
-                    inst["adopt_users_at"] = int(time.time())
-                    _au = _pre
-                _stopped, _why = _csqtt_stop_foreign(iface, _src)
-                if not _stopped:
-                    _e = "couldn't stop the existing csqtt server (" + _why + ")"
-                    _CSQTT_ADOPT_LATER[iface] = (time.monotonic() + CSQTT_ADOPT_RETRY_S, _e)
-                    res["errors"].append(iface + ": " + _e)
-                    if prev:
-                        have[iface] = inst
-                    continue
-            if _au:
-                _csqtt_serve_adopted(inst)
             if not _csqtt_present(iface):
                 if _cut:
                     _csqtt_stop_one(iface)
@@ -17147,20 +15403,14 @@ def reconcile_csqtt(want, remove=None):
                     if _fp or not _csqtt_scan_ok():
                         if not _fp:
                             _e = "the process scan did not complete, so this server is not installed on %s yet" % iface
-                        elif inst.get("adopt_foreign"):
-                            _e = "the server being taken over " + _csqtt_came_back(_fp)
-                            _CSQTT_ADOPT_LATER[iface] = (time.monotonic() + CSQTT_ADOPT_RETRY_S, _e)
                         else:
                             _e = ("another csqtt server, not this panel's, is running on %s (pid %d), so this one is not "
-                                  "installed over it. Stop that server, or remove this one and take that server over from "
-                                  "the node page." % (iface, _fp))
+                                  "installed over it. Stop that server or choose another interface." % (iface, _fp))
                         res["errors"].append(iface + ": " + _e)
                         if prev:
                             have[iface] = inst
                         continue
                 err = _csqtt_install(inst)
-                if not err:
-                    _CSQTT_ADOPT_LATER.pop(iface, None)
                 if not err and _cut:
                     _csqtt_cut_clear(iface)
                 if err:
@@ -17273,7 +15523,7 @@ def csqtt_snapshot():
             _rs, _ts = _pw_speed(last, pw, up, dn, _nowt)
             online = _raw_online("csqtt:" + iface, pw, _rs, _ts, _nowt, _alive)
             pwds[pw] = {"device_id": e.get("device_id", ""), "up_bytes": up, "down_bytes": dn,
-                        "is_deactivated": bool(e.get("is_deactivated")), "expires_at": e.get("expires_at", 0),
+                        "is_deactivated": bool(e.get("is_deactivated")),
                         "ip": e.get("ip") or _dev.get("ip", ""), "online": online, "rx_speed": _rs, "tx_speed": _ts}
         _rxb, _txb, _rxs, _txs = _wdtt_iface_traffic(iface)
         _own = _turn_own_dns(_csqtt_dir(iface))
@@ -17291,7 +15541,6 @@ def csqtt_snapshot():
                     "dns": _csqtt_applied_dns(iface, inst),
                     **({"dns_server": _own} if _own is not OWN_DNS_UNKNOWN else {}),
                     "rx_bytes": _rxb, "tx_bytes": _txb, "rx_speed": _rxs, "tx_speed": _txs,
-                    "adopt_users": inst.get("adopt_users") or {},
                     "passwords": pwds, "devices": devs})
     return out
 
@@ -17512,7 +15761,7 @@ def main():
                 if _n_listen:
                     with contextlib.suppress(Exception):
                         _turn_sock_bufs(_n_listen)
-                tp = apply_turn(reply.get("turn"), reply.get("turn_onboard"))
+                tp = apply_turn(reply.get("turn"))
                 with contextlib.suppress(Exception):
                     heal_turn_binds()
                 with contextlib.suppress(Exception):
@@ -17529,10 +15778,7 @@ def main():
                     reconcile_dev_reach(node_cfg, reply.get("dev_reach"), _dar)
                 except Exception as e:
                     _dar["errors"].append("device access: " + str(e)[:160])
-                _shr = {"changed": 0, "errors": []}
-                r = reconcile(node_cfg, reconcile_net_share(node_cfg, net_filter_desired(node_cfg, reply["desired"]),
-                                                            reply.get("net_share"), _shr),
-                              agent, sudo, reply.get("remove"))
+                r = reconcile(node_cfg, reply["desired"], agent, sudo, reply.get("remove"))
                 _xds = {str((x or {}).get("id")): (x or {}).get("endpoint") for x in _EXITS["list"]}
                 reconcile_dial_src(reply["desired"], r,
                                    extra=[{"endpoint": _xds.get(str(e.get("id"))) or "",
@@ -17550,8 +15796,7 @@ def main():
                 _route_sig = json.dumps([reply.get("desired_ifaces"), reply.get("cascade"),
                                          reply.get("smart"), _def_egress,
                                          _devexit_sig(reply.get("cascade")),
-                                         _NET["sig"], sorted(_NET["refused"]),
-                                         reply.get("lan_share"), _SHARE["sig"],
+                                         reply.get("lan_share"),
                                          _EXITS.get("dialin"),
                                          log_level() >= LOG_INFO],
                                         sort_keys=True, default=str)
@@ -17564,15 +15809,11 @@ def main():
                                     else "timer" if (time.time() - last_route_t) >= ROUTING_RECONCILE_EVERY_S else "devs_moved")
                     eg = reconcile_egress(node_cfg, reply.get("desired_ifaces") or {}, _def_egress)
                     nr = {"changed": 0, "errors": []}
-                    _nets = reconcile_net_routes(node_cfg, reply["desired"], nr)
-                    reconcile_net_snat(node_cfg, _nets, nr)
                     reconcile_lan_block(reply.get("lan_share") is False, nr, owned=_own_tunnel_devs(node_cfg),
                                         mesh=_relay_links(node_cfg))
-                    net_share_verify(nr)
                     dev_reach_verify(nr)
                     cas = reconcile_cascade(node_cfg, reply.get("cascade"), reply.get("smart"), _def_egress,
-                                            panel_conn=panel, panel_cfg=reply.get("panel"),
-                                            nets=_nets)
+                                            panel_conn=panel, panel_cfg=reply.get("panel"))
                     with contextlib.suppress(Exception):
                         reconcile_inet_chain(node_cfg, {e.get("dev") for e in
                                                         ((reply.get("cascade") or {}).get("devexit") or [])})
@@ -17582,7 +15823,6 @@ def main():
                 else:
                     eg = {"changed": 0, "errors": []}; cas = {"changed": 0, "errors": []}
                     nr = {"changed": 0, "errors": []}
-                net_probe_take(node_cfg, reply.get("net_probe"), reply["desired"], online_max)
                 for blk in (cr, dl, rs, sp, sa, ik):
                     for e in blk["errors"]:
                         k, _, m = e.partition(": ")
@@ -17599,8 +15839,7 @@ def main():
                 active = (set(reply.get("create") or {})
                           | set(reply.get("delete") or []) | set(reply.get("restart") or []) | set(reply.get("turn") or {})
                           | set(reply.get("iface_stop") or []) | set(reply.get("iface_start") or [])
-                          | set(reply.get("iface_key") or {})
-                          | set(reply.get("turn_onboard") or []))
+                          | set(reply.get("iface_key") or {}))
                 active |= _ri_failed
                 for k in list(NODE_ERRORS):
                     if k not in active:
@@ -17609,7 +15848,7 @@ def main():
                     log(LOG_ERR, "egress: " + e)
                 for e in nr["errors"]:
                     log(LOG_ERR, "networks: " + e)
-                for e in _shr["errors"] + _dar["errors"]:
+                for e in _dar["errors"]:
                     log(LOG_ERR, e)
                 for e in xr["errors"]:
                     log(LOG_ERR, "exit: " + e)

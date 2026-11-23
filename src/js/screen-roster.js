@@ -1,23 +1,19 @@
 import { ago, seen, isMobile } from "./util.js";
 import { T, Tsplit, Trich, plural, srvVerb, srvDetail, srvName } from "./i18n.js";
-import { Store, api, bus, useStore } from "./store.js";
+import { Store, api, useStore } from "./store.js";
 import { ifaceIsAll, targetType } from "./model.js";
+import { Dropdown, Ic, RowError, SearchBox, Sheet, StoreOffBanner, Tag, closeModal,
+  lifecycleIcon, openConfirm, openModal, rateCell, rowDouble, rowNoSelect, rowSingle, secTitle, tgt3 } from "./ui.js";
 import {
-  CapList, Dropdown, Ic, Popover, RowError, SearchBox, Sheet, StoreOffBanner, Tag, closeModal,
-  lifecycleIcon, openConfirm, openModal, rateCell, rowDouble, rowNoSelect, rowSingle, secTitle, tgt3,
-} from "./ui.js";
-import {
-  EV_ACTIONS, EV_ITEMS, evItemLabel, evActionLabel, USER_DEFDIR, GROUP_DEFDIR, activityView, evDecorate,
+  EV_ACTIONS, EV_ITEMS, evItemLabel, evActionLabel, USER_DEFDIR, activityView, evDecorate,
   ifaceFilterOptions, nodeFilterOptions, pageScroll, pageSizeOpts, peerMatchesQ, peerInRosterStatus,
-  peerStatusFilters, searchMatch, sortColToggle, sortUsers, unassignedView, userIdentityMatchesQ,
-  userMatchesQ, userOnNodeIface, userPeerViews, userStatTag, userStats, usersView, groupShares,
-  shareDeviceName, groupMemberViews, groupStats, sortGroups, trafficRangeLabel,
+  peerStatusFilters, sortColToggle, sortUsers, unassignedView, userIdentityMatchesQ,
+  userMatchesQ, userOnNodeIface, userPeerViews, userStatTag, userStats, usersView,
 } from "./views.js";
-import { openUserConfigs, openUserEdit, openGroup, openCreateGroup, confirmDeleteGroup, UserCounts } from "./peer-ui.js";
-import { openAddPeers, openCreateUser, openUserView, openGroupView } from "./sheets-crud.js";
-import { TrafficRail, TrafficCell, UserTrafficCell } from "./traffic-ui.js";
-import { trafficTotals } from "./traffic.js";
-import { EmbeddedPeers, UsersHeader, filterBtn, sortField, USER_SORT, GROUP_SORT } from "./grids.js";
+import { openUserConfigs, openUserEdit, UserCounts } from "./peer-ui.js";
+import { openAddPeers, openCreateUser, openUserView } from "./sheets-crud.js";
+import { TrafficRail, UserTrafficCell } from "./traffic-ui.js";
+import { EmbeddedPeers, UsersHeader, filterBtn, sortField, USER_SORT } from "./grids.js";
 import { h, Fragment } from "preact";
 import { useState, useEffect } from "preact/hooks";
 import htm from "htm";
@@ -168,7 +164,7 @@ export function UserRow({ user, onlineOnly, q, nested }) {
     <div class="urow-head" title=${T("Double-click for QR / configs")} onMouseDown=${rowNoSelect} onClick=${e => rowSingle(e, toggle)} onDblClick=${e => rowDouble(e, () => openUserConfigs(user))}>
       <span class="u-exp"><${Ic} i="arrow"/></span>
       ${userStatTag(user)}
-      <span class="u-name">${lifecycleIcon(user, user.peerCount ? user.status : "empty")}<span class="un">${user.name}</span>${user.tag ? html`<span class="tagchip">${user.tag}</span>` : null}${user.note ? html`<span class="u-note" title=${user.note}>${user.note}</span>` : null}<${UserCounts} user=${user}/></span>
+      <span class="u-name">${lifecycleIcon(user, user.peerCount ? user.status : "empty")}<span class="un">${user.name}</span><${UserCounts} user=${user}/></span>
       <span class="u-right">
         <span class="u-counts">${(() => {
           const onc = html`<span class=${"u-onc" + (user.onlineCount ? " on" : "")}>${T("{n} Online", { n: user.onlineCount })}</span>`;
@@ -199,87 +195,10 @@ export function UserRow({ user, onlineOnly, q, nested }) {
   </div>`;
 }
 
-function ModeIcons({ users, force }) {
-  const set = m => { usersView.mode = m; force(x => x + 1); };
-  const groupsMode = usersView.mode === "groups";
-  const tab = users ? { role: "tab", "aria-selected": groupsMode } : {};
-  return html`<div class="pmode pm-icons" role=${users ? "tablist" : null} aria-label=${users ? T("Users or groups") : null}>
-    ${users ? html`<button type="button" role="tab" aria-selected=${!groupsMode} class=${"pm-opt pm-ico pm-users" + (groupsMode ? "" : " on")}
-      title=${T("Users")} aria-label=${T("Users")} onClick=${() => set("users")}><${Ic} i="user"/></button>` : null}
-    <button type="button" ...${tab} class=${"pm-opt pm-ico pm-groups" + (groupsMode ? " on" : "")}
-      title=${T("Groups")} aria-label=${T("Groups")} onClick=${() => set("groups")}><${Ic} i="users"/></button>
-  </div>`;
-}
-
-function GroupsHeader({ sort, dir, onSort }) {
-  const arrow = c => sort === c ? (dir < 0 ? "↓ " : "↑ ") : "";
-  const th = (c, label, cls) => html`<span class=${"clk" + (cls ? " " + cls : "")} onClick=${() => onSort(c)}>${arrow(c)}${label}</span>`;
-  return html`<div class="uhead ghead">
-    <span></span>${th("name", T("col|Group"))}
-    <span class="u-right">${th("members", T("col|Members"), "uh-pc")}${th("peers", T("col|Peers"), "uh-gpeers")}${th("nodes", T("col|Nodes"), "uh-srv")}${th("nets", T("col|Networks"))}${th("rate", T("col|Rate") + " ↓↑", "uh-r uh-rate")}${th("rtotal", trafficRangeLabel() + " ↓↑", "uh-r")}<span></span></span>
-  </div>`;
-}
-
-function GroupRow({ g, st, q }) {
-  const [, force] = useState(0);
-  const searching = !!q;
-  const nameHit = searching && searchMatch(g.name, q);
-  const expanded = searching && !nameHit ? usersView.gexpanded[g.id] !== false : !!usersView.gexpanded[g.id];
-  const toggle = () => { usersView.gexpanded[g.id] = !expanded; force(x => x + 1); };
-  const shares = groupShares(g.id);
-  const lit = st.online > 0;
-  const view = groupMemberViews[g.id] || (groupMemberViews[g.id] = { page: 1, pageSize: 20, sort: "status", dir: -1 });
-  let body = null;
-  if (expanded) {
-    const inGroup = new Set(g.users);
-    const all = Store.recon.users.filter(u => inGroup.has(u.id) && (!filtersOn() || memberPasses(u)));
-    const members = sortUsers(searching && !nameHit ? all.filter(u => userMatchesQ(u, q)) : all, view.sort, view.dir, "group|" + g.id);
-    const totalPages = Math.max(1, Math.ceil(members.length / view.pageSize));
-    const page = Math.min(Math.max(1, view.page), totalPages);
-    body = html`<div class="urow-body gcard-body">
-      ${!g.users.length ? html`<div class="ug-empty">${T("No members yet.")} <button type="button" class="btn btn-ghost btn-mini" onClick=${() => openGroup(g.id)}><${Ic} i="plus"/> ${T("Add members")}</button></div>`
-        : html`<${Fragment}>
-          <${UsersHeader} sort=${view.sort} dir=${view.dir} onSort=${c => { sortColToggle(view, "sort", "dir", c, USER_DEFDIR); view.page = 1; force(x => x + 1); }}/>
-          <div class="urows">${members.slice((page - 1) * view.pageSize, page * view.pageSize).map(u => html`<${UserRow} key=${u.id} user=${u} q=${nameHit ? "" : q} nested=${true} onlineOnly=${usersView.online}/>`)}</div>
-          <${RowsPager} total=${members.length} page=${page} pageSize=${view.pageSize} onPage=${p => { view.page = p; force(x => x + 1); }}
-            onSize=${v => { view.pageSize = v; view.page = 1; force(x => x + 1); }}/>
-        <//>`}
-    </div>`;
-  }
-  return html`<div class=${"urow gcard" + (expanded ? " open" : "")}>
-    <div class="urow-head" title=${T("Double-click to edit the group")} onMouseDown=${rowNoSelect} onClick=${e => rowSingle(e, toggle)} onDblClick=${e => rowDouble(e, () => openGroup(g.id))}>
-      <span class="u-exp"><${Ic} i="arrow"/></span>
-      <span class="u-name"><span class="g-ico"><${Ic} i="users"/></span><span class="un">${g.name}</span></span>
-      <span class="u-right">
-        <span class="u-counts"><span class="u-pc">${plural(st.members, "cap|Member")}</span>${st.members ? html`<span class="u-dot"> · </span><span class=${"u-onc" + (lit ? " on" : "")}>${T("{n} Online", { n: st.online })}</span>` : null}</span>
-        <span class="u-counts g-peers"><span class="u-pc">${plural(st.peers, "cap|Peer")}</span>${st.peers ? html`<span class="u-dot"> · </span><span class=${"u-onc" + (st.peersOn ? " on" : "")}>${T("{n} Online", { n: st.peersOn })}</span>` : null}</span>
-        ${(() => { const gn = nodesOfPeers(g.users.flatMap(u => Store.peersByUser(u)));
-          return html`<span class="u-servers">${nodesChip(gn)}</span>${nodesTap(gn, g.name)}`; })()}
-        <span class="g-nets" onClick=${e => e.stopPropagation()}>
-          <${Popover} hoverOnly cls="grp-pop" popCls="netroute-bub" trigger=${html`<span class=${"grp-n" + (shares.length ? " lit-net" : " zero")}
-              aria-label=${T("Devices whose networks are shared with {name}: {n}", { name: g.name, n: shares.length })}><${Ic} i="network"/>${shares.length}</span>`}>
-            <span class="netroute-h">${T("Networks shared with this group")}</span>
-            ${shares.length ? html`<${CapList} items=${shares} cap=${10} row=${p => html`<div class="netbub-row" key=${p.id}><b>${shareDeviceName(p)}</b> <span class="faint">${(p.routes || []).join(", ")}</span></div>`}/>`
-              : html`<div class="netbub-row sub">${T("None yet — share a network from a device's Networks window.")}</div>`}
-          <//>
-        </span>
-        <span class="u-thru">${rateCell(st.rx, st.tx)}</span>
-        ${isMobile() ? null : html`<span class="u-total"><${TrafficCell} a=${st.traffic} e=${trafficTotals()} ctx=${{ group: true }}/></span>`}
-        <span class="u-acts" onClick=${e => e.stopPropagation()} onDblClick=${e => e.stopPropagation()}>
-          <button type="button" class="iconbtn" data-lbl=${T("Traffic")} title=${T("Traffic — graph and members")} aria-label=${T("Traffic — graph and members")} onClick=${() => openGroupView(g.id)}><${Ic} i="bars"/></button>
-          ${isMobile() ? null : html`<button type="button" class="iconbtn" data-lbl=${T("Users")} title=${T("Show this group on the users list")} aria-label=${T("Show this group on the users list")}
-            onClick=${() => { usersView.mode = "users"; usersView.group = g.id; usersView.q = ""; usersView.page = 1; bus.emit(); }}><${Ic} i="user"/></button>`}
-          <button type="button" class="iconbtn" data-lbl=${T("Edit")} title=${T("Edit group")} aria-label=${T("Edit group")} onClick=${() => openGroup(g.id)}><${Ic} i="pencil"/></button>
-          <button type="button" class="iconbtn danger" data-lbl=${T("Delete")} title=${T("Delete group")} aria-label=${T("Delete group")} onClick=${() => confirmDeleteGroup(g, false)}><${Ic} i="trash"/></button>
-        </span>
-      </span>
-    </div>
-    ${body}
-  </div>`;
-}
-
-const memberPasses = u => userOnNodeIface(u, usersView.node, usersView.iface) && (!usersView.online || u.onlineCount > 0);
-const filtersOn = () => !!(usersView.node || usersView.iface || usersView.online || (usersView.mode === "users" && usersView.status));
+const userPassesFilters = u => userOnNodeIface(u, usersView.node, usersView.iface)
+  && (!usersView.online || u.onlineCount > 0)
+  && (!usersView.status || Store.peersByUser(u.id).some(p => peerInRosterStatus(p, usersView.status)));
+const filtersOn = () => !!(usersView.node || usersView.iface || usersView.online || usersView.status);
 function RosterFilters({ reset }) {
   const allIfaces = Array.from(new Set(Object.keys(Store.describe).flatMap(n => Store.userIfacesOf(n)))).sort();
   const ifaceOpts = usersView.node ? Store.userIfacesOf(usersView.node) : allIfaces;
@@ -291,61 +210,19 @@ function RosterFilters({ reset }) {
     <${Dropdown} className="selwrap" ariaLabel=${T("All interfaces")} value=${usersView.iface}
       onChange=${v => { usersView.iface = v; reset(); }}
       options=${ifaceFilterOptions(ifaceOpts, "")}/>
-    ${usersView.mode === "users" ? html`<${Dropdown} className="selwrap" ariaLabel=${T("All statuses")} value=${usersView.status}
-      onChange=${v => { usersView.status = v; reset(); }} options=${peerStatusFilters()}/>` : null}
+    <${Dropdown} className="selwrap" ariaLabel=${T("All statuses")} value=${usersView.status}
+      onChange=${v => { usersView.status = v; reset(); }} options=${peerStatusFilters()}/>
     <button class=${"onlbtn" + (usersView.online ? " on" : "")} aria-pressed=${!!usersView.online} title=${T("Show only users with a device online")}
       onClick=${() => { usersView.online = !usersView.online; reset(); }}>${T("status|Online")}</button>
   <//>`;
 }
 
-function GroupsView({ force }) {
-  const all = Store.groups();
-  const q = usersView.gq.trim().toLowerCase();
-  const byId = new Map(Store.recon.users.map(u => [u.id, u]));
-  const hit = g => searchMatch(g.name, q) || g.users.some(u => byId.has(u) && userMatchesQ(byId.get(u), q));
-  const filt = filtersOn();
-  const passes = g => (!q || hit(g)) && (!filt || g.users.some(u => byId.has(u) && memberPasses(byId.get(u))));
-  const stc = new Map();
-  const st = g => stc.get(g.id) || (stc.set(g.id, groupStats(g)), stc.get(g.id));
-  const list = sortGroups(all, st, usersView.gsort, usersView.gdir).filter(passes);
-  const pageSize = usersView.gpageSize || 20;
-  const totalPages = Math.max(1, Math.ceil(list.length / pageSize));
-  const page = Math.min(Math.max(1, usersView.gpage || 1), totalPages);
-  const setPage = p => { usersView.gpage = p; force(x => x + 1); };
-  return html`<div class="screen">
-    <${StoreOffBanner}/>
-    ${isMobile() ? null : html`<${TrafficRail}/>`}
-    <div class=${"toolbar" + (isMobile() ? " mtoolbar" : "")}>
-      <${ModeIcons} users=${true} force=${force}/>
-      <${SearchBox} placeholder=${T("Search groups or members…")} value=${usersView.gq} onInput=${e => { usersView.gq = e.target.value; usersView.gpage = 1; force(x => x + 1); }}/>
-      ${isMobile() ? filterBtn(filtersOn(), r => html`<${RosterFilters} reset=${() => { usersView.gpage = 1; force(x => x + 1); r(); }}/>
-          ${sortField(usersView, "gsort", "gdir", GROUP_SORT(), GROUP_DEFDIR, () => { usersView.gpage = 1; force(x => x + 1); r(); })}`)
-        : html`<${RosterFilters} reset=${() => { usersView.gpage = 1; force(x => x + 1); }}/>`}
-      <button class=${"btn btn-primary" + (isMobile() ? " mfab" : "")} onClick=${() => openCreateGroup()}><span class="plus"><${Ic} i="plus"/></span> ${T("New group")}</button>
-    </div>
-    ${secTitle(T("Groups"), list.length, false)}
-    ${!all.length ? html`<div class="empty"><b>${T("No groups yet")}</b>${T("Put people in a group to share a network with all of them at once, from a device's Networks window.")}</div>`
-      : !list.length ? html`<div class="empty"><b>${T("Nothing matches")}</b>${filt ? T("Clear the filters.") : T("Clear the search.")}</div>`
-      : html`<${Fragment}>
-        <${GroupsHeader} sort=${usersView.gsort} dir=${usersView.gdir} onSort=${c => { sortColToggle(usersView, "gsort", "gdir", c, GROUP_DEFDIR); usersView.gpage = 1; force(x => x + 1); }}/>
-        <div class="urows">${list.slice((page - 1) * pageSize, page * pageSize).map(g => html`<${GroupRow} key=${g.id} g=${g} st=${st(g)} q=${q}/>`)}</div>
-      <//>`}
-    <${RowsPager} total=${list.length} page=${page} pageSize=${pageSize} onPage=${setPage}
-      onSize=${v => { usersView.gpageSize = v; usersView.gpage = 1; force(x => x + 1); }}/>
-  </div>`;
-}
-
 export function UsersScreen() {
   useStore();
   const [, force] = useState(0);
-  if (usersView.mode === "groups") return html`<${GroupsView} force=${force}/>`;
-  const groups = Store.groups();
-  if (usersView.group && !Store.group(usersView.group)) usersView.group = "";
-  const inGroup = usersView.group ? new Set(Store.group(usersView.group).users) : null;
   const q = usersView.q.toLowerCase();
   const allUsers = Store.recon.users;
-  const users = sortUsers(allUsers, usersView.sort, usersView.dir, "users").filter(u => (!inGroup || inGroup.has(u.id)) && userMatchesQ(u, q) && memberPasses(u)
-    && (!usersView.status || Store.peersByUser(u.id).some(p => peerInRosterStatus(p, usersView.status))));
+  const users = sortUsers(allUsers, usersView.sort, usersView.dir, "users").filter(u => userMatchesQ(u, q) && userPassesFilters(u));
   const unassigned = Store.unassignedPeers().filter(p => peerInRosterStatus(p, usersView.status)
     && (!usersView.online || p.targets.some(t => t.online)));
 
@@ -359,29 +236,21 @@ export function UsersScreen() {
     <${StoreOffBanner}/>
     ${isMobile() ? null : html`<${TrafficRail}/>`}
     ${isMobile() ? html`<div class="toolbar mtoolbar">
-      <${ModeIcons} users=${true} force=${force}/>
-      <${SearchBox} placeholder=${T("Search users, tags, notes, peers…")} value=${usersView.q} onInput=${e => { usersView.q = e.target.value; usersView.page = 1; force(x => x + 1); }}/>
-      ${filterBtn(filtersOn() || usersView.group, redraw => { const reset = () => { usersView.page = 1; redraw(); force(x => x + 1); };
+      <${SearchBox} placeholder=${T("Search users and peers…")} value=${usersView.q} onInput=${e => { usersView.q = e.target.value; usersView.page = 1; force(x => x + 1); }}/>
+      ${filterBtn(filtersOn(), redraw => { const reset = () => { usersView.page = 1; redraw(); force(x => x + 1); };
         return html`<${Fragment}>
-          <${Dropdown} className="selwrap grpsel" ariaLabel=${T("Groups")} value=${usersView.group}
-            onChange=${v => { usersView.group = v; reset(); }}
-            options=${[{ value: "", label: T("All groups") }, ...Store.groups().map(g => ({ value: g.id, label: g.name }))]}/>
           <${RosterFilters} reset=${reset}/>
           ${sortField(usersView, "sort", "dir", USER_SORT(), USER_DEFDIR, reset)}<//>`; })}
       <button class="btn btn-primary mfab" onClick=${openCreateUser}><span class="plus"><${Ic} i="plus"/></span> ${T("New user")}</button>
     </div>` : html`<div class="toolbar">
-      <${Dropdown} className="selwrap grpsel" ariaLabel=${T("Groups")} value=${usersView.group}
-        onChange=${v => { usersView.group = v; usersView.page = 1; force(x => x + 1); }}
-        options=${[{ value: "", label: T("All groups") }, ...groups.map(g => ({ value: g.id, label: g.name }))]}/>
-      <${ModeIcons} users=${false} force=${force}/>
-      <${SearchBox} placeholder=${T("Search users, tags, notes, peers…")} value=${usersView.q} onInput=${e => { usersView.q = e.target.value; usersView.page = 1; force(x => x + 1); }}/>
+      <${SearchBox} placeholder=${T("Search users and peers…")} value=${usersView.q} onInput=${e => { usersView.q = e.target.value; usersView.page = 1; force(x => x + 1); }}/>
       <${RosterFilters} reset=${() => { usersView.page = 1; force(x => x + 1); }}/>
       <button class="btn btn-primary" onClick=${openCreateUser}><span class="plus"><${Ic} i="plus"/></span> ${T("New user")}</button>
     </div>`}
 
-    ${secTitle(inGroup ? T("{name} users", { name: Store.group(usersView.group).name }) : T("Total users"), users.length, false)}
+    ${secTitle(T("Total users"), users.length, false)}
     ${!allUsers.length ? html`<div class="empty"><b>${T("No users yet")}</b>${T("Create a user, then add their devices.")}</div>`
-      : !users.length ? html`<div class="empty"><b>${T("Nothing matches")}</b>${inGroup || filtersOn() ? T("Clear the filters.") : T("Clear the search.")}</div>`
+      : !users.length ? html`<div class="empty"><b>${T("Nothing matches")}</b>${filtersOn() ? T("Clear the filters.") : T("Clear the search.")}</div>`
       : html`<${Fragment}>
         <${UsersHeader} sort=${usersView.sort} dir=${usersView.dir} onSort=${c => { sortColToggle(usersView, "sort", "dir", c, USER_DEFDIR); usersView.page = 1; force(x => x + 1); }}/>
         <div class="urows">${pageUsers.map(u => html`<${UserRow} key=${u.id} user=${u} q=${q} onlineOnly=${usersView.online}/>`)}</div>

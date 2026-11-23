@@ -196,41 +196,6 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   </div>`;
 }
 
-export function ReclaimSheet({ node, iface, w, family, onBusy }) {
-  const isCsq = family === "csqtt";
-  const reported = (isCsq ? w.tun_addr : w.wg_addr) || "";
-  const [subnet, setSubnet] = useState(reported);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const users = Object.keys(w.passwords || {}).length;
-  const go = async () => {
-    setBusy(true); setErr(""); if (onBusy) onBusy(true);
-    const body = { node, family, iface };
-    if (subnet.trim() && subnet.trim() !== reported) body.subnet = subnet.trim();
-    const r = await api.turnReclaim(body);
-    setBusy(false); if (onBusy) onBusy(false);
-    if (r && r.ok) {
-      const n = ((r.data || {}).users) || 0;
-      closeModal();
-      toast(n ? T("Reclaimed {v1} — {v2} user(s) kept", { v1: iface, v2: String(n) })
-              : T("Reclaimed {v1}", { v1: iface }), "ok");
-      await Store.poll();
-    } else setErr(srvText(r) || T("Couldn't reclaim {v1}", { v1: iface }));
-  };
-  return html`<${Sheet} title=${T("Reclaim {v1}", { v1: iface })} width=${520} onClose=${closeModal}
-    foot=${footRow({ onCancel: closeModal, onAction: go, action: busy ? T("Reclaiming…") : T("Reclaim"), busy })}>
-    <p class="hint" style="margin:0 0 12px">${Trich("The node still runs this server, but this panel holds no record of it — so nothing starts it and nothing manages its users. Reclaiming writes the record back from what the node reports.")}</p>
-    <div class="field"><label>${T("Users in its store")}</label>
-      <div class="ro-field"><span class="mono">${String(users)}</span></div>
-      <div class="hint">${users ? T("They are imported as peers, so reclaiming does not disconnect them.") : T("This server has no users yet.")}</div></div>
-    <div class="field"><label>${T("Subnet")}</label>
-      <input value=${subnet} onInput=${e => setSubnet(e.target.value)} placeholder="10.66.70.1/24"/>
-      <div class="hint">${T("Must be free across the fleet. Both kinds hand out client addresses at runtime, so changing it does not invalidate anyone's credentials.")}</div></div>
-    ${err ? html`<div class="formmsg err">${err}</div>` : null}
-  <//>`;
-}
-
-
 export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
   useStore();
   const [q, setQ] = useState("");
@@ -240,16 +205,12 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
   const blocked = !live || inProc(nrec.proc_status);
   const cfg = (isCsq ? (nrec.csqtt_cfg || {}) : (nrec.wdtt_cfg || {}))[iface] || {};
   const unclaimed = w ? (w.unclaimed === true || (w.unclaimed === undefined && !Object.keys(cfg).length)) : false;
-  const [reclaiming, setReclaiming] = useState(false);
-  const reclaim = () => pushModal(html`<${ReclaimSheet} node=${node} iface=${iface} w=${w}
-    family=${isCsq ? "csqtt" : "wdtt"} onBusy=${setReclaiming}/>`);
   const fork = w.fork || cfg.fork || (isCsq ? "csqtt" : "amurcanov");
   const active = w.active === "active";
-  const adopting = ((isCsq ? nrec.csqtt_adopting : nrec.wdtt_adopting) || []).includes(iface);
-  const awaiting = !adopting && (!!w.await_restore || !!missing);
+  const awaiting = !!w.await_restore || !!missing;
   const stopped = !!cfg.stopped;
   const failErr = (nrec.cmd_errors || {})[iface] || "";
-  const never = !adopting && !!missing && !!failErr && !((nrec.wdtt_vault || {})[iface]);
+  const never = !!missing && !!failErr && !((nrec.wdtt_vault || {})[iface]);
   const restorableK = !isCsq && !!((nrec.wdtt_vault || {})[iface]);
   const notup = !active && !awaiting;
   const restoring = (nrec.wdtt_restoring || []).includes(iface);
@@ -270,12 +231,9 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
     <${NodeRail} active=${node}/>
     <div class="crumb"><a href="#/nodes">${T("col|Nodes")}</a><span class="sep">/</span><a href=${"#/node/" + encodeURIComponent(node)}>${dname}</a><span class="sep">/</span><b>${iface}</b></div>
     <div class="detail-head">
-      <div class="title"><h1>${iface}</h1><span class=${"iftype " + (isCsq ? "csqtt" : "wdtt")}>${kindLabel}</span><${ForkTag} fork=${fork} suffix=${lineSuffix}/>${adopting ? html`<span class="tg-busy"><${Ic} i="clock"/>${T("tag|adopting")}</span>` : awaiting ? html`<span class="nstat down"><${Ic} i="shield"/> ${missing ? T("tag|missing") : T("awaiting restore")}</span>` : (op && op.phase === "busy") ? html`<span class="tg-busy"><${Ic} i="clock"/>${ifopBusy(op.verb)}</span>` : stopped ? html`<span class="nstat stopped" title=${T("Stopped by you — Start it whenever you're ready")}><${Ic} i="stop"/> ${T("tag|stopped")}</span>` : active ? html`<span class="reporting">${T("tag|running")}</span>` : html`<span class="nstat stale"><${Ic} i="clock"/> ${T("tag|starting")}</span>`}<span class="when"><${OnlinePeersTag} nodeId=${node} iface=${iface} total=${peers.length} orphans=${0}/></span></div>
+      <div class="title"><h1>${iface}</h1><span class=${"iftype " + (isCsq ? "csqtt" : "wdtt")}>${kindLabel}</span><${ForkTag} fork=${fork} suffix=${lineSuffix}/>${awaiting ? html`<span class="nstat down"><${Ic} i="shield"/> ${missing ? T("tag|missing") : T("awaiting restore")}</span>` : (op && op.phase === "busy") ? html`<span class="tg-busy"><${Ic} i="clock"/>${ifopBusy(op.verb)}</span>` : stopped ? html`<span class="nstat stopped" title=${T("Stopped by you — Start it whenever you're ready")}><${Ic} i="stop"/> ${T("tag|stopped")}</span>` : active ? html`<span class="reporting">${T("tag|running")}</span>` : html`<span class="nstat stale"><${Ic} i="clock"/> ${T("tag|starting")}</span>`}<span class="when"><${OnlinePeersTag} nodeId=${node} iface=${iface} total=${peers.length} orphans=${0}/></span></div>
       <div class="grow"></div>
     </div>
-    ${adopting && failErr
-      ? html`<div class="notice warn"><${Ic} i="warn"/><span>${Trich("The node couldn't take this server over yet: *{err}*. It keeps trying — once that server is stopped, the take-over completes; otherwise the panel stops trying 5 minutes after the take-over started.", { err: failErr })}</span></div>`
-      : adopting ? html`<div class="notice"><${Ic} i="clock"/><span>${Trich("This server is being *taken over* — the node stops the existing one and brings it back up under the panel with its original identity and users. Its controls stay disabled until that finishes.")}</span></div>` : null}
     ${never ? html`<div class="notice warn"><${Ic} i="warn"/><span>${Trich("The node refused to install this server, so it was never created: *{err}*. Fix that and create it again, or remove it — there is no identity to restore and nothing to recreate.", { err: failErr })}
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn btn-primary danger" onClick=${() => openModal(isCsq ? html`<${CsqttDeleteSheet} node=${node} iface=${iface}/>` : html`<${WdttDeleteSheet} node=${node} iface=${iface}/>`)}><${Ic} i="trash"/> ${T("Remove this server")}</button></div></span></div>`
     : awaiting ? html`<div class="notice warn"><${Ic} i="shield"/><span>${missing ? T("This node isn't reporting this server — it's gone from the box (a rebuild, or a node running a build without WDTT support).") : T("This server was wiped.")} ${restorable
@@ -285,12 +243,7 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
     <${Panel} icon="key" title=${T("Interface details")} tone="online"
         actions=${Store.ifaceGone[node + "|" + iface]
           ? html`<${StatusTag} cls="tg-del" icon="clock" label="deleting" title=${T("The node tears it down on its next sync")}/>`
-          : adopting
-          ? html`<${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|adopting")} title=${T("The node applies the take-over on its next sync")}/>`
-          : unclaimed
-          ? html`<button class="btn btn-mini btn-primary" disabled=${blocked || reclaiming} onClick=${reclaim}
-              title=${T("Take this server back under the panel, keeping the users in its store")}><${Ic} i="check"/>${
-              reclaiming ? T("Reclaiming…") : T("Reclaim")}</button>`
+          : unclaimed ? null
           : html`<${Fragment}>${opFlash}${(op && op.phase === "busy") || awaiting ? null : notup
           ? html`<button class="btn btn-mini" disabled=${blocked || awaiting} title=${blocked ? T("Unavailable while the node is down") : (isCsq ? T("Bring this csqtt server up on the node") : T("Bring this WDTT server up on the node"))} onClick=${() => (isCsq ? startOrRestartCsqtt : startOrRestartWdtt)(node, iface, "start")}><${Ic} i="play"/> ${(isMobile() ? T("rowact|Start") : T("Start service"))}</button>`
           : html`<${Fragment}><button class="btn btn-mini" disabled=${blocked} title=${(isCsq ? T("Take this csqtt server down (stays down until started)") : T("Take this WDTT server down (stays down until started)"))} onClick=${() => (isCsq ? startOrRestartCsqtt : startOrRestartWdtt)(node, iface, "stop")}><${Ic} i="stop"/> ${(isMobile() ? T("rowact|Stop") : T("Stop service"))}</button><button class="btn btn-mini" disabled=${blocked} title=${(isCsq ? T("Bounce this csqtt server on the node") : T("Bounce this WDTT server on the node"))} onClick=${() => (isCsq ? startOrRestartCsqtt : startOrRestartWdtt)(node, iface, "restart")}><${Ic} i="refresh"/> ${(isMobile() ? T("rowact|Restart") : T("Restart service"))}</button><//>`}<button class="btn btn-mini" disabled=${blocked || awaiting || (op && op.phase === "busy")} title=${blocked ? T("Unavailable while the node is down") : ""} onClick=${() => (isCsq ? openEditCsqtt(node, iface) : openEditWdtt(node, iface))}><${Ic} i="pencil"/>${(isMobile() ? T("Edit") : T("Edit interface"))}</button><button class="btn btn-mini danger" disabled=${blocked || (op && op.phase === "busy")} title=${(isCsq ? T("Stop + remove this csqtt server and disconnect its users") : T("Stop + remove this WDTT server and disconnect its users"))} onClick=${() => openModal(isCsq ? html`<${CsqttDeleteSheet} node=${node} iface=${iface}/>` : html`<${WdttDeleteSheet} node=${node} iface=${iface}/>`)}><${Ic} i="trash"/>${T("Delete")}</button><//>`}>
@@ -405,7 +358,7 @@ function AwgDevicesSheet({ node, iface }) {
   useStore();
   const [q, setQ] = useState(""), [page, setPage] = useState(1);
   const all = Store.recon.peers.map(p => ({ p, t: p.targets.find(t => t.node === node && t.iface === iface) })).filter(x => x.t)
-    .sort((a, b) => ((b.p.routes || []).length ? 1 : 0) - ((a.p.routes || []).length ? 1 : 0) || String(a.p.title || "").localeCompare(String(b.p.title || "")));
+    .sort((a, b) => String(a.p.title || "").localeCompare(String(b.p.title || "")));
   const who = x => { const u = x.p.user_id != null ? Store.user(x.p.user_id) : null; return u ? u.name : ""; };
   const ql = q.trim().toLowerCase();
   const rows = ql ? all.filter(x => ((x.p.title || "") + " " + who(x) + " " + (x.t.ip || "")).toLowerCase().includes(ql)) : all;
@@ -416,27 +369,24 @@ function AwgDevicesSheet({ node, iface }) {
       aria-label=${T("Filter by device, user or address…")} onInput=${e => { setQ(e.target.value); setPage(1); }}/>` : null}
     ${rows.length ? html`<div class="reachev-list">${pageSlice(rows, pg).map(x => html`<div class="reachev-row awgdev" key=${x.p.id}>
         <span class="ifname">${x.p.title || T("Untitled")}</span><span class="faint">${who(x) || T("status|Unassigned")}</span><span class="grow"></span>
-        ${(x.p.routes || []).length ? html`<span class="tg tg-warn" title=${(x.p.routes || []).join(", ")}>${T("tag|gateway")}</span>` : null}<span class="mono faint">${x.t.ip || ""}</span></div>`)}</div>`
+        <span class="mono faint">${x.t.ip || ""}</span></div>`)}</div>`
       : html`<div class="hint">${all.length ? T("No device matches “{q}”.", { q }) : T("No device is on this interface.")}</div>`}
     <${ListPager} page=${pg} setPage=${setPage} total=${rows.length}/>
   <//>`;
 }
-const GW_SHOWN = 5;
 function AwgSwitchSheet({ node, iface, to, commit, sent }) {
   useStore();
-  const [busy, setBusy] = useState(false), [err, setErr] = useState(""), [srvBlk, setSrvBlk] = useState(null), [typed, setTyped] = useState("");
+  const [busy, setBusy] = useState(false), [err, setErr] = useState(""), [srvBlk, setSrvBlk] = useState(null);
   const meta = Store.ifaceMeta(node, iface) || {};
   const peers = Store.recon.peers.filter(p => p.targets.some(t => t.node === node && t.iface === iface));
   const users = new Set(peers.filter(p => p.user_id != null).map(p => p.user_id)).size;
-  const gws = peers.filter(p => (p.routes || []).length);
   const fwd = turnProxiesFor(node, iface);
   const cant = svc => (turnForkList().find(f => f.id === turnFork(svc)) || {}).awg3 === false;
   const blk = to !== "3.1" ? [] : (srvBlk || fwd.filter(tp => cant(tp.service)).map(tp => ({ service: tp.service, title: tp.title || "", fork: turnFork(tp.service) })));
   const others = fwd.filter(tp => !blk.some(b => b.service === tp.service)).length;
   const lowS = to === "3.1" && awgLowS({ ...(meta.awg_params || {}), ...(sent || {}) });
-  const typeOk = !gws.length || typed.trim() === iface;
   const go = async () => {
-    if (busy || blk.length || !typeOk) return;
+    if (busy || blk.length) return;
     setBusy(true); setErr("");
     let r;
     try { r = await commit(); } catch (e) { r = { ok: false, error: String((e && e.message) || e) }; }
@@ -450,12 +400,8 @@ function AwgSwitchSheet({ node, iface, to, commit, sent }) {
   const line = (tone, icon, body) => html`<div class=${"notice" + (tone ? " " + tone : "")}><${Ic} i=${icon}/><span>${body}</span></div>`;
   return html`<${Sheet} title=${to === "3.1" ? T("Switch {v1} to AmneziaWG 3.1", { v1: iface }) : T("Switch {v1} back to AmneziaWG 2.0", { v1: iface })} width=${620} noGuard=${true}
     foot=${html`<span class="grow"></span><button class="btn btn-ghost btn-dismiss" onClick=${closeModal}>${T("Cancel")}</button><button class="btn btn-danger"
-      disabled=${busy || !!blk.length || !typeOk} title=${blk.length ? T("A turn proxy whose app carries AmneziaWG 2.0 only points here") : !typeOk ? T("Type {phrase} to confirm", { phrase: iface }) : null} onClick=${go}>${busy
+      disabled=${busy || !!blk.length} title=${blk.length ? T("A turn proxy whose app carries AmneziaWG 2.0 only points here") : null} onClick=${go}>${busy
         ? html`<span class="spin sm"></span>${T("Working…")}` : to === "3.1" ? T("Switch to 3.1") : T("Switch back to 2.0")}</button>`}>
-    ${gws.length ? html`<div class="notice danger awgsw-gw"><${Ic} i="warn"/><div>
-      <div>${T("Network gateways on {v1} — the networks behind each one go dark until it imports the new config:", { v1: iface })}</div>
-      <ul class="awgsw-list">${gws.slice(0, GW_SHOWN).map(p => html`<li key=${p.id}><b>${p.title || T("Untitled")}</b> <span class="mono faint">${(p.routes || []).join(", ")}</span></li>`)}
-        ${gws.length > GW_SHOWN ? html`<li class="awgsw-more"><button type="button" class="linkbtn" onClick=${() => pushModal(html`<${AwgDevicesSheet} node=${node} iface=${iface}/>`)}>${T("…and {v1} more", { v1: gws.length - GW_SHOWN })}</button></li>` : null}</ul></div></div>` : null}
     ${blk.length ? html`<div class="notice danger"><${Ic} i="warn"/><div>
       <div>${T("The panel refuses this switch while these turn proxies point at {v1} — their app carries AmneziaWG 2.0 only:", { v1: iface })}</div>
       <ul class="awgsw-list">${blk.map(b => { const lp = (String(b.service).match(/-(\d+)$/) || [])[1];
@@ -473,9 +419,6 @@ function AwgSwitchSheet({ node, iface, to, commit, sent }) {
       ${lowS ? html`<li>${T("One of S1–S4 is below 12, which header protection refuses — the switch draws new ones.")}</li>` : null}
       ${to === "3.1" ? html`<li>${awg3Apps()}</li>` : null}
     </ul></div>
-    ${gws.length ? html`<label class="confirm-type"><span>${typeToConfirm(iface)}</span>
-      <input class="ctype-input" type="text" spellcheck="false" autocomplete="off" placeholder=${iface} value=${typed}
-        onInput=${e => setTyped(e.target.value)} onKeyDown=${e => { if (e.key === "Enter") go(); }}/></label>` : null}
     ${err ? html`<div class="formmsg err">${err}</div>` : null}
   <//>`;
 }

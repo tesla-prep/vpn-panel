@@ -278,7 +278,6 @@ export function TurnProxiesBlock({ node, nrec, snap, metas, title, iface }) {
         })}
     ${optTurns.map(o => optCard(o.svc, o.d))}
     ${!iface ? Object.entries(nrec.turn_pending || {}).filter(([s]) => !all.some(t => t.service === s) && !optSvcs.has(s)).map(([s, act]) => html`<div class="ifcard tp pending"><div class="ifcard-top"><span class="iftype turn">${T("val|turn")}</span><span class="ifname">${forkLabel(turnFork(s))}</span><span class="grow"></span><${CmdErr} err=${(nrec.cmd_errors || {})[s]}/>${act === "delete" ? html`<span class="tg-busy del">${T("deleting…")}</span>` : html`<span class="tg tg-pending"><${Ic} i="clock"/>${T("tag|pending")}</span>`}<button class="xbtn" title=${T("Cancel this request")} onClick=${() => cancelTurn(node, { service: s })}><${Ic} i="x"/></button></div></div>`) : null}
-    ${!iface ? (nrec.turn_onboarding || []).map(p => html`<div class="ifcard tp pending"><div class="ifcard-top"><span class="iftype turn">${T("val|turn")}</span><span class="ifname">${T("adopting…")}</span><span class="grow"></span><${CmdErr} err=${(nrec.cmd_errors || {})[p]}/><span class="tg-busy">${T("adopting…")}</span><button class="xbtn" title=${T("Cancel this request")} onClick=${() => cancelTurn(node, { path: p })}><${Ic} i="x"/></button></div><div class="ifcard-rows"><div class="ifrow"><span class="l faint" style="word-break:break-all">${p}</span></div></div></div>`) : null}
     </div>
   <//>`;
 }
@@ -1341,7 +1340,7 @@ export function ServerDefaultsSheet({ fork }) {
 let _turnPend = null;
 export function turnPendLabel(act) {
   if (!_turnPend) _turnPend = { install: T("ifop|installing"), manage: T("ifop|applying"), rotate: T("ifop|rotating"), delete: T("ifop|deleting"),
-    onboard: T("ifop|adopting"), restart: T("ifop|restarting"), reinstall: T("ifop|installing"), start: T("ifop|starting"), stop: T("ifop|stopping") };
+    restart: T("ifop|restarting"), reinstall: T("ifop|installing"), start: T("ifop|starting"), stop: T("ifop|stopping") };
   return _turnPend[act] || "";
 }
 const _turnRestartPend = {};
@@ -1389,7 +1388,6 @@ export async function startTurn(node, service) {
 export function openSetupTurn(node, forwardIface) { openModal(html`<${SetupTurnSheet} node=${node} forwardIface=${forwardIface}/>`); }
 export function SetupTurnSheet({ node, forwardIface }) {
   const FORKS = enabledTurnForks().filter(f => !isSelfContainedKind(f.kind));
-  const [mode, setMode] = useState("new");
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const snap = Store.stats[node] || {};
   const isBridge = nrec.kind === "docker" && (nrec.net_mode || "host") === "bridge";
@@ -1425,7 +1423,6 @@ export function SetupTurnSheet({ node, forwardIface }) {
     return base + (sd._extra ? (base ? " " : "") + sd._extra : ""); };
   const [params, setParams] = useState(dflParams(FORKS[0] || turnForkList()[0]));
   const [openSec, setOpenSec] = useState(null);
-  const [path, setPath] = useState("");
   const [msg, setMsg] = useState(null); const [busy, setBusy] = useState(false);
   const fail = t => { setBusy(false); setMsg({ k: "err", t }); };
   const isCustom = fwd === "__custom__";
@@ -1449,15 +1446,6 @@ export function SetupTurnSheet({ node, forwardIface }) {
   };
   const randKey = () => copy(randWrapKey(), T("Random 64-hex key copied — paste it into the parameters"));
   const save = async () => {
-    if (mode === "existing") {
-      const p = path.trim();
-      if (!p.startsWith("/") || !p.endsWith(".service")) return fail(T("Enter the absolute path to the .service unit."));
-      setBusy(true); setMsg({ k: "work", t: T("requesting…") });
-      const r = await api.turnOnboard({ node, path: p });
-      if (!r.ok) return fail(srvText(r) || T("Request failed."));
-      closeModal(); await Store.poll();
-      return toast(T("Turn-proxy adopt requested — the node reads it on its next sync."), "ok");
-    }
     if (!lhost) return fail(T("Listen IP is required."));
     if (!/^\d+$/.test(lport.trim())) return fail(T("Listen port must be a number."));
     if (isCsqtt) return csqttSaveRef.current ? csqttSaveRef.current(lhost, lport.trim(), pin) : fail(T("csqtt fields aren't ready yet."));
@@ -1477,20 +1465,8 @@ export function SetupTurnSheet({ node, forwardIface }) {
     await Store.poll();
     toast(T("Turn-proxy install requested — the node downloads + starts it on its next sync."), "ok");
   };
-  return html`<${Sheet} title=${mode === "new" ? turnSheetTitle(f.label, title) : T("Adopt turn-proxy")} width=${880}
-    foot=${footRow({ onCancel: closeModal, disabled: busy || !!tsperr || (mode === "new" && !FORKS.length), title: tsperr || "", onAction: save, action: mode === "existing" ? T("Adopt") : (isSelfContained ? T("Create") : T("Install")) })}>
-    <div class="field"><label>${T("Source")}</label>
-      <div class="chiprow proto3">
-        <button class=${"chip c-awg" + (mode === "new" ? " on" : "")} onClick=${() => setMode("new")}>${T("Install a fork")}</button>
-        <button class=${"chip c-ex" + (mode === "existing" ? " on" : "")} onClick=${() => setMode("existing")}>${T("Adopt existing service")}</button>
-      </div></div>
-    ${mode === "existing" ? html`<${Fragment}>
-      <div class="iface-intro big">
-        <div>${T("Adopt a turn-proxy already running as a systemd service on this node.")}</div>
-        <div>${T("The node reads the unit's ExecStart (listen, forwards-to, wrap key) on its next sync and it shows up here.")}</div>
-      </div>
-      <div class="field"><label>${T("Service unit path")}</label><input autofocus value=${path} onInput=${e => setPath(e.target.value)} placeholder="/etc/systemd/system/vk-turn-proxy-...service" autocomplete="off"/></div>
-    <//>` : html`<${Fragment}>
+  return html`<${Sheet} title=${turnSheetTitle(f.label, title)} width=${880}
+    foot=${footRow({ onCancel: closeModal, disabled: busy || !!tsperr || !FORKS.length, title: tsperr || "", onAction: save, action: T("Install") })}>
       <div class="row2">
         <div class="field"><label>${T("col|Title")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— optional")}</span></label><input value=${title} onInput=${e => setTitle(e.target.value)} placeholder=${f.label} autocomplete="off"/></div>
         <div class="field"><label>${T("Fork")}</label>
@@ -1520,7 +1496,6 @@ export function SetupTurnSheet({ node, forwardIface }) {
       <${Disclosure} title=${T("Server parameters")} summary=${forkSettings(fork).length ? null : html`<span class="faint">${T("val|none")}</span>`} open=${openSec === "server"} onToggle=${() => setOpenSec(s => s === "server" ? null : "server")}>
         <${TurnParamsEditor} fork=${fork} node=${node} value=${params} onChange=${setParams} listen=${(lhost || "server_ip") + ":" + (lport || "port")} connect=${isCustom ? (custom || "interface_ip:port") : ("127.0.0.1:" + (((ifaces.find(i => i.name === fwd)) || {}).port || "port"))}/>
       <//>
-    <//>`}
     <//>`}
     ${msg ? html`<div class=${"formmsg " + msg.k}>${msg.t}</div>` : null}
   <//>`;
@@ -1596,9 +1571,7 @@ export function WdttCard({ node, w, reorder }) {
   const _wop = Store.ifaceOp[node + "|" + w.iface];
   const _wopTag = opTag(node + "|" + w.iface);
   const deleting = !!Store.ifaceGone[node + "|" + w.iface];
-  const adopting = (nrec.wdtt_adopting || []).includes(w.iface);
   const tag = deleting ? html`<${StatusTag} cls="tg-del" icon="clock" label="deleting" title=${T("The node tears it down on its next sync")}/>`
-    : adopting ? html`<${StatusTag} cls="tg-busy" icon="clock" label=${T("tag|adopting")} title=${T("The node applies the take-over on its next sync")}/>`
     : converting ? html`<${StatusTag} cls="tg-convert" icon="clock" label="converting" title=${T("The node is converting between bare-metal and docker")}/>`
     : _wopTag ? _wopTag
     : restoring ? html`<${StatusTag} cls="tg tg-pending" icon="clock" label="restoring…" title=${T("Restoring the vaulted server identity")}/>`
@@ -1607,8 +1580,8 @@ export function WdttCard({ node, w, reorder }) {
     : wstopped ? html`<span class="tg-off" title=${T("Stopped from the panel — open to Start it")}><${Ic} i="stop"/>${T("tag|stopped")}</span>`
     : html`<${StatusTag} cls="tg tg-pending" icon="clock" label="starting" title=${T("Installing / starting on the node")}/>`;
   const _wopBusy = _wop && _wop.phase === "busy";
-  const wdim = deleting || adopting || converting || awaiting || restoring || !active || _wopBusy;
-  const wCanOpen = !_wopBusy && !nblocked && !deleting && !adopting;
+  const wdim = deleting || converting || awaiting || restoring || !active || _wopBusy;
+  const wCanOpen = !_wopBusy && !nblocked && !deleting;
   return html`<div class=${"ifcard tp" + (wCanOpen ? " clickable" : "") + (wdim ? " down" : "") + (nblocked ? " locked" : "") + (it ? it.cls : "")} data-rid=${it ? it.rid : null} onClick=${() => { if (!wCanOpen) return; openModal(html`<${WdttManageSheet} node=${node} w=${w}/>`); }}>
     <div class="ifcard-top">${reorder ? html`<span class="drag-grip" title=${T("Drag to reorder")} onClick=${e => e.stopPropagation()} ...${reorder.grip(rid)} dangerouslySetInnerHTML=${{ __html: GRIP_SVG }}></span>` : null}
       <span class="iftype wdtt">WDTT</span>
@@ -1865,7 +1838,6 @@ export function EditWdttSheet({ node, iface }) {
   const oldListen = cfg.listen || w.listen || "";
   const ips = ipChoices(nrec);
   const emode = nrec.routing_mode || "kernel";
-  const adopting = (nrec.wdtt_adopting || []).includes(iface);
   const fork = cfg.fork || w.fork || "amurcanov";
   const forkLabel = (turnForkList().find(x => x.id === fork) || {}).label || fork;
   const [wgPort, setWgPort] = useState(String(cfg.wg_port || "56001"));
@@ -1909,8 +1881,7 @@ export function EditWdttSheet({ node, iface }) {
         <button class="btn btn-ghost danger" onClick=${() => openModal(html`<${WdttDeleteSheet} node=${node} iface=${iface}/>`)}><${Ic} i="trash"/>${T("Delete")}</button>
         ${notup ? control("start", "play", (isMobile() ? T("rowact|Start") : T("Start service")), T("Bring this WDTT server up on the node"))
           : html`<${Fragment}>${control("stop", "stop", (isMobile() ? T("rowact|Stop") : T("Stop service")), T("Take this WDTT server down (stays down until started)"))}${control("restart", "refresh", (isMobile() ? T("rowact|Restart") : T("Restart service")), T("Bounce this WDTT server on the node"))}<//>`}
-      <//>`, onCancel: closeModal, disabled: busy || adopting || !!wgperr || !!egressSaveBlock(eg, emode), title: (adopting ? T("This server is being adopted — wait for the node to finish") : wgperr || egressSaveBlock(eg, emode)) || "", onAction: save, action: T("Save") })}>
-    ${adopting ? html`<div class="notice"><${Ic} i="clock"/><span>${Trich("This server is being *taken over* right now — its settings are read-only until the node reports the result.")}</span></div>` : null}
+      <//>`, onCancel: closeModal, disabled: busy || !!wgperr || !!egressSaveBlock(eg, emode), title: (wgperr || egressSaveBlock(eg, emode)) || "", onAction: save, action: T("Save") })}>
     <div class="iface-intro"><div>${Trich("*WDTT* owns its own *WireGuard* interface *({iface} · {addr})* and mints each user's key on connect.", { iface, addr: wgAddr || "—" })}</div></div>
     <div class="row2">
       <div class="field"><label>${T("WDTT server")}</label>
@@ -2227,14 +2198,14 @@ function AppRoutingFields({ value: a, onChange }) {
 }
 
 const AR_EXC_MAX = 20;
-export const arxEntry = (sel, own, ar) => ({ who: Object.fromEntries(["users", "groups", "peers"].filter(k => (sel[k] || []).length).map(k => [k, sel[k]])),
+export const arxEntry = (sel, own, ar) => ({ who: Object.fromEntries(["users", "peers"].filter(k => (sel[k] || []).length).map(k => [k, sel[k]])),
   app_routing: own && arOn(ar).length ? arBody(ar) : null });
 export const arxSend = ax => ax.map(({ who, app_routing }) => ({ who, app_routing }));
-const arxGone = e => e.k === "g" ? !Store.group(e.id) : e.k === "u" ? !Store.user(e.id) : !Store.peer(e.id);
+const arxGone = e => e.k === "u" ? !Store.user(e.id) : !Store.peer(e.id);
 const arxNobody = who => whoEntries(who || {}).every(arxGone);
 const arxWho = who => namedFew(whoEntries(who || {}).map(whoEntryName));
 const arxWhoRow = who => { const es = whoEntries(who || {});
-  return html`${es.slice(0, 3).map((e, i) => html`${i ? ", " : ""}${e.k === "g" ? html`<${Ic} i="users"/>` : e.k === "p" ? html`<${Ic} i="device"/>` : null}${whoEntryName(e)}`)}${
+  return html`${es.slice(0, 3).map((e, i) => html`${i ? ", " : ""}${e.k === "p" ? html`<${Ic} i="device"/>` : null}${whoEntryName(e)}`)}${
     es.length > 3 ? html`<span class="faint"> ${T("and {n} more", { n: es.length - 3 })}</span>` : null}`; };
 function ArExceptions({ node, iface, value, onChange }) {
   const rs = useReorder(value.map(e => e._id), ids => onChange(ids.map(id => value.find(e => e._id === id))), "y", { container: ".arx-list", card: ".arx-row" });
@@ -2254,7 +2225,7 @@ function ArExceptions({ node, iface, value, onChange }) {
           onClick=${() => onChange(value.filter(x => x !== e))}><${Ic} i="x"/></button></div>`; })}</div>` : null}
     <button type="button" class="btn btn-ghost arx-add" disabled=${value.length >= AR_EXC_MAX}
       title=${value.length >= AR_EXC_MAX ? T("At most {v1} exceptions.", { v1: AR_EXC_MAX }) : ""} onClick=${() => edit(null)}><${Ic} i="plus"/>${T("Add exception")}</button>
-    <div class="hint">${T("Chosen people get their own rule, or none. A device's exception beats its user's, and a user's beats a group's; a person in two groups gets the upper one. Applies at each user's next connect.")}</div>
+    <div class="hint">${T("Chosen people get their own rule, or none. A device's exception takes precedence over its user's. Applies at each user's next connect.")}</div>
     ${value.length && snap && !snap.csqtt_ar_pw ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Exceptions need a node update — until then everyone gets the server rule.")}</span></div>` : null}
   </div>`;
 }
@@ -2272,15 +2243,15 @@ function ArExceptionSheet({ node, iface, entry, onApply }) {
   const empty = !whoCount(sel);
   const apply = () => { if (empty) return;
     onApply(arxEntry(sel, own, ar)); dirtyRef.current = false; if (cleanRef.current) cleanRef.current(); closeModal(); };
-  const cell = e => { const m = e.k === "g" ? (Store.group(e.id) || {}).users || [] : null;
-    const n = here.filter(p => e.k === "p" ? p.id === e.id : e.k === "u" ? p.user_id === e.id : !!p.user_id && m.includes(p.user_id)).length;
+  const cell = e => {
+    const n = here.filter(p => e.k === "p" ? p.id === e.id : p.user_id === e.id).length;
     return html`<span class=${"netdev" + (n ? "" : " none")} title=${n ? T("{devices} on this server", { devices: plural(n, "device") }) : ""}>${n
       ? html`<span class="netdev-n ok">${n}</span>` : T("no device here")}</span>`; };
   return html`<${Sheet} title=${entry ? T("Edit exception") : T("Add exception")} width=${680} dirtyRef=${dirtyRef} closeRef=${closeRef} cleanRef=${cleanRef}
     foot=${footRow({ onCancel: () => (closeRef.current ? closeRef.current() : closeModal()), onAction: apply, action: T("Apply"), disabled: empty,
-                     title: empty ? T("Choose at least one person, group or device.") : "" })}>
+                     title: empty ? T("Choose at least one person or device.") : "" })}>
     <div class="field"><label>${T("For whom")}</label>
-      <${WhoPicker} sel=${sel} setSel=${setSel} here=${here} cell=${cell} onTyped=${typedOnly} empty=${T("Choose at least one person, group or device.")}/></div>
+      <${WhoPicker} sel=${sel} setSel=${setSel} here=${here} cell=${cell} onTyped=${typedOnly} empty=${T("Choose at least one person or device.")}/></div>
     <div class="field"><label>${T("App routing")}</label>
       <div class="dpsw netsw-share" role="radiogroup" aria-label=${T("App routing")}>${[[false, T("No App routing")], [true, T("Own rule")]].map(([v, l]) => html`<button type="button" role="radio"
         aria-checked=${own === v} class=${own === v ? "on" : ""} onClick=${() => setOwn(v)}>${l}</button>`)}</div>

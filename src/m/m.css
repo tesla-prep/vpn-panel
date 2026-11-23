@@ -323,7 +323,7 @@ html[data-ui="m"] {
   & .toolbar.mtoolbar { display: flex; flex-wrap: nowrap; gap: 8px; align-items: stretch; margin-bottom: 4px; }
   & .mtoolbar .search { flex: 1 1 auto; min-width: 0; min-height: 44px; display: flex; }
   & .mtoolbar .search input { height: 44px; box-sizing: border-box; width: 100%; }
-  & .mtoolbar > :is(.pmode, .onlbtn, .mfilter-btn, .search) { height: 44px; min-height: 44px; box-sizing: border-box; }
+  & .mtoolbar > :is(.onlbtn, .mfilter-btn, .search) { height: 44px; min-height: 44px; box-sizing: border-box; }
   & .mfilter-btn { flex: none; width: 46px; height: auto; min-height: 44px; border: 1px solid var(--line-solid); background: var(--surface); border-radius: var(--r-sm); position: relative; }
   & .mfilter-btn.on::after { content: ""; position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: var(--brand); }
   & .mfab {
@@ -337,7 +337,7 @@ html[data-ui="m"] {
   & .mfilters .selwrap, & .mfilters .onlbtn, & .mfilters .ddbtn { min-height: 44px; box-sizing: border-box; }
   & .mfilters .selwrap { display: flex; }
   & .mfilters .ddbtn { width: 100%; }
-  & .mtoolbar > .pmode, & .mtoolbar > .onlbtn { flex: none; min-height: 44px; }
+  & .mtoolbar > .onlbtn { flex: none; min-height: 44px; }
   & .uhead, & table.peergrid > thead { display: none; }
   & .msort { display: grid; grid-template-columns: minmax(0, 1fr) 44px; gap: 8px; align-items: center; }
   & .msort-l { grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); margin-top: 6px; }
@@ -358,13 +358,12 @@ html[data-ui="m"] {
   & .urow-head > .u-name { grid-column: 2 / -1; grid-row: 1; font-size: 15.5px; }
   & .urow-head > .u-name { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
   & .urow-head > .u-name > * { white-space: normal; overflow: visible; text-overflow: clip; min-width: 0; }
-  & .urow-head > .u-name .tagchip { flex: none; }
   & .urow-head > .ustat { grid-column: 2; grid-row: 2; }
   & .urow-head > .u-right { display: contents; }
   & .urow-head .u-right > * { padding: 0; }
   & .urow-head .u-counts { display: block; grid-column: 3; grid-row: 2; font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
   & .urow-head .u-thru { display: block; grid-column: 4; grid-row: 2; justify-self: end; font-size: 12px; }
-  & .urow-head .u-thru:not(:has(.ratecell.live)), & .urow-head .u-thru .up, & .urow-head :is(.u-servers, .u-last, .u-total, .u-note) { display: none; }
+  & .urow-head .u-thru:not(:has(.ratecell.live)), & .urow-head .u-thru .up, & .urow-head :is(.u-servers, .u-last, .u-total) { display: none; }
   & .urow-head .u-acts {
     position: absolute; top: 0; bottom: 0; left: calc(100% + 22px); display: flex; gap: 0; scroll-snap-align: end;
   }
@@ -400,9 +399,6 @@ html[data-ui="m"] {
   & .m-nodesheet .m-ns-pc { margin-left: auto; font-size: 13px; color: var(--ink-3); }
   & .m-nodesheet :is(.m-ns-nm, .m-ns-if) > .ic:last-child { color: var(--faint); }
   & .m-nodesheet .m-ns-nm > .ic:last-child { margin-left: auto; }
-  & .gcard > .urow-head > .u-name { grid-column: 2 / -1; }
-  & .gcard > .urow-head .u-counts:first-child { grid-column: 2 / 4; }
-  & .gcard > .urow-head :is(.g-peers, .g-nets) { display: none; }
 
   & .targetpick > .targetopt { min-width: 0; }
   & .targetopt { flex-wrap: wrap; row-gap: 8px; column-gap: 8px; padding: 8px 10px; }
@@ -517,8 +513,6 @@ html[data-ui="m"] {
   & table.peergrid td.rowacts > .iconbtn svg { width: 20px; height: 20px; }
   & table.peergrid td.empty { padding: 24px 16px; }
 
-  & .mtoolbar .pmode { flex: none; }
-  & .mtoolbar .pmode .pm-opt { min-height: 42px; }
 
   & .section-title:has(+ .nodegrid) { flex-wrap: wrap; align-items: center; }
   & .section-title:has(+ .nodegrid) .nodehint { display: none; }
@@ -852,7 +846,7 @@ html[data-ui="m"] {
   & .panel-head:has(> .rangetabs):has(> .hdr-lead) > .rangetabs { flex: 1 0 100%; margin-left: 0; }
   & .panel-head:has(> .rangetabs):has(> .hdr-lead) > .rangetabs > .rtab { flex: 1 1 0; }
   & .ifrow .m-onltap { padding: 8px 6px; margin: -8px -6px; }
-  & :is(.stat .k, .ig-l, .hcol-l, .msort-l, .netshare-l, .act-cat) { font-size: 11px; }
+  & :is(.stat .k, .ig-l, .hcol-l, .msort-l, .act-cat) { font-size: 11px; }
   & .m-addtop { width: 100%; min-height: 44px; justify-content: center; margin: 0 0 14px; }
   & .cpick-opt { flex-wrap: wrap; row-gap: 6px; height: auto; min-height: 48px; padding-top: 8px; padding-bottom: 8px; }
   & .cpick-opt .ce-name { flex: 1 1 100%; min-width: 0; white-space: normal; overflow: visible; text-overflow: clip; font-size: 15px; }

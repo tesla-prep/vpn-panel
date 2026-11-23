@@ -1694,13 +1694,10 @@ function useWhoReport(node, iface, whos) {
 const whoTally = (rep, only) => { const c = { ok: 0, soon: 0, no: 0 };
   for (const [pid, st] of Object.entries((rep || {}).devices || {})) if (!only || only(pid)) c[st] = (c[st] || 0) + 1;
   return c; };
-export const whoEntryHas = (e, pid) => { const p = Store.peer(pid), uid = p && p.user_id;
-  return e.k === "p" ? pid === e.id : e.k === "u" ? uid === e.id : !!uid && ((Store.group(e.id) || {}).users || []).includes(uid); };
-export const whoEntryName = e => e.k === "g" ? ((Store.group(e.id) || {}).name || T("a group that no longer exists"))
-  : e.k === "u" ? ((Store.user(e.id) || {}).name || T("a user who no longer exists"))
+export const whoEntryHas = (e, pid) => e.k === "p" ? pid === e.id : Store.peer(pid)?.user_id === e.id;
+export const whoEntryName = e => e.k === "u" ? (Store.user(e.id)?.name || T("a user who no longer exists"))
   : (Store.peer(e.id) ? deviceLabel(Store.peer(e.id)) : T("a device that no longer exists"));
-export const whoEntries = w => [...(w.groups || []).map(id => ({ k: "g", id })), ...(w.users || []).map(id => ({ k: "u", id })),
-                         ...(w.peers || []).map(id => ({ k: "p", id }))];
+export const whoEntries = w => [...(w.users || []).map(id => ({ k: "u", id })), ...(w.peers || []).map(id => ({ k: "p", id }))];
 
 const whoNoWhy = (rep, node) => rep && rep.node_old
   ? T("{v1} needs an update to route per person — these rules apply to nobody there until it is.", { v1: Store.nodeName(node) })
@@ -1749,32 +1746,31 @@ function AsChip({ ip, node, direct }) {
 }
 
 export const peersOn = (node, iface) => Store.recon.peers.filter(p => (p.targets || []).some(t => t && t.node === node && t.iface === iface));
-export const whoCount = w => (w.groups || []).length + (w.users || []).length + (w.peers || []).length;
+export const whoCount = w => (w.users || []).length + (w.peers || []).length;
 const whoSorted = (sel, k, key) => sel[key].slice().sort((a, b) => whoEntryName({ k, id: a }).localeCompare(whoEntryName({ k, id: b }))).map(id => ({ k, id }));
 
 export function WhoPicker({ sel, setSel, here, cell, onTyped, empty }) {
   const [q, setQ] = useState(""), [page, setPage] = useState(1);
-  const list = [...whoSorted(sel, "g", "groups"), ...whoSorted(sel, "u", "users"), ...whoSorted(sel, "p", "peers")];
+  const list = [...whoSorted(sel, "u", "users"), ...whoSorted(sel, "p", "peers")];
   const ql = q.trim().toLowerCase();
   const rows = ql ? list.filter(e => whoEntryName(e).toLowerCase().includes(ql)) : list;
   const pages = Math.max(1, Math.ceil(rows.length / LIST_PAGE)), pg = Math.min(page, pages);
   const addTo = (k, id) => { if (!id || sel[k].includes(id)) return; setSel(s => ({ ...s, [k]: [...s[k], id].sort() })); setQ(""); };
-  const drop = e => { const k = { g: "groups", u: "users", p: "peers" }[e.k]; setSel(s => ({ ...s, [k]: s[k].filter(x => x !== e.id) })); };
+  const drop = e => { const k = e.k === "u" ? "users" : "peers"; setSel(s => ({ ...s, [k]: s[k].filter(x => x !== e.id) })); };
   return html`<${Fragment}>
       <div class="sharebar" onInput=${onTyped} onChange=${onTyped}>
-        <div class="sharebar-add"><${UserPicker} value=${null} placeholder=${T("Add a person, group or device…")} exclude=${sel.users}
-          groups=${Store.groups().filter(g => !sel.groups.includes(g.id))} onGroup=${id => addTo("groups", id)} onChange=${id => addTo("users", id)}
+        <div class="sharebar-add"><${UserPicker} value=${null} placeholder=${T("Add a person or device…")} exclude=${sel.users}
+          onChange=${id => addTo("users", id)}
           devices=${here.filter(p => !sel.peers.includes(p.id)).map(p => ({ id: p.id, name: deviceLabel(p), sub: (Store.user(p.user_id) || {}).name || "" }))}
           onDevice=${id => addTo("peers", id)}/></div>
         ${list.length > LIST_PAGE || q ? html`<input class="sharebar-filter" value=${q} data-enter="self" placeholder=${T("Filter the list…")}
             aria-label=${T("Filter the list…")} onInput=${e => { setQ(e.target.value); setPage(1); }}/>` : null}
       </div>
       ${list.length ? html`<div class="sharegrid gmembers" role="table">
-          <div class="sharegrid-h" role="row"><span>${T("col|User, group or device")}</span><span>${T("Devices here")}</span><span></span></div>
-          ${pageSlice(rows, pg).map(e => { const gone = e.k === "g" ? !Store.group(e.id) : e.k === "u" ? !Store.user(e.id) : !Store.peer(e.id);
+          <div class="sharegrid-h" role="row"><span>${T("col|User or device")}</span><span>${T("Devices here")}</span><span></span></div>
+          ${pageSlice(rows, pg).map(e => { const gone = e.k === "u" ? !Store.user(e.id) : !Store.peer(e.id);
             return html`<div class=${"sharegrid-r" + (e.k === "u" ? "" : " grp") + (gone ? " gone" : "")} role="row" key=${e.k + ":" + e.id}>
-            <span class="nm">${e.k === "g" ? html`<${Ic} i="users"/>` : e.k === "p" ? html`<${Ic} i="device"/>` : null}${whoEntryName(e)}${e.k === "g" && !gone
-              ? html`<span class="faint sharegrid-sub">${plural(Store.group(e.id).users.length, "member")}</span>` : e.k === "p" && !gone && Store.user(Store.peer(e.id).user_id)
+            <span class="nm">${e.k === "p" ? html`<${Ic} i="device"/>` : null}${whoEntryName(e)}${e.k === "p" && !gone && Store.user(Store.peer(e.id).user_id)
               ? html`<span class="faint sharegrid-sub">${Store.user(Store.peer(e.id).user_id).name}</span>` : null}</span>
             <span>${cell(e)}</span>
             <span><button type="button" class="btn btn-ghost btn-mini" title=${T("Remove {name}", { name: whoEntryName(e) })}
@@ -1821,7 +1817,7 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
   const apply = () => { if (empty || pBad) return; onApply(dest, chosen ? sel : null, ips, aud, directIp !== undefined ? dip : undefined,
     withPorts && pc ? { proto: pc.proto, list: pc.list } : null);
     dirtyRef.current = false; if (cleanRef.current) cleanRef.current(); closeModal(); };
-  const count = [sel.groups.length ? plural(sel.groups.length, "group") : "", sel.users.length ? plural(sel.users.length, "user") : "",
+  const count = [sel.users.length ? plural(sel.users.length, "user") : "",
                  sel.peers.length ? plural(sel.peers.length, "device") : ""].filter(Boolean).join(", ");
   const kSni = chosen && mode === "sni_kernel" && ((((Store.stats || {})[node] || {}).smartroute || {}).src || 0) < 2;
   return html`<${Sheet} title=${T("Rule settings")} width=${680} dirtyRef=${dirtyRef} closeRef=${closeRef} cleanRef=${cleanRef}

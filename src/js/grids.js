@@ -3,7 +3,7 @@ import { T } from "./i18n.js";
 import { Store, api, useStore } from "./store.js";
 import { targetType, nodeStale, ghostIface, ifaceIsAll, ifaceMatch, tgtXfer, tgtSeenAge } from "./model.js";
 import {
-  Ic, Tag, Badge, Dropdown, SearchBox, secTitle, footRow, Popover, toast, openModal, openConfirm,
+  Ic, Tag, Badge, Dropdown, SearchBox, secTitle, footRow, toast, openModal, openConfirm,
   rowSingle, rowDouble, rowNoSelect, RowError, rateCell, xferCell, DepBadge,
   gridIfaceTag, gridStatusBadge, lifecycleIcon, statusLabel, dlul, rowError,
   Portal, Sheet, closeModal,
@@ -18,21 +18,13 @@ import {
   confirmCorrectDeployment, openRecreateRekey, peerBlockBtn,
 } from "./peer-actions.js";
 import { PeerTrafficCell } from "./traffic-ui.js";
-import { openPeerConfigs, ReachedByBody } from "./peer-ui.js";
-import { openEditPeer, openPeerView, openPeerNetworks } from "./sheets-crud.js";
+import { openPeerConfigs } from "./peer-ui.js";
+import { openEditPeer, openPeerView } from "./sheets-crud.js";
 import { h, Fragment } from "preact";
 import { useState, useEffect, useRef } from "preact/hooks";
 import htm from "htm";
 
 const html = htm.bind(h);
-
-const gwTag = (p, t) => html`<${Popover} hoverOnly cls="grp-pop" popCls="netroute-bub netbub-wide"
-  trigger=${html`<span class=${"tg tg-gw" + (t.online ? "" : " muted")} role="button" tabIndex="0" onClick=${() => openPeerNetworks(p)}
-    onKeyDown=${e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openPeerNetworks(p); } }}
-    aria-label=${T("Who reaches the networks behind this device")}>
-    <${Ic} i="network"/>${p.routes.length}</span>`}>
-  <${ReachedByBody} peer=${p} blocked=${!!(p.selfDisabled || p.userDisabled) || p.status === "expired"} down=${!t.online} onView=${() => openPeerNetworks(p)}/>
-<//>`;
 
 export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hideUser, loc, sort, dir, onSort, ranged, owner }) {
   const arrow = c => sort === c ? (dir < 0 ? "↓ " : "↑ ") : "";
@@ -49,17 +41,10 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
         const hidden = p.targets.filter(d => !(shownByPeer[p.id] || new Set()).has(tkey(d.node, d.iface)));
         const fresh = Store.recentlyCreated[p.id] && (Date.now() - Store.recentlyCreated[p.id] < 2500);
         const re = rowError("peer:" + p.id);
-        const gw = (p.routes || []).length ? gwTag(p, t) : null;
         return html`<tr key=${p.id + "|" + tkey(t.node, t.iface)} data-peer=${p.id} class=${"clk" + (fresh ? " pcreate" : "")} title=${T("Double-click for QR / configs")} onMouseDown=${rowNoSelect} onClick=${e => rowSingle(e, () => openPeerView(p.id, t.node, t.iface))} onDblClick=${e => rowDouble(e, () => openPeerConfigs(p))}>
-          <td data-label=${T("col|Status")} class="c-status">${gridStatusBadge(t, p, re)}${loc ? gridIfaceTag(t) : null}${loc ? gw : null}</td>
+          <td data-label=${T("col|Status")} class="c-status">${gridStatusBadge(t, p, re)}${loc ? gridIfaceTag(t) : null}</td>
           ${(() => {
-            const titleCell = html`<td data-label=${T("col|Title")} class="c-name">${lifecycleIcon(p, t.status)}${(() => {
-              const nm = p.title ? html`<b>${p.title}</b>` : html`<span class="faint">${T("Untitled")}</span>`;
-              const priv = p.private ? html`<span class="tg tg-priv" title=${T("Only this user's own devices reach it and the networks behind it")}>${T("tag|private")}</span>` : null;
-              const rtr = p.router ? html`<span class="tg tg-router" title=${T("Several devices share this address — the torrent guard never cuts it as a whole")}>${T("tag|router")}</span>` : null;
-              const chip = !loc && !agg && gw ? gw : null;
-              return priv || rtr || chip ? html`<span class="namewrap">${nm}${priv}${rtr}${chip}</span>` : nm;
-            })()}</td>`;
+            const titleCell = html`<td data-label=${T("col|Title")} class="c-name">${lifecycleIcon(p, t.status)}${p.title ? html`<b>${p.title}</b>` : html`<span class="faint">${T("Untitled")}</span>`}</td>`;
             const addrCell = html`<td data-label=${T("col|Address")} class="c-addr"><span class="addr">${t.ip || "—"}</span>${hidden.length ? html`<${DepBadge} others=${hidden}/>` : null}</td>`;
             const nodeCell = html`<td data-label=${T("col|Node")} class="c-node"><div class="srvcell"><span class="srv-name" style=${"color:" + (Store.nodeColor(t.node) || "var(--ink)")}>${Store.nodeName(t.node)}</span></div></td>`;
             const userCell = hideUser ? null : html`<td data-label=${T("col|User")} class=${"usercell" + (u ? " linked" : "")}
@@ -70,8 +55,7 @@ export function PeerGrid({ rows, agg, node, iface, shownByPeer, q, blocked, hide
             if (loc) return html`${userCell}${titleCell}${addrCell}${nodeCell}`;
             const srvAgg = agg ? html`<td data-label=${node === "*" ? T("col|Node") : T("col|IF")} class="c-node"><div class="srvcell">
               ${node === "*" ? html`<span class="srv-name" style=${"color:" + (Store.nodeColor(t.node) || "var(--ink)")}>${Store.nodeName(t.node)}</span>` : null}
-              ${gw ? html`<span class="srvtags">${ifaceIsAll(iface) ? gridIfaceTag(t) : null}${gw}</span>`
-                : (ifaceIsAll(iface) ? gridIfaceTag(t) : null)}
+              ${ifaceIsAll(iface) ? gridIfaceTag(t) : null}
             </div></td>` : null;
             return html`${userCell}${titleCell}${srvAgg}${addrCell}`;
           })()}
@@ -130,8 +114,6 @@ export const PEER_SORT = () => [["status", T("col|Status")], ["title", T("col|Ti
   ["address", T("col|Address")], ["online", T("col|Online")], ["rate", T("col|Rate")], ["total", T("col|Total")]];
 export const USER_SORT = () => [["status", T("col|Status")], ["name", T("col|User")], ["peers", T("col|Peers")], ["nodes", T("col|Nodes")],
   ["last", T("col|Online")], ["rate", T("col|Rate")]];
-export const GROUP_SORT = () => [["name", T("col|Group")], ["members", T("col|Members")], ["peers", T("col|Peers")], ["nodes", T("col|Nodes")],
-  ["nets", T("col|Networks")], ["rate", T("col|Rate")]];
 export const filterBtn = (on, controls, key) => {
   const k = key || String(controls);
   if (_fsRedraw && _fsKey === k && _fsCtl !== controls) { _fsCtl = controls; queueMicrotask(_fsRedraw); }

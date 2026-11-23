@@ -3,7 +3,7 @@ import { T, locale } from "./i18n.js";
 import { Store, useStore, bus } from "./store.js";
 import { Ic, Popover, Portal, xferCell, dlul } from "./ui.js";
 import { ChartHover } from "./charts.js";
-import { trafficRangeLabel, peerTraffic, userTraffic, groupTraffic } from "./views.js";
+import { trafficRangeLabel, peerTraffic, userTraffic } from "./views.js";
 import { trafficView, trafficModalView, trafficTotals, trafficData, trafficSeries, panelToday, volumeColumns, customWindow } from "./traffic.js";
 import { h, Fragment } from "preact";
 import { useState, useRef } from "preact/hooks";
@@ -100,7 +100,6 @@ function TrafficBubble({ a, rx, tx, ctx, user }) {
   const c = ctx || {};
   const notes = user ? [] : [
     !c.owner && a && a.owners > 1 ? T("The whole device — including what it carried for an earlier owner.") : null,
-    c.group ? T("Every member's devices added together — someone in two groups counts in both.") : null,
     c.ungrouped ? T("This peer's total across all its deployments — every row of it repeats it.") : null,
     c.filtered ? T("The whole peer, not only the deployments this filter shows.") : null,
     c.wire ? T("On {v1} now: {v2} — since the interface came up", { v1: c.iface, v2: pair(c.wire.rx_bytes || 0, c.wire.tx_bytes || 0) }) : null,
@@ -155,9 +154,9 @@ export function TrafficBlock({ by, id }) {
   useStore();
   const mv = trafficModalView;
   const e = trafficTotals(mv);
-  const s = trafficSeries(by, id, mv, by === "group" ? ((Store.group(id) || {}).users || []).slice().sort().join(",") : "");
+  const s = trafficSeries(by, id, mv);
   const td = e && e.data;
-  const a = !td ? null : by === "peer" ? td.peer.get(id) || null : by === "user" ? td.user.get(id) || null : groupTraffic(td, id);
+  const a = !td ? null : (by === "peer" ? td.peer.get(id) : td.user.get(id)) || null;
   const d = s.data;
   const gaps = d && d.gaps ? Object.keys(d.gaps).filter(k => (d.gaps[k] || []).some(g => g[0] > d.since)) : [];
   return html`<div class="tblock">

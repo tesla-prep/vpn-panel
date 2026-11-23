@@ -112,7 +112,7 @@ export function srvVars(vars) {
   return out;
 }
 
-const USER_FIELDS = { tag: "Tag", note: "Note", vk_link: "VK call link", vk_links: "VK call links", expiry: "Subscription expiry" };
+const USER_FIELDS = { vk_link: "VK call link", vk_links: "VK call links" };
 const ACT_FIELDS = { awg_params: "act|AmneziaWG parameters", listen_port: "act|listen port", mtu: "MTU" };
 const LEGACY_DETAIL = {
   "Deleted peer": [[/^(\d+) targets?$/, m => plural(+m[1], "target")]],
@@ -126,9 +126,7 @@ const LEGACY_DETAIL = {
   "Updated panel settings": [[/^(.+)$/, m => m[1].split(", ").map(x => T(x)).join(", ")]],
   "Updated user": [[/^([a-z_]+(?:, [a-z_]+)*)$/, m => m[1].split(", ").map(f => (USER_FIELDS[f] ? T(USER_FIELDS[f]) : f)).join(", ")]],
 };
-const RECLAIMED = [[/^(\d+) user\(s\) kept$/, m => T("{count} kept", { count: plural(+m[1], "user") })],
-                   [/^no users in its store$/, () => T("no users in its store")]];
-for (const v of ["Reclaimed a WDTT server", "Reclaimed a csqtt server", "Reclaimed a wdtt server"]) LEGACY_DETAIL[v] = RECLAIMED;
+
 
 export function srvName(e) {
   const n = (e && e.name) || "";
@@ -151,7 +149,6 @@ export function srvDetail(e) {
 const LEGACY_VERB = [
   [/^VK pool changed — reassigned (\d+) user\(s\)$/, m => T("VK pool changed — reassigned %d user(s)").replace("%d", m[1])],
   [/^VK links per new user: (\d+) → (\d+)$/, m => T("VK links per new user: %d → %d").replace("%d", m[1]).replace("%d", m[2])],
-  [/^Reclaimed a (wdtt|csqtt) server$/, m => T(m[1] === "wdtt" ? "Reclaimed a WDTT server" : "Reclaimed a csqtt server")],
 ];
 export const srvVerb = v => {
   if (!v) return "";

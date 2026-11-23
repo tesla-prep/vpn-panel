@@ -3,7 +3,7 @@ import { T } from "./js/i18n.js";
 
 const DEFAULTS = { graceMs: 60000, nodeStaleMs: 30000, unblockMs: 300000, restoreGraceMs: 120000 };
 
-const RANK = { online: 8, faulty: 7, ready: 6, expiring: 6, blocked: 5, partial: 4, restoring: 3, pending: 3, creating: 3, rotating: 3, dangling: 2, broken: 2, blocking: 1, disabled: 0, expired: 0, unknown: 1 };
+const RANK = { online: 8, faulty: 7, ready: 6, blocked: 5, partial: 4, restoring: 3, pending: 3, creating: 3, rotating: 3, dangling: 2, broken: 2, blocking: 1, disabled: 0, unknown: 1 };
 
 function ipInCidr(ip, cidr) {
   if (!ip || !cidr || String(cidr).indexOf("/") < 0 || String(ip).indexOf(":") >= 0) return true;
@@ -156,18 +156,10 @@ function reconcile(roster, stats, now, cfg) {
     if (cfg.rotating && cfg.rotating.has(pid) && (status === "dangling" || status === "creating" || status === "unknown")) status = "rotating";
 
     const blocked = !!(p.disabled || (user && user.disabled));
-    const nowSec = now / 1000;
-    const peerExp = +p.expiry || 0, userExp = (user && +user.expiry) || 0;
-    const effExpiry = (peerExp && userExp) ? Math.min(peerExp, userExp) : (peerExp || userExp);
-    const selfExpired = peerExp > 0 && nowSec >= peerExp;
-    const userExpired = userExp > 0 && nowSec >= userExp;
-    const expired = !blocked && (selfExpired || userExpired);
-    const warnS = (cfg.expiryWarnDays != null ? cfg.expiryWarnDays : 3) * 86400;
-    const expiring = !blocked && !expired && effExpiry > 0 && nowSec >= (effExpiry - warnS);
     const ublkAt = Math.max(p.unblock_at || 0, (user && user.unblock_at) || 0);
     const restoring = !blocked && ublkAt && (now - ublkAt * 1000) < cfg.unblockMs && !(live.length > 0 && present.length === live.length);
-    const lifecycle = blocked ? "disabled" : expired ? "expired" : expiring ? "expiring" : restoring ? "restoring" : null;
-    const removedByAccess = blocked || expired;
+    const lifecycle = blocked ? "disabled" : restoring ? "restoring" : null;
+    const removedByAccess = blocked;
     const OFF_STATES = { dangling: 1, unknown: 1, creating: 1, broken: 1, partial: 1 };
     const takesLifecycle = s => s === "ready" || (removedByAccess && OFF_STATES[s]);
     if (lifecycle && takesLifecycle(status)) status = lifecycle;
@@ -190,7 +182,6 @@ function reconcile(roster, stats, now, cfg) {
         : T("reaching the server but the handshake never completes — likely DPI / MTU / wrong {v1} params", { v1: proto });
     }
     else if (status === "broken") reason = T("the interface is up but this peer's IP is outside its subnet — the record needs correcting, not the interface");
-    else if (status === "expired") reason = selfExpired ? T("this peer's access date has passed") : T("the subscription's access date has passed");
 
     const restorable = targets.some(d => d.restorable);
     const correctable = targets.some(d => d.correctable);
@@ -206,13 +197,9 @@ function reconcile(roster, stats, now, cfg) {
       id: pid, pubkey: pubkey, psk: p.psk || "", title: p.title || "",
       wdtt_password: p.wdtt_password || "", csqtt_password: p.csqtt_password || "", vk_hash: p.vk_hash || "",
       user_id: (p.user_id != null) ? p.user_id : null,
-      name: user ? (user.name || "") : "", tag: user ? (user.tag || "") : "",
+      name: user ? (user.name || "") : "",
       unassigned: !user,
       sub_hide: Array.isArray(p.sub_hide) ? p.sub_hide : [],
-      routes: Array.isArray(p.routes) ? p.routes : [],
-      share: (p.share && typeof p.share === "object" && !Array.isArray(p.share)) ? p.share : null,
-      private: p.private === true,
-      router: p.router === true,
       overrides: p.overrides || null,
       targets: targets, created_at: p.created_at || null, modified_at: p.modified_at || null,
       status: status, reason: reason, online: onlineAny, lastHandshakeAge: lastAge,
@@ -222,9 +209,6 @@ function reconcile(roster, stats, now, cfg) {
       problemMs: problemMs,
       disabled: blocked, selfDisabled: !!p.disabled, userDisabled: !!(user && user.disabled),
       disabledAt: p.disabled_at || 0,
-      expired: expired, selfExpired: selfExpired, userExpired: userExpired, expiring: expiring,
-      expiry: effExpiry,
-      ownExpiry: peerExp,
     };
   });
 
@@ -238,16 +222,9 @@ function reconcile(roster, stats, now, cfg) {
       if (pr.online) online = true;
       if (status === "empty" || (RANK[pr.status] || 0) > (RANK[status] || 0)) status = pr.status;
     });
-    const uExp = +u.expiry || 0, nowSecU = now / 1000, warnSU = (cfg.expiryWarnDays != null ? cfg.expiryWarnDays : 3) * 86400;
-    const uExpired = !u.disabled && uExp > 0 && nowSecU >= uExp;
-    const uExpiring = !u.disabled && !uExpired && uExp > 0 && nowSecU >= (uExp - warnSU);
-    if (status === "ready" || status === "empty") {
-      if (u.disabled) status = "disabled";
-      else if (uExpired) status = "expired";
-      else if (uExpiring) status = "expiring";
-    }
+    if ((status === "ready" || status === "empty") && u.disabled) status = "disabled";
     return {
-      id: uid, name: u.name || "", tag: u.tag || "", note: u.note || "", vk_link: u.vk_link || "",
+      id: uid, name: u.name || "", vk_link: u.vk_link || "",
       vk_links: Array.isArray(u.vk_links) ? u.vk_links : (u.vk_link ? [u.vk_link] : []),
       vk_pool: u.vk_pool || {},
 
@@ -256,7 +233,6 @@ function reconcile(roster, stats, now, cfg) {
       peerCount: mine.length, onlineCount: mine.filter(pr => pr.online).length,
       status: status, online: online, disabled: !!u.disabled,
       disabledAt: u.disabled_at || 0,
-      expired: uExpired, expiring: uExpiring, expiry: uExp,
     };
   });
 

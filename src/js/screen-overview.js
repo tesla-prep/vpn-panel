@@ -977,8 +977,7 @@ export function Protection({ range, bs }) {
       spark: (d && d.bseries) || null, color: "var(--brand)",
       bcats: bcats.length ? bcats : null, cats: (cov.cats && cov.cats.length) ? cov.cats : null });
   }
-  tiles.push({ k: T("Torrents caught"), v: kmb(torrents), n: torrents, sub: torrents ? T("connections · {v1}", { v1: rw }) : T("none {v1}", { v1: rw }), spark: (d && d.series) || null, color: "var(--dangling)", who: who.torrent,
-    foot: T("Several devices behind one router? Mark that device as a router — one device's torrent then no longer cuts the others.") });
+  tiles.push({ k: T("Torrents caught"), v: kmb(torrents), n: torrents, sub: torrents ? T("connections · {v1}", { v1: rw }) : T("none {v1}", { v1: rw }), spark: (d && d.series) || null, color: "var(--dangling)", who: who.torrent });
   tiles.push({ k: T("Scanners flagged"), v: kmb(scan), n: scan, sub: scan ? plural(scan, "source") + " · " + rw : T("none flagged"), color: "var(--partial)", who: who.scan });
   if (mechKeys.length || mechd) {
     tiles.push({ k: T("Ports blocked"), v: kmb(mechd), n: mechd,

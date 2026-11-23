@@ -88,7 +88,6 @@ export function portokRead(text) {
 }
 export const portokSame = (a, b) => (a || []).join(",") === (b || []).join(",");
 
-export const routerCapable = p => !!p && (p.router === true || (p.targets || []).some(t => ["wg", "awg"].includes(targetType(t))));
 export const candDialPort = cd => {
   const l = ((cd || {}).wdtt || {}).listen;
   const p = l ? Number(String(l).split(":").pop()) : 0;
@@ -324,7 +323,6 @@ export function nextCsqttName(node) {
                         ...((Store.stats[node] || {}).csqtt || []).map(c => c && c.iface),
                         ...Object.keys(nrec.wdtt_cfg || {}),
                         ...((Store.stats[node] || {}).wdtt || []).map(w => w && w.iface),
-                        ...(nrec.csqtt_candidates || []).map(c => c && c.iface),
                         ...Object.keys(Store.describe[node] || {}),
                         ...Object.keys(nrec.missing_ifaces || {}), ...Object.keys(nrec.ghost_ifaces || {}),
                         ...(nrec.iface_candidates || []).map(c => c && c.name)].filter(Boolean));

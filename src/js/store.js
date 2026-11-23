@@ -83,7 +83,6 @@ export const api = {
   nodes() { return this.get("/api/nodes"); },
   nodeCreate(b) { return this.post("/api/nodes/create", b); },
   nodeUpdate(b) { return this.post("/api/nodes/update", b); },
-  turnReclaim(b) { return this.post("/api/turn/reclaim", b); },
   escrowVerified(b) { return this.post("/api/iface/escrow/verified", b); },
   resolveHost(h) { return this.get("/api/resolve?host=" + encodeURIComponent(h)); },
   exitCheck(node, dev, iface) { return this.get("/api/exit/check?node=" + encodeURIComponent(node)
@@ -124,17 +123,12 @@ export const api = {
   userCreate(b) { return this.post("/api/users/create", b); },
   userUpdate(b) { return this.post("/api/users/update", b); },
   userDelete(b) { return this.post("/api/users/delete", b); },
-  groupCreate(b) { return this.post("/api/groups/create", b); },
-  groupUpdate(b) { return this.post("/api/groups/update", b); },
-  groupDelete(b) { return this.post("/api/groups/delete", b); },
   userBlock(b) { return this.post("/api/user/block", b); },
   userUnblock(b) { return this.post("/api/user/unblock", b); },
   peerCreate(b) { return this.post("/api/peers/create", b); },
   peerUpdate(b) { return this.post("/api/peers/update", b); },
-  peerNetworks(b) { return this.post("/api/peers/networks", b); },
   routingWho(b) { return this.post("/api/routing/who", b); },
   userNetworks(b) { return this.post("/api/users/networks", b); },
-  peerNetworkProbe(b) { return this.post("/api/peers/networks/probe", b); },
   peerAddTarget(b) { return this.post("/api/peers/add-target", b); },
   exitTest(b) { return this.post("/api/exit/test", b); },
   peerUpdateTarget(b) { return this.post("/api/peers/update-target", b); },
@@ -166,12 +160,10 @@ export const api = {
   turnStart(b) { return this.post("/api/turn/start", b); },
   turnReinstall(b) { return this.post("/api/turn/reinstall", b); },
   turnInstall(b) { return this.post("/api/turn/install", b); },
-  turnOnboard(b) { return this.post("/api/turn/onboard", b); },
   turnCancel(b) { return this.post("/api/turn/cancel", b); },
   turnCheckUpdates(b) { return this.post("/api/turn/check-updates", b); },
   wdttSet(b) { return this.post("/api/wdtt/set", b); },
   wdttDelete(b) { return this.post("/api/wdtt/delete", b); },
-  wdttAdopt(b) { return this.post("/api/wdtt/adopt", b); },
   wdttPeerCreate(b) { return this.post("/api/wdtt-peer/create", b); },
   wdttPeerRotate(b) { return this.post("/api/wdtt-peer/rotate", b); },
   wdttRestore(b) { return this.post("/api/wdtt/restore", b); },
@@ -181,7 +173,6 @@ export const api = {
   csqttVersions(q) { return this.get("/api/csqtt/versions?node=" + encodeURIComponent(q.node || "") + (q.iface ? "&iface=" + encodeURIComponent(q.iface) : "")); },
   csqttVersion(b) { return this.post("/api/csqtt/version", b); },
   csqttSet(b) { return this.post("/api/csqtt/set", b); },
-  csqttAdopt(b) { return this.post("/api/csqtt/adopt", b); },
   csqttDelete(b) { return this.post("/api/csqtt/delete", b); },
   csqttPeerCreate(b) { return this.post("/api/csqtt-peer/create", b); },
   csqttPeerRotate(b) { return this.post("/api/csqtt-peer/rotate", b); },
@@ -304,7 +295,6 @@ export const Store = {
       probSince: this._probSince,
       ...(_adv.churn_gap_s ? { churnGapS: _adv.churn_gap_s } : {}), ...(_adv.churn_min ? { churnMin: _adv.churn_min } : {}),
       detectBlocked: _sc.blocked !== false, detectChurn: _sc.faulty !== false,
-      expiryWarnDays: (this.panelSettings || {}).expiry_warn_days,
       ...(_adv.restore_grace_ms ? { restoreGraceMs: _adv.restore_grace_ms } : {}),
       ...(_adv.node_stale_ms ? { nodeStaleMs: _adv.node_stale_ms } : {}), ...(_adv.peer_grace_ms ? { graceMs: _adv.peer_grace_ms } : {}) });
     this._missIfSince = this._missIfSince || {};
@@ -365,40 +355,7 @@ export const Store = {
   },
   peer(id) { return this.recon.peers.find(p => p.id === id); },
   user(id) { return this.recon.users.find(u => u.id === id); },
-  groups() {
-    if (this._groupsOf !== this.roster) {
-      const g = (this.roster && this.roster.groups) || {}, us = (this.roster && this.roster.users) || {};
-      this._groupsList = Object.keys(g).filter(id => g[id] && typeof g[id] === "object")
-        .map(id => ({ id, name: String(g[id].name || ""), users: (Array.isArray(g[id].users) ? g[id].users : []).filter(u => us[u]) }))
-        .sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
-      this._groupsById = new Map(this._groupsList.map(x => [x.id, x]));
-      this._groupsOf = this.roster;
-    }
-    return this._groupsList;
-  },
-  group(id) { this.groups(); return this._groupsById.get(id) || null; },
-  groupsByUser(id) {
-    if (this._gByUserOf !== this.roster) {
-      const m = new Map();
-      for (const g of this.groups()) for (const u of g.users) (m.get(u) || m.set(u, []).get(u)).push(g);
-      this._gByUser = m;
-      this._gByUserOf = this.roster;
-    }
-    return this._gByUser.get(id) || [];
-  },
   peersOfUser(id) { return this.recon.peers.filter(p => p.user_id === id); },
-  sharesByGroup(gid) {
-    if (this._sByGroupOf !== this.recon) {
-      const m = new Map();
-      for (const p of this.recon.peers) {
-        if (p.private || !(p.routes || []).length || !p.share || !p.share.groups || typeof p.share.groups !== "object") continue;
-        for (const g of Object.keys(p.share.groups)) (m.get(g) || m.set(g, []).get(g)).push(p);
-      }
-      this._sByGroup = m;
-      this._sByGroupOf = this.recon;
-    }
-    return this._sByGroup.get(gid) || [];
-  },
   peersByUser(id) {
     if (this._pByUserOf !== this.recon) {
       const m = new Map();

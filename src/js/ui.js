@@ -183,7 +183,7 @@ export function closeModals(n) { _applyStack(_stack.slice(0, Math.max(0, _stack.
 let _sheetStack = [];
 
 let _rowClickT = null;
-const _rowInteractive = e => !!(e.target.closest && e.target.closest("button, a, input, select, textarea, label, .assigncell, .rowacts, .selwrap, .tg-gw"));
+const _rowInteractive = e => !!(e.target.closest && e.target.closest("button, a, input, select, textarea, label, .assigncell, .rowacts, .selwrap"));
 export function rowSingle(e, fn) { if (_rowInteractive(e)) return; clearTimeout(_rowClickT); _rowClickT = setTimeout(() => { _rowClickT = null; fn(); }, 200); }
 export function rowDouble(e, fn) { if (_rowInteractive(e)) return; clearTimeout(_rowClickT); _rowClickT = null; fn(); }
 export const rowNoSelect = e => { if (e.detail > 1) e.preventDefault(); };
@@ -448,8 +448,8 @@ const STATUS_WORDS = once(() => ({
   online: T("status|Online"), ready: T("status|Ready"), pending: T("status|Pending"), creating: T("status|Creating"),
   rotating: T("status|Rotating"), restoring: T("status|Restoring"), partial: T("status|Partial"),
   dangling: T("status|Dangling"), broken: T("status|Broken"), faulty: T("status|Faulty"),
-  blocked: T("status|Blocked"), restricted: T("status|Restricted"), expired: T("status|Expired"),
-  expiring: T("status|Expiring"), blocking: T("status|Blocking"), unknown: T("status|Unknown"),
+  blocked: T("status|Blocked"), restricted: T("status|Restricted"),
+  blocking: T("status|Blocking"), unknown: T("status|Unknown"),
   unassigned: T("status|Unassigned"), orphan: T("status|Orphan"), removing: T("status|Removing"), empty: T("status|Empty"),
 }));
 export const statusLabel = s => { const k = STATUS_LABEL[s] || s || ""; return STATUS_WORDS()[k] || (k.charAt(0).toUpperCase() + k.slice(1)); };
@@ -798,16 +798,16 @@ export function opTag(key) {
   if (op.phase === "fail") return html`<${StatusTag} cls="tg-busy del" icon="warn" label=${ifopFail(op.verb)} msg=${op.err || T("the change failed on the node")} title=${T("Save failed on the node")}/>`;
   return null;
 }
-export const STATUS_RANK = { disabled: -1, expired: -1, blocking: -1, dangling: 0, broken: 0, blocked: 1, faulty: 1, partial: 1, pending: 2, creating: 2, rotating: 2, restoring: 2, expiring: 4, unknown: 3, unassigned: 4, online: 5, ready: 6 };
+export const STATUS_RANK = { disabled: -1, blocking: -1, dangling: 0, broken: 0, blocked: 1, faulty: 1, partial: 1, pending: 2, creating: 2, rotating: 2, restoring: 2, unknown: 3, unassigned: 4, online: 5, ready: 6 };
 export const STATUS_ICON = { online: "check", ready: "clock", partial: "warn", pending: "clock", creating: "clock", rotating: "refresh",
   blocked: "warn", faulty: "warn", dangling: "err", broken: "warn", unknown: "info", unassigned: "user", orphan: "link", removing: "trash", empty: "info",
-  disabled: "off", blocking: "off", restoring: "refresh", expired: "warn", expiring: "warn" };
+  disabled: "off", blocking: "off", restoring: "refresh" };
 
 const PROC_LABEL = once(() => ({
   reinstalling: T("re-installing"), "converting-bare": T("converting to bare-metal"), "converting-docker": T("converting to docker"), updating: T("updating"), uninstalling: T("uninstalling"),
   reinstalled: T("re-installed"), "reinstalled-updated": T("re-installed and updated"), "converted-bare": T("converted to bare-metal"), "converted-docker": T("converted to docker"), updated: T("updated"), uptodate: T("up to date"),
   "reinstall-aborted": T("re-install aborted"), "convert-aborted": T("convert aborted"), "update-aborted": T("update aborted"), "uninstall-aborted": T("uninstall aborted"),
-  "reinstall-failed": T("re-install failed"), "convert-failed": T("convert failed"), "update-failed": T("update failed"), "uninstall-failed": T("uninstall failed"), "adopt-failed": T("take-over failed"), "adopted-container": T("took over a container's interface"), "adopt-container-failed": T("container take-over failed"), failed: T("proc|failed") }));
+  "reinstall-failed": T("re-install failed"), "convert-failed": T("convert failed"), "update-failed": T("update failed"), "uninstall-failed": T("uninstall failed"), "adopted-container": T("took over a container's interface"), "adopt-container-failed": T("container take-over failed"), failed: T("proc|failed") }));
 const PROC_LABEL_FRESH = once(() => ({ reinstalling: T("installing"), reinstalled: T("installed"), "reinstalled-updated": T("installed and updated"),
   "reinstall-aborted": T("install aborted"), "reinstall-failed": T("install failed") }));
 export const procLabel = (state, fresh) => (fresh && PROC_LABEL_FRESH()[state]) || PROC_LABEL()[state] || state;
@@ -853,8 +853,6 @@ export function lifecycleIcon(it, st) {
   if (!it) return null;
   st = st || it.status;
   if (it.disabled && st !== "disabled") return html`<span class="lc-ic lc-blocked" title=${T("status|Blocked")}><${Ic} i="off"/></span>`;
-  if (it.expired && st !== "expired") return html`<span class="lc-ic lc-expired" title=${T("Access expired")}><${Ic} i="warn"/></span>`;
-  if (it.expiring && st !== "expiring") return html`<span class="lc-ic lc-expiring" title=${T("About to expire")}><${Ic} i="warn"/></span>`;
   return null;
 }
 
@@ -869,8 +867,6 @@ const STATUS_REASONS = once(() => ({
   blocked: blockedReason(null),
   broken: T("the interface is up but this peer's IP is outside its subnet — the record needs correcting, not the interface"),
   disabled: T("access is blocked — removed from every server until unblocked"),
-  expired: T("the access date has passed — removed from every server until the date is extended"),
-  expiring: T("the access date is coming up — will be removed from every server when it passes"),
 }));
 export const statusReason = s => STATUS_REASONS()[s] || "";
 export function protoLabel(type) { return type === "awg" ? "AmneziaWG" : type === "wg" ? "WireGuard" : T("WireGuard or AmneziaWG"); }

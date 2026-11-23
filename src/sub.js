@@ -13,12 +13,6 @@
     en: {
       loading: "Loading…", noConfigs: "No configs yet",
       noConfigsSub: "There are no active peers on this subscription. New peers will appear here automatically.",
-      netsTitle: "Networks you can reach",
-      netsPick: "Available networks",
-      netsVia: "on {node} · through {via}",
-      netsNotCovered: "This device's settings leave it out — ask your administrator to include it.",
-      netsHowTo: "Open them by address — for example 192.168.50.10 in a browser, or \\\\192.168.50.10 for shared folders on Windows.",
-      netsNames: "A name from that network works only if your administrator set your device to use that network's DNS server. Automatic discovery — printers, the “Network” folder, .local names — doesn't reach across the tunnel.",
       peer: "Peer", primary: "Primary", download: "Download .conf", dl: "Download", copyConfig: "Copy config",
       copied: "Copied", copiedClip: "Copied to clipboard", copyFailed: "Copy failed", showConfig: "Show config text", showLink: "Show link", showQR: "Show QR",
       dlShort: "Download", enlarge: "Tap to enlarge", share: "Share",
@@ -68,9 +62,8 @@
       incompleteSub: "This link is missing the part after “#”. Copy the whole URL — the section after the # is what unlocks your configs and it never leaves your device.",
       notFound: "Link not found", notFoundSub: "This subscription doesn’t exist, was revoked, or subscriptions are turned off.",
       subDisabledSub: "This subscription has been turned off\nPlease contact your administrator",
-      subBlockedWord: "BLOCKED", subExpiredWord: "EXPIRED",
+      subBlockedWord: "BLOCKED",
       pickDevices: "Your devices", pickOpen: "Jump to any device or connection", close: "Close", connections: "Connections",
-      subExpiredSub: "This subscription has expired\nPlease contact your administrator",
       err: "Something went wrong", errServer: "Couldn’t load this subscription (server error). Please try again later.",
       errNet: "Couldn’t load this subscription. Check your connection and try again.",
       errResp: "The server returned an unexpected response.",
@@ -84,12 +77,6 @@
     ru: {
       loading: "Загрузка…", noConfigs: "Пока нет конфигураций",
       noConfigsSub: "На этой подписке нет активных пиров. Новые появятся здесь автоматически.",
-      netsTitle: "Сети, к которым у вас есть доступ",
-      netsPick: "Доступные сети",
-      netsVia: "на {node} · через {via}",
-      netsNotCovered: "Настройки этого устройства её не включают — попросите администратора добавить.",
-      netsHowTo: "Открывайте их по адресу — например, 192.168.50.10 в браузере или \\\\192.168.50.10 для общих папок Windows.",
-      netsNames: "Имя из той сети работает, только если администратор настроил ваше устройство на DNS-сервер этой сети. Автоматический поиск — принтеры, папка «Сеть», имена .local — через туннель не работает.",
       peer: "Пир", primary: "Главный", download: "Скачать .conf", dl: "Скачать", copyConfig: "Скопировать",
       copied: "Скопировано", copiedClip: "Скопировано в буфер обмена", copyFailed: "Не удалось", showConfig: "Показать текст конфига", showLink: "Показать ссылку", showQR: "Показать QR",
       dlShort: "Скачать", enlarge: "Нажмите, чтобы увеличить", share: "Поделиться",
@@ -139,9 +126,8 @@
       incompleteSub: "В ссылке отсутствует часть после «#». Скопируйте URL целиком — часть после # разблокирует ваши конфиги и никогда не покидает ваше устройство.",
       notFound: "Ссылка не найдена", notFoundSub: "Эта подписка не существует, была отозвана или подписки отключены.",
       subDisabledSub: "Эта подписка отключена\nОбратитесь к администратору",
-      subBlockedWord: "ЗАБЛОКИРОВАНО", subExpiredWord: "ИСТЕКЛО",
+      subBlockedWord: "ЗАБЛОКИРОВАНО",
       pickDevices: "Ваши устройства", pickOpen: "Перейти к любому устройству или подключению", close: "Закрыть", connections: "Подключения",
-      subExpiredSub: "Срок действия этой подписки истёк\nОбратитесь к администратору",
       err: "Что-то пошло не так", errServer: "Не удалось загрузить подписку (ошибка сервера). Попробуйте позже.",
       errNet: "Не удалось загрузить подписку. Проверьте соединение и попробуйте снова.",
       errResp: "Сервер вернул неожиданный ответ.",
@@ -575,7 +561,7 @@
   function _pickKey(e) {
     if (e.key === "Escape") { e.preventDefault(); e.stopImmediatePropagation(); dismissHints(); }
   }
-  function openConfigPicker(peers, cur, jump, extra) {
+  function openConfigPicker(peers, cur, jump) {
     closeAllHints();
     if (!peers.length) return;
     var ov = el("div", "cp-overlay");
@@ -591,16 +577,6 @@
     function isHere(en) { return cur && en.pi === cur.pi && en.ci === cur.ci; }
     function go(en) { dismissHints(); jump(en.pi, en.ci); }
     function row(on) { var r = el("button", "cp-row" + (on ? " on" : "")); r.type = "button"; return r; }
-    function netsRow(list) {
-      if (!extra) return;
-      var r = row(!!cur && cur.pi === extra.pi);
-      r.className += " cp-nets";
-      r.appendChild(el("span", "cp-name", t("netsPick")));
-      r.appendChild(el("span", "cp-nets-n", String(extra.n)));
-      r.onclick = function () { dismissHints(); jump(extra.pi, 0); };
-      list.appendChild(r);
-    }
-
     function showConnections(g, back) {
       title.textContent = ""; list.textContent = "";
       if (back) {
@@ -630,7 +606,6 @@
         r.onclick = function () { go(en); };
         list.appendChild(r);
       });
-      if (!back) netsRow(list);
     }
     function showPeers() {
       title.textContent = ""; list.textContent = "";
@@ -652,7 +627,6 @@
         r.onclick = function () { g.entries.length === 1 ? go(g.entries[0]) : showConnections(g, true); };
         list.appendChild(r);
       });
-      netsRow(list);
     }
 
     if (peers.length === 1) showConnections(peers[0], false); else showPeers();
@@ -1802,49 +1776,24 @@
   var hint = function (cls, dir) { var s = el("span", cls); s.setAttribute("aria-hidden", "true"); s.appendChild(chevronEl(dir)); return s; };
 
   var _relayoutRail = null;
-  function networksPage(nets) {
-    var page = el("section", "ppage");
-    page.setAttribute("data-mode", "nets");
-    var srow = el("div", "srow"), cell = el("div", "scell"), stage = el("div", "scell-stage");
-    var box = el("div", "netbox");
-    var head = el("p", "netbox-h", t("netsTitle"));
-    head.setAttribute("data-pick", "");
-    box.appendChild(head);
-    var list = el("ul", "netbox-list");
-    nets.forEach(function (n) {
-      var li = el("li", "netbox-row");
-      li.appendChild(el("span", "netbox-pre", n.prefix));
-      li.appendChild(el("span", "netbox-meta", n.via
-        ? t("netsVia").replace("{node}", function () { return n.node_name; }).replace("{via}", function () { return n.via; })
-        : n.node_name));
-      if (n.covered === false) li.appendChild(el("span", "netbox-warn", t("netsNotCovered")));
-      list.appendChild(li);
-    });
-    box.appendChild(list);
-    box.appendChild(el("p", "netbox-note", t("netsHowTo")));
-    box.appendChild(el("p", "netbox-note", t("netsNames")));
-    stage.appendChild(box); cell.appendChild(stage); srow.appendChild(cell); page.appendChild(srow);
-    return page;
-  }
   function deadPeerPage(row) {
     var peer = row.peer;
-    var expired = !!peer.expired && !peer.disabled;
     var page = el("section", "ppage");
     page.setAttribute("data-mode", "dead");
     var srow = el("div", "srow");
     var cell = el("div", "scell");
     var stage = el("div", "scell-stage");
-    var box = el("div", "peer-dead " + (expired ? "state-expired" : "state-blocked"));
+    var box = el("div", "peer-dead state-blocked");
     var nameEl = el("p", "peer-dead-name", peer.title || t("peer"));
     nameEl.setAttribute("data-pick", "");
     box.appendChild(nameEl);
-    box.appendChild(el("p", "state-word", expired ? t("subExpiredWord") : t("subBlockedWord")));
-    box.appendChild(el("p", "state-sub", expired ? t("subExpiredSub") : t("subDisabledSub")));
+    box.appendChild(el("p", "state-word", t("subBlockedWord")));
+    box.appendChild(el("p", "state-sub", t("subDisabledSub")));
     stage.appendChild(box); cell.appendChild(stage); srow.appendChild(cell); page.appendChild(srow);
     page.appendChild(hint("vhint vhint-u", "u")); page.appendChild(hint("vhint vhint-d", "d"));
     page._pick = { row: row, dead: true, title: peer.title || t("peer"),
                    cells: [{ srv: "", kind: "",
-                             badge: el("span", "scell-tag cp-dead", expired ? t("subExpiredWord") : t("subBlockedWord")) }] };
+                             badge: el("span", "scell-tag cp-dead", t("subBlockedWord")) }] };
     return page;
   }
   function peerProtoPage(mode, row, vkLink, userName) {
@@ -2206,11 +2155,6 @@
       showState(t("subBlockedWord"), t("subDisabledSub"), "blocked");
       return Promise.resolve();
     }
-    if (data.expired) {
-      document.getElementById("peers").hidden = true;
-      showState(t("subExpiredWord"), t("subExpiredSub"), "expired");
-      return Promise.resolve();
-    }
     var wrap = document.getElementById("peers");
     wrap.innerHTML = "";
     var peers = data.peers || [];
@@ -2230,8 +2174,8 @@
 
     return Promise.all(jobs).then(function (rows) {
       var anyBad = rows.some(function (r) { return r.bad; });
-      var deadRows = rows.filter(function (r) { return r.peer.disabled || r.peer.expired; });
-      var liveRows = rows.filter(function (r) { return !(r.peer.disabled || r.peer.expired); });
+      var deadRows = rows.filter(function (r) { return r.peer.disabled; });
+      var liveRows = rows.filter(function (r) { return !(r.peer.disabled); });
       var has = { wg: false, awg: false, turn: false };
       liveRows.forEach(function (r) { (r.peer.targets || []).forEach(function (t) {
         if (isSelfContained(t.type)) { if (data.turn_enabled) has.turn = true; return; }
@@ -2262,15 +2206,12 @@
         };
         btns[mode] = b; bar.appendChild(b);
       });
-      if ((data.networks || []).length && liveRows.length) pager.appendChild(networksPage(data.networks));
       deadRows.forEach(function (row) { pager.appendChild(deadPeerPage(row)); });
       if (!pager.children.length) { showState(t("noConfigs"), t("noConfigsSub")); return; }
       if (groups.length > 1) wrap.appendChild(bar);
       wrap.appendChild(pager);
 
       var pages = Array.prototype.slice.call(pager.children);
-      var netsIdx = -1;
-      for (var ni = 0; ni < pages.length; ni++) if (pages[ni].getAttribute("data-mode") === "nets") { netsIdx = ni; break; }
       pages.forEach(function (pg, i) {
         var u = pg.querySelector(".vhint-u"), d = pg.querySelector(".vhint-d");
         if (u) u.style.display = (pages.length > 1 && i > 0) ? "" : "none";
@@ -2304,9 +2245,9 @@
         return { pi: pi, ci: ((pg && pg._pos) ? pg._pos() : { cell: 0 }).cell };
       }
       var openPicker = function () {
-        openConfigPicker(pickPeers, curPick(), jumpTo, netsIdx >= 0 ? { pi: netsIdx, n: (data.networks || []).length } : null);
+        openConfigPicker(pickPeers, curPick(), jumpTo);
       };
-      var pickOn = pickTotal > 1 || netsIdx >= 0;
+      var pickOn = pickTotal > 1;
       headerSwitch(pickOn ? openPicker : null);
       if (pickOn) {
         pages.forEach(function (pg) {

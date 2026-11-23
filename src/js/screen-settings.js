@@ -422,7 +422,6 @@ export function PanelSettingsScreen() {
   const [ttlD, setTtlD] = useState(String(adv.geo_ttl_days || 3));
   const [topTalk, setTopTalk] = useState(String(ps.top_talkers || 10));
   const [topDest, setTopDest] = useState(String(ps.top_destinations || 10));
-  const [warnDays, setWarnDays] = useState(String(ps.expiry_warn_days == null ? 3 : ps.expiry_warn_days));
   const [logEdit, setLogEdit] = useState(null);
   const logBase = ps.log_level || "info";
   const logSaved = () => (ps.log_debug_left ? "debug" : logBase);
@@ -739,7 +738,6 @@ export function PanelSettingsScreen() {
         history_resolution: +histRes || 3600,
         top_talkers: Math.max(1, Math.min(50, parseInt(topTalk) || 10)),
         top_destinations: Math.max(1, Math.min(50, parseInt(topDest) || 10)),
-        expiry_warn_days: Math.max(0, Math.min(365, parseInt(warnDays) || 3)),
         show_node_lans: showLans,
         scan_allow: normScanAllow(scanAllow),
         block_allow: normBlockAllow(blockAllow),
@@ -977,7 +975,7 @@ const sectionLabel = k => ({
     sec === "geo" ? geoDirty() || nbDirty() || pokDirty() :
     sec === "defaults" ? (dns !== (idf.dns || []).join(", ") || mtu !== String(idf.mtu || 1280) || ka !== String(idf.keepalive || 25) || JSON.stringify(statusCondsOut()) !== JSON.stringify({ blocked: (ps.status_conditions || {}).blocked !== false, faulty: (ps.status_conditions || {}).faulty !== false }) || JSON.stringify(awgTrim(awgDef)) !== JSON.stringify(awgTrim(idf.awg_params || {})) || JSON.stringify(awg3Trim(awg3Def)) !== JSON.stringify(awg3Trim(idf.awg3_params)) || reachDef !== (idf.reach || "user") || awgGenDef !== (idf.awg_gen || DEFAULT_AWG_GEN) || (ivkEscrow !== null && ivkEscrow !== ivkEscrowInit)) :
     sec === "configs" ? (sc !== _scMode) :
-    sec === "subs" ? (subsOn !== !!subCfg.enabled || autoGen !== !!subCfg.auto_generate || warnDays !== String(ps.expiry_warn_days == null ? 3 : ps.expiry_warn_days) || JSON.stringify([...subLangs].sort()) !== JSON.stringify([...(subLangCfg.enabled || ["en"])].sort()) || subLangDef !== (subLangCfg.default || "en")) :
+    sec === "subs" ? (subsOn !== !!subCfg.enabled || autoGen !== !!subCfg.auto_generate || JSON.stringify([...subLangs].sort()) !== JSON.stringify([...(subLangCfg.enabled || ["en"])].sort()) || subLangDef !== (subLangCfg.default || "en")) :
     sec === "display" ? (dispDirty() || tzDirty() || dataDirty()) :
     sec === "logs" ? (logDirty() || logMbPDirty()) :
     sec === "mesh" ? (showLans !== (ps.show_node_lans !== false) || normScanAllow(scanAllow).join(",") !== (ps.scan_allow || []).join(",")) :
@@ -1432,7 +1430,7 @@ const sectionLabel = k => ({
             const label = T("Who can open connections to devices on new interfaces");
             const everyone = reachEveryoneRows().length;
             return html`<div class="field reachfield"><label>${label}</label>
-              <div class="dpsw netsw-share" role="radiogroup" aria-label=${label}>${[["everyone", T("Everyone on this node")], ["user", T("Same user and their groups")], ["none", T("Nobody")]].map(([mv, l]) => html`<button type="button" role="radio"
+              <div class="dpsw netsw-share" role="radiogroup" aria-label=${label}>${[["everyone", T("Everyone on this node")], ["user", T("Same user")], ["none", T("Nobody")]].map(([mv, l]) => html`<button type="button" role="radio"
                 aria-checked=${reachDef === mv} class=${reachDef === mv ? "on" : ""} onClick=${() => setReachDef(mv)}>${l}</button>`)}</div>
               <div class="hint">${T("Applies to interfaces created from now on.")} ${everyone
                 ? html`<button type="button" class="linkbtn" onClick=${() => openModal(html`<${ReachEveryoneSheet}/>`)}>${T("Existing interfaces set to “Everyone on this node”: {n}", { n: everyone })}</button>`
@@ -1490,9 +1488,6 @@ const sectionLabel = k => ({
           <div class="field"><label class="ivk-esc-row toggle-row"><${Switch} on=${autoGen} disabled=${!subsOn} onChange=${setAutoGen}/>
             <span>${T("Auto-generate subscription links for new users")}</span></label>
             <div class="hint">${T("When you create a user, mint their subscription link automatically, in the background (user creation stays instant). Needs the encryption key unlocked at that moment; otherwise the link is created the next time you open that user with the key unlocked.")}</div></div>
-          <div class="seclabel">${T("Access expiry")}</div>
-          <p class="hint" style="margin:0 0 12px">${Trich("A subscription or peer with an expiry date shows an orange *about to expire* warning this many days ahead.")}</p>
-          <div class="field" style="max-width:340px"><label>${T("Warn before expiry (days)")}</label><input type="text" inputmode="numeric" value=${warnDays} onDblClick=${e => e.target.select()} onInput=${e => { let v = e.target.value.replace(/[^0-9]/g, ""); if (+v > 365) v = "365"; setWarnDays(v); }} placeholder=${T("Default: 3 (0 = warn only once expired)")}/></div>
           <div class="field"><label>${T("Public URL")}</label><code>${subBaseUrl()}</code></div>
           <div class="seclabel">${T("Languages")}</div>
           <div class="field"><label>${T("Offered on the subscription page")}</label>
@@ -2367,11 +2362,11 @@ function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirt
         <button type="button" class="btn btn-ghost s5x-go" disabled=${!canTest} onClick=${run}>
           <${Ic} i="refresh"/> ${pending ? T("testing…") : T("Test from the node")}</button>
       </div></div>
-    <div class="netprobe s5x-test">
+    <div class="s5x-test">
       ${pending ? html`<div class="netgw"><span class="condot"></span><span>${T("Waiting for {node} to ask the proxy and report back — a few seconds.", { node: node.name })}</span></div>` : null}
       ${tmsg ? line(["bad", tmsg]) : null}
       ${says.map(line)}
-      ${!says.length && last.length ? html`<div class="netprobe-h">${T("Last check by the node:")}</div>` : null}
+      ${!says.length && last.length ? html`<div class="s5x-test-h">${T("Last check by the node:")}</div>` : null}
       ${!says.length ? last.map(line) : null}
     </div>
     <${Disclosure} title=${T("How names and UDP work through this exit")} open=${S5X_VIEW.notes}

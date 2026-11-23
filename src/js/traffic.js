@@ -119,8 +119,8 @@ export function trafficFreezeTag(v) {
 }
 
 const _ser = new Map();
-export function trafficSeries(by, id, v, keyExtra) {
-  const q = trafficQuery(v), k = by + "|" + id + "|" + q + (keyExtra ? "|" + keyExtra : "");
+export function trafficSeries(by, id, v) {
+  const q = trafficQuery(v), k = by + "|" + id + "|" + q;
   let e = _ser.get(k);
   if (e && (e.busy || Date.now() - e.at <= TTL_MS || (e.data && trafficImmutable(v)))) return e;
   if (!e) _ser.set(k, e = { at: 0, busy: false, data: null, err: null });
