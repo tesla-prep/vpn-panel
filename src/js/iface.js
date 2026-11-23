@@ -57,6 +57,10 @@ function dockerPortsStep() {
   return html`<${Fragment}>${a}<span class="mono">swg-node → ports:</span>${b}<//>`;
 }
 
+const awgFold = body => isMobile()
+  ? html`<details class="iface-amnezia m-awgfold"><summary><span class="ig-l">AmneziaWG</span></summary>${body}</details>`
+  : html`<div class="iface-amnezia"><span class="ig-l">AmneziaWG</span>${body}</div>`;
+
 export function IfaceDetail({ node: rawNode, iface: rawIface }) {
   useStore();
   const [q, setQ] = useState("");
