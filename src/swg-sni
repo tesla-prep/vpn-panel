@@ -28,6 +28,8 @@ NFQA_VERDICT_HDR = 2
 NFQA_MARK = 3
 NF_ACCEPT = 1
 NLA_TYPE_MASK = 0x3fff
+SNI_PROBE, SNI_REPLY, SNI_PASS, SNI_ALLOW, SNI_ARRIVE = 0x20000000, 0x10000000, 0x08000000, 0x04000000, 0x02000000
+SNI_DIRECT_MARK, SNI_BLOCK_MARK = 0x9996, 0x9998
 
 
 def _nla(attr_type, payload):
@@ -183,6 +185,9 @@ class NFQueue:
         self.s = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, NETLINK_NETFILTER)
         self.s.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 8 << 20)
         self.s.bind((0, 0))
+        self.s.settimeout(0.25)
+        self.probes = {}
+        self.probe_sources = collections.Counter()
         cmd = struct.pack("=BB", NFQNL_CFG_CMD_BIND, 0) + struct.pack(">H", socket.AF_UNSPEC)
         self.s.send(_msg(NFQNL_MSG_CONFIG, qnum, _nla(NFQA_CFG_CMD, cmd)))
         params = struct.pack(">I", 0xFFFF) + struct.pack("=B", NFQNL_COPY_PACKET)
@@ -198,29 +203,107 @@ class NFQueue:
             attrs.append(_nla(NFQA_MARK, struct.pack(">I", mark)))
         self.s.send(_msg(NFQNL_MSG_VERDICT, self.qnum, *attrs))
 
-    def loop(self, on_packet):
+    def _finish_probe(self, key, mark, pid=None):
+        probe = self.probes.pop(key, None)
+        if probe:
+            source = probe[4]
+            self.probe_sources[source] -= 1
+            if not self.probe_sources[source]:
+                del self.probe_sources[source]
+            for held in probe[3]:
+                self._accept(held, mark)
+        if pid is not None:
+            self._accept(pid, mark)
+
+    def _probe(self, pid, pkt, indev, mark, inspect):
+        dst, tcp = _dst_and_tcp_payload(pkt, strict=True)
+        if dst is None:
+            self._accept(pid, SNI_BLOCK_MARK)
+            return
+        flags = pkt[(pkt[0] & 0xf) * 4 + 13]
+        if not tcp:
+            self._accept(pid, SNI_PASS | (mark & SNI_REPLY))
+            return
+        key, seq, src = _flow_seq(pkt)
+        key = (indev, key)
+        if mark & SNI_REPLY or flags & 0x07:
+            self._finish_probe(key, SNI_BLOCK_MARK, pid)
+            return
+        probe = self.probes.get(key)
+        if probe is None:
+            source = (indev, src)
+            if (len(self.probes) >= PARTIAL_MAX or self.probe_sources[source] >= PARTIAL_PER_SRC
+                    or not tcp.startswith(b"\x16")):
+                self._accept(pid, SNI_BLOCK_MARK)
+                return
+            probe = [time.monotonic() + PARTIAL_TTL, seq, b"", [], source]
+            self.probes[key] = probe
+            self.probe_sources[source] += 1
+        offset = (seq - probe[1]) & 0xffffffff
+        old = probe[2]
+        overlap = min(len(tcp), max(0, len(old) - offset))
+        if (offset > len(old) or offset + len(tcp) > PARTIAL_BYTES or len(probe[3]) >= 16
+                or old[offset:offset + overlap] != tcp[:overlap]):
+            self._finish_probe(key, SNI_BLOCK_MARK, pid)
+            return
+        probe[2] = data = old + tcp[overlap:]
+        probe[3].append(pid)
+        if len(data) >= 2 and data[1] != 3:
+            self._finish_probe(key, SNI_BLOCK_MARK)
+            return
+        if len(data) < 6:
+            return
+        length = _hello_len(data)
+        if not length or length > PARTIAL_BYTES:
+            self._finish_probe(key, SNI_BLOCK_MARK)
+        elif len(data) >= length:
+            verdict = SNI_BLOCK_MARK
+            try:
+                host = parse_sni(data[:length], strict=True)
+                if host:
+                    verdict = inspect(host, pkt, indev, mark) or SNI_BLOCK_MARK
+            finally:
+                self._finish_probe(key, verdict)
+
+    def loop(self, on_packet, inspect):
+        next_sweep = 0
         while True:
-            buf = self.s.recv(0x10000)
+            now = time.monotonic()
+            if now >= next_sweep:
+                for key, probe in list(self.probes.items()):
+                    if probe[0] <= now:
+                        self._finish_probe(key, SNI_BLOCK_MARK)
+                next_sweep = now + 0.25
+            try:
+                buf = self.s.recv(0x10000)
+            except TimeoutError:
+                continue
             off = 0
             while off + 16 <= len(buf):
                 mlen, mtype = struct.unpack("=IH", buf[off:off + 6])
                 if mlen < 16 or off + mlen > len(buf):
                     break
                 if mtype == NFQNL_MSG_PACKET:
-                    pid, payload, indev = self._parse_packet(buf[off + 16:off + mlen])
+                    pid, payload, indev, wire_mark = self._parse_packet(buf[off + 16:off + mlen])
                     if pid is not None:
-                        mark = None
-                        try:
-                            if payload:
-                                mark = on_packet(payload, indev)
-                        except Exception:
-                            pass
-                        self._accept(pid, mark)
+                        if wire_mark & SNI_PROBE:
+                            try:
+                                self._probe(pid, payload, indev, wire_mark, inspect)
+                            except Exception as e:
+                                say(LOG_WARNING, "swg-sni: gated packet: %s", e)
+                        else:
+                            mark = None
+                            try:
+                                if payload:
+                                    mark = on_packet(payload, indev)
+                            except Exception:
+                                pass
+                            self._accept(pid, mark)
                 off += (mlen + 3) & ~3
 
     @staticmethod
     def _parse_packet(body):
-        pid, payload, indev, o = None, b"", 0, 4
+        pid, payload, indev, mark, o = None, b"", 0, 0, 4
         while o + 4 <= len(body):
             alen, atype = struct.unpack("=HH", body[o:o + 4])
             if alen < 4 or o + alen > len(body):
@@ -233,11 +316,13 @@ class NFQueue:
                 payload = data
             elif atype == NFQA_IFINDEX_INDEV and len(data) >= 4:
                 indev = struct.unpack(">I", data[:4])[0]
+            elif atype == NFQA_MARK and len(data) >= 4:
+                mark = struct.unpack(">I", data[:4])[0]
             o += (alen + 3) & ~3
-        return pid, payload, indev
+        return pid, payload, indev, mark
 
 
-def _dst_and_tcp_payload(pkt):
+def _dst_and_tcp_payload(pkt, strict=False):
     if len(pkt) < 20 or (pkt[0] >> 4) != 4:
         return None, None
     ihl = (pkt[0] & 0x0F) * 4
@@ -246,6 +331,11 @@ def _dst_and_tcp_payload(pkt):
     dst = socket.inet_ntoa(pkt[16:20])
     toff = ((pkt[ihl + 12] >> 4) & 0x0F) * 4
     start = ihl + toff
+    if strict:
+        total, fragment = struct.unpack(">HxxH", pkt[2:8])
+        if ihl < 20 or toff < 20 or not start <= total <= len(pkt) or fragment & 0x3fff:
+            return None, None
+        return dst, pkt[start:total]
     return dst, pkt[start:] if start <= len(pkt) else b""
 
 
@@ -260,9 +350,11 @@ def _flow_seq(pkt):
     return (pkt[12:20], pkt[ihl:ihl + 4]), struct.unpack(">I", pkt[ihl + 4:ihl + 8])[0], pkt[12:16]
 
 
-def parse_sni(p):
+def parse_sni(p, strict=False):
     try:
         if len(p) < 43 or p[0] != 0x16:
+            return None
+        if strict and (len(p) != _hello_len(p) or int.from_bytes(p[6:9], "big") != len(p) - 9):
             return None
         i = 43
         sid = p[i]; i += 1 + sid
@@ -272,18 +364,34 @@ def parse_sni(p):
             return None
         ext_total = struct.unpack(">H", p[i:i + 2])[0]; i += 2
         end = min(len(p), i + ext_total)
+        if strict and i + ext_total != len(p):
+            return None
+        host = None
         while i + 4 <= end:
             etype, elen = struct.unpack(">HH", p[i:i + 4]); i += 4
+            if strict and i + elen > end:
+                return None
             if etype == 0x0000:
+                if strict and (host is not None or elen < 5 or int.from_bytes(p[i:i + 2], "big") != elen - 2):
+                    return None
                 j = i + 2
                 if j + 3 > len(p):
                     return None
                 ntype, nlen = p[j], struct.unpack(">H", p[j + 1:j + 3])[0]
                 j += 3
-                if ntype == 0 and j + nlen <= len(p):
-                    return p[j:j + nlen].decode("ascii", "ignore").lower() or None
-                return None
+                if strict:
+                    if ntype != 0 or j + nlen != i + elen:
+                        return None
+                    host = p[j:j + nlen].decode("ascii").lower()
+                    if not re.fullmatch(r"(?=.{1,253}$)[a-z0-9-]{1,63}(?:\.[a-z0-9-]{1,63})*", host):
+                        return None
+                else:
+                    if ntype == 0 and j + nlen <= len(p):
+                        return p[j:j + nlen].decode("ascii", "ignore").lower() or None
+                    return None
             i += elen
+        if strict and i == end:
+            return host
     except Exception:
         return None
     return None
@@ -377,8 +485,10 @@ def _blocks_parse(data):
             out = []
             for r in lst:
                 mark, act, cats, sel = int(r[0]), str(r[1]), r[2], r[3]
+                table = int(r[4] or 0) if len(r) > 4 else 0
+                via = str(r[5] or "") if len(r) > 5 else ""
                 out.append((mark, act, tuple((str(c), frozenset(str(x) for x in ex)) for c, ex in cats),
-                            str(sel) if sel else None))
+                            str(sel) if sel else None, table, via))
             return tuple(out)
         src = []
         for net, lst in data.get("src") or []:
@@ -549,8 +659,9 @@ class Classifier:
 
     def on_packet(self, payload, indev=None):
         now = time.time()
-        if now - self._last_reload > 2:
-            self._last_reload = now; self._reload()
+        mono = time.monotonic()
+        if mono - self._last_reload > 2:
+            self._last_reload = mono; self._reload()
         dst, tcp = _dst_and_tcp_payload(payload)
         if not dst or not tcp:
             return
@@ -598,21 +709,28 @@ class Classifier:
         return None
 
     def _blocked(self, src, cats, indev=None):
+        rule = self._rule_for_name(src, cats, indev)
+        return rule[0] if rule and rule[1] == "block" else 0
+
+    def _rule_for_name(self, src, cats, indev, arrived=None):
         rules = None
-        for net, m, rl in self.bsrc:
-            if src & m == net:
-                rules = rl
-                break
-        if rules is None:
+        if arrived is not True:
+            for net, m, rl in self.bsrc:
+                if src & m == net:
+                    rules = rl
+                    break
+        if rules is None and arrived is not False:
             for nets, rl in self.barr:
                 if any(src & m == n for n, m in nets):
                     rules = rl
                     break
         if rules is None:
-            return 0
+            return None
         sel = self.bsel
         me = None
-        for mark, act, rcats, who in rules:
+        for mark, act, rcats, who, table, via in rules:
+            if arrived and via and via == self._ifname(indev):
+                continue
             if who is not None:
                 me = me or (self._ifname(indev), src)
                 if me not in sel.get(who, ()):
@@ -623,8 +741,31 @@ class Classifier:
                         me = me or (self._ifname(indev), src)
                         if any(me in sel.get(w, ()) for w in ex):
                             continue
-                    return mark if act == "block" else 0
-        return 0
+                    return mark, act, table
+        return None
+
+    def inspect_probe(self, host, pkt, indev, mark):
+        now = time.monotonic()
+        if now - self._last_reload > 0.25:
+            self._last_reload = now
+            self._reload()
+        src, dst = socket.inet_ntoa(pkt[12:16]), socket.inet_ntoa(pkt[16:20])
+        rule = self._rule_for_name(_ip4(src), self._match(host), indev, bool(mark & SNI_ARRIVE))
+        if not rule or rule[1] == "block":
+            return SNI_BLOCK_MARK
+        target = SNI_DIRECT_MARK if rule[1] == "direct" else rule[2]
+        if target != SNI_DIRECT_MARK and not 7000 <= target <= 7099:
+            return SNI_BLOCK_MARK
+        if (mark & 0xffff or SNI_DIRECT_MARK) == target:
+            return SNI_ALLOW | target
+        iif = self._ifname(indev)
+        if re.fullmatch(r"[A-Za-z0-9_.@:+-]{1,15}", iif):
+            key = f'inet {self.table} sni_probe_route {{ "{iif}" . {src} . {dst}'
+            command = f"add element {key} : {target} }}\ndelete element {key} }}\nadd element {key} : {target} }}\n"
+            res = subprocess.run(["nft", "-f", "-"], input=command, text=True, capture_output=True, timeout=1)
+            if res.returncode:
+                say(LOG_WARNING, "swg-sni: could not record retry route: %s", res.stderr.strip()[:120])
+        return SNI_BLOCK_MARK
 
     _ifn = {}
 
@@ -779,7 +920,7 @@ def main():
     q = NFQueue(a.queue)
     say(LOG_INFO, "swg-sni: bound queue %s, table %s, map %s, reset-mark %#x, learn-ttl %ss", a.queue, a.table, a.map,
         a.reset_mark, a.learn_ttl)
-    q.loop(cls.on_packet)
+    q.loop(cls.on_packet, cls.inspect_probe)
 
 
 if __name__ == "__main__":

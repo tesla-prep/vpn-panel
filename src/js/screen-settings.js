@@ -2755,7 +2755,7 @@ function NodeDefaultRules({ node, nodeExits, base, rules, exitIps, mode, onChang
   const st = adopt(st0, rules);
   if (st !== st0) setSt(st);
   NODE_LIST_ROWS[node] = { base, rows: st.rows, catchAll: st.catchAll, mode };
-  return html`<${RoutingRules} scope="node" node=${node} rows=${st.rows} catchAll=${st.catchAll} exitIps=${exitIps || {}}
+  return html`<${RoutingRules} scope="node" node=${node} mode=${mode} rows=${st.rows} catchAll=${st.catchAll} exitIps=${exitIps || {}}
     onChange=${(rows, catchAll, xs) => { setSt({ rows, catchAll }); NODE_LIST_ROWS[node] = { base, rows, catchAll, mode };
       onChange(rowsToRules(rows, catchAll), xs); }}/>`;
 }

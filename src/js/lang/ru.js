@@ -2686,6 +2686,7 @@ export const STR = {
 
   "Routing rules": "Правила маршрутизации",
   "— the most specific rule wins": "— выигрывает самое точное правило",
+  "— IP rules in order, most specific hostname": "— IP сверху вниз, SNI по самому точному имени",
   "— the first matching rule wins": "— выигрывает первое совпадение",
   "Node default ({v1})": "Как у ноды ({v1})",
   "Direct (this node)": "Напрямую (эта нода)",
@@ -2694,6 +2695,8 @@ export const STR = {
     "Это правило маршрутизирует {v1}. Удаление здесь попадёт на ноду только после сохранения интерфейса.",
   "Add rule": "Добавить правило",
   "Everything else": "Всё остальное",
+  "Hybrid SNI checks the visible hostname after the TCP handshake on port 443. Rejected TLS connections receive a TCP reset.":
+    "Hybrid SNI проверяет видимое имя после TCP-рукопожатия на порту 443. Отклонённые TLS-соединения получают TCP RST.",
   "“Everything else → Block” stops each new connection before its site name is read, so the rules above that match by site name never take effect: those sites are blocked too. Route them by address (an IP range or a network) instead, or block by name only what you don't want.":
     "«Всё остальное → Заблокировать» останавливает каждое новое соединение раньше, чем прочитано имя сайта, поэтому правила выше, срабатывающие по имени сайта, не действуют: эти сайты тоже блокируются. Направьте их по адресу (диапазон IP или сеть) или блокируйте по имени только то, что не нужно.",
   "{v1} pointing nowhere": "указывают в никуда: {v1}",

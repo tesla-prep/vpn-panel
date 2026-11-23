@@ -1774,6 +1774,7 @@ DNSOK_MAX = 65536
 SNI_DIRECT_MARK = 0x9996
 SNI_BLOCK_MARK = 0x9998
 SNI_RESET_MARK = 0x9999
+SNI_PROBE, SNI_REPLY, SNI_PASS, SNI_ALLOW, SNI_ARRIVE = 0x20000000, 0x10000000, 0x08000000, 0x04000000, 0x02000000
 _SNI_PROC = {"p": None}
 _SMART_MODE = {"m": None}
 
@@ -3870,6 +3871,10 @@ def _arrivals_parse(arr):
             ents.append({"category": e["category"], "action": "exit", "via_iface": dev, "table": T})
         elif e["category"] != "all" or e["action"] == "block":
             ents.append({"category": e["category"], "action": e["action"]})
+        else:
+            continue
+        if e.get("row_id"):
+            ents[-1]["row_id"] = e["row_id"]
     return (subs, ents) if subs and ents else ([], [])
 
 
@@ -4278,6 +4283,15 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
         arr_stamps[sn] = version
     want = [(e["subnet"], e["category"], e.get("action", "exit"), e.get("table")) + ((e["src"],) if "src" in e else ())
             for e in spec + allr]
+    probe_name_cats = set(name_cats or ()) | {c for c in cats if (_CAT_CAPS.get(c) or {}).get("host")}
+
+    def allows_name(e):
+        return e["category"] in probe_name_cats and e.get("action", "exit") in ("direct", "exit") and _ports_t443(e)
+    strict_src = ({e["subnet"] for e in spec if allows_name(e)}
+                  & {w[0] for w in want if w[1:3] == ("all", "block")}) if pin and queue else set()
+    strict_arr = bool(pin and queue and arr and any(allows_name(e) for e in arr["entries"])
+                      and any(e["category"] == "all" and e["action"] == "block" for e in arr["entries"]))
+    strict = bool(strict_src or strict_arr)
     ps_of = {i: _ports_spans(e["ports"]) for i, e in enumerate(spec) if "ports" in e}
     pt_of = {i: _ports_tokens(ps) for i, ps in ps_of.items()}
     off443 = {i for i, ps in ps_of.items() if not _spans_t443(ps)}
@@ -4356,7 +4370,7 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
     sni_blocks = None
     _nb = lambda acts: any(w[2] in acts and w[1] != "all" for w in want) or any(a in acts and c != "all" for c, a, _T, _g in aw)
     _has_blk = _nb(("block",))
-    if queue and (_has_blk or off443):
+    if queue and (_has_blk or off443 or strict):
         by_src = {}
         for i, w in enumerate(want):
             if w[1] != "all" and i not in off443:
@@ -4367,12 +4381,12 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                 rcats += [[sh, list(ex)] for j in members for sh, ex in sh_of.get(j, ())]
                 by_src.setdefault(w[0], []).append([(i + 1) << 16 | SNI_BLOCK_MARK, w[2],
                                                     rcats,
-                                                    w[4] if len(w) > 4 else None])
+                                                    w[4] if len(w) > 4 else None, w[3]])
         _used = lambda acts: ({w[1] for w in want if w[2] in acts} | {sh for i, w in enumerate(want) if w[2] in acts for sh, _x in sh_of.get(i, ())}
                               | {c for c, a, _T, _g in aw if a in acts} | {sh for i, (c, a, _T, _g) in enumerate(aw) if a in acts for sh in ash_of.get(i, ())})
         _wids = {w[4] for w in want if len(w) > 4} | {x for lst in sh_of.values() for _sh, ex in lst for x in ex}
         sni_blocks = {"v": 1, "mark": SNI_BLOCK_MARK,
-                      "src": [[S, rl] for S, rl in sorted(by_src.items()) if any(r[1] == "block" for r in rl)],
+                      "src": [[S, rl] for S, rl in sorted(by_src.items()) if S in strict_src or any(r[1] == "block" for r in rl)],
                       "sel": {x: sorted(_src_pairs((srcs or {}).get(x))) for x in sorted(_wids)},
                       "nolearn": sorted(_used(("block",)) - _used(("exit", "direct")) - {"all"}
                                         | ({NEVER_BLOCK_CAT} & set(name_cats or ())))}
@@ -4384,11 +4398,11 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
             _q = sorted(_used(("exit", "direct")) - _r443 - {"all"})
             if _q:
                 sni_blocks["quiet"] = _q
-        if arr and any(a == "block" and c != "all" for c, a, _T, _g in aw):
+        if arr and (strict_arr or any(a == "block" and c != "all" for c, a, _T, _g in aw)):
             sni_blocks["arr"] = {"nets": _collapse4(arr["subnets"]),
                                  "rules": [[(0x8000 + i + 1) << 16 | SNI_BLOCK_MARK, a,
                                             [[aw[j][0], []] for j in members] +
-                                            [[sh, []] for j in members for sh in ash_of.get(j, ())], None]
+                                            [[sh, []] for j in members for sh in ash_of.get(j, ())], None, _T, _g]
                                            for i, (c, a, _T, _g) in enumerate(aw)
                                            if c != "all" and (members := arr_host_policies.get(i, (i,)))]}
     if host_learn:
@@ -4420,7 +4434,7 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                   for cj, aj, _Tj, gj in aw[:i] if aj in ("exit", "direct") and cj != "all"]
             if ex:
                 svb_of[(0x8000 + i + 1) << 16 | SNI_BLOCK_MARK] = ex
-    blk_rst = bool(pin and (blk_reject or (sni_blocks and _has_blk)))
+    blk_rst = bool(pin and (blk_reject or strict or (sni_blocks and _has_blk)))
     dns_blk, catd = set(), set()
     if spare_dns:
         for i, w in enumerate(want):
@@ -4481,6 +4495,8 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
         sig = hashlib.sha1((sig + "|ipru:" + json.dumps([ip_matches, arr_ip_matches])).encode()).hexdigest()[:16]
     if host_matches or arr_host_matches:
         sig = hashlib.sha1((sig + "|hostu:" + json.dumps([host_matches, arr_host_matches])).encode()).hexdigest()[:16]
+    if strict:
+        sig = hashlib.sha1((sig + "|probe:" + json.dumps([sorted(strict_src), strict_arr])).encode()).hexdigest()[:16]
     if dns_blk:
         sig = hashlib.sha1((sig + "|dok:" + json.dumps([sorted(dns_blk), sorted(catd)])).encode()).hexdigest()[:16]
     if (queue and _has_blk) or blk_rst:
@@ -4501,7 +4517,8 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                and {c for c in _chs if re.fullmatch(r"pb\d+", c)} == want_pb
                and ("sa" in _chs) == bool(arr) and {c for c in _chs if re.fullmatch(r"pa\d+", c)} == want_pa
                and (not arr or ("@lg" in _cbody("prerouting") and bool(_cbody("sa").strip())))
-               and ("svb" in _chs) == bool(svb_of) and (not svb_of or bool(_cbody("svb").strip())))
+               and ("svb" in _chs) == bool(svb_of) and (not svb_of or bool(_cbody("svb").strip()))
+               and all((c in _chs) == strict for c in ("sni_probe", "sni_auth", "sni_input")))
     fwd_ok = (((not v6f) or ("drop" in _cbody("forward"))) and ((not (pin and reset_mark)) or ("reject" in _cbody("forward")))
               and ((not blk_rst) or ("%#010x" % SNI_BLOCK_MARK) in _cbody("forward")))
     if stored != sig or not chain_present or not pre_ok or not fwd_ok or not rows_ok:
@@ -4541,8 +4558,63 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
             bat.add("delete", "chain", "inet", SMART_NFT_TABLE, c)
         if pin:
             _add("ct", "direction", "original", "meta", "mark", "set", "ct", "mark")
+        probe = ["ct", "mark", "&", hex(SNI_PROBE), "!=", "0"]
+        if strict:
+            if "map sni_probe_route {" not in body:
+                bat.add("add", "map", "inet", SMART_NFT_TABLE, "sni_probe_route",
+                        "{ type ifname . ipv4_addr . ipv4_addr : mark; flags timeout; timeout 90s; size 16384; }")
+            for chain, spec in (
+                ("sni_probe", ""),
+                ("sni_auth", "{ type filter hook prerouting priority mangle + 2; policy accept; }"),
+                ("sni_input", "{ type filter hook input priority filter; policy accept; }"),
+            ):
+                if chain not in _chs:
+                    bat.add("add", "chain", "inet", SMART_NFT_TABLE, chain, spec)
+                bat.add("flush", "chain", "inet", SMART_NFT_TABLE, chain)
+            pg = ("add", "rule", "inet", SMART_NFT_TABLE, "sni_probe")
+            bat.add(*pg, "meta", "mark", "set", "ct", "mark")
+            bat.add(*pg, "ct", "direction", "reply", "meta", "mark", "set", "ct", "mark", "|", hex(SNI_REPLY))
+            bat.add(*pg, "queue", "num", str(SNI_NFQUEUE), "bypass")
+            auth = ("add", "rule", "inet", SMART_NFT_TABLE, "sni_auth")
+            bat.add(*auth, "meta", "mark", "&", hex(SNI_PASS), "!=", "0",
+                    "ct", "direction", "reply", "meta", "mark", "set", "0", "return")
+            bat.add(*auth, "meta", "mark", "&", hex(SNI_PASS), "!=", "0",
+                    "ct", "direction", "original", "meta", "mark", "set", "ct", "mark", "&", "0xffff", "return")
+            # Several queued segments can carry a verdict after the first one has committed the flow's mark.
+            bat.add(*auth, "ct", "direction", "original", "meta", "mark", "&", hex(SNI_ALLOW), "!=", "0",
+                    "ct", "mark", "set", "meta", "mark", "&", "0xffff", "meta", "mark", "set", "ct", "mark")
+            bat.add(*auth, "ct", "direction", "original", "ct", "mark", hex(SNI_DIRECT_MARK),
+                    "meta", "mark", "set", "0", "return")
+            # A missing verdict, bypass or an explicit denial all keep the connection unapproved.
+            bat.add(*auth, *probe, "meta", "mark", "set", hex(SNI_BLOCK_MARK))
+            bat.add("add", "rule", "inet", SMART_NFT_TABLE, "sni_input", *probe, "meta", "mark", hex(SNI_BLOCK_MARK),
+                    "meta", "l4proto", "tcp", "counter", "reject", "with", "tcp", "reset")
+            _add(*probe, "goto", "sni_probe")
+        else:
+            for chain in ("sni_probe", "sni_auth", "sni_input"):
+                if chain in _chs:
+                    bat.add("flush", "chain", "inet", SMART_NFT_TABLE, chain)
+                    bat.add("delete", "chain", "inet", SMART_NFT_TABLE, chain)
+            if "map sni_probe_route {" in body:
+                bat.add("delete", "map", "inet", SMART_NFT_TABLE, "sni_probe_route")
+
+        def _probe_fallback(emit, arrived=False):
+            pending = SNI_PROBE | (SNI_ARRIVE if arrived else 0)
+            start = ("tcp", "dport", "443", "ct", "state", "new", "ct", "direction", "original",
+                     "fib", "daddr", "type", "!=", "local")
+            emit(*start, "meta", "mark", "set", "iifname", ".", "ip", "saddr", ".", "ip", "daddr", "map", "@sni_probe_route")
+            emit(*start, "ct", "mark", "set", "meta", "mark", "&", "0xffff", "|", hex(pending), "goto", "sni_probe")
+            emit("drop")
+
+        def _approved(emit, fin):
+            emit("ct", "direction", "original", "ct", "mark", hex(SNI_DIRECT_MARK), "meta", "mark", "set", "0", fin)
+            emit("ct", "direction", "original", "ct", "mark", f"{SWG_RT_BASE}-{SWG_RT_MAX}", fin)
+
+        direct_pin = ("ct", "mark", "set", hex(SNI_DIRECT_MARK), "meta", "mark", "set", "0")
         if arr:
             _add("iifname", "@lg", "ip", "saddr", "@ar", "ip", "daddr", "!=", "@cln", "jump", "sa")
+        for S in sorted(strict_src):
+            _approved(lambda *m, _S=S: _add("ip", "saddr", _S, *m), "return")
         if pin:
             for S in subnets:
                 _add("ip", "saddr", S, "udp", "dport", "443", "drop")
@@ -4580,6 +4652,8 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
 
         def _shadow_rules(i, emit, fin):
             _S, c2, a2, T2 = want[i][:4]
+            if _S in strict_src:
+                return
             pmi = pt_of.get(i, [])
             for sh, ex in sh_of.get(i, ()):
                 xm = [t for x in ex for t in ("iifname", ".", "ip", "saddr", "!=", "@" + _smart_srcsetname(x))]
@@ -4601,10 +4675,12 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                     _add("iifname", ".", "ip", "saddr", "@" + _smart_srcsetname(w[4]), "jump", "sr%d" % k)
                 for snm, xc in _route_sets(cat, act, i, ip_matches, host_matches):
                     _row = ("add", "rule", "inet", SMART_NFT_TABLE, "sr%d" % k)
+                    if S in strict_src and snm.startswith("catl_"):
+                        continue
                     if act == "exit":
                         bat.add(*_row, *_new, *pm, "ip", "daddr", "@" + snm, "meta", "mark", "set", str(T), *(["ct", "mark", "set", str(T)] if pin else []), "accept")
                     elif act == "direct":
-                        bat.add(*_row, *_new, *pm, "ip", "daddr", "@" + snm, "accept")
+                        bat.add(*_row, *_new, *pm, "ip", "daddr", "@" + snm, *(direct_pin if S in strict_src else ()), "accept")
                     elif act == "block":
                         bat.add(*_row, *pm, "ip", "daddr", "@" + snm, *xc, *(["jump", "pb%d" % i] if i in pb_of else ["drop"]))
                 _shadow_rules(i, lambda *m, _k=k: bat.add("add", "rule", "inet", SMART_NFT_TABLE, "sr%d" % _k, *m), "accept")
@@ -4613,13 +4689,20 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                 if act == "exit":
                     _add("ip", "saddr", S, *_new, "meta", "mark", "set", str(T), *(["ct", "mark", "set", str(T)] if pin else []))
                 elif act == "block":
-                    _add("ip", "saddr", S, *_new, "drop")
+                    if S in strict_src:
+                        _probe_fallback(lambda *m, _S=S: _add("ip", "saddr", _S, *m))
+                    else:
+                        if pin:
+                            _add("ip", "saddr", S, *probe, "drop")
+                        _add("ip", "saddr", S, *_new, "drop")
                 continue
             for snm, xc in _route_sets(cat, act, i, ip_matches, host_matches):
+                if S in strict_src and snm.startswith("catl_"):
+                    continue
                 if act == "exit":
                     _add("ip", "saddr", S, *_new, *pm, "ip", "daddr", "@" + snm, "meta", "mark", "set", str(T), *(["ct", "mark", "set", str(T)] if pin else []), "return")
                 elif act == "direct":
-                    _add("ip", "saddr", S, *_new, *pm, "ip", "daddr", "@" + snm, "return")
+                    _add("ip", "saddr", S, *_new, *pm, "ip", "daddr", "@" + snm, *(direct_pin if S in strict_src else ()), "return")
                 elif act == "block":
                     if str(cat).startswith("blku"):
                         _add("ip", "saddr", S, "ip", "daddr", "@" + snm, *xc, "counter", "drop")
@@ -4629,6 +4712,8 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
         if arr:
             def _sa(*m):
                 bat.add("add", "rule", "inet", SMART_NFT_TABLE, "sa", *m)
+            if strict_arr:
+                _approved(_sa, "accept")
             if pin:
                 _sa("udp", "dport", "443", "drop")
             for i, (c, a, T, g) in enumerate(aw):
@@ -4638,9 +4723,16 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                     if a == "exit":
                         _sa(*gd, *_new, *mk, "accept")
                     elif a == "block":
-                        _sa(*_new, "drop")
+                        if strict_arr:
+                            _probe_fallback(_sa, arrived=True)
+                        else:
+                            if pin:
+                                _sa(*probe, "drop")
+                            _sa(*_new, "drop")
                     continue
                 for c2 in [c] + ash_of.get(i, []):
+                    if strict_arr and c2 != c:
+                        continue
                     if c2 == c:
                         sets = _route_sets(c, a, i, arr_ip_matches, arr_host_matches)
                     elif a == "block":
@@ -4648,10 +4740,12 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                     else:
                         sets = _rsets(c2, a)
                     for snm, xc in sets:
+                        if strict_arr and snm.startswith("catl_"):
+                            continue
                         if a == "exit":
                             _sa(*gd, *_new, "ip", "daddr", "@" + snm, *mk, "accept")
                         elif a == "direct":
-                            _sa(*_new, "ip", "daddr", "@" + snm, "accept")
+                            _sa(*_new, "ip", "daddr", "@" + snm, *(direct_pin if strict_arr else ()), "accept")
                         else:
                             _sa("ip", "daddr", "@" + snm, *xc, *(["jump", "pa%d" % i] if i in pa_of else ["drop"]))
         if pin and queue:
@@ -4665,6 +4759,10 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
             if "forward" not in chains_now:
                 run(["nft", "add", "chain", "inet", SMART_NFT_TABLE, "forward", "{ type filter hook forward priority filter; policy accept; }"])
             bat.add("flush", "chain", "inet", SMART_NFT_TABLE, "forward")
+            if strict:
+                bat.add("add", "rule", "inet", SMART_NFT_TABLE, "forward", *probe,
+                        "meta", "mark", hex(SNI_BLOCK_MARK), "meta", "l4proto", "tcp",
+                        "counter", "reject", "with", "tcp", "reset")
             if blk_rst:
                 bat.add("add", "rule", "inet", SMART_NFT_TABLE, "forward", "tcp", "dport", "443", "meta", "mark", "&", "0x0000ffff",
                         "==", "%#010x" % SNI_BLOCK_MARK, "counter", "reject", "with", "tcp", "reset")
@@ -10093,6 +10191,7 @@ def smart_status():
             "sni_alive": sni_alive,
             "arr": 1,
             "caps_keep": 1,
+            "tls_fallback": 1,
             "allow": 1,
             "p2pi": 1,
             "ports": 1}

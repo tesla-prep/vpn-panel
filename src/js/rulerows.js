@@ -3,6 +3,8 @@ import { idnHost } from "./idn.js";
 
 let _gidSeq = 0;
 export const newGid = () => "rg" + (++_gidSeq);
+export const newRuleRowId = () => Array.from(crypto.getRandomValues(new Uint32Array(2)),
+  value => value.toString(16).padStart(8, "0")).join("");
 
 const isCatchAll = r => r && r.category === "all";
 const isLegacy = r => !!(r && (r.match || r.tlds));
@@ -120,10 +122,10 @@ export function rulesToRows(rules) {
                   badges: (rule.tlds || []).map(t => ({ t: "target", raw: "*." + t, ...classify("*." + t) })) });
       continue;
     }
-    const key = rowKey(rule);
+    const key = rowKey(rule), rowId = rule.row_id || "";
     const last = rows[rows.length - 1];
-    if (last && !last.locked && last._key === key) { last.badges.push(...badgesOf(rule)); continue; }
-    rows.push({ _gid: newGid(), _key: key, enabled: ruleOn(rule), action: rule.action || "exit",
+    if (last && !last.locked && last._key === key && last._rowId === rowId) { last.badges.push(...badgesOf(rule)); continue; }
+    rows.push({ _gid: newGid(), _key: key, _rowId: rowId, enabled: ruleOn(rule), action: rule.action || "exit",
                 node: rule.action === "exit" ? (rule.node || "") : "",
                 exit_id: rule.action === "dev" ? (rule.exit_id || "") : "", badges: badgesOf(rule),
                 ...(rule.who && typeof rule.who === "object" ? { who: canonWho(rule.who) } : {}),
@@ -141,6 +143,7 @@ export function rowsToRules(rows, catchAll) {
     const badges = row.badges || [];
     if (!badges.length) continue;
     const base = { enabled: row.enabled !== false, action: row.action || "exit" };
+    if (row._rowId) base.row_id = row._rowId;
     if (base.action === "exit") base.node = row.node || "";
     if (base.action === "dev") base.exit_id = row.exit_id || "";
     if (row.who) { base.who = { on: base.enabled, ...canonWho(row.who) }; base.enabled = false; }

@@ -3,7 +3,7 @@ import { classify, classifyAll, patternTier, TIER2_MIN } from "./classify.js";
 import { idnHost, idnDiffers } from "./idn.js";
 import { rulesToRows, rowsToRules, badgeIdentity, rowHasBadge, newGid,
          badgeText, readToken as rrReadToken,
-         customTargets, customCaps, listBuckets, TIER2_CAP, listTier2, tier2Count, canonWho, rowLints, badgeCovers,
+         customTargets, customCaps, listBuckets, TIER2_CAP, listTier2, tier2Count, canonWho, rowLints, badgeCovers, newRuleRowId,
          portsClean, portsOf, portsReach, rowCovers } from "./rulerows.js";
 import { esc, seen, isMobile } from "./util.js";
 import { isSelfContainedName, nodeStale, nodeStatusOf, kindOf, awgGen } from "./model.js";
@@ -237,7 +237,7 @@ export function ProvTag({ id, label, plain }) {
 function buildModeMeta() {
   const WINS = {
     order:    { card: T("First match — the order you set"),       label: T("— the first matching rule wins") },
-    specific: { card: T("Most specific name; IP rules in order"), label: T("— the most specific rule wins") },
+    specific: { card: T("Most specific name; IP rules in order"), label: T("— IP rules in order, most specific hostname") },
   };
   const arb = k => ({ overlaps: WINS[k].card, winsLabel: WINS[k].label });
   return {
@@ -1509,7 +1509,7 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   </div>`;
 }
 
-export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, onChange, scope, blk }) {
+export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, onChange, scope, blk, mode }) {
   const nodeScope = scope === "node";
   const others = (Store.nodes || []).filter(n => n.id !== node);
   const _nrec = (Store.nodes || []).find(n => n.id === node);
@@ -1518,11 +1518,13 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
   const _nfall = _nlist ? _nlist.filter(r => r && r.enabled !== false && r.category !== "all" && r.aud !== "cascaded") : [];
   const _ncatch = _nlist ? rulesToRows(_nlist).catchAll : null;
   const exits = (_nrec || {}).exits || [];
-  const _mode = _nrec ? (_nrec.routing_mode || "kernel") : "";
+  const _mode = mode || (_nrec ? (_nrec.routing_mode || "kernel") : "");
+  const tlsFallback = _mode === "sni" && !!Store.stats?.[node]?.smartroute?.tls_fallback;
   const dispRows = rows || [];
   const ips = exitIps || {};
   const shownIps = !nodeScope && _nlist && !catchAll ? { ...((_nrec || {}).default_routing_exit_ips || {}), ...ips } : ips;
-  const emit = (rs, ca, xs, dip) => onChange(rs, ca === undefined ? catchAll : ca, xs === undefined ? ips : xs, dip === undefined ? directIp : dip);
+  const emit = (rs, ca, xs, dip) => onChange(rs.map(r => r._rowId || r.legacy ? r : { ...r, _rowId: newRuleRowId() }),
+    ca === undefined ? catchAll : ca, xs === undefined ? ips : xs, dip === undefined ? directIp : dip);
 
   const rs = useReorder(dispRows.map(r => r._gid), ids => emit(ids.map(id => dispRows.find(r => r._gid === id)).filter(Boolean)), "y", { container: ".rrlist", card: ".rrrow" });
   const setRow = (gid, patch) => emit(dispRows.map(r => r._gid === gid ? { ...r, ...patch } : r));
@@ -1659,7 +1661,9 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
     ${nodeScope && _mode === "sni_kernel" && ((((Store.stats || {})[node] || {}).smartroute || {}).src || 0) < 2 && dispRows.some(r => r.aud !== "local")
       ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Kernel SNI on this node can't match hostnames for traffic cascaded in — only IP addresses and networks apply to it.")}</span></div>` : null}
     ${allBlockPreemptsNames(_mode, dispRows) >= 0 ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("A Block to every address (0.0.0.0/0) stops each new connection before its site name is read, so the rules above it that match by site name never take effect: those sites are blocked too. Route them by address instead, or give the Block ports that leave out TCP 443.")}</span></div>` : null}
-    ${catchAllPreemptsNames(_mode, dispRows, catchAll) ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("“Everything else → Block” stops each new connection before its site name is read, so the rules above that match by site name never take effect: those sites are blocked too. Route them by address (an IP range or a network) instead, or block by name only what you don't want.")}</span></div>` : null}
+    ${catchAllPreemptsNames(_mode, dispRows, catchAll) ? (tlsFallback
+      ? html`<div class="hint">${T("Hybrid SNI checks the visible hostname after the TCP handshake on port 443. Rejected TLS connections receive a TCP reset.")}</div>`
+      : html`<div class="notice warn"><${Ic} i="warn"/><span>${T("“Everything else → Block” stops each new connection before its site name is read, so the rules above that match by site name never take effect: those sites are blocked too. Route them by address (an IP range or a network) instead, or block by name only what you don't want.")}</span></div>`) : null}
     ${dispRows.length || catchAll ? null : html`<div class="hint">${others.length
       ? Trich("No rules yet. Add a rule to send some destinations through another node, or set *Everything else* to channel everything.")
       : Trich("No rules yet. Add a rule to send some destinations out a device on this node or block them, or set *Everything else* to say where the rest goes.")}</div>`}

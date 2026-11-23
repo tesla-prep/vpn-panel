@@ -10673,6 +10673,9 @@ def _validate_routing(routing, nodes, nid, custom_list_ids=(), prev=(), snap=Non
         if act not in ("exit", "direct", "block"):
             return None, "rule action must be exit|direct|block", _dropped_report(dropped)
         out = {"enabled": r.get("enabled", True) is not False, "category": cat, "action": act}
+        row_id = r.get("row_id")
+        if cat != "all" and isinstance(row_id, str) and re.fullmatch(r"[a-f0-9]{16}", row_id):
+            out["row_id"] = row_id
         if tgt is not None:
             out["domains"], out["cidrs"] = tgt[0], tgt[1]
             if tgt[2]:
@@ -12249,7 +12252,7 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
                     return False
                 cat, extra = _rc
                 if action != "exit":
-                    smart_items.append((nid, None, S, cat, action, None, None, None, extra, r.get("who"), _pt))
+                    smart_items.append((nid, None, S, cat, action, None, None, None, extra, r.get("who"), _pt, r.get("row_id")))
                     return cat == "all"
                 P = r.get("node")
                 if not P or P not in nodes:
@@ -12261,7 +12264,7 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
                     return False
                 if P not in targets:
                     targets.append(P)
-                smart_items.append((nid, P, S, cat, "exit", dev_n, dev_p, base_p, extra, r.get("who"), _pt))
+                smart_items.append((nid, P, S, cat, "exit", dev_n, dev_p, base_p, extra, r.get("who"), _pt, r.get("row_id")))
                 return cat == "all"
             for r in (ov.get("routing") or []):
                 _all_said = _lower(r) or _all_said
@@ -12385,7 +12388,7 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
         add_exit(P, S, dev_p, T, X, W, base_p)
         slot(P).setdefault("_from", {}).setdefault(S, nid)
 
-    for (nid, P, S, cat, action, dev_n, dev_p, base_p, extra, who, ports) in smart_items:
+    for (nid, P, S, cat, action, dev_n, dev_p, base_p, extra, who, ports, row_id) in smart_items:
         sn = slot(nid)
         if action == "exit":
             T = sn["_targets"].get(P)
@@ -12401,6 +12404,8 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
                 sn["_legs"].append({"subnet": S, "peer": P, "mark": T, "mode": "smart"})
         else:
             entry = {"subnet": S, "category": cat, "action": action}
+        if row_id:
+            entry["row_id"] = row_id
         if isinstance(who, dict):
             entry["src"] = who_wid(S, who)
             sn.setdefault("_who", {})[entry["src"]] = (S, who)
@@ -12546,6 +12551,8 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
                 break
             else:
                 ent = {"category": cat, "action": action}
+            if r.get("row_id"):
+                ent["row_id"] = r["row_id"]
             if ent not in ents:
                 ents.append(ent)
             if extra:
