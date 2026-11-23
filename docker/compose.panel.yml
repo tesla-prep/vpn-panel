@@ -17,6 +17,7 @@ services:
     environment:
       SWG_PUBLIC_URL: "${PANEL_URL:?Set PANEL_URL in .env}"
       SWG_SUB_PUBLIC_URL: "${SUB_URL:?Set SUB_URL in .env}"
+      SWG_SOURCE_REVISION: "SWG_COMMIT"
     volumes:
       - ./data/etc:/etc/swg-panel
       - ./data/lib:/var/lib/swg-panel

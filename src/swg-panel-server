@@ -2650,6 +2650,15 @@ def normalize_sub_perms(deps):
 
 def _panel_public_url(deps):
     return PANEL_PUBLIC_URL
+
+
+def _node_enrollment_data(node, token):
+    revision = os.environ.get("SWG_SOURCE_REVISION", "")
+    return {"id": node["id"], "name": node.get("name"), "token": token,
+            "endpoint_host": node.get("endpoint_host") or "", "panel_url": PANEL_PUBLIC_URL,
+            "install_revision": revision if re.fullmatch(r"[a-f0-9]{40}", revision) else ""}
+
+
 def _is_ip(host):
     try:
         ipaddress.ip_address(host)
@@ -17074,12 +17083,17 @@ def api(method, path, qs, body, deps):
         if not name or len(name) > 40 or not all(c.isalnum() or c in "-_" for c in name):
             return 400, {"ok": False, "error": "name must be 1–40 chars: letters, digits, - or _",
                          "code": "bad_request"}
+        endpoint = body.get("endpoint_host")
+        endpoint = "" if endpoint is None else endpoint
+        if not isinstance(endpoint, str) or (endpoint.strip() and
+                not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", endpoint.strip())):
+            return 400, {"ok": False, **perr("Enter the node's public hostname or IPv4 address."), "code": "bad_request"}
         nid = gen_id()
         while nid in nodes:
             nid = gen_id()
         token = base64.urlsafe_b64encode(os.urandom(18)).decode().rstrip("=")
         nodes[nid] = {"id": nid, "name": name, "color": sanitize_color(body.get("color"), {"dark": "#34d399", "light": "#12A46B"}),
-                      "endpoint_host": (body.get("endpoint_host") or "").strip(),
+                      "endpoint_host": endpoint.strip(),
                       "stats_file": f"stats-{nid}.json",
                       "token_hash": make_token_hash(token), "token_sha": hashlib.sha256(token.encode()).hexdigest(),
                       "created": now()}
@@ -17087,7 +17101,7 @@ def api(method, path, qs, body, deps):
         ev_append(roster_path, "node", nid, "Enrolled node", name)
         reconcile_mesh(nodes, deps.get("node_snaps") or {}, deps)
         nodes_save(deps["nodes_path"], nodes)
-        return 200, {"ok": True, "data": {"id": nid, "name": name, "token": token}}
+        return 200, {"ok": True, "data": _node_enrollment_data(nodes[nid], token)}
 
     if method == "POST" and path == "/api/nodes/update":
         nid = body.get("id") or ""
@@ -18395,7 +18409,7 @@ def api(method, path, qs, body, deps):
         nodes[nid]["token_sha"] = hashlib.sha256(token.encode()).hexdigest()
         nodes_save(deps["nodes_path"], nodes)
         ev_append(roster_path, "node", nid, "Rotated node token", nodes[nid].get("name", nid))
-        return 200, {"ok": True, "data": {"id": nid, "name": nodes[nid].get("name"), "token": token}}
+        return 200, {"ok": True, "data": _node_enrollment_data(nodes[nid], token)}
 
     if method == "POST" and path == "/api/nodes/remesh":
         nid = body.get("id") or ""

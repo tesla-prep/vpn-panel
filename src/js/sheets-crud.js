@@ -1585,40 +1585,71 @@ function flaggedForRemoval() {
 
 export function NodeCreateSheet() {
   const [name, setName] = useState(""); const [color, setColor] = useState({ ...NODE_CREATE_DEFAULT }); const [msg, setMsg] = useState(null);
+  const [endpoint, setEndpoint] = useState("");
+  const [busy, setBusy] = useState(false);
   const nameBad = name.trim() && !V.nodeName(name);
+  const endpointOk = validNodeInstallEndpoint(endpoint);
   const create = async () => {
     if (!name.trim()) return setMsg({ k: "err", t: T("Give the node a name.") });
     if (!V.nodeName(name)) return setMsg({ k: "err", t: T("Name: 1–40 chars, letters/digits/-/_ only.") });
-    setMsg({ k: "work", t: T("creating…") });
-    const r = await api.nodeCreate({ name: name.trim(), endpoint_host: "", color });
-    if (!r.ok) return setMsg({ k: "err", t: srvText(r) || T("couldn't create node") });
-    await Store.poll(); openModal(html`<${NodeTokenSheet} name=${r.data.name} token=${r.data.token} isNew=${true}/>`);
+    if (!endpointOk) return setMsg({ k: "err", t: T("Enter the node's public hostname or IPv4 address.") });
+    const r = await sheetSend(() => api.nodeCreate({ name: name.trim(), endpoint_host: endpoint.trim(), color }),
+      t => setMsg(t ? { k: "err", t } : null), setBusy);
+    if (!r.ok) return;
+    openModal(html`<${NodeTokenSheet} enrollment=${r.data} isNew=${true} canInstall=${true}/>`);
+    Store.poll().catch(() => {});
   };
   return html`<${Sheet} title=${T("Add node")}
-    foot=${footRow({ onCancel: closeModal, onAction: create, action: T("Create node") })}>
+    foot=${footRow({ onCancel: closeModal, disabled: busy || !!nameBad || !name.trim() || !endpointOk, onAction: create, action: T("Create node") })}>
     <div class="field"><label>${T("Name")}</label>
       <div class="namerow"><input autofocus class=${nameBad ? "bad" : ""} value=${name} onInput=${e => setName(e.target.value)} placeholder="msk-edge1" autocomplete="off"/>
         <${ThemedSwatch} val=${color} title=${T("Node colour")} onChange=${setColor} sample=${(c) => html`<span class="tg" style=${"background:color-mix(in srgb," + c + " 16%,transparent);color:" + c}>${name.trim() || T("tag|node")}</span>`}/></div>
       <div class=${"hint" + (nameBad ? " err" : "")}>${nameBad ? T("1–40 chars: letters, digits, - or _ only.") : T("A label for this node — you can rename it anytime. The swatches set its colour per theme.")}</div></div>
+    ${nodeInstallEndpointField(endpoint, setEndpoint)}
     ${msg ? html`<div class=${"formmsg " + msg.k}>${msg.t}</div>` : null}
   <//>`;
 }
-const INSTALL_SCRIPT = "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/swg.sh";
-const installNodeCmd = `curl -fsSLo swg.sh ${INSTALL_SCRIPT} && sudo bash swg.sh install node`;
+const validNodeInstallEndpoint = value => /^[a-z0-9][a-z0-9.-]*$/i.test(value.trim());
 
-export function NodeTokenSheet({ name, token, isNew }) {
-  const host = Store.panelPublicUrl || location.origin + BASE;
-  const install = installNodeCmd;
+function nodeInstallEndpointField(value, onChange) {
+  return html`<div class="field"><label>${T("Public hostname or IPv4 address")}</label>
+    <input value=${value} onInput=${e => onChange(e.target.value)} placeholder="vpn.example.org" autocomplete="off"
+      class=${value.trim() && !validNodeInstallEndpoint(value) ? "bad" : ""}/></div>`;
+}
+
+const quoteShell = value => "'" + String(value).replaceAll("'", "'\"'\"'") + "'";
+const nodeInstallBootstrap = [
+  '[ "$(id -u)" -eq 0 ] || { echo "Run this command as root." >&2; exit 1; }',
+  'if ! command -v curl >/dev/null; then . /etc/os-release; [ "$ID" = ubuntu ]; apt-get update </dev/null; DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y --no-install-recommends ca-certificates curl </dev/null; fi',
+  'script=$(mktemp)',
+  'trap \'rm -f -- "$script"\' EXIT',
+  'curl -fsSL --retry 3 -o "$script" "$1" </dev/null',
+  'shift',
+  'bash "$script" install node --token-stdin "$@"',
+].join('; ');
+
+function installNodeCmd(enrollment, endpoint) {
+  const revision = /^[a-f0-9]{40}$/.test(enrollment.install_revision) ? enrollment.install_revision : "";
+  const host = enrollment.panel_url || Store.panelPublicUrl || location.origin + BASE;
+  const script = `https://raw.githubusercontent.com/tesla-prep/vpn-panel/${revision || "main"}/swg.sh`;
+  const args = [script, "--panel-url", host, "--node-endpoint", endpoint.trim()];
+  if (revision) args.push("--revision", revision);
+  return `printf '%s\\n' ${quoteShell(enrollment.token)} | sh -eu -c ${quoteShell(nodeInstallBootstrap)} swg-install ${args.map(quoteShell).join(" ")}`;
+}
+
+export function NodeTokenSheet({ enrollment, isNew, canInstall }) {
+  const [endpoint, setEndpoint] = useState(enrollment.endpoint_host || "");
+  const install = canInstall && validNodeInstallEndpoint(endpoint) ? installNodeCmd(enrollment, endpoint) : "";
   const copyField = (label, value) => html`<div class="field"><label>${label}</label>
     <div class="cmdrow"><div class="tokenbox">${value}</div>
       <button class="copyaction" onClick=${() => copy(value, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>`;
-  return html`<${Sheet} title=${(isNew ? T("Node created") : T("New token")) + " · " + name}
+  return html`<${Sheet} title=${(isNew ? T("Node created") : T("New token")) + " · " + enrollment.name}
     foot=${html`<button class="btn btn-primary" onClick=${closeModal}>${T("Done")}</button>`}>
-    ${copyField("PANEL_URL", host)}
-    ${copyField("NODE_TOKEN", token)}
-    ${isNew ? copyField(T("Run on the node"), install) : null}
-    ${isNew ? html`<p class="hint">${T("Enter the panel URL, node token and public node address when the installer asks.")}</p>`
-             : html`<p class="hint">${T("Set NODE_TOKEN in /opt/swg-node/.env, then run sudo docker compose up -d in that directory.")}</p>`}
+    ${canInstall && !validNodeInstallEndpoint(enrollment.endpoint_host || "") ? nodeInstallEndpointField(endpoint, setEndpoint) : null}
+    ${install ? copyField(T("Node install command"), install) : null}
+    ${canInstall ? html`<p class="hint">${T("Run the command as root on the Ubuntu node. It contains the node token.")}</p>`
+      : html`${copyField("NODE_TOKEN", enrollment.token)}
+        <p class="hint">${T("Set NODE_TOKEN in /opt/swg-node/.env, then run sudo docker compose up -d in that directory.")}</p>`}
   <//>`;
 }
 export function openNodeEdit(node) { openModal(html`<${NodeEditSheet} node=${node}/>`); }
@@ -1684,7 +1715,11 @@ export function NodeEditSheet({ node }) {
 }
 export function openNodeRotate(node) { openModal(html`<${NodeRotateSheet} node=${node}/>`); }
 export function NodeRotateSheet({ node }) {
-  const go2 = async () => { const r = await api.nodeRotate({ id: node.id }); if (!r.ok) { toast(srvText(r) || T("rotate failed"), "err"); return; } openModal(html`<${NodeTokenSheet} name=${node.name} token=${r.data.token} isNew=${false} kind=${node.kind} platform=${node.platform}/>`); };
+  const go2 = async () => {
+    const r = await api.nodeRotate({ id: node.id });
+    if (!r.ok) { toast(srvText(r) || T("rotate failed"), "err"); return; }
+    openModal(html`<${NodeTokenSheet} enrollment=${r.data} canInstall=${node.status === "dangling"}/>`);
+  };
   return html`<${Sheet} title=${T("Rotate token · {v1}", { v1: node.name })}
     foot=${footRow({ onCancel: closeModal, onAction: go2, action: T("Rotate") })}>
     <div class="notice warn"><${Ic} i="warn"/><span>${T("The current token stops working immediately. Re-enroll the node with the new token or it will go offline.")}</span></div>

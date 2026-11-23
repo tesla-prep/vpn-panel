@@ -122,7 +122,6 @@ export function NodeDetail({ node: rawName }) {
 
   const live = Store.recon.nodeStatus[name] === "live";
   const blocked = !live || inProc(nrec.proc_status);
-  const down = !live && !inProc(nrec.proc_status);
   const snap = Store.stats[name];
   const hasTurns = !!((snap && (snap.turn_proxies || []).length) || Object.keys(nrec.turn_pending || {}).length || (nrec.turn_onboarding || []).length);
   const wdttIfaces = (snap && snap.wdtt || []).filter(w => w && w.iface);
@@ -154,7 +153,7 @@ export function NodeDetail({ node: rawName }) {
  null}
         ${isMobile() ? html`<button class="iconbtn" data-lbl=${T("More")} title=${T("More")} onClick=${() => openModal(html`<${NodeMoreSheet} id=${nrec.id}/>`)}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>` : html`<${Fragment}>
-        <button class="iconbtn" title=${down ? T("Rotate token — and get a one-line command that fixes only the credential") : T("Rotate token (re-enroll / re-install)")} onClick=${() => openNodeRotate(nrec)}><${Ic} i="key"/></button>
+        <button class="iconbtn" title=${nrec.status === "dangling" ? T("Rotate token and get a new install command") : T("Rotate token")} onClick=${() => openNodeRotate(nrec)}><${Ic} i="key"/></button>
         <button class="iconbtn danger" title=${nrec.removing ? T("Force remove node") : T("Remove node")} onClick=${() => openNodeRemove(nrec)}><${Ic} i="trash"/></button>
         <//>`}
       </div>
