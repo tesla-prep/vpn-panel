@@ -6172,6 +6172,14 @@ def node_describe(snapshot):
             "data": {"hostname": snapshot.get("hostname"), "interfaces": interfaces}}
 
 
+def iface_egress_mode(rec):
+    mode = rec.get("egress_mode")
+    if not mode or mode == "direct":
+        # Older panels stored Auto and pinned direct output under the same value.
+        return "local" if any(str(rec.get(k) or "").strip() for k in ("wan_iface", "egress_ip")) else "node"
+    return mode
+
+
 def apply_iface_meta(node_cfg, interfaces, ivk_pub="", vault_restore_ok=False):
     node_ep = (node_cfg or {}).get("endpoint_host")
     ifov = (node_cfg or {}).get("ifaces") or {}
@@ -6197,7 +6205,7 @@ def apply_iface_meta(node_cfg, interfaces, ivk_pub="", vault_restore_ok=False):
             ifc["keepalive"] = ov["keepalive"]
         ifc["egress_ip"] = ov.get("egress_ip") or ""
         ifc["wan_iface"] = ov.get("wan_iface") or ""
-        ifc["egress_mode"] = ov.get("egress_mode") or "direct"
+        ifc["egress_mode"] = iface_egress_mode(ov)
         ifc["egress_node"] = ov.get("egress_node") or ""
         ifc["exit_id"] = ov.get("exit_id") or ""
         ifc["routing"] = ov.get("routing") or []
@@ -11457,8 +11465,11 @@ def _apply_egress_mode(rec, body, nodes, nid, deps):
         return "This browser tab is older than the panel — reload it before saving routing.", None
     if "egress_mode" in body:
         mode = (body.get("egress_mode") or "direct").strip()
-        if mode not in ("direct", "forward", "smart"):
-            return "egress_mode must be direct|forward|smart", None
+        if (mode == "exit" and rec.get("egress_mode") == "exit" and rec.get("exit_id")
+                and body.get("exit_id") == rec["exit_id"]):
+            return None, None
+        if mode not in ("node", "local", "direct", "forward", "smart"):
+            return "egress_mode must be node|local|direct|forward|smart", None
         if mode == "forward":
             en = (body.get("egress_node") or "").strip()
             if en not in nodes or en == nid:
@@ -11492,8 +11503,11 @@ def _apply_egress_mode(rec, body, nodes, nid, deps):
             rec["egress_mode"] = "exit"; rec["exit_id"] = xid
             rec.pop("egress_node", None); rec.pop("wan_iface", None)
         else:
-            rec["egress_mode"] = "direct"
+            if mode != "direct" or rec.get("egress_mode") != "local":
+                rec["egress_mode"] = mode
             rec.pop("egress_node", None); rec.pop("exit_id", None)
+            if mode == "node":
+                rec.pop("wan_iface", None); rec.pop("egress_ip", None)
     elif "routing" in body and rec.get("egress_mode") == "smart":
         rules, err, _drop = _validate_routing(body.get("routing"), nodes, nid, _custom,
                                               snap=(deps.get("node_snaps") or {}).get(nid) or {},
@@ -12209,10 +12223,8 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
         return cat, extra
 
     def _collect_egress(nid, ov, S, targets, auto_label="", name=""):
-        mode = ov.get("egress_mode")
-        _auto = ((not mode or mode == "direct")
-                 and not str(ov.get("wan_iface") or "").strip()
-                 and not str(ov.get("egress_ip") or "").strip())
+        mode = iface_egress_mode(ov)
+        _auto = mode == "node"
         if _auto and _nlist(nid) is not None and _nlist_selective(nid):
             mode = "smart"
             ov = dict(ov, routing=[], routing_exit_ips={})
@@ -18171,8 +18183,12 @@ def api(method, path, qs, body, deps):
             _xerr = _apply_exit_ips(ov, body, nodes, nid, lenient=True)
             if _xerr:
                 return 400, {"ok": False, "error": _xerr, "code": "bad_request"}
+        elif _cm in ("node", "local"):
+            ov["egress_mode"] = _cm
+            if _cm == "node":
+                ov.pop("wan_iface", None); ov.pop("egress_ip", None)
         elif _cm != "direct":
-            return 400, {"ok": False, "error": "egress_mode must be direct|forward|smart", "code": "bad_request"}
+            return 400, {"ok": False, "error": "egress_mode must be node|local|direct|forward|smart", "code": "bad_request"}
         _blk = _validate_block(body.get("block"), deps.get("panel_settings"))
         if _blk:
             ov["block"] = _blk

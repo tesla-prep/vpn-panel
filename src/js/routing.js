@@ -307,6 +307,8 @@ export function rulesTitle(nodeId) {
 export function rulesSummary(nodeId, rows, catchAll) {
   const list = rows || [];
   const n = list.length;
+  if (!n && catchAll?.action === "exit" && catchAll.enabled !== false)
+    return T("Everything else → {v1}", { v1: T("Forward to {node}", { node: Store.nodeName(catchAll.node) }) });
   if (!n) return T("no rules yet");
   const a = { v1: n, v2: pluralWord(n, "rule") };
   const head = Trich("*{v1}* {v2}", a);
@@ -1513,7 +1515,6 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
   const nodeScope = scope === "node";
   const others = (Store.nodes || []).filter(n => n.id !== node);
   const _nrec = (Store.nodes || []).find(n => n.id === node);
-  const _dflt = nodeScope ? null : ((_nrec || {}).exits || []).find(x => String(x.id) === String((_nrec || {}).default_exit || "")) || null;
   const _nlist = !nodeScope && Array.isArray((_nrec || {}).default_routing) ? _nrec.default_routing : null;
   const _nfall = _nlist ? _nlist.filter(r => r && r.enabled !== false && r.category !== "all" && r.aud !== "cascaded") : [];
   const _ncatch = _nlist ? rulesToRows(_nlist).catchAll : null;
@@ -1549,16 +1550,19 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
                why: T("This rule leaves by an exit that is not on this node any more, so it routes nothing and traffic takes the next matching rule instead. Choose another destination, or delete the rule.") };
     return null;
   };
-  const destOpts = (withDefault, held) => { const _gone = goneDest(held); return [
-    ...(withDefault && _nlist ? [{ value: "__dflt__", label: T("Node default ({v1})", { v1: plural(_nfall.length, "rule") }) }]
-      : withDefault && _dflt ? [{ value: "__dflt__",
-      label: T("Node default ({v1})", { v1: _dflt.label || _dflt.device || _dflt.id }) }] : []),
-    { value: "direct", label: T("Direct (this node)") },
-    ...(others.length ? [{ group: T("Forward to node (cascade)"),
-                           items: others.map(n => ({ value: "exit|" + n.id, label: T("Forward to {node}", { node: n.name }) })) }] : []),
-    { value: "block", label: T("Block") },
-    ...(_gone ? [{ value: _gone.value, label: _gone.label, className: "bad", refuse: _gone.why }] : []),
-  ]; };
+  const destOpts = (withDefault, held) => {
+    const _gone = goneDest(held);
+    const [action, id] = String(held || "").split("|");
+    return [
+      ...(withDefault && !nodeScope ? [{ value: "__dflt__", label: T("Node rules") }] : []),
+      { value: "direct", label: T("Direct (this node)") },
+      ...(others.length ? [{ group: T("Forward to node (cascade)"),
+                             items: others.map(n => ({ value: "exit|" + n.id, label: T("Forward to {node}", { node: n.name }) })) }] : []),
+      { value: "block", label: T("Block") },
+      ...(_gone ? [{ value: _gone.value, label: _gone.label, className: "bad", refuse: _gone.why }] : []),
+      ...(!_gone && action === "dev" && id ? [{ value: held, label: destLabelOf({ action, exit_id: id }) }] : []),
+    ];
+  };
   const tuneBtn = (on, open) => html`<button type="button" class=${"iconbtn rrgear" + (on ? " on" : "")} title=${T("Rule settings")}
     aria-label=${T("Rule settings")} onClick=${open}><${Ic} i="sliders"/></button>`;
   const dipOn = !nodeScope && directIp !== undefined;
@@ -1581,7 +1585,7 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
         toast(T("Switched to {v1} — save to apply your rules.", { v1: mm.label || target }), "ok");
       } });
   };
-  const catchVal = !catchAll ? (_dflt || _nlist ? "__dflt__" : "direct")
+  const catchVal = !catchAll ? (nodeScope ? "direct" : "__dflt__")
     : catchAll.action === "exit" ? "exit|" + (catchAll.node || "")
     : catchAll.action === "dev" ? "dev|" + (catchAll.exit_id || "") : catchAll.action;
   const setCatch = (v, xs, dip) => {
@@ -1657,7 +1661,7 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
           onChange=${onCatch} options=${destOpts(true, catchVal)}/></span>
       </span>
     </div>
-    ${!nodeScope && _nlist && !catchAll ? html`<div class="hint rrnote">${T("Node default (Settings ▸ Network ▸ Default exit):")} ${nodeRows.slice(0, 10).map(r => html`<span>${(r.badges || []).slice(0, 3).map(b => b.t === "list" ? catLabelOf(b.id) : targetLabel(b.kind, b.value)).join(", ")}${(r.badges || []).length > 3 ? "…" : ""} → ${destLabelOf(r)}</span> · `)}${nodeRows.length > 10 ? T("…and {v1} more", { v1: nodeRows.length - 10 }) + " · " : ""}<span>${T("everything else")} → ${_ncatch ? (goneDest(destVal(_ncatch)) || {}).label || destLabelOf(_ncatch) : T("Direct (this node)")}</span></div>` : null}
+    ${!nodeScope && _nlist && !catchAll ? html`<div class="hint rrnote">${T("Node rules (Settings → Network)")} · ${nodeRows.slice(0, 10).map(r => html`<span>${(r.badges || []).slice(0, 3).map(b => b.t === "list" ? catLabelOf(b.id) : targetLabel(b.kind, b.value)).join(", ")}${(r.badges || []).length > 3 ? "…" : ""} → ${destLabelOf(r)}</span> · `)}${nodeRows.length > 10 ? T("…and {v1} more", { v1: nodeRows.length - 10 }) + " · " : ""}<span>${T("everything else")} → ${_ncatch ? (goneDest(destVal(_ncatch)) || {}).label || destLabelOf(_ncatch) : T("Direct (this node)")}</span></div>` : null}
     ${nodeScope && _mode === "sni_kernel" && ((((Store.stats || {})[node] || {}).smartroute || {}).src || 0) < 2 && dispRows.some(r => r.aud !== "local")
       ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Kernel SNI on this node can't match hostnames for traffic cascaded in — only IP addresses and networks apply to it.")}</span></div>` : null}
     ${allBlockPreemptsNames(_mode, dispRows) >= 0 ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("A Block to every address (0.0.0.0/0) stops each new connection before its site name is read, so the rules above it that match by site name never take effect: those sites are blocked too. Route them by address instead, or give the Block ports that leave out TCP 443.")}</span></div>` : null}
@@ -1913,69 +1917,29 @@ export function AsnHint({ targets }) {
 export function EgressPicker({ node, value, onChange, noRules }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
   const ipIfaces = nrec.ip_ifaces || [];
-  const others = (Store.nodes || []).filter(n => n.id !== node);
-  const exits = nrec.exits || [];
-  const _dflt = (nrec.exits || []).find(x => String(x.id) === String(nrec.default_exit || "")) || null;
-  const ifSel = value.mode === "smart" ? "smart" : value.mode === "forward" ? "forward|" + (value.node || "")
-    : value.mode === "exit" ? "exit|" + (value.exitId || "") : "auto";
-  const _unnamed = value.mode === "forward" && !!value.node && !others.some(n => n.id === value.node);
-  const _goneFwd = _unnamed && !(Store.nodes || []).some(n => n.id === value.node);
-  const _selfFwd = _unnamed && !_goneFwd;
-  const exSel = value.mode === "exit" ? exits.find(x => String(x.id) === String(value.exitId || "")) : null;
-  const exNote = value.mode !== "exit" ? "" : !exSel
-    ? T("That exit no longer exists — traffic goes out directly. Choose another, or add it back under Settings → Network.")
-    : exSel.enabled === false
-    ? T("This exit is turned off — traffic goes out directly until it is turned back on. The interface keeps this selection.")
-    : exSel.why_not
-    ? T("This exit's device can't be used right now — traffic goes out directly. Settings → Network says why.")
-    : "";
-  const exSrc = (value.mode === "exit" && exSel && !exNote && (exSel.producer || "adopted") !== "imported")
-    ? (String(exSel.egress_ip || "").trim()
-        ? T("Leaves as {v1}. That source belongs to the exit, so every interface using it shares one — change it under Settings → Network.", { v1: exSel.egress_ip })
-        : T("Leaves as whichever address the node picks on {v1}. Pin one on the exit under Settings → Network.", { v1: exSel.device || "" }))
-    : "";
-  let ipOpts = [];
-  if (value.mode === "direct") ipOpts = ipIfaces.filter(p => !value.nic || p.iface === value.nic).map(p => p.ip);
-  else if (value.mode === "forward") { const tn = others.find(n => n.id === value.node); ipOpts = (tn && tn.ips) || []; }
   const onIf = v => {
-    if (v === "auto") return onChange({ ...value, mode: "auto", node: "", exitId: "" });
-    if (v === "smart") return onChange({ ...value, mode: v, nic: "", node: "",
-      ip: value.mode === "auto" || value.mode === "direct" || value.mode === "smart" ? (value.ip || "") : (value.ownIp || "") });
-    const [mode, x] = v.split("|");
-    if (mode === "forward") return onChange({ ...value, mode, node: x, nic: "", ip: "", exitId: "" });
-    if (mode === "exit") return onChange({ ...value, mode, exitId: x, nic: "", node: "", ip: "" });
-    onChange({ ...value, mode, nic: x, node: "", ip: "", exitId: "" });
+    if (v === value.mode) return;
+    onChange({ ...value, mode: v, nic: "", ip: v === "smart" ? (value.mode === "direct" ? value.ip : value.ownIp) : "" });
   };
   return html`<${Fragment}>
-    <div class="field"><label>${T("Outbound (egress) interface")}</label>
-      <${Dropdown} value=${ifSel} onChange=${onIf} options=${[
-        { value: "auto", label: _dflt ? T("Auto ({v1})", { v1: _dflt.label || _dflt.device || _dflt.id })
-                                      : T("Auto (MASQUERADE)") },
-        { value: "smart", label: T("Routing (smart cascade)"), className: "egopt-mode" },
-        ...(others.length ? [{ group: T("Forward to node (cascade)"), items: others.map(n => ({ value: "forward|" + n.id, label: T("Forward to {node}", { node: n.name }) })) }] : []),
-        ...(_selfFwd ? [{ value: ifSel, label: T("This node itself"), className: "bad",
-                          refuse: T("This interface is set to forward everything to the node it is already on, which cannot work — the traffic would leave by this node's own address anyway. Choose another destination.") }] : []),
-        ...(_goneFwd ? [{ value: ifSel, label: T("A node that is no longer here"), className: "bad",
-                          refuse: T("This interface forwards everything to a node that is not in this panel any more, so it routes nothing and its clients leave by this node's own address. Choose another destination.") }] : []),
+    <div class="field"><label>${T("Interface routing")}</label>
+      <${Dropdown} value=${value.mode} onChange=${onIf} options=${[
+        { value: "node", label: T("Inherit node rules") },
+        { value: "direct", label: T("All traffic direct") },
+        { value: "smart", label: T("Interface rules"), className: "egopt-mode" },
       ]}/>
-      <div class="hint">${others.length
-        ? (exits.length
-          ? T("Leave by a device on this node, channel everything through another node, or route per-destination (smart).")
-          : T("Leave normally, channel everything through another node, or route per-destination (smart)."))
-        : (exits.length
-          ? T("Leave by a device on this node, or route per-destination (smart).")
-          : T("Leave normally, or route per-destination (smart)."))}</div>
-      ${exNote ? html`<div class="hint err">${exNote}</div>` : null}
-      ${exSrc ? html`<div class="hint">${exSrc}</div>` : null}</div>
+      ${value.mode === "node" ? html`<div class="hint">${T("Uses this node's routing rules from Settings → Network.")}</div>`
+        : value.mode === "direct" ? html`<div class="hint">${T("Exits directly from this node without inheriting its routing rules.")}</div>` : null}</div>
     ${value.mode === "smart"
       ? (noRules ? null : html`<${RoutingRules} node=${node} rows=${value.rows || []} catchAll=${value.catchAll} onChange=${(rows, catchAll) => onChange({ ...value, rows, catchAll })}/>`)
-      : (value.mode !== "auto" && value.mode !== "exit") ? html`<div class="field"><label>${T("Outbound (egress) IP")}</label>
-      <${NodeIpPick} key=${value.mode + "|" + (value.node || value.nic || "")} ips=${ipOpts} value=${value.ip || ""} onChange=${ip => onChange({ ...value, ip })} auto=${value.mode === "forward" ? T("Auto (target node default)") : T("val|Auto")}/>
-      <div class="hint">${value.mode === "forward" ? T("Source IP on the target node that clients egress from.") : T("Source IP clients egress from.")}</div></div>` : null}
+      : value.mode === "direct" ? html`<div class="field"><label>${T("Outbound (egress) IP")}</label>
+      <${NodeIpPick} key=${value.nic || ""} ips=${ipIfaces.filter(p => !value.nic || p.iface === value.nic).map(p => p.ip)}
+        value=${value.ip || ""} onChange=${ip => onChange({ ...value, ip })} auto=${T("val|Auto")}/>
+      <div class="hint">${T("Source IP clients egress from.")}</div></div>` : null}
   <//>`;
 }
 
-export const natPinApplies = eg => ((eg || {}).mode === "auto" || (eg || {}).mode === "direct");
+export const natPinApplies = eg => eg?.mode === "direct";
 
 export function NatSourcePick({ node, value, onChange }) {
   const nrec = (Store.nodes || []).find(n => n.id === node) || {};
@@ -1983,7 +1947,7 @@ export function NatSourcePick({ node, value, onChange }) {
   const nics = (nrec.ether_ifaces && nrec.ether_ifaces.length)
     ? nrec.ether_ifaces.filter(n => !isSelfContainedName(n) && !n.startsWith("swg_"))
     : [...new Set(ipIfaces.map(p => p.iface))].filter(n => !isSelfContainedName(n) && !n.startsWith("swg_"));
-  const nicNote = (value.mode === "direct" || value.mode === "auto") && value.nic
+  const nicNote = value.mode === "direct" && value.nic
     && nrec.wan_iface && value.nic !== nrec.wan_iface
     ? T("This node's traffic leaves by {v2}, not {v1}, so this rule can never match and clients would leave with no NAT at all. Choose “Off”, or {v2} — unless you route to {v1} yourself.",
         { v1: value.nic, v2: nrec.wan_iface })
@@ -1993,7 +1957,7 @@ export function NatSourcePick({ node, value, onChange }) {
     <div class="field secdiv"><label>${T("Extra NAT")}</label></div>
     <div class="field">
     <${Dropdown} value=${value.nic || ""}
-      onChange=${n => onChange({ ...value, nic: n, mode: n ? "direct" : "auto" })}
+      onChange=${n => onChange({ ...value, nic: n })}
       options=${[{ value: "", label: T("val|Off") }, ...nics.map(n => ({ value: n, label: n }))]}/>
     <div class="hint">${T("This doesn't send traffic out that card. It only changes the source address of traffic that already leaves by it — use it when you route to that card yourself, outside the panel. To leave by a card, pick it under “Leave by a device”.")}</div>
     ${nicNote ? html`<div class="hint err">${nicNote}</div>` : null}
@@ -2001,21 +1965,32 @@ export function NatSourcePick({ node, value, onChange }) {
   <//>`;
 }
 
+const interfaceEgressMode = m => {
+  if (m.egress_mode === "local") return "direct";
+  if (!m.egress_mode || m.egress_mode === "direct")
+    return m.egress_ip || m.wan_iface ? "direct" : "node";
+  return m.egress_mode;
+};
+
 export const egressInit = m => {
   const { rows, catchAll } = rulesToRows(m.routing || []);
+  const mode = interfaceEgressMode(m);
+  const legacy = mode === "forward" && m.egress_node ? { action: "exit", node: m.egress_node }
+    : mode === "exit" && m.exit_id ? { action: "dev", exit_id: m.exit_id } : null;
+  const legacyMode = mode === "forward" || mode === "exit";
+  const exitIps = legacy?.action === "exit" && m.egress_ip ? { [legacy.node]: m.egress_ip } : {};
   for (const r of rows) for (const b of (r.badges || [])) b.stored = true;
-  return { mode: m.egress_mode === "smart" ? "smart" : m.egress_mode === "forward" ? "forward"
-      : m.egress_mode === "exit" ? "exit" : (m.egress_ip || m.wan_iface) ? "direct" : "auto",
-    nic: m.wan_iface || "", node: m.egress_node || "", ip: m.egress_ip || "",
-    ownIp: m.egress_mode === "forward" ? "" : (m.egress_ip || ""),
-    exitId: m.exit_id || "", rows, catchAll,
-    exitIps: { ...(m.routing_exit_ips || {}) },
+  return { mode: legacyMode ? "smart" : mode,
+    nic: legacyMode ? "" : (m.wan_iface || ""), ip: legacyMode ? "" : (m.egress_ip || ""),
+    ownIp: legacyMode ? "" : (m.egress_ip || ""), legacy,
+    rows: legacyMode ? [] : rows,
+    catchAll: legacyMode ? { enabled: true, category: "all", ...(legacy || { action: "direct" }) }
+      : catchAll || (mode === "smart" || rows.length ? null : { enabled: true, category: "all", action: "direct" }),
+    exitIps: legacyMode ? exitIps : { ...(m.routing_exit_ips || {}) },
     p2p: m.p2p && m.p2p.action ? { ...m.p2p } : null };
 };
 
 export function egressSaveBlock(eg, mode) {
-  if (eg && eg.mode === "exit" && !String(eg.exitId || "").trim())
-    return T("Choose which exit this interface leaves by.");
   if (!eg || eg.mode !== "smart") return null;
   for (const row of (eg.rows || [])) {
     if (row.locked) continue;
@@ -2233,14 +2208,16 @@ export function exitLabel(ex, node) {
 export const exitOf = (node, id) => (((Store.nodes || []).find(n => n.id === node) || {}).exits || [])
   .find(x => String(x.id) === String(id)) || null;
 
-export function ifTrafficBadge(mode, egNode, node, exitId) {
+export function ifTrafficBadge(meta, node) {
+  const mode = interfaceEgressMode(meta), egNode = meta.egress_node, exitId = meta.exit_id;
+  if (mode === "node") return html`<span class="egb egb-smart" title=${T("Uses this node's routing rules from Settings → Network.")}><${Ic} i="server"/>${T("Node rules")}</span>`;
   if (mode === "forward" && egNode) {
     const linking = (Store.panelSettings || {}).mesh_effective === "demand" && node && (p => !!p && p.out === "connecting")(
       meshHealth(node).peers.find(x => x.peer === egNode));
     if (linking) return html`<span class="egb egb-fwd" style=${"color:" + Store.nodeColor(egNode)} title=${T("Linking to {v1} — this interface's traffic resumes once the link is up", { v1: Store.nodeName(egNode) })}><${Ic} i="cascade"/>${T("linking →")} ${Store.nodeName(egNode)}</span>`;
     return html`<span class="egb egb-fwd" style=${"color:" + Store.nodeColor(egNode)} title=${T("Cascade — exits via {v1}", { v1: Store.nodeName(egNode) })}><${Ic} i="cascade"/>${T("cascade →")} ${Store.nodeName(egNode)}</span>`;
   }
-  if (mode === "smart") return html`<span class="egb egb-smart" title=${T("Per-destination smart routing")}><${Ic} i="cascade"/>${T("smart cascade")}</span>`;
+  if (mode === "smart") return html`<span class="egb egb-smart" title=${T("Per-destination smart routing")}><${Ic} i="cascade"/>${T("Interface rules")}</span>`;
   if (mode === "forward") return html`<span class="egb egb-cascade"><${Ic} i="cascade"/>${T("tag|cascade")}</span>`;
   if (mode === "exit") {
     const x = exitOf(node, exitId);
@@ -2258,8 +2235,22 @@ export function ifTrafficBadge(mode, egNode, node, exitId) {
   return html`<span class="egb egb-direct" title=${T("Exits directly from this node")}><${Ic} i="globe"/>${T("tag|direct")}</span>`;
 }
 
-export const egressBody = eg => ({ ...(eg.mode === "smart"
-  ? { egress_mode: "smart", routing: rowsToRules(eg.rows, eg.catchAll), routing_exit_ips: eg.exitIps || {}, routing_v: 3, egress_ip: eg.ip || "" }
-  : eg.mode === "exit" ? { egress_mode: "exit", exit_id: eg.exitId || "" }
-  : { egress_mode: eg.mode === "auto" ? "direct" : eg.mode, egress_node: eg.node || "", egress_ip: eg.ip || "", wan_iface: eg.nic || "" }),
-  p2p: eg.p2p || null });
+export const egressBody = eg => {
+  let body;
+  if (eg.mode === "node") body = { egress_mode: "node" };
+  else if (eg.mode === "direct") body = { egress_mode: "local", egress_ip: eg.ip || "", wan_iface: eg.nic || "" };
+  else {
+    const { legacy, catchAll } = eg;
+    const rules = rowsToRules(eg.rows, catchAll);
+    // Keep the original cascade until its rule is edited.
+    if (legacy && rules.length === 1 && catchAll?.enabled !== false && catchAll?.action === legacy.action
+        && (catchAll.node || "") === (legacy.node || "") && (catchAll.exit_id || "") === (legacy.exit_id || "")) {
+      body = legacy.action === "exit"
+        ? { egress_mode: "forward", egress_node: legacy.node, egress_ip: eg.exitIps?.[legacy.node] || "" }
+        : { egress_mode: "exit", exit_id: legacy.exit_id };
+    } else {
+      body = { egress_mode: "smart", routing: rules, routing_exit_ips: eg.exitIps || {}, routing_v: 3, egress_ip: eg.ip || "" };
+    }
+  }
+  return { ...body, p2p: eg.p2p || null };
+};

@@ -2767,7 +2767,7 @@ function DefaultReach({ node }) {
   const rc = node.default_reach;
   if (!rc) return null;
   const auto = rc.auto || [], arr = rc.arr || [];
-  const ifTrig = html`<b>${plural(auto.length, "Auto interface")}</b>`;
+  const ifTrig = html`<b>${T("{v1} using node rules", { v1: plural(auto.length, "interface") })}</b>`;
   const arTrig = html`<b>${plural(arr.length, "interface")}</b>`;
   const hov = (trig, items) => items.length ? html`<${Popover} hoverOnly popCls="netroute-bub" trigger=${trig}>
       ${items.slice(0, 10).map(x => html`<div class="netbub-row">${x}</div>`)}
@@ -2801,7 +2801,7 @@ function NodeEgressForm({ node, vals: v, set }) {
     <label class="toggle-row"><${Switch} on=${isList} onChange=${on => {
       set({ default_routing: on ? [] : null, default_routing_exit_ips: {} });
       setRulesOpen(on);
-    }}/><span>${T("Routing (smart cascade)")}</span></label>
+    }}/><span>${T("Node rules")}</span></label>
     ${isList ? html`<div class="field">
       <${Disclosure} title=${rulesTitle(node.id)} open=${rulesOpen} onToggle=${() => {
           const c = NODE_LIST_ROWS[node.id];

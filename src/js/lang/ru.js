@@ -2513,9 +2513,12 @@ export const STR = {
   "These interfaces' client traffic exits the fleet through *{node}*{smart}.":
     "Клиентский трафик этих интерфейсов выходит из флота через *{node}*{smart}.",
   " — smart-routed by destination": " — с умной маршрутизацией по назначению",
-  "This is a panel-managed mesh link to *{node}*. It's created and torn down automatically as nodes are added or removed. To route a user interface's traffic out through this node, set that interface's egress to *Forward to {node}*.":
-    "Это меш-линк до *{node}*, которым управляет панель. Он создаётся и сносится автоматически по мере добавления и удаления нод. Чтобы направить трафик пользовательского интерфейса через эту ноду, задайте её в выходе того интерфейса: *Переслать на {node}*.",
-  "This is a panel-managed mesh link to *{node}*. On demand, a link exists while a forward, a smart rule or its own settings use it, and is removed an hour after nothing does. To route a user interface's traffic out through this node, set that interface's egress to *Forward to {node}*.": "Это меш-линк до *{node}*, которым управляет панель. В режиме «по требованию» линк существует, пока им пользуется пересылка, умное правило или его собственные настройки, и удаляется через час после того, как пользоваться перестанут. Чтобы направить трафик пользовательского интерфейса через эту ноду, задайте её в выходе того интерфейса: *Переслать на {node}*.",
+  "This is a panel-managed mesh link to *{node}*. It's created and torn down automatically as nodes are added or removed.":
+    "Панель автоматически создаёт и удаляет меш-линк до *{node}* при добавлении или удалении нод.",
+  "This is a panel-managed mesh link to *{node}*. On demand, a link exists while a forward, a smart rule or its own settings use it, and is removed an hour after nothing does.":
+    "Панель поддерживает меш-линк до *{node}*, пока он нужен пересылке, правилу маршрутизации или задан в настройках. В режиме «по требованию» панель удаляет линк через час после того, как он перестаёт использоваться.",
+  "To send all traffic from an interface through this node, set *Interface rules → Everything else → Forward to {node}* and leave the rule list empty.":
+    "Чтобы отправить весь трафик интерфейса через эту ноду, выберите *Свои правила → Всё остальное → Переслать на {node}* и оставьте список правил пустым.",
   "Changing the *endpoint* or *port* will break the existing clients' connections; you will need to re-distribute the configs / QR codes.":
     "Смена *эндпоинта* или *порта* разорвёт соединения существующих клиентов; конфиги и QR придётся раздать заново.",
 
@@ -2695,6 +2698,7 @@ export const STR = {
     "Это правило маршрутизирует {v1}. Удаление здесь попадёт на ноду только после сохранения интерфейса.",
   "Add rule": "Добавить правило",
   "Everything else": "Всё остальное",
+  "Everything else → {v1}": "Всё остальное → {v1}",
   "Hybrid SNI checks the visible hostname after the TCP handshake on port 443. Rejected TLS connections receive a TCP reset.":
     "Hybrid SNI проверяет видимое имя после TCP-рукопожатия на порту 443. Отклонённые TLS-соединения получают TCP RST.",
   "“Everything else → Block” stops each new connection before its site name is read, so the rules above that match by site name never take effect: those sites are blocked too. Route them by address (an IP range or a network) instead, or block by name only what you don't want.":
@@ -2724,6 +2728,14 @@ export const STR = {
     "Список не может содержать другой список — добавьте его адреса сюда",
 
   "Outbound (egress) interface": "Интерфейс выхода (egress)",
+  "Interface routing": "Маршрутизация интерфейса",
+  "Node rules": "Правила ноды",
+  "Inherit node rules": "Наследовать правила ноды",
+  "All traffic direct": "Весь трафик напрямую",
+  "Interface rules": "Свои правила",
+  "{v1} using node rules": "{v1} с правилами ноды",
+  "Uses this node's routing rules from Settings → Network.": "Использует правила этой ноды из раздела «Настройки → Сеть».",
+  "Exits directly from this node without inheriting its routing rules.": "Прямой выход через эту ноду без наследования её правил.",
   "Leave by a device": "Выход через устройство",
   "val|Network card": "Сетевая карта",
   "Extra NAT": "Дополнительный NAT",
@@ -6722,7 +6734,7 @@ export const STR = {
     "{v1} приходят сразу с двух узлов и выходят по собственному маршруту этого узла.",
   "default routing rules": "правила маршрутизации по умолчанию",
   "a more specific rule in this node's default wins these hosts: {toks}": "в правилах этого узла по умолчанию есть более точное — эти адреса забирает оно: {toks}",
-  "Node default (Settings ▸ Network ▸ Default exit):": "Как у ноды (Настройки ▸ Сеть ▸ Выход по умолчанию):",
+  "Node rules (Settings → Network)": "Правила ноды (Настройки → Сеть)",
   "everything else": "всё остальное",
   "a more specific rule below wins these hosts for the traffic it names: {toks}": "ниже есть более точное правило — для своего трафика эти адреса забирает оно: {toks}",
   "an exit": "выход",
@@ -6900,7 +6912,6 @@ export const PLURALS = {
   node: ["нода", "ноды", "нод"],
   user: ["пользователь", "пользователя", "пользователей"],
   interface: ["интерфейс", "интерфейса", "интерфейсов"],
-  "Auto interface": ["интерфейс на «Авто»", "интерфейса на «Авто»", "интерфейсов на «Авто»"],
   server: ["сервер", "сервера", "серверов"],
   update: ["обновление", "обновления", "обновлений"],
   "prep|node": ["ноде", "нодах", "нодах"],

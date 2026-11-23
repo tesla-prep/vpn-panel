@@ -26,6 +26,7 @@ import { TurnProxiesBlock, turnEnabled, WdttCard, WDTT_COLOR, ForkTag, ifaceTurn
          openSetupTurn, wdttRecreateFresh, wdttRestoreIdentity, WdttDeleteSheet, csqttRunLine } from "./turn.js";
 import { PeerGrid, NodeRail, NodesRailPanel } from "./grids.js";
 import { openCreateIface, openEditIface, openConnectionEdit, OrphanRow } from "./iface.js";
+import { ifTrafficBadge } from "./routing.js";
 import { openNodeCreate, openNodeEdit, openNodeRemove, openNodeRotate, unflagNode } from "./sheets-crud.js";
 import { confirmRestoreInterface, confirmRestoreAllInterfaces, openRecreateRekey } from "./peer-actions.js";
 import { h, Fragment } from "preact";
@@ -381,11 +382,7 @@ export function NodeDetail({ node: rawName }) {
             <div class="ifcard-rows">
               <div class="ifrow"><span class="l">${T("Listen (local)")}</span><span class="r addr">${ifn0}${dtls ? ":" + dtls : ""}</span></div>
               <div class="ifrow"><span class="l">${T("Subnet")}</span><span class="r addr">${w.wg_addr || "—"}</span></div>
-              <div class="ifrow"><span class="l">${T("Traffic")}</span><span class="r">${wcfg.egress_mode === "forward" && wcfg.egress_node
-                ? html`<span class="egb egb-fwd" style=${"color:" + Store.nodeColor(wcfg.egress_node)} title=${T("Exits via {v1}", { v1: Store.nodeName(wcfg.egress_node) + (wcfg.egress_ip ? " (" + wcfg.egress_ip + ")" : "") })}><${Ic} i="server"/>→ ${Store.nodeName(wcfg.egress_node)}</span>`
-                : wcfg.egress_mode === "smart"
-                ? html`<span class="egb egb-smart" title=${T("{v1} destination rule(s)", { v1: (wcfg.routing || []).filter(r => r.action === "exit" || r.action === "dev").length })}><${Ic} i="cascade"/>${T("tag|smart")}</span>`
-                : html`<span class="egb egb-direct" title=${T("Exits directly from this node")}><${Ic} i="globe"/>${T("tag|direct")}</span>`}</span></div>
+              <div class="ifrow"><span class="l">${T("Traffic")}</span><span class="r">${ifTrafficBadge(wcfg, name)}</span></div>
               <div class="ifrow"><span class="l">${T("Peers reachable by")}</span><span class="r">${reachChip(name, w.iface, wcfg.reach)}</span></div>
               <div class="ifrow"><span class="l">${T("Peers")}</span><span class="r">${ps.length
                 ? html`<${OnlinePeersTag} nodeId=${name} iface=${w.iface} orphans=${0} orphHref=${href}
@@ -431,11 +428,7 @@ export function NodeDetail({ node: rawName }) {
             <div class="ifcard-rows">
               <div class="ifrow"><span class="l">${T("Listen (local)")}</span><span class="r addr">${c.iface + (portOf(c.listen) ? ":" + portOf(c.listen) : "")}</span></div>
               <div class="ifrow"><span class="l">${T("Subnet")}</span><span class="r addr">${c.tun_addr || "—"}</span></div>
-              <div class="ifrow"><span class="l">${T("Traffic")}</span><span class="r">${ccfg.egress_mode === "forward" && ccfg.egress_node
-                ? html`<span class="egb egb-fwd" style=${"color:" + Store.nodeColor(ccfg.egress_node)} title=${T("Exits via {v1}", { v1: Store.nodeName(ccfg.egress_node) + (ccfg.egress_ip ? " (" + ccfg.egress_ip + ")" : "") })}><${Ic} i="server"/>→ ${Store.nodeName(ccfg.egress_node)}</span>`
-                : ccfg.egress_mode === "smart"
-                ? html`<span class="egb egb-smart" title=${T("{v1} destination rule(s)", { v1: (ccfg.routing || []).filter(r => r.action === "exit" || r.action === "dev").length })}><${Ic} i="cascade"/>${T("tag|smart")}</span>`
-                : html`<span class="egb egb-direct" title=${T("Exits directly from this node")}><${Ic} i="globe"/>${T("tag|direct")}</span>`}</span></div>
+              <div class="ifrow"><span class="l">${T("Traffic")}</span><span class="r">${ifTrafficBadge(ccfg, name)}</span></div>
               <div class="ifrow"><span class="l">${T("Peers reachable by")}</span><span class="r">${reachChip(name, c.iface, ccfg.reach)}</span></div>
               <div class="ifrow"><span class="l">${T("Peers")}</span><span class="r">${ps.length
                 ? html`<${OnlinePeersTag} nodeId=${name} iface=${c.iface} orphans=${0} orphHref=${href}
@@ -483,11 +476,7 @@ export function NodeDetail({ node: rawName }) {
                     return html`<div class="ifrow"><span class="l">${T("col|Drops")}</span><span class="r addr"><${DropsPop} d=${_d} iface=${ifn} node=${name}
                       trigger=${html`<${DropsFigure} d=${_d}/>`}/></span></div>`;
                   })()}
-                  <div class="ifrow"><span class="l">${T("Traffic")}</span><span class="r">${m.egress_mode === "forward" && m.egress_node
-                    ? html`<span class="egb egb-fwd" style=${"color:" + Store.nodeColor(m.egress_node)} title=${T("Exits via {v1}", { v1: Store.nodeName(m.egress_node) + (m.egress_ip ? " (" + m.egress_ip + ")" : "") })}><${Ic} i="server"/>→ ${Store.nodeName(m.egress_node)}</span>`
-                    : m.egress_mode === "smart"
-                    ? html`<span class="egb egb-smart" title=${T("{v1} destination rule(s)", { v1: (m.routing || []).filter(r => r.action === "exit" || r.action === "dev").length })}><${Ic} i="cascade"/>${T("tag|smart")}</span>`
-                    : html`<span class="egb egb-direct" title=${T("Exits directly from this node")}><${Ic} i="globe"/>${T("tag|direct")}</span>`}</span></div>
+                  <div class="ifrow"><span class="l">${T("Traffic")}</span><span class="r">${ifTrafficBadge(m, name)}</span></div>
                   <div class="ifrow"><span class="l">${T("Peers reachable by")}</span><span class="r">${reachChip(name, ifn, m.reach)}</span></div>
                   <div class="ifrow"><span class="l">${T("Peers")}</span><span class="r">${ps.length
                     ? html`<${OnlinePeersTag} nodeId=${name} iface=${ifn} orphans=${orph} orphHref=${"#/node/" + encodeURIComponent(name) + "/" + encodeURIComponent(ifn)}

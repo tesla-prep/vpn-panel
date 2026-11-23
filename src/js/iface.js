@@ -157,7 +157,7 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
         <div class="iface-grid">
           <div class="ig-item"><span class="ig-l">${T("col|Endpoint")}</span><span class="ig-v">${meta.endpoint || "—"}</span></div>
           <div class="ig-item"><span class="ig-l">${T("Server address")}</span><span class="ig-v">${meta.address || "—"}</span></div>
-          <div class="ig-item"><span class="ig-l">${T("Traffic")}</span><span class="ig-v">${ifTrafficBadge(meta.egress_mode, meta.egress_node, node, meta.exit_id)}</span></div>
+          <div class="ig-item"><span class="ig-l">${T("Traffic")}</span><span class="ig-v">${ifTrafficBadge(meta, node)}</span></div>
           ${(() => {
             const d = meta.drops;
             return html`<div class="ig-item"><span class="ig-l">${T("col|Drops")}</span><span class="ig-v">${d
@@ -297,7 +297,7 @@ export function WdttIfaceDetail({ node, iface, w, nrec, missing, kind }) {
       <div class="iface-grid">
         <div class="ig-item"><span class="ig-l">${T("col|Endpoint")}</span><span class="ig-v">${w.listen || cfg.listen || "—"}</span></div>
         <div class="ig-item"><span class="ig-l">${T("Server address")}</span><span class="ig-v">${(isCsq ? (w.tun_addr || cfg.tun_addr) : w.wg_addr) || "—"}</span></div>
-        <div class="ig-item"><span class="ig-l">${T("Traffic")}</span><span class="ig-v">${ifTrafficBadge(cfg.egress_mode, cfg.egress_node, node, cfg.exit_id)}</span></div>
+        <div class="ig-item"><span class="ig-l">${T("Traffic")}</span><span class="ig-v">${ifTrafficBadge(cfg, node)}</span></div>
         <div class="ig-item"><span class="ig-l">${T("Fork")}</span><span class="ig-v"><${ForkTag} fork=${fork} suffix=${lineSuffix}/></span></div>
       </div>
     <//>
@@ -1065,8 +1065,9 @@ export function ConnectionEditSheet({ node, iface }) {
       </div>`;
     })()}
     <div class="hint" style="margin-top:14px">${(Store.panelSettings || {}).mesh_effective === "demand"
-      ? Trich("This is a panel-managed mesh link to *{node}*. On demand, a link exists while a forward, a smart rule or its own settings use it, and is removed an hour after nothing does. To route a user interface's traffic out through this node, set that interface's egress to *Forward to {node}*.", { node: Store.nodeName(peer) })
-      : Trich("This is a panel-managed mesh link to *{node}*. It's created and torn down automatically as nodes are added or removed. To route a user interface's traffic out through this node, set that interface's egress to *Forward to {node}*.", { node: Store.nodeName(peer) })}</div>
+      ? Trich("This is a panel-managed mesh link to *{node}*. On demand, a link exists while a forward, a smart rule or its own settings use it, and is removed an hour after nothing does.", { node: Store.nodeName(peer) })
+      : Trich("This is a panel-managed mesh link to *{node}*. It's created and torn down automatically as nodes are added or removed.", { node: Store.nodeName(peer) })}
+      ${" "}${Trich("To send all traffic from an interface through this node, set *Interface rules → Everything else → Forward to {node}* and leave the rule list empty.", { node: Store.nodeName(peer) })}</div>
   <//>`;
 }
 export function EditIfaceSheet({ node, iface }) {
