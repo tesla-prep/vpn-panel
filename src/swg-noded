@@ -12374,6 +12374,7 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
             if _fk and _fk not in _tflags:
                 _tflags[_fk] = _turn_discover_flags(_tp.get("service") or "")
     snap = {"hostname": socket.gethostname(), "generated_at": now,
+            "endpoint_host": node_cfg.get("endpoint_host") or "",
             "interfaces": interfaces, "turn_proxies": _tps, "turn_flags": _tflags,
             "turn_drops": proxy_drops(_tps + _selfcontained_listeners()),
             "arch": _turn_arch(),

@@ -1609,32 +1609,25 @@ export function NodeCreateSheet() {
     ${msg ? html`<div class=${"formmsg " + msg.k}>${msg.t}</div>` : null}
   <//>`;
 }
-const validNodeInstallEndpoint = value => /^[a-z0-9][a-z0-9.-]*$/i.test(value.trim());
+const validNodeInstallEndpoint = value => !value.trim() || /^[a-z0-9][a-z0-9.-]*$/i.test(value.trim());
 
 function nodeInstallEndpointField(value, onChange) {
-  return html`<div class="field"><label>${T("Public hostname or IPv4 address")}</label>
+  return html`<div class="field"><label>${T("Public hostname or IPv4 address (optional)")}</label>
     <input value=${value} onInput=${e => onChange(e.target.value)} placeholder="vpn.example.org" autocomplete="off"
-      class=${value.trim() && !validNodeInstallEndpoint(value) ? "bad" : ""}/></div>`;
+      class=${!validNodeInstallEndpoint(value) ? "bad" : ""}/>
+    <div class="hint">${T("Leave blank to detect the node's public IPv4 during installation.")}</div></div>`;
 }
 
 const quoteShell = value => "'" + String(value).replaceAll("'", "'\"'\"'") + "'";
-const nodeInstallBootstrap = [
-  '[ "$(id -u)" -eq 0 ] || { echo "Run this command as root." >&2; exit 1; }',
-  'if ! command -v curl >/dev/null; then . /etc/os-release; [ "$ID" = ubuntu ]; apt-get update </dev/null; DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l apt-get install -y --no-install-recommends ca-certificates curl </dev/null; fi',
-  'script=$(mktemp)',
-  'trap \'rm -f -- "$script"\' EXIT',
-  'curl -fsSL --retry 3 -o "$script" "$1" </dev/null',
-  'shift',
-  'bash "$script" install node --token-stdin "$@"',
-].join('; ');
+const nodeInstallBootstrap = "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh";
 
 function installNodeCmd(enrollment, endpoint) {
   const revision = /^[a-f0-9]{40}$/.test(enrollment.install_revision) ? enrollment.install_revision : "";
   const host = enrollment.panel_url || Store.panelPublicUrl || location.origin + BASE;
-  const script = `https://raw.githubusercontent.com/tesla-prep/vpn-panel/${revision || "main"}/swg.sh`;
-  const args = [script, "--panel-url", host, "--node-endpoint", endpoint.trim()];
-  if (revision) args.push("--revision", revision);
-  return `printf '%s\\n' ${quoteShell(enrollment.token)} | sh -eu -c ${quoteShell(nodeInstallBootstrap)} swg-install ${args.map(quoteShell).join(" ")}`;
+  let args = `-host ${quoteShell(host)}`;
+  if (endpoint.trim()) args += ` -endpoint ${quoteShell(endpoint.trim())}`;
+  if (revision) args += ` -revision ${revision}`;
+  return `swg_bootstrap=$(curl -q -fsSL --proto '=https' ${nodeInstallBootstrap}) && printf '%s\\n' ${quoteShell(enrollment.token)} | sudo bash -c "$swg_bootstrap" -- node ${args}`;
 }
 
 export function NodeTokenSheet({ enrollment, isNew, canInstall }) {
@@ -1645,9 +1638,9 @@ export function NodeTokenSheet({ enrollment, isNew, canInstall }) {
       <button class="copyaction" onClick=${() => copy(value, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>`;
   return html`<${Sheet} title=${(isNew ? T("Node created") : T("New token")) + " · " + enrollment.name}
     foot=${html`<button class="btn btn-primary" onClick=${closeModal}>${T("Done")}</button>`}>
-    ${canInstall && !validNodeInstallEndpoint(enrollment.endpoint_host || "") ? nodeInstallEndpointField(endpoint, setEndpoint) : null}
+    ${canInstall && !isNew && (!enrollment.endpoint_host || !validNodeInstallEndpoint(enrollment.endpoint_host)) ? nodeInstallEndpointField(endpoint, setEndpoint) : null}
     ${install ? copyField(T("Node install command"), install) : null}
-    ${canInstall ? html`<p class="hint">${T("Run the command as root on the Ubuntu node. It contains the node token.")}</p>`
+    ${canInstall ? html`<p class="hint">${T("Run the command on the Ubuntu node with curl and sudo. It contains the node token.")}</p>`
       : html`${copyField("NODE_TOKEN", enrollment.token)}
         <p class="hint">${T("Set NODE_TOKEN in /opt/swg-node/.env, then run sudo docker compose up -d in that directory.")}</p>`}
   <//>`;

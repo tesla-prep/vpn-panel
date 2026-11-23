@@ -2652,6 +2652,9 @@ def _panel_public_url(deps):
     return PANEL_PUBLIC_URL
 
 
+_NODE_ENDPOINT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
+
+
 def _node_enrollment_data(node, token):
     revision = os.environ.get("SWG_SOURCE_REVISION", "")
     return {"id": node["id"], "name": node.get("name"), "token": token,
@@ -10100,6 +10103,7 @@ _SNAP_SHAPE = {
                      "node_ip_ifaces", "turn_proxies", "wdtt_dormant"), (list, dict)),
     **dict.fromkeys(("ether_ifaces", "exit_kinds", "ifaces_awaiting_key", "node_ifaces", "node_ips"), (list, str)),
     **dict.fromkeys(("iface_drops", "mesh_health"), (dict, dict)),
+    "endpoint_host": (str, None),
     "udp_listen": (list, int),
     **dict.fromkeys(("iface_key_sealed", "ip_forward", "relay", "rp_filter", "static_egress", "wdtt_key_sealed"), (dict, None)),
 }
@@ -17086,7 +17090,7 @@ def api(method, path, qs, body, deps):
         endpoint = body.get("endpoint_host")
         endpoint = "" if endpoint is None else endpoint
         if not isinstance(endpoint, str) or (endpoint.strip() and
-                not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9.-]*", endpoint.strip())):
+                not _NODE_ENDPOINT_RE.fullmatch(endpoint.strip())):
             return 400, {"ok": False, **perr("Enter the node's public hostname or IPv4 address."), "code": "bad_request"}
         nid = gen_id()
         while nid in nodes:
@@ -19501,7 +19505,8 @@ class Handler(BaseHTTPRequestHandler):
         net_probe_absorb(nid, snap)
         exit_test_absorb(nid, snap)
         if not (node.get("endpoint_host") or "").strip():
-            _pub = node_public_ip(snap)
+            reported = snap.get("endpoint_host") or ""
+            _pub = reported if _NODE_ENDPOINT_RE.fullmatch(reported) else node_public_ip(snap)
             if _pub:
                 node["endpoint_host"] = _pub
                 with contextlib.suppress(Exception):

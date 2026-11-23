@@ -6915,10 +6915,11 @@ Object.assign(STR, {
   "Configure SOCKS5 proxies here and assign an exit from the user card.": "Настройте прокси здесь и назначьте выход в карточке пользователя.",
   "No SOCKS5 exits on this node yet.": "На этой ноде пока нет выходов SOCKS5.",
   "Set PANEL_URL, NODE_TOKEN and the public NODE_ENDPOINT in /opt/swg-node/.env.": "Укажите PANEL_URL, NODE_TOKEN и публичный NODE_ENDPOINT в /opt/swg-node/.env.",
-  "Public hostname or IPv4 address": "Публичное имя хоста или IPv4-адрес",
+  "Public hostname or IPv4 address (optional)": "Публичное имя хоста или IPv4-адрес (необязательно)",
+  "Leave blank to detect the node's public IPv4 during installation.": "Оставьте поле пустым, чтобы установщик определил внешний IPv4 ноды.",
   "Enter the node's public hostname or IPv4 address.": "Укажите публичное имя хоста или IPv4-адрес ноды.",
   "Node install command": "Команда установки ноды",
   "Rotate token and get a new install command": "Сменить токен и получить новую команду установки",
-  "Run the command as root on the Ubuntu node. It contains the node token.": "Выполните команду от root на Ubuntu-ноде. Команда содержит токен ноды.",
+  "Run the command on the Ubuntu node with curl and sudo. It contains the node token.": "Выполните команду на Ubuntu-ноде с curl и правами sudo. Команда содержит токен ноды.",
   "Set NODE_TOKEN in /opt/swg-node/.env, then run sudo docker compose up -d in that directory.": "Укажите NODE_TOKEN в /opt/swg-node/.env и выполните sudo docker compose up -d в этом каталоге.",
 });
