@@ -38,9 +38,9 @@ export function catLabelOf(c) {
   if (isProviderCat(c)) return capFirst(prettyCatLabel(c, (Store.catLabels || {})[c]));
   return capFirst((Store.catLabels || {})[c] || lt[c] || (String(c).startsWith("custom") ? T("Custom") : c));
 }
-export const capBadges = caps => html`<span class="capbs">
-  ${caps && caps.host ? html`<span class="capb host" title=${T("Matchable by domain — needs Hybrid SNI")}>${T("Host")}</span>` : null}
-  ${caps && caps.ip ? html`<span class="capb ip" title=${T("Matchable by IP range — works in every mode")}>${T("cap|IP")}</span>` : null}</span>`;
+export const capBadges = caps => caps && (caps.host || caps.ip) ? html`<span class="capbs">
+  ${caps.host ? html`<span class="capb host" title=${T("Matchable by domain — needs Force-DNS or SNI mode")}>${T("Domains")}</span>` : null}
+  ${caps.ip ? html`<span class="capb ip" title=${T("Matchable by IP range — works in every mode")}>${T("IP networks")}</span>` : null}</span>` : null;
 export const isProviderCat = c => typeof c === "string" && c.includes(":") && !String(c).startsWith("custom");
 export const providerOf = c => isProviderCat(c) ? c.split(":", 1)[0] : "";
 
@@ -94,9 +94,13 @@ export const CAT_FRIENDLY = () => (_cat_friendly || (_cat_friendly = {
   instagram: "Instagram", tiktok: "TikTok", github: "GitHub", disney: "Disney+", spotify: "Spotify",
   twitch: "Twitch", reddit: "Reddit", discord: "Discord", vk: "VK", yandex: "Yandex", cloudflare: "Cloudflare",
   ru_gov: T("Russian Government"), ru_banks: T("Russian Banks"), ru_social: T("Russian Social (VK / OK)"),
+  "rc:category-ru": T("Russian services"),
+  "rc:whitelist": T("Direct access allowlist"),
+  "runet:ru-available-only-inside": T("Only available from Russia"),
 }));
 export function prettyCatLabel(id, fallback) {
-  const rid = String(id || "").includes(":") ? String(id).split(":")[1] : String(id || "");
+  const rid = catRawId(id);
+  if (CAT_FRIENDLY()[id]) return CAT_FRIENDLY()[id];
   if (CAT_FRIENDLY()[rid.toLowerCase()]) return CAT_FRIENDLY()[rid.toLowerCase()];
   if (/^[a-z]{2}$/i.test(rid) && _REGION_NAMES) {
     try { const n = _REGION_NAMES.of(rid.toUpperCase()); if (n && n.toUpperCase() !== rid.toUpperCase()) return n; } catch (e) {}
@@ -107,7 +111,11 @@ export function prettyCatLabel(id, fallback) {
   if ((m = rid.match(/^tld-(.+)$/))) return T("TLD .{v1}", { v1: m[1].toLowerCase() });
   return fallback || _titleize(rid) || rid;
 }
-export const catRawId = id => String(id || "").includes(":") ? String(id).split(":")[1] : String(id || "");
+export function catRawId(id) {
+  const [prov, rid] = String(id || "").split(":");
+  if (prov === "runet" && rid) return rid.replaceAll("--attr--", "@").replaceAll("--bang--", "!");
+  return rid ?? prov;
+}
 let _cat_desc = null;
 export const CAT_DESC = () => (_cat_desc || (_cat_desc = {
   google: T("Google search, accounts & core services"), youtube: T("YouTube video + its CDN"),
@@ -124,6 +132,12 @@ export const CAT_DESC = () => (_cat_desc || (_cat_desc = {
   "rf:community": T("Community list: sites RKN does not block that refuse visitors from Russia"),
   "rf:community_ips": T("Community list: networks RKN does not block that refuse addresses from Russia"),
   "rf:discord_ips": T("Discord's networks"),
+  "rc:category-ru": T("Russian services and IP check sites"),
+  "rc:whitelist": T("Russian services and sites for direct access"),
+  "runet:ru-available-only-inside": T("Resources accessible only from Russia, including government sites"),
+  "runet:ru-blocked": T("Resources blocked in Russia"),
+  "runet:ru-blocked-all": T("Expanded list of resources blocked in Russia"),
+  "runet:ru-whitelist": T("IP networks on the Russian mobile Internet allowlist"),
 }));
 export const catDescOf = id => CAT_DESC()[String(id || "").toLowerCase()] || CAT_DESC()[catRawId(id).toLowerCase()] || "";
 export function catListUrl(id, caps) {
@@ -132,6 +146,13 @@ export function catListUrl(id, caps) {
   switch (prov) {
     case "mc": return "https://github.com/MetaCubeX/meta-rules-dat/blob/meta/geo/" + (host ? "geosite" : "geoip") + "/" + rid + ".list";
     case "rf": return "https://github.com/1andrevich/Re-filter-lists/blob/main/" + rid + ".lst";
+    case "rc": return "https://github.com/hydraponique/roscomvpn-geosite/blob/master/data/" + encodeURIComponent(rid);
+    case "runet": {
+      const encoded = encodeURIComponent(rid);
+      if (!host) return "https://github.com/runetfreedom/russia-blocked-geoip/blob/release/text/" + encoded + ".txt";
+      if (_CATALOG_BY_ID[id]?.host_text) return "https://github.com/runetfreedom/russia-blocked-geosite/blob/release/" + encoded + ".txt";
+      return "https://github.com/runetfreedom/russia-v2ray-rules-dat/blob/release/sing-box/rule-set-geosite/geosite-" + encoded + ".srs";
+    }
     default: return "";
   }
 }
@@ -154,7 +175,7 @@ export function ListInfo({ cat, list }) {
   return html`<span class="listsize">${summary}</span>`;
 }
 
-export function CatalogRow({ it, added, onPick }) {
+export function CatalogRow({ it, added, onPick, preview = true }) {
   const [fetched, setFetched] = useState(() => _LIST_INFO_CACHE[it.id] || null);
   const own = it.list, ownB = own ? listBuckets(own) : null;
   const ownDoms = ownB ? ownB.host : [], ownIps = ownB ? ownB.ip : [];
@@ -162,12 +183,12 @@ export function CatalogRow({ it, added, onPick }) {
                                ...(ownIps.length ? { ip: { n: ownIps.length, sample: ownIps.slice(0, 4) } } : {}) } }
                    : fetched;
   useEffect(() => {
-    if (own) return;
+    if (own || !preview || (it.provider === "runet" && it.caps.host && !it.host_text)) return;
     if (info && !(info.tiers && Object.keys(info.tiers).some(k => info.tiers[k] && info.tiers[k].pending))) return;
     let live = true;
     const t = setTimeout(() => askListInfo(it.id, () => live && setFetched(_LIST_INFO_CACHE[it.id] || null),
                                            { waitMs: LIST_ASK_MS, errOnGiveUp: false }), 250);
-    return () => { live = false; clearTimeout(t); }; }, [it.id]);
+    return () => { live = false; clearTimeout(t); }; }, [it.id, preview]);
   const title = prettyCatLabel(it.id, it.label), rid = catRawId(it.id), desc = catDescOf(it.id);
   const hostD = info && info.tiers && info.tiers.host, ipD = info && info.tiers && info.tiers.ip;
   const summary = sizeSummary((hostD && hostD.n) || 0, (ipD && ipD.n) || 0);
@@ -199,6 +220,8 @@ export function provLabelOf(c) {
 export const CAT_PROVIDER_DEFAULTS = {
   mc: { color: "#5B8FF9", colorL: "#2C6FD6" },
   rf: { color: "#E8684A", colorL: "#C2452A" },
+  rc: { color: "#C084FC", colorL: "#8550B4" },
+  runet: { color: "#4DB995", colorL: "#137456" },
 };
 export function providerColor(prov) {
   const ov = (Store.panelSettings && Store.panelSettings.provider_colors) || {};
@@ -906,7 +929,8 @@ const _sizeOfInfo = d => {
   if (host || ip) return { host, ip };
   const any = f => Object.keys(d.tiers).some(k => d.tiers[k] && d.tiers[k][f]);
   if (any("pending")) return null;
-  return any("failed") ? { err: true } : { host: 0, ip: 0 };
+  if (any("failed")) return { err: true };
+  return any("unsupported") ? { err: true, unsupported: true } : { host: 0, ip: 0 };
 };
 export function listSizeNow(id) {
   const cl = customListOf(id);
@@ -952,6 +976,7 @@ function ListBadgeSize({ cat, onRetry }) {
   if (sz && !sz.err) return sizeSummary(sz.host, sz.ip) ? null : html`<span class="tfb-size missing"
     title=${T("The panel resolved this list and it holds nothing — check the id, or the source may have emptied it.")}>${T("list|empty")}</span>`;
   if (!sz) return html`<span class="tfb-size preparing" title=${T("The panel is fetching this list now — it routes as soon as it lands.")}>${T("preparing…")}</span>`;
+  if (sz.unsupported) return html`<span class="tfb-size missing" title=${T("This list has no domain suffixes the routing engine can use.")}>${T("list|unsupported")}</span>`;
   return html`<button type="button" class="tfb-size notready" title=${T("The panel hasn't fetched this list yet. The rule saves either way and routes as soon as it lands — click to ask again.")}
     onClick=${e => { e.stopPropagation(); delete _LIST_INFO_CACHE[cat]; delete _LIST_INFO_PENDING[cat];
                      askListInfo(cat, onRetry, { retry: true }); onRetry(); }}>${T("not ready")}</button>`;
@@ -990,7 +1015,7 @@ function Badge({ b, gate, node, modeLabel, onRemove, onEdit, onFix, onRetry, onR
     ${inert ? html`<span class="tfb-g" aria-hidden="true">⊘</span>` : null}
     <button type="button" class="tfb-main" onClick=${() => (isList ? (onReveal && onReveal(b.id)) : onEdit())} title=${title}>
       <span class="tfb-lbl">${isList ? catLabelOf(b.id) : targetLabel(b.kind, b.value)}</span>
-      ${isList ? html`<${ProvTag} id=${b.id} label=${listSourceOf(b.id)}/>`
+      ${isList ? html`<${ProvTag} id=${b.id} label=${listSourceOf(b.id)}/>${capBadges(_listCaps(b))}`
         : html`<span class=${"capb " + (wide ? "wide" : "kind")}>${KIND_LABEL()[b.kind]}</span>`}
     </button>
     ${isList ? html`<${ListBadgeSize} cat=${b.id} onRetry=${onRetry}/>` : null}
@@ -1027,12 +1052,13 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   const [asText, setAsText] = useState(false);
   const [draft, setDraft] = useState("");
   const [page, setPage] = useState(0);
+  const [listType, setListType] = useState("all");
   const [cidx, setCidx] = useState(_CATALOG_INDEX);
   const [expand, setExpand] = useState(false);
   const [say, setSay] = useState("");
   const [pending, setPending] = useState({ text: "", forQ: null });
   const [tries, bump] = useState(0);
-  const ref = useRef(null), popRef = useRef(null), inRef = useRef(null);
+  const ref = useRef(null), popRef = useRef(null), inRef = useRef(null), resultsRef = useRef(null);
   const badges = row.badges || [];
   const modeLabel = (MODE_META[mode] || {}).label || mode;
   useListSizes(badges.filter(b => b.t === "list").map(b => b.id), () => bump(x => x + 1), tries);
@@ -1139,25 +1165,35 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   }, [open]);
 
   const per = isMobile() ? 50 * more : 50;
+  const chooseType = type => {
+    setListType(type); setPage(0); setMore(1); setAct(-1);
+    if (resultsRef.current) resultsRef.current.scrollTop = 0;
+  };
+  const matchesType = it => listType === "all" || it.caps?.[listType];
   const _mine = (Store.panelSettings?.custom_lists || [])
     .filter(l => l && (!ql || String(l.title || "").toLowerCase().includes(ql) || String(l.id || "").toLowerCase().includes(ql)))
     .map(l => ({ id: l.id, provider: "custom", provider_label: T("Custom"), caps: customCaps(l),
                  disp: l.title || l.id, label: l.title || l.id, list: l }))
+    .filter(matchesType)
     .sort((a, b) => a.disp.toLowerCase().localeCompare(b.disp.toLowerCase()));
-  const _hits = (ql.length >= 2 && cidx) ? cidx.filter(it => it.hay.includes(ql)).sort((a, b) => a.disp.localeCompare(b.disp)) : [];
+  const byName = (a, b) => a.disp.localeCompare(b.disp);
+  const _hits = (ql.length !== 1 && cidx)
+    ? cidx.filter(it => matchesType(it) && (!ql || it.hay.includes(ql))).sort(byName) : [];
   const _qn = ql.replace(/[^a-z0-9]/g, "");
   const _provHit = _qn.length >= 3 && !lq.includes("*") ? (Store.catalogProviders || []).filter(p => p.enabled
     && String(p.label || "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith(_qn)) : [];
   const _provGroups = _provHit.map(p => ({ p, all: (cidx || []).filter(it => it.provider === p.id) }));
   const _hitIds = new Set(_hits.map(it => it.id));
-  const _cat = _hits.concat(..._provGroups.map(g => g.all.filter(it => !_hitIds.has(it.id))
-    .sort((a, b) => a.disp.localeCompare(b.disp)).map(it => ({ ...it, grpProv: g.p.label }))));
+  const _cat = _hits.concat(..._provGroups.map(g => g.all.filter(it => matchesType(it) && !_hitIds.has(it.id))
+    .sort(byName).map(it => ({ ...it, grpProv: g.p.label }))));
   const _provWait = _provGroups.filter(g => !g.all.length && (g.p.status === "downloading" || g.p.status === "failed" || g.p.error)).map(g => g.p);
-  const catPage = _cat.slice(page * per, (page + 1) * per);
   const pages = Math.max(1, Math.ceil(_cat.length / per));
+  const pageNow = Math.min(page, pages - 1);
+  const catPage = _cat.slice(pageNow * per, (pageNow + 1) * per);
   const has = id => badges.some(b => b.t === "list" && b.id === id);
   const revealList = id => {
     setOpen(true); setEditing(null);
+    chooseType("all");
     const local = !!customListOf(id);
     if (local) { setQ(""); setPage(0); }
     else {
@@ -1165,7 +1201,8 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
       setQ(catRawId(id));
       const hits = (cidx || []).filter(it => it.hay.includes(term)).sort((a, b) => a.disp.localeCompare(b.disp));
       const at = hits.findIndex(it => it.id === id);
-      setPage(at >= 0 ? Math.floor(at / per) : 0);
+      setPage(at >= 0 && !isMobile() ? Math.floor(at / per) : 0);
+      if (at >= 0 && isMobile()) setMore(Math.floor(at / 50) + 1);
     }
     setReveal(id);
   };
@@ -1302,7 +1339,7 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     : null;
   const listRow = it => { const g = listGate(mode, it.id, node), added = has(it.id), i = rows.findIndex(r => r.it === it);
     return html`<div class=${"tfrow" + (i >= 0 && i === act ? " act" : "")} key=${it.id} data-lid=${it.id} onMouseEnter=${() => setAct(i)}>
-      <${CatalogRow} it=${it} added=${added} onPick=${() => (added ? removeList(it.id) : g.ok && commitList(it.id))}/>
+      <${CatalogRow} it=${it} added=${added} preview=${ql.length >= 2} onPick=${() => (added ? removeList(it.id) : g.ok && commitList(it.id))}/>
       ${!g.ok ? html`<div class="tfrow-why">${gateReason(g, modeLabel)}${fixBtn(g)}</div>` : null}
     </div>`; };
   let lastGrp = null;
@@ -1371,8 +1408,15 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     <span class="tf-live" aria-live="polite">${say}</span>
     ${open && pos && (!listEditor || rows.length) ? html`<${Portal}><div ref=${popRef} class=${"catpick-pop wide tfpop" + (pos.flip ? " flip" : "")}
         style=${"left:" + pos.left + "px;top:" + pos.top + "px;width:" + pos.width + "px;--catpick-maxh:" + (pos.maxh - 119) + "px"}>
-      <div class="tfpop-head"><button type="button" class="pop-x" aria-label=${T("Close")} title=${T("Close")} onClick=${() => { setOpen(false); setHoldQ(null); if (isMobile() && inRef.current) inRef.current.blur(); }}><${Ic} i="x"/></button></div>
-      <div class="catpick-list" onScroll=${isMobile() ? (e => { const l = e.currentTarget;
+      <div class="tfpop-head">
+        ${listEditor ? null : html`<div class="tfpop-types" role="group" aria-label=${T("List type")}>
+          ${[["all", T("All list types")], ["ip", T("IP networks")], ["host", T("Domains")]].map(([type, label]) =>
+            html`<button key=${type} type="button" aria-pressed=${listType === type}
+                onMouseDown=${e => e.preventDefault()} onClick=${() => chooseType(type)}>${label}</button>`)}
+        </div>`}
+        <button type="button" class="pop-x" aria-label=${T("Close")} title=${T("Close")} onClick=${() => { setOpen(false); setHoldQ(null); if (isMobile() && inRef.current) inRef.current.blur(); }}><${Ic} i="x"/></button>
+      </div>
+      <div class="catpick-list" ref=${resultsRef} onScroll=${isMobile() ? (e => { const l = e.currentTarget;
           if (!growing.current && _cat.length > per && l.scrollTop + l.clientHeight > l.scrollHeight - 400) { growing.current = true; setMore(m => m + 1); } }) : null}>
         ${readList ? html`<div class="catpick-grp">${T("Use what you typed")}</div>
           <${readList.ok ? "button" : "div"} type=${readList.ok ? "button" : null} class=${"tfuse" + (act <= 0 ? " act" : "") + (readList.ok ? "" : " off")}
@@ -1395,15 +1439,15 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
         ${!listEditor ? _provWait.map(p => html`<div class="catpick-empty">${p.status === "downloading"
             ? T("{v1} is still downloading its list catalog — its lists appear here when it finishes.", { v1: p.label })
             : T("{v1} could not download its list catalog — retry it in Settings ▸ Geo data providers.", { v1: p.label })}</div>`) : null}
-        ${!listEditor && ql.length >= 2 && !q.includes("*") && !_cat.length && !_provWait.length && cidx ? html`<div class="catpick-empty">${T("No list matches “{q}”.", { q })}</div>` : null}
+        ${!listEditor && ql.length !== 1 && !q.includes("*") && !_cat.length && !_mine.length && !_provWait.length && cidx
+          ? html`<div class="catpick-empty">${listType !== "all" ? T("No lists of this type match.") : ql ? T("No list matches “{q}”.", { q }) : T("No lists available.")}</div>` : null}
         ${!listEditor && ql.length === 1 ? html`<div class="catpick-empty">${T("Keep typing to search the provider catalog.")}</div>` : null}
-        ${!listEditor && !rows.length && !ql ? html`<div class="catpick-empty">${T("Type a service name, an address, an IP range or an AS number.")}</div>` : null}
       </div>
       ${_cat.length > per && !isMobile() ? html`<div class="catpick-foot">
-        <span class="catpick-count">${T("{v1}–{v2} of {v3}", { v1: page * per + 1, v2: Math.min(_cat.length, (page + 1) * per), v3: _cat.length })}</span><span class="grow"></span>
+        <span class="catpick-count">${T("{v1}–{v2} of {v3}", { v1: pageNow * per + 1, v2: Math.min(_cat.length, (pageNow + 1) * per), v3: _cat.length })}</span><span class="grow"></span>
         <div class="catpick-nav">
-          <button type="button" class="btn btn-mini" disabled=${page === 0} onClick=${() => { setPage(p => Math.max(0, p - 1)); setAct(-1); }} >${T("‹ Prev")}</button>
-          <button type="button" class="btn btn-mini" disabled=${page >= pages - 1} onClick=${() => { setPage(p => Math.min(pages - 1, p + 1)); setAct(-1); }} >${T("Next ›")}</button>
+          <button type="button" class="btn btn-mini" disabled=${pageNow === 0} onClick=${() => { setPage(pageNow - 1); setAct(-1); }} >${T("‹ Prev")}</button>
+          <button type="button" class="btn btn-mini" disabled=${pageNow >= pages - 1} onClick=${() => { setPage(pageNow + 1); setAct(-1); }} >${T("Next ›")}</button>
         </div></div>` : null}
       ${isMobile() ? html`<button type="button" class="btn btn-primary m-tfdone" onClick=${() => {
           if (q.trim() && rows.length === 1) {

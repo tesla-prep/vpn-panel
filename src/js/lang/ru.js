@@ -2550,6 +2550,13 @@ export const STR = {
 
   "Host": "Хост",
   "cap|IP": "IP",
+  "IP networks": "IP-сети",
+  "List type": "Тип списка",
+  "All list types": "Все",
+  "No lists available.": "Нет доступных списков.",
+  "No lists of this type match.": "Нет подходящих списков этого типа.",
+  "list|unsupported": "Нет поддерживаемых записей",
+  "This list has no domain suffixes the routing engine can use.": "В списке нет доменных суффиксов, которые поддерживает маршрутизация.",
   "Matchable by domain — needs Force-DNS or SNI mode": "Совпадает по домену — нужен режим Force-DNS или SNI",
   "Matchable by IP range — works in every mode": "Совпадает по диапазону IP — работает в любом режиме",
   "Large list — noticeable memory / reload on any node that routes it":
@@ -2649,6 +2656,15 @@ export const STR = {
     "Дальше добавьте списки — категория совпадает по домену или по IP в зависимости от выбранных списков.",
   "A category with that name already exists.": "Категория с таким именем уже есть.",
   "Provider catalog": "Каталог провайдера",
+  "Russian services": "Российские сервисы",
+  "Direct access allowlist": "Список для прямого доступа",
+  "Only available from Russia": "Доступно только из России",
+  "Russian services and IP check sites": "Российские сервисы и сайты проверки IP",
+  "Russian services and sites for direct access": "Российские сервисы и сайты для прямого доступа",
+  "Resources accessible only from Russia, including government sites": "Ресурсы, доступные только из России, включая госресурсы",
+  "Resources blocked in Russia": "Ресурсы, заблокированные в России",
+  "Expanded list of resources blocked in Russia": "Расширенный список ресурсов, заблокированных в России",
+  "IP networks on the Russian mobile Internet allowlist": "IP-сети из белого списка российского мобильного интернета",
   "Lists from {v1}": "Списки {v1}",
   "{v1} is still downloading its list catalog — its lists appear here when it finishes.": "{v1} ещё загружает каталог списков — они появятся здесь, когда загрузка закончится.",
   "{v1} could not download its list catalog — retry it in Settings ▸ Geo data providers.": "Не удалось загрузить каталог списков {v1} — повторите в «Настройки ▸ Провайдеры гео-данных».",
@@ -4100,6 +4116,10 @@ export const STR = {
     "Самый широкий набор GeoSite + GeoIP — правила по сервисам и странам, вслед за данными Clash.",
   "Russia-focused domain and IP lists for anti-censorship routing — blocked services and their networks.":
     "Списки доменов и адресов с фокусом на Россию для обхода блокировок — закрытые сервисы и их сети.",
+  "RoscomVPN domain lists for Russian resources, services, games and advertising.":
+    "Доменные списки RoscomVPN для российских ресурсов, сервисов, игр и рекламы.",
+  "RunetFreedom GeoSite and GeoIP, including resources accessible only from Russia and blocked networks.":
+    "GeoSite и GeoIP RunetFreedom, включая ресурсы, доступные только из России, и заблокированные сети.",
   "Your own IP / domain lists — turn off to hide the Custom lists section in routing.":
     "Ваши списки адресов и доменов — выключите, чтобы скрыть раздел своих списков в маршрутизации.",
   "Re-fetch every routed list from its provider now (updates the panel; nodes pull the changes on their schedule)":

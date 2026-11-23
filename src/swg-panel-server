@@ -74,6 +74,7 @@ import inspect
 import ipaddress
 import itertools
 import math
+import mmap
 import errno
 import json
 import os
@@ -7645,6 +7646,8 @@ SWG_RT_BASE = 7000
 SWG_RT_MAX = 7099
 SWG_RT_BAND = SWG_RT_MAX - SWG_RT_BASE + 1
 
+RUNET_GEOSITE_RAW = "https://raw.githubusercontent.com/runetfreedom/russia-blocked-geosite/release/"
+RUNET_GEOIP_RAW = "https://raw.githubusercontent.com/runetfreedom/russia-blocked-geoip/release/text/"
 CATALOG_PROVIDERS = {
     "mc": {"label": "MetaCubeX", "url": "https://github.com/MetaCubeX/meta-rules-dat", "strip": ".list", "skip_at": True,
            "trees": [("host", "https://api.github.com/repos/MetaCubeX/meta-rules-dat/git/trees/meta:geo/geosite"),
@@ -7658,6 +7661,18 @@ CATALOG_PROVIDERS = {
            "raw_ip":   "https://raw.githubusercontent.com/1andrevich/Re-filter-lists/main/{id}.lst",
            "lists": {"community": "host", "community_ips": "ip", "discord_ips": "ip", "domains_all": "host"},
            "note": "Russia-focused domain and IP lists for anti-censorship routing — blocked services and their networks."},
+    "rc": {"label": "RoscomVPN", "url": "https://github.com/hydraponique/roscomvpn-geosite",
+           "trees": [("host", "https://api.github.com/repos/hydraponique/roscomvpn-geosite/git/trees/master:data")],
+           "raw_host": "https://raw.githubusercontent.com/hydraponique/roscomvpn-geosite/master/data/{id}",
+           "host_fmt": "dlc",
+           "note": "RoscomVPN domain lists for Russian resources, services, games and advertising."},
+    "runet": {"label": "RunetFreedom", "url": "https://github.com/runetfreedom/russia-v2ray-rules-dat",
+              "trees": [("host", "https://api.github.com/repos/runetfreedom/russia-v2ray-rules-dat/git/trees/release:sing-box/rule-set-geosite"),
+                        ("host", "https://api.github.com/repos/runetfreedom/russia-blocked-geosite/git/trees/release"),
+                        ("ip", "https://api.github.com/repos/runetfreedom/russia-blocked-geoip/git/trees/release:text")],
+              "raw_host": RUNET_GEOSITE_RAW + "{id}.txt", "raw_ip": RUNET_GEOIP_RAW + "{id}.txt",
+              "host_fmt": "dlc",
+              "note": "RunetFreedom GeoSite and GeoIP, including resources accessible only from Russia and blocked networks."},
 }
 CATALOG_PROVIDER_ORDER = list(CATALOG_PROVIDERS)
 CATALOG_TTL = 86400
@@ -8919,7 +8934,7 @@ def provider_stale(pid, gen):
 
 def catalog_refresh_provider(pid, gen):
     part = _catalog_build(only=[pid])
-    if provider_stale(pid, gen) or not part:
+    if provider_stale(pid, gen) or not part or pid in (_CATALOG.get("perr") or {}):
         return None
     with _CATALOG_LOCK:
         base = dict(_catalog_last_good())
@@ -9093,6 +9108,10 @@ def _catalog_gh(url):
             return json.load(r)
     return _http_retry(_do)
 
+def _runet_catalog_id(name):
+    return name.replace("@", "--attr--").replace("!", "--bang--")
+
+
 def _catalog_build(only=None):
     idx = {}; perr = {}
     for prov in [p for p in CATALOG_PROVIDER_ORDER if not only or p in only]:
@@ -9104,16 +9123,31 @@ def _catalog_build(only=None):
                     if e.get("type") != "blob":
                         continue
                     p = e.get("path", "")
-                    if strip and not p.endswith(strip):
-                        continue
-                    if cfg.get("skip_at") and "@" in p:
-                        continue
-                    rid = p[:-len(strip)] if strip else p
+                    host_text = False
+                    if prov == "runet":
+                        if tier == "host" and p.startswith("geosite-") and p.endswith(".srs"):
+                            rid = _runet_catalog_id(p[8:-4])
+                        elif p.endswith(".txt"):
+                            rid = p[:-4]
+                            host_text = tier == "host"
+                        else:
+                            continue
+                    else:
+                        if strip and not p.endswith(strip):
+                            continue
+                        if cfg.get("skip_at") and "@" in p:
+                            continue
+                        rid = p[:-len(strip)] if strip else p
                     if not rid or "/" in rid:
+                        continue
+                    if prov in ("runet", "rc") and not re.fullmatch(r"[a-z0-9_.-]+", rid):
                         continue
                     resolved_tier = cfg["lists"].get(rid) if "lists" in cfg else tier
                     if resolved_tier:
-                        idx.setdefault(prov + ":" + rid, {"p": prov, "ip": False, "host": False})[resolved_tier] = True
+                        entry = idx.setdefault(prov + ":" + rid, {"p": prov, "ip": False, "host": False})
+                        entry[resolved_tier] = True
+                        if host_text:
+                            entry["host_text"] = True
         except Exception as ex:
             perr[prov] = str(ex)[:120]
     if only:
@@ -9143,6 +9177,12 @@ def catalog_index(force=False):
         _CATALOG["fail_at"] = now
         _CATALOG["err"] = _CATALOG["err"] or "every catalog provider failed to fetch"
         return _catalog_last_good()
+    failed = _CATALOG.get("perr") or {}
+    if failed:
+        last = _catalog_last_good()
+        keep = {p for p in failed if any(e.get("p") == p for e in last.values())}
+        idx = {c: e for c, e in idx.items() if e.get("p") not in keep}
+        idx.update({c: e for c, e in last.items() if e.get("p") in keep})
     _CATALOG.update(idx=idx, at=now, err="")
     _catalog_changed()
     _CATALOG.pop("fail_at", None)
@@ -9272,6 +9312,8 @@ def _catalog_refresh_loop():
 
 def catalog_label(cid):
     rid = cid.split(":", 1)[1] if ":" in cid else cid
+    if cid.startswith("runet:"):
+        rid = rid.replace("--attr--", "@").replace("--bang--", "!")
     return rid.replace("_", " ").replace("-", " ").strip().title() or cid
 
 def catalog_search(q, page, per=40, enabled=None):
@@ -9375,6 +9417,13 @@ def _line_host_plain(raw):
         return ln
     return ln if zone and _zone_label_ok(ln) else None
 
+def _line_host_dlc(raw):
+    line = raw.split("#", 1)[0].strip()
+    kind, sep, value = line.partition(":")
+    if sep and kind != "domain":
+        return None
+    return _line_host_plain("+." + value.split()[0]) if sep and value.strip() else _line_host_plain(line)
+
 def _line_abp(raw):
     ln = raw.strip().lower()
     if not ln or ln[0] in "!#" or ln.startswith("@@") or "##" in ln or "/" in ln or "*" in ln:
@@ -9435,6 +9484,9 @@ def block_source_size(provider, lid):
     m = list_ensure("blk:%s:%s" % (provider, lid or ""), tier)
     return tier, (int(m["n"]) if m and m.get("n") is not None else None)
 
+_LIST_NO_DOMAIN_SUFFIXES = "no compatible domain suffixes in the list"
+
+
 def list_resolve(cat, tier):
     if cat.startswith("blku:"):
         return None
@@ -9448,12 +9500,134 @@ def list_resolve(cat, tier):
     if not tmpl or ("lists" in cfg and cfg["lists"][rid] != tier):
         return None
     try:
-        txt = _list_fetch_text(tmpl.format(id=rid))
-    except Exception:
+        if tier == "host" and _runet_uses_geosite(cat):
+            items = sorted(set(_runet_geosite_domains(rid)))
+        else:
+            txt = _list_fetch_text(tmpl.format(id=rid))
+            if tier == "ip":
+                return _norm_ip(txt)
+            if cfg.get("host_fmt") != "dlc":
+                return _norm_host_plain(txt)
+            items = _norm_set(txt, _line_host_dlc)
+        if not items:
+            raise ValueError(_LIST_NO_DOMAIN_SUFFIXES)
+        return items
+    except Exception as exc:
+        if prov in ("runet", "rc"):
+            _list_note_err(cat, tier, exc)
         return None
-    return _norm_ip(txt) if tier == "ip" else _norm_host_plain(txt)
 
 _LIST_SUSPECT = {}
+
+_RUNET_GEOSITE_LOCK = threading.Lock()
+_RUNET_GEOSITE_FAILED_AT = 0
+
+
+def _runet_uses_geosite(cat):
+    return cat.startswith("runet:") and not catalog_cached()[0].get(cat, {}).get("host_text")
+
+
+def _open_runet_geosite():
+    global _RUNET_GEOSITE_FAILED_AT
+    path = os.path.join(LIST_DIR, "runet-geosite.dat")
+    with _RUNET_GEOSITE_LOCK:
+        now = time.time()
+        if os.path.isfile(path) and now - os.path.getmtime(path) < CATALOG_TTL:
+            return open(path, "rb")
+        if now - _RUNET_GEOSITE_FAILED_AT < 60:
+            raise ValueError("RunetFreedom GeoSite download failed recently")
+        os.makedirs(LIST_DIR, exist_ok=True)
+        tmp = path + ".tmp"
+        def _fetch():
+            req = urllib.request.Request(RUNET_GEOSITE_RAW + "geosite.dat", headers={"User-Agent": "swg-panel"})
+            with urllib.request.urlopen(req, timeout=40) as response, open(tmp, "wb") as out:
+                size = 0
+                expected_size = response.length
+                while chunk := response.read(1024 * 1024):
+                    size += len(chunk)
+                    if size > _LIST_FETCH_CAP:
+                        raise ValueError("RunetFreedom GeoSite exceeds the list size limit")
+                    out.write(chunk)
+                if not size or (expected_size is not None and size != expected_size):
+                    raise ValueError("incomplete RunetFreedom GeoSite download")
+        try:
+            _http_retry(_fetch, tries=2)
+            with open(tmp, "rb") as f, mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as data:
+                if not sum((field, wire) == (1, 2) for field, wire, _, _ in _geosite_fields(data, 0, len(data))):
+                    raise ValueError("invalid RunetFreedom GeoSite archive")
+            os.replace(tmp, path)
+        except Exception:
+            _RUNET_GEOSITE_FAILED_AT = time.time()
+            with contextlib.suppress(OSError):
+                os.remove(tmp)
+            raise
+        return open(path, "rb")
+
+
+def _geosite_varint(data, start, end):
+    value = 0
+    for shift in range(0, 64, 7):
+        if start >= end:
+            break
+        byte = data[start]
+        start += 1
+        value |= (byte & 0x7f) << shift
+        if byte < 0x80:
+            return value, start
+    raise ValueError("invalid GeoSite varint")
+
+
+def _geosite_fields(data, start, end):
+    # GeoSiteList, GeoSite, Domain and Attribute use scalar and length-delimited protobuf fields.
+    while start < end:
+        tag, start = _geosite_varint(data, start, end)
+        number, wire = tag >> 3, tag & 7
+        if wire == 0:
+            value, start = _geosite_varint(data, start, end)
+            yield number, wire, value, start
+        elif wire == 2:
+            size, start = _geosite_varint(data, start, end)
+            stop = start + size
+            if stop > end:
+                raise ValueError("truncated GeoSite message")
+            yield number, wire, start, stop
+            start = stop
+        else:
+            raise ValueError("unsupported GeoSite wire type")
+
+
+def _runet_geosite_domains(rid):
+    code, _, attr = rid.replace("--attr--", "@").replace("--bang--", "!").partition("@")
+    code, attr = code.upper().encode(), attr.encode()
+    with _open_runet_geosite() as source, mmap.mmap(source.fileno(), 0, access=mmap.ACCESS_READ) as data:
+        for field, wire, start, end in _geosite_fields(data, 0, len(data)):
+            if (field, wire) != (1, 2):
+                continue
+            site = _geosite_fields(data, start, end)
+            if not any((f, w) == (1, 2) and data[a:b].upper() == code for f, w, a, b in site):
+                continue
+            found_attr = not attr
+            for f, w, a, b in _geosite_fields(data, start, end):
+                if (f, w) != (2, 2):
+                    continue
+                value, kind, matches_attr = None, 0, not attr
+                for df, dw, da, db in _geosite_fields(data, a, b):
+                    if (df, dw) == (1, 0):
+                        kind = da
+                    elif (df, dw) == (2, 2):
+                        value = data[da:db]
+                    elif (df, dw) == (3, 2) and attr:
+                        matches_attr |= any((af, aw) == (1, 2) and data[aa:ab] == attr
+                                            for af, aw, aa, ab in _geosite_fields(data, da, db))
+                found_attr |= matches_attr
+                if kind == 2 and value and matches_attr:
+                    domain = _line_host_plain("+." + value.decode("utf-8"))
+                    if domain:
+                        yield domain
+            if found_attr:
+                return
+            break
+    raise ValueError("list not found in the current RunetFreedom GeoSite archive")
 
 def _hash_count_file(path):
     h = hashlib.sha1(); n = 0
@@ -9518,9 +9692,10 @@ def _host_stream_spec(cat, tier):
         return None
     prov, rid = cat.split(":", 1)
     cfg = CATALOG_PROVIDERS[prov]
-    if "lists" in cfg and cfg["lists"][rid] != "host":
+    if _runet_uses_geosite(cat) or ("lists" in cfg and cfg["lists"][rid] != "host"):
         return None
-    return cfg["raw_host"].format(id=rid), _line_host_plain
+    parser = _line_host_dlc if cfg.get("host_fmt") == "dlc" else _line_host_plain
+    return cfg["raw_host"].format(id=rid), parser
 
 
 def _stream_host_store(cat, tier, url, line_fn):
@@ -9553,6 +9728,8 @@ def _stream_host_store(cat, tier, url, line_fn):
         with contextlib.suppress(Exception):
             os.remove(raw_tmp)
         ver, n = _hash_count_file(srt_tmp)
+        if not n and line_fn is _line_host_dlc:
+            raise ValueError(_LIST_NO_DOMAIN_SUFFIXES)
     except Exception as e:
         _list_note_err(cat, tier, e)
         _cleanup()
@@ -15475,7 +15652,8 @@ def api(method, path, qs, body, deps):
     if method == "GET" and path == "/api/catalog/index":
         idx = catalog_cached()[0]
         en = (deps.get("panel_settings") or {}).get("providers") or {}
-        items = [{"id": c, "provider": e.get("p", ""), "caps": {"host": e.get("host", False), "ip": e.get("ip", False)}}
+        items = [{"id": c, "provider": e.get("p", ""), "caps": {"host": e.get("host", False), "ip": e.get("ip", False)},
+                  **({"host_text": bool(e.get("host_text"))} if e.get("p") == "runet" else {})}
                  for c, e in idx.items() if en.get(e.get("p", ""), False)]
         return 200, {"ok": True, "data": {"items": items, "provider_labels": {p: catalog_provider_label(p) for p in CATALOG_PROVIDER_ORDER}}}
 
@@ -15499,7 +15677,9 @@ def api(method, path, qs, body, deps):
             with _LIST_LOCK:
                 _busy = (cat + "|" + tier) in _LIST_INFLIGHT
             if not m or (_busy and not _meta_n(m)):
+                unsupported = tier == "host" and _LIST_ERR.get(cat + "|host") == _LIST_NO_DOMAIN_SUFFIXES
                 out[tier] = ({"n": 0, "sample": [], "pending": True} if _busy
+                             else {"n": 0, "sample": [], "unsupported": True} if unsupported
                              else {"n": 0, "sample": [], "failed": True})
                 continue
             sample = []

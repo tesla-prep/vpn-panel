@@ -3408,7 +3408,13 @@ input, textarea, select, .mono, pre, code, kbd, samp { font-variant-ligatures: n
 .pop-x:hover{background:var(--dd-hover);color:var(--ink)}
 .pop-x:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
 .pop-x .ic{display:inline-flex}
-.tfpop-head{display:flex;justify-content:flex-end;padding:5px 13px 0;overflow:hidden;scrollbar-gutter:stable}
+.tfpop-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 13px 6px;scrollbar-gutter:stable}
+.tfpop-head > .pop-x{margin-left:auto}
+.tfpop-types{display:flex;flex-wrap:wrap;gap:4px}
+.tfpop-types button{border:1px solid transparent;border-radius:6px;background:none;padding:4px 8px;color:var(--dim);font:inherit;font-size:12px;cursor:pointer}
+.tfpop-types button:hover{color:var(--ink);background:var(--dd-hover)}
+.tfpop-types button[aria-pressed="true"]{border-color:var(--line-solid);color:var(--ink);background:var(--dd-hover)}
+.tfpop-types button:focus-visible{outline:2px solid var(--brand);outline-offset:1px}
 .tfpop .catpick-list{scrollbar-gutter:stable}
 .tfpop .tfpop-head + .catpick-list{padding-top:0}
 .tfpop .tfpop-head + .catpick-list > .catpick-grp:first-child{padding-top:0}
