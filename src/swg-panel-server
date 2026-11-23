@@ -98,6 +98,7 @@ import traceback
 import uuid
 import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from functools import lru_cache
 from urllib.parse import urlparse, parse_qs, unquote, quote
 
 
@@ -9392,8 +9393,12 @@ def _list_fetch_text(url):
 _IP_NET_CAP = 1_000_000
 
 def _norm_ip(text):
+    return _collapse_ip4(text.splitlines(), _IP_NET_CAP)
+
+
+def _collapse_ip4(lines, cap=None):
     nets = []
-    for ln in text.splitlines():
+    for ln in lines:
         s = ln.split("#", 1)[0].strip()
         if not s:
             continue
@@ -9401,7 +9406,7 @@ def _norm_ip(text):
             n = ipaddress.ip_network(s, strict=False)
             if n.version == 4:
                 nets.append(n)
-                if len(nets) > _IP_NET_CAP:
+                if cap is not None and len(nets) > cap:
                     return None
         except Exception:
             continue
@@ -9896,6 +9901,66 @@ def _asn_expand(asns, cidrs):
             if c not in out:
                 out.append(c)
     return out
+
+
+@lru_cache(maxsize=128)
+def _routing_ip_count(files, cidrs):
+    def inputs():
+        yield from cidrs
+        for path, _, _, _ in files:
+            with open(path, encoding="utf-8") as f:
+                yield from f
+    return len(_collapse_ip4(inputs()))
+
+
+def routing_ip_coverage(ps, nid, categories, targets):
+    providers = ps.get("providers") or {}
+    custom = {cl.get("id"): cl for cl in (ps.get("custom_lists") or [])}
+    cix, have = catalog_cached()
+    files, state = [], "ready"
+    _, cidrs, asns = _clean_targets(targets, keep_asns=True)
+    for cat in sorted(set(categories)):
+        cl = custom.get(cat)
+        if cl is not None:
+            if cl.get("enabled", True) and nid not in (cl.get("disabled_nodes") or []):
+                cidrs.extend(cl.get("cidrs") or ())
+                asns.extend(cl.get("asns") or ())
+            continue
+        if not _is_routed_list_cat(cat) or not providers.get(cat.split(":", 1)[0]):
+            continue
+        meta = list_meta(cat, "ip")
+        if not (cix.get(cat) or {}).get("ip"):
+            if have:
+                continue
+            if not meta:
+                if state != "failed":
+                    state = "pending"
+                continue
+        path = _list_path(cat, "ip")
+        try:
+            if not meta:
+                raise FileNotFoundError(path)
+            st = os.stat(path)
+            files.append((path, st.st_ino, st.st_mtime_ns, st.st_size))
+        except FileNotFoundError:
+            list_ensure(cat, "ip", force=bool(meta))
+            if list_failed(cat, "ip"):
+                state = "failed"
+            elif state != "failed":
+                state = "pending"
+    if state != "ready":
+        return {"state": state}
+    for asn in set(asns):
+        parsed = classify_target(asn)
+        if parsed["kind"] == "asn":
+            prefixes = _asn_cidrs(int(parsed["value"][2:]))
+            if not prefixes:
+                return {"state": "failed"}
+            cidrs.extend(prefixes)
+    try:
+        return {"state": state, "networks": _routing_ip_count(tuple(files), tuple(sorted(set(cidrs))))}
+    except OSError:
+        return {"state": "pending"}
 
 
 _TLD_RE = re.compile(r"^(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$")
@@ -15535,6 +15600,13 @@ def api(method, path, qs, body, deps):
             return 400, {"ok": False, "error": "n (AS number) required", "code": "bad_request"}
         _pfx = _asn_cidrs(_asn)
         return 200, {"ok": True, "data": {"asn": _asn, "count": len(_pfx), "sample": _pfx[:4]}}
+
+    if method == "POST" and path == "/api/routing/ip-coverage":
+        nid, cats, targets = body.get("node"), body.get("lists"), body.get("targets")
+        if not isinstance(nid, str) or not isinstance(cats, list) or not isinstance(targets, list) or not all(
+                isinstance(x, str) for x in cats + targets):
+            return 400, {"ok": False, "error": "invalid routing preview", "code": "bad_request"}
+        return 200, {"ok": True, "data": routing_ip_coverage(panel_settings, nid, cats, targets)}
 
     if method == "GET" and path == "/api/catalog":
         try:    _pg = max(0, int((qs.get("page") or ["0"])[0] or 0))

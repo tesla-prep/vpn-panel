@@ -4063,8 +4063,75 @@ class _NftBatch:
         return True
 
 
+_SMART_IP_UNIONS = {}
+
+
+def _smart_ip_unions(entries, arrivals, smart):
+    inline = (smart or {}).get("cidrs") or {}
+    manifest = (smart or {}).get("list_manifest") or {}
+    files = {}
+    previous = dict(_SMART_IP_UNIONS)
+    _SMART_IP_UNIONS.clear()
+    sets = {}
+
+    def compile_group(group, matches):
+        members = tuple(sorted({e["category"] for _, e in group
+                                if inline.get(e["category"]) or (manifest.get(e["category"]) or {}).get("ip")}))
+        if len(members) < 2:
+            return
+        stamps = []
+        try:
+            for cat in members:
+                if (manifest.get(cat) or {}).get("ip"):
+                    if not re.fullmatch(r"[A-Za-z0-9:._-]+", cat):
+                        return
+                    if cat not in files:
+                        path = os.path.join(GEO_DIR, cat + ".txt")
+                        st = os.stat(path)
+                        files[cat] = path, st.st_ino, st.st_mtime_ns, st.st_size
+                stamps.append((files.get(cat), tuple(inline.get(cat) or ())))
+            sig = tuple(stamps)
+            cached = _SMART_IP_UNIONS.get(members) or previous.get(members)
+            if cached and cached[0] == sig:
+                _, values, version = cached
+            else:
+                networks = []
+                for cat in members:
+                    networks.extend(inline.get(cat) or ())
+                    if cat in files:
+                        with open(files[cat][0], encoding="utf-8") as f:
+                            networks.extend(line.strip() for line in f if line.strip())
+                values = _collapse4(networks)
+                version = hashlib.sha1("\n".join(values).encode()).hexdigest()[:16]
+        except (OSError, UnicodeError):
+            return
+        if not values:
+            return
+        _SMART_IP_UNIONS[members] = sig, values, version
+        name = "ipru_" + hashlib.sha1("\n".join(members).encode()).hexdigest()[:16]
+        sets[name] = values, version
+        for i, e in group:
+            if e["category"] in members:
+                matches[i] = name
+                name = None
+
+    def compile_matches(rows):
+        matches, group, key = {}, [], None
+        for i, e in enumerate(rows):
+            scope = {k: v for k, v in e.items() if k != "category"}
+            if scope != key or e["category"] == "all":
+                compile_group(group, matches)
+                group, key = [], scope
+            group.append((i, e))
+        compile_group(group, matches)
+        return matches
+
+    return compile_matches(entries), compile_matches(arrivals), sets
+
+
 def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_mark=0, queue=True, learn_ttl=3600, srcs=None,
-                      shadows=None, arrivals=None, name_cats=None, blk_reject=False, spare_dns=False, static_cats=None):
+                      shadows=None, arrivals=None, name_cats=None, blk_reject=False, spare_dns=False, static_cats=None,
+                      smart=None):
     _SNI_BLOCKS["v"] = None
     _DNS_SPARE["v"] = None
     cats = sorted(set(categories) | {e["category"] for e in smart_e})
@@ -4125,6 +4192,19 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
     subnets = sorted({e["subnet"] for e in smart_e})
     spec = [e for e in smart_e if e["category"] != "all" and _smart_keys_read(e)]
     allr = [e for e in smart_e if e["category"] == "all" and "src" not in e and "ports" not in e]
+    ip_matches, arr_ip_matches, ip_sets = ({}, {}, {}) if spare_dns else _smart_ip_unions(
+        spec, arr["entries"] if arr else (), smart)
+    # Populate each set in the same transaction that attaches its rule.
+    for sn, (values, version) in ip_sets.items():
+        if sn not in have_sets:
+            bat.add("add", "set", "inet", SMART_NFT_TABLE, sn, "{ typeof ip daddr; flags interval; auto-merge; }")
+        elif _ARR_SETS.get(sn) == version and _t["counts"].get(sn, 0):
+            continue
+        else:
+            bat.add("flush", "set", "inet", SMART_NFT_TABLE, sn)
+        for i in range(0, len(values), 2000):
+            bat.add("add", "element", "inet", SMART_NFT_TABLE, sn, "{ " + ", ".join(values[i:i + 2000]) + " }")
+        arr_stamps[sn] = version
     want = [(e["subnet"], e["category"], e.get("action", "exit"), e.get("table")) + ((e["src"],) if "src" in e else ())
             for e in spec + allr]
     ps_of = {i: _ports_spans(e["ports"]) for i, e in enumerate(spec) if "ports" in e}
@@ -4290,6 +4370,12 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
         if act == "block":
             return _bsets(c)
         return [(_smart_setname(c), [])] + ([(_smart_learnsetname(c), [])] if queue else [])
+    def _route_sets(c, act, i, matches):
+        sets = _rsets(c, act)
+        if i not in matches:
+            return sets
+        return ([(matches[i], [])] if matches[i] else []) + [
+            (sn, cond) for sn, cond in sets if sn != _smart_setname(c)]
     v6f = sorted(set(v6_ifaces))
     sig = hashlib.sha1((("pin;" if pin else "") + ("q2;" if queue else "") + json.dumps(want) + "|v6:" + ",".join(v6f) + "|rst:" + str(reset_mark) + ("|lttl:" + str(learn_ttl) if queue else "") + "|s9").encode()).hexdigest()[:16]
     if pt_of:
@@ -4300,6 +4386,8 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
         sig = hashlib.sha1((sig + "|pb:" + json.dumps(sorted(pb_of.items()))).encode()).hexdigest()[:16]
     if arr:
         sig = hashlib.sha1((sig + "|arr:" + json.dumps([aw, sorted(ash_of.items()), sorted(pa_of.items())])).encode()).hexdigest()[:16]
+    if ip_matches or arr_ip_matches:
+        sig = hashlib.sha1((sig + "|ipru:" + json.dumps([ip_matches, arr_ip_matches])).encode()).hexdigest()[:16]
     if dns_blk:
         sig = hashlib.sha1((sig + "|dok:" + json.dumps([sorted(dns_blk), sorted(catd)])).encode()).hexdigest()[:16]
     if (queue and _has_blk) or blk_rst:
@@ -4418,7 +4506,7 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                 k = _row_of[i]
                 if rows[k]["start"] == i:
                     _add("iifname", ".", "ip", "saddr", "@" + _smart_srcsetname(w[4]), "jump", "sr%d" % k)
-                for snm, xc in _rsets(cat, act):
+                for snm, xc in _route_sets(cat, act, i, ip_matches):
                     _row = ("add", "rule", "inet", SMART_NFT_TABLE, "sr%d" % k)
                     if act == "exit":
                         bat.add(*_row, *_new, *pm, "ip", "daddr", "@" + snm, "meta", "mark", "set", str(T), *(["ct", "mark", "set", str(T)] if pin else []), "accept")
@@ -4434,7 +4522,7 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                 elif act == "block":
                     _add("ip", "saddr", S, *_new, "drop")
                 continue
-            for snm, xc in _rsets(cat, act):
+            for snm, xc in _route_sets(cat, act, i, ip_matches):
                 if act == "exit":
                     _add("ip", "saddr", S, *_new, *pm, "ip", "daddr", "@" + snm, "meta", "mark", "set", str(T), *(["ct", "mark", "set", str(T)] if pin else []), "return")
                 elif act == "direct":
@@ -4460,9 +4548,13 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
                         _sa(*_new, "drop")
                     continue
                 for c2 in [c] + ash_of.get(i, []):
-                    for snm, xc in ((_bsets(c2) if c2 == c else ([] if queue else [(_smart_setname(c2), ["ip", "daddr", "!=", "@dnsok"]
-                                                                                     if c2 in dns_blk else [])])) if a == "block"
-                                    else _rsets(c2, a)):
+                    if c2 == c:
+                        sets = _route_sets(c, a, i, arr_ip_matches)
+                    elif a == "block":
+                        sets = [] if queue else [(_smart_setname(c2), ["ip", "daddr", "!=", "@dnsok"] if c2 in dns_blk else [])]
+                    else:
+                        sets = _rsets(c2, a)
+                    for snm, xc in sets:
                         if a == "exit":
                             _sa(*gd, *_new, "ip", "daddr", "@" + snm, *mk, "accept")
                         elif a == "direct":
@@ -4588,6 +4680,7 @@ def _ensure_smart_nft(smart_e, categories, res, pin=False, v6_ifaces=(), reset_m
         if ((sn.startswith("cat_") and sn not in wanted_sn) or (sn.startswith("catl_") and sn not in wanted_ln)
                 or ((sn.startswith("catd_") or sn == "dnsok") and sn not in wanted_dn)
                 or (sn.startswith("src_") and sn not in want_src)
+                or (sn.startswith("ipru_") and sn not in ip_sets)
                 or (sn in ("lg", "ar", "cln") and not arr)):
             if run(["nft", "delete", "set", "inet", SMART_NFT_TABLE, sn]).returncode == 0:
                 res["changed"] += 1
@@ -4810,6 +4903,7 @@ def _smart_load_cidrs(cidrs_map, set_counts, res):
                 continue
         elif not done and have >= len(cl):
             continue
+        cl = _collapse4(cl)
         ok = True
         for i in range(0, len(cl), 2000):
             if run(["nft", "add", "element", "inet", SMART_NFT_TABLE, sn, "{ " + ", ".join(cl[i:i + 2000]) + " }"]).returncode == 0:
@@ -9263,7 +9357,8 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                                     reset_mark=(SNI_RESET_MARK if is_sni else 0), queue=(host_engine == "sni_user"),
                                     learn_ttl=learn_ttl, srcs=(smart or {}).get("srcs"), shadows=_shw, arrivals=_arr,
                                     name_cats=_name_cats,
-                                    static_cats={c for c in smart_cats if _CAT_CAPS.get(c, {}).get("ip") or ((smart or {}).get("cidrs") or {}).get(c)})
+                                    static_cats={c for c in smart_cats if _CAT_CAPS.get(c, {}).get("ip") or ((smart or {}).get("cidrs") or {}).get(c)},
+                                    smart=smart)
     if smart_cats:
         _smart_geo_refresh(smart_cats, set_counts or {}, res, additive={c for c, v in domains.items() if v})
     _smart_load_cidrs((smart or {}).get("cidrs") or {}, set_counts or {}, res)

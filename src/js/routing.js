@@ -1,4 +1,4 @@
-import { T, Trich, Tsplit, plural, pluralWord, srvText } from "./i18n.js";
+import { T, Trich, Tsplit, plural, pluralWord, srvText, fmtNum } from "./i18n.js";
 import { classify, classifyAll, patternTier, TIER2_MIN } from "./classify.js";
 import { idnHost, idnDiffers } from "./idn.js";
 import { rulesToRows, rowsToRules, badgeIdentity, rowHasBadge, newGid,
@@ -544,6 +544,8 @@ let _CATALOG_INDEX = null;
 let _CATALOG_BY_ID = {};
 let _CATALOG_KEY = null;
 let _CATALOG_REQ = { key: null, p: null };
+const catalogWords = value => String(value || "").toLowerCase().replace(/[^\p{L}\p{N}!]+/gu, " ").trim();
+const catalogPrefix = (fields, term) => fields.some(text => text.startsWith(term) || text.includes(" " + term));
 export const catalogKey = () => {
   const on = (Store.panelSettings || {}).providers || {};
   return (Store.catalogGen || "") + "|" + Object.keys(on).filter(k => on[k]).sort().join(",");
@@ -558,7 +560,7 @@ export function loadCatalogIndex() {
     const pl = r.data.provider_labels || {};
     const idx = (r.data.items || []).map(it => { const disp = prettyCatLabel(it.id, "");
       return { ...it, provider_label: pl[it.provider] || it.provider, disp,
-               hay: (it.id + " " + catRawId(it.id) + " " + disp + " " + catDescOf(it.id)).toLowerCase() }; });
+               words: [catRawId(it.id), disp, it.label].map(catalogWords) }; });
     if (_CATALOG_REQ.p === p) {
       _CATALOG_INDEX = idx; _CATALOG_KEY = key;
       _CATALOG_BY_ID = Object.fromEntries(idx.map(it => [it.id, it]));
@@ -969,6 +971,33 @@ function useListSizes(ids, onLand, tries) {
     return () => { live = false; };
   }, [key, tries]);
 }
+
+function useIpCoverage(node, badges) {
+  const lists = badges.filter(b => {
+    if (b.t !== "list") return false;
+    const caps = _listCaps(b);
+    return caps.ip || !caps.host;
+  }).map(b => b.id).sort();
+  const targets = badges.filter(b => b.kind === "ip" || b.kind === "asn").map(b => b.value).sort();
+  const key = lists.length || targets.length ? JSON.stringify({ node: node || "", lists, targets }) : "";
+  const [result, setResult] = useState(null);
+  useEffect(() => {
+    if (!key) return;
+    let live = true, timer;
+    const refresh = async () => {
+      let data;
+      try { data = (await api.routingIpCoverage(JSON.parse(key)))?.data; } catch {}
+      if (!live) return;
+      const coverage = data || { state: "failed" };
+      setResult({ key, coverage });
+      timer = setTimeout(refresh, coverage.state === "pending" ? 2000 : 15000);
+    };
+    timer = setTimeout(refresh, 150);
+    return () => { live = false; clearTimeout(timer); };
+  }, [key]);
+  return key ? (result?.key === key ? result.coverage : { state: "pending" }) : null;
+}
+
 function ListBadgeSize({ cat, onRetry }) {
   if (!knownListId(cat)) return html`<span class="tfb-size missing"
     title=${T("No list with this id — its provider may be switched off in Settings, or the list was withdrawn upstream. The rule keeps it, and it matches nothing until it comes back.")}>${T("list|not found")}</span>`;
@@ -1062,10 +1091,11 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   const badges = row.badges || [];
   const modeLabel = (MODE_META[mode] || {}).label || mode;
   useListSizes(badges.filter(b => b.t === "list").map(b => b.id), () => bump(x => x + 1), tries);
-  useAsnCounts(badges.filter(b => b.t === "target" && b.kind === "asn").map(b => b.value));
+  const coverage = useIpCoverage(node, badges);
 
   const lq = (holdQ != null && !q) ? holdQ : q;
   const ql = lq.trim().toLowerCase();
+  const term = lq.includes("*") ? "" : catalogWords(ql);
   const listTok = /^list:(.+)$/i.exec(q.trim());
   const readList = (listTok && !listEditor) ? { id: listTok[1].trim(), ok: knownListId(listTok[1].trim()) } : null;
   const noList = () => /^all$/i.test((readList || {}).id || "") ? T("For all traffic, use “Everything else” below the rules")
@@ -1171,14 +1201,14 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   };
   const matchesType = it => listType === "all" || it.caps?.[listType];
   const _mine = (Store.panelSettings?.custom_lists || [])
-    .filter(l => l && (!ql || String(l.title || "").toLowerCase().includes(ql) || String(l.id || "").toLowerCase().includes(ql)))
+    .filter(l => l && (!ql || (term && catalogPrefix([l.title, l.id].map(catalogWords), term))))
     .map(l => ({ id: l.id, provider: "custom", provider_label: T("Custom"), caps: customCaps(l),
                  disp: l.title || l.id, label: l.title || l.id, list: l }))
     .filter(matchesType)
     .sort((a, b) => a.disp.toLowerCase().localeCompare(b.disp.toLowerCase()));
   const byName = (a, b) => a.disp.localeCompare(b.disp);
   const _hits = (ql.length !== 1 && cidx)
-    ? cidx.filter(it => matchesType(it) && (!ql || it.hay.includes(ql))).sort(byName) : [];
+    ? cidx.filter(it => matchesType(it) && (!ql || (term && catalogPrefix(it.words, term)))).sort(byName) : [];
   const _qn = ql.replace(/[^a-z0-9]/g, "");
   const _provHit = _qn.length >= 3 && !lq.includes("*") ? (Store.catalogProviders || []).filter(p => p.enabled
     && String(p.label || "").toLowerCase().replace(/[^a-z0-9]/g, "").startsWith(_qn)) : [];
@@ -1186,6 +1216,7 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   const _hitIds = new Set(_hits.map(it => it.id));
   const _cat = _hits.concat(..._provGroups.map(g => g.all.filter(it => matchesType(it) && !_hitIds.has(it.id))
     .sort(byName).map(it => ({ ...it, grpProv: g.p.label }))));
+  const searchingLists = !listEditor && !!ql && (_cat.length || _mine.length);
   const _provWait = _provGroups.filter(g => !g.all.length && (g.p.status === "downloading" || g.p.status === "failed" || g.p.error)).map(g => g.p);
   const pages = Math.max(1, Math.ceil(_cat.length / per));
   const pageNow = Math.min(page, pages - 1);
@@ -1197,9 +1228,9 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     const local = !!customListOf(id);
     if (local) { setQ(""); setPage(0); }
     else {
-      const term = catRawId(id).toLowerCase();
+      const term = catalogWords(catRawId(id));
       setQ(catRawId(id));
-      const hits = (cidx || []).filter(it => it.hay.includes(term)).sort((a, b) => a.disp.localeCompare(b.disp));
+      const hits = (cidx || []).filter(it => catalogPrefix(it.words, term)).sort(byName);
       const at = hits.findIndex(it => it.id === id);
       setPage(at >= 0 && !isMobile() ? Math.floor(at / per) : 0);
       if (at >= 0 && isMobile()) setMore(Math.floor(at / 50) + 1);
@@ -1319,16 +1350,18 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   const leftovers = /[\s,]/.test((q || "").trim());
 
   const meter = (() => {
-    let names = 0, nets = 0;
+    let names = 0;
     for (const b of badges) {
-      if (b.t === "list") { const s = listSizeNow(b.id); if (s && !s.err) { names += s.host || 0; nets += s.ip || 0; } continue; }
-      if (b.kind === "ip") nets += 1;
-      else if (b.kind === "asn") nets += asnNets(b.value);
-      else names += 1;
+      if (b.t === "list") { const s = listSizeNow(b.id); if (s && !s.err) names += s.host || 0; continue; }
+      if (b.kind !== "ip" && b.kind !== "asn") names += 1;
     }
     const bits = [plural(badges.length, "entry")];
     if (names) bits.push(plural(names, "name").replace(String(names), fmtCount(names)));
-    if (nets) bits.push(plural(nets, "network").replace(String(nets), fmtCount(nets)));
+    if (coverage?.state === "ready" && coverage.networks) {
+      const n = coverage.networks;
+      bits.push(T("IPv4: {v1}", { v1: plural(n, "network").replace(String(n), fmtNum(n)) }));
+    } else if (coverage?.state === "pending") bits.push(T("Counting IPv4 networks…"));
+    else if (coverage?.state === "failed") bits.push(T("IPv4 network count unavailable"));
     return bits.join(" · ");
   })();
 
@@ -1382,7 +1415,7 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
         onReveal=${revealList}/>`)}
       ${hidden > 0 ? html`<button type="button" class="tf-more" onClick=${() => setExpand(true)}>${T("+{v1} more", { v1: hidden })}</button>` : null}
       ${expand && badges.length > BADGE_CAP ? html`<button type="button" class="tf-more" onClick=${() => setExpand(false)}>${T("show fewer")}</button>` : null}
-      <input ref=${inRef} class=${"tf-in" + (reading && reading.kind === "invalid" ? " bad" : "")} type="text" spellcheck="false" autocomplete="off"
+      <input ref=${inRef} class=${"tf-in" + (reading && reading.kind === "invalid" && !searchingLists ? " bad" : "")} type="text" spellcheck="false" autocomplete="off"
         data-enter=${open ? "self" : null} data-noautofocus="1"
         role="combobox" aria-expanded=${open ? "true" : "false"} aria-autocomplete="list"
         placeholder=${badges.length ? T("add another…")
@@ -1393,12 +1426,12 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     </div>
     <div class="tf-foot">
       <span class="tf-lstart">${leading ? html`<span class="tf-lead">${leading}</span>` : null}
-        ${badges.length ? html`<span class="tf-meter" title=${T("An estimate from what the panel has resolved so far. The node's own report is the authority once it syncs.")}>${meter}</span>` : null}</span>
+        ${badges.length ? html`<span class="tf-meter" title=${T("IPv4 networks are counted after merging the inputs resolved by the panel. The number of names is an estimate.")}>${meter}</span>` : null}</span>
       ${leftovers ? (pending.text && pending.forQ === q
             ? html`<span class="tf-lint err">${pending.text}</span>` : null)
         : (listEditor && listTok) ? html`<span class="tf-lint err">${T("A list can't contain another list — add its addresses here instead")}</span>`
         : readList && !readList.ok ? html`<span class="tf-lint err">${noList()}</span>`
-        : reading && reading.kind === "invalid" ? html`<span class="tf-lint err">${targetWhy(reading.why, q)}</span>`
+        : reading && reading.kind === "invalid" && !searchingLists ? html`<span class="tf-lint err">${targetWhy(reading.why, q)}</span>`
         : reading ? (open ? null : html`<span class="tf-say">${readGate && readGate.ok ? targetSentence(reading.kind, reading.value) : gateReason(readGate || {}, modeLabel)}</span>`)
         : !badges.length ? html`<span class="tf-say">${listEditor ? T("Type an address, IP range, AS number or pattern.")
               : Trich("Try a service name like *YouTube*, or type an address, IP range or AS number.")}</span>` : null}

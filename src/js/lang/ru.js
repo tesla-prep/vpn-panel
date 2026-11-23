@@ -2555,6 +2555,11 @@ export const STR = {
   "All list types": "Все",
   "No lists available.": "Нет доступных списков.",
   "No lists of this type match.": "Нет подходящих списков этого типа.",
+  "IPv4: {v1}": "IPv4: {v1}",
+  "Counting IPv4 networks…": "Считаем IPv4-сети…",
+  "IPv4 network count unavailable": "Число IPv4-сетей недоступно",
+  "IPv4 networks are counted after merging the inputs resolved by the panel. The number of names is an estimate.":
+    "IPv4-сети посчитаны после объединения загруженных панелью источников. Число имён приблизительное.",
   "list|unsupported": "Нет поддерживаемых записей",
   "This list has no domain suffixes the routing engine can use.": "В списке нет доменных суффиксов, которые поддерживает маршрутизация.",
   "Matchable by domain — needs Force-DNS or SNI mode": "Совпадает по домену — нужен режим Force-DNS или SNI",

@@ -71,6 +71,7 @@ export const api = {
   blockCatalog() { return this.get("/api/block-catalog"); },
   blockCatalogSave(body) { return this.post("/api/block-catalog/save", body || {}); },
   listInfo(cat, retry) { return this.get("/api/list-info?cat=" + encodeURIComponent(cat) + (retry ? "&retry=1" : "")); },
+  routingIpCoverage(selection) { return this.post("/api/routing/ip-coverage", selection); },
   geoUpdate() { return this.post("/api/geo/update", {}); },
   geoProviderRetry(provider) { return this.post("/api/geo/provider-retry", { provider }); },
   geoProviderCancel(provider) { return this.post("/api/geo/provider-cancel", { provider }); },
