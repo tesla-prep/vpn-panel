@@ -2558,8 +2558,14 @@ export const STR = {
   "IPv4: {v1}": "IPv4: {v1}",
   "Counting IPv4 networks…": "Считаем IPv4-сети…",
   "IPv4 network count unavailable": "Число IPv4-сетей недоступно",
-  "IPv4 networks are counted after merging the inputs resolved by the panel. The number of names is an estimate.":
-    "IPv4-сети посчитаны после объединения загруженных панелью источников. Число имён приблизительное.",
+  "Counting coverage…": "Считаем покрытие…",
+  "Coverage count unavailable": "Число записей недоступно",
+  "Counting domain names…": "Считаем домены…",
+  "Domain count unavailable": "Число доменов недоступно",
+  "Domain and IPv4 coverage after merging the sources resolved by the panel.":
+    "Покрытие доменов и IPv4-сетей после объединения загруженных панелью списков.",
+  "Coverage after merging the category sources and applying exceptions.":
+    "Покрытие после объединения источников и применения исключений.",
   "list|unsupported": "Нет поддерживаемых записей",
   "This list has no domain suffixes the routing engine can use.": "В списке нет доменных суффиксов, которые поддерживает маршрутизация.",
   "Matchable by domain — needs Force-DNS or SNI mode": "Совпадает по домену — нужен режим Force-DNS или SNI",

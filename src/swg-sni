@@ -312,7 +312,8 @@ if set(SNI_TIER1) & set(SNI_TIER2):
 
 def _mtime(path):
     try:
-        return os.stat(path).st_mtime
+        st = os.stat(path)
+        return st.st_ino, st.st_mtime_ns, st.st_size
     except OSError:
         return None
 
@@ -331,6 +332,23 @@ def _index(data, labels=True):
             if cat not in cats:
                 cats.append(cat)
     return out
+
+
+def _domain_index(data):
+    index = _index(data)
+    redundant = []
+    for name, cats in index.items():
+        parent = name.partition(".")[2]
+        while "." in parent:
+            covering = index.get(parent)
+            if covering:
+                if set(covering) == set(cats):
+                    redundant.append(name)
+                break
+            parent = parent.partition(".")[2]
+    for name in redundant:
+        del index[name]
+    return index
 
 
 def _bucket(kind, data):
@@ -389,6 +407,7 @@ def _blocks_parse(data):
 class Classifier:
     bsrc, barr, bsel, nolearn, bmark, blocks_path, blocks_mtime = (), (), {}, frozenset(), 0, None, None
     quiet = frozenset()
+    learn_unions = {}
     sets_path, sets_mtime, set_gen = None, None, {}
 
     def __init__(self, map_path, table, reset_mark=0, learn_ttl=3600):
@@ -431,12 +450,13 @@ class Classifier:
             self.map_mtime = self.pat_mtime = self.blocks_mtime = None
             self.bsrc, self.barr, self.bsel, self.nolearn, self.bmark = [], [], {}, frozenset(), 0
             self.quiet = frozenset()
+            self.learn_unions = {}
             return
         if mt != self.map_mtime:
             self.map_mtime = mt
             try:
                 with open(self.map_path) as f:
-                    self.dom2cat = _index(json.load(f))
+                    self.dom2cat = _domain_index(json.load(f))
                 say(LOG_INFO, "swg-sni: loaded %d domains", len(self.dom2cat))
             except Exception as e:
                 say(LOG_ERR, "swg-sni: map reload failed: %s", e)
@@ -469,6 +489,9 @@ class Classifier:
             self.bsrc, self.barr, self.bsel, self.nolearn, self.bmark = _blocks_parse(data)
             q = data.get("quiet") if isinstance(data, dict) else None
             self.quiet = frozenset(str(c) for c in q) if isinstance(q, list) else frozenset()
+            unions = data.get("learn") if isinstance(data, dict) else None
+            self.learn_unions = {c: tuple(v) for c, v in unions.items()
+                                 if isinstance(v, list) and all(isinstance(x, str) for x in v)} if isinstance(unions, dict) else {}
             if bmt is not None:
                 say(LOG_INFO, "swg-sni: loaded blocks for %d sources%s, %d categories not learned",
                     len(self.bsrc), " + arrivals" if self.barr else "", len(self.nolearn))
@@ -520,6 +543,10 @@ class Classifier:
                 return cats
         return ()
 
+    def _learn_categories(self, cats):
+        return dict.fromkeys(target for cat in cats if cat not in self.nolearn
+                             for target in (cat, *self.learn_unions.get(cat, ())))
+
     def on_packet(self, payload, indev=None):
         now = time.time()
         if now - self._last_reload > 2:
@@ -552,9 +579,7 @@ class Classifier:
         first = False
         with self._lock:
             idle = not self._pending
-            for cat in cats:
-                if cat in self.nolearn:
-                    continue
+            for cat in self._learn_categories(cats):
                 key = (dst, cat)
                 ts = self.seen.get(key)
                 if ts is None or now - ts >= self.learn_ttl:

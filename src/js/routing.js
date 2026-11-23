@@ -737,6 +737,7 @@ export function BlockTraffic({ node, value, onChange, p2p, onP2p }) {
   const list = Object.values(bc.categories || {}).filter(c => c.enabled !== false);
   const availOn = c => (c.enabled_nodes || []).includes(node);
   const content = list.filter(c => (c.kind === "content" || c.kind === "ip") && availOn(c));
+  const selectedSources = content.filter(c => active(c.id)).flatMap(c => c.sources || []);
   const mech = list.filter(c => c.kind === "mechanism" && !MECH_UNBUILT.has(c.id) && !(onP2p && c.id === "torrents"));
   const chip = c => { const dis = blockCatDisabled(mode, bc.providers, c);
     const dead = !dis && !blockCatLive(mode, bc.providers, c);
@@ -752,6 +753,7 @@ export function BlockTraffic({ node, value, onChange, p2p, onP2p }) {
     <div class="blk-grp"><div class="blk-gtitle">${T("Content filtering")}</div>
       ${content.length ? html`<div class="blk-chips">${content.map(chip)}</div>`
         : html`<div class="hint blk-empty">${noFilterCats(() => { closeAllModals(); goSettings("routing"); })}</div>`}
+      ${selectedSources.length ? html`<div class="hint"><${BlockCoverageSummary} sources=${selectedSources} hosts=${blockTierOk(mode, "host")}/></div>` : null}
       ${content.length ? nbLine(node, mode) : null}</div>
     <div class="blk-grp"><div class="blk-gtitle">${T("Traffic & abuse")} <span class="faint" style="text-transform:none;letter-spacing:0">${T("— built-in")}</span></div>
       ${onP2p ? html`<${IfaceP2p} node=${node} block=${value} p2p=${p2p}
@@ -972,30 +974,49 @@ function useListSizes(ids, onLand, tries) {
   }, [key, tries]);
 }
 
-function useIpCoverage(node, badges) {
-  const lists = badges.filter(b => {
-    if (b.t !== "list") return false;
-    const caps = _listCaps(b);
-    return caps.ip || !caps.host;
-  }).map(b => b.id).sort();
-  const targets = badges.filter(b => b.kind === "ip" || b.kind === "asn").map(b => b.value).sort();
-  const key = lists.length || targets.length ? JSON.stringify({ node: node || "", lists, targets }) : "";
+function useCoverage(method, selection) {
+  const key = selection ? JSON.stringify(selection) : "";
   const [result, setResult] = useState(null);
   useEffect(() => {
     if (!key) return;
     let live = true, timer;
     const refresh = async () => {
       let data;
-      try { data = (await api.routingIpCoverage(JSON.parse(key)))?.data; } catch {}
+      try { data = (await api[method](JSON.parse(key)))?.data; } catch {}
       if (!live) return;
       const coverage = data || { state: "failed" };
       setResult({ key, coverage });
-      timer = setTimeout(refresh, coverage.state === "pending" ? 2000 : 15000);
+      timer = setTimeout(refresh, Object.values(coverage).some(t => t?.state === "pending") ? 2000 : 15000);
     };
     timer = setTimeout(refresh, 150);
     return () => { live = false; clearTimeout(timer); };
-  }, [key]);
+  }, [method, key]);
   return key ? (result?.key === key ? result.coverage : { state: "pending" }) : null;
+}
+
+function coverageParts(coverage, { hosts = true, showZero = false } = {}) {
+  if (!coverage) return [];
+  if (coverage.state === "pending") return [T("Counting coverage…")];
+  if (coverage.state === "failed") return [T("Coverage count unavailable")];
+  const count = (n, what) => plural(n, what).replace(String(n), fmtNum(n));
+  const out = [];
+  const host = hosts ? coverage.host : null, ip = coverage.ip;
+  if (host?.state === "ready") {
+    if (host.names || showZero) out.push(count(host.names, "name"));
+    if (host.patterns) out.push(count(host.patterns, "pattern"));
+  } else if (host?.state === "pending") out.push(T("Counting domain names…"));
+  else if (host?.state === "failed") out.push(T("Domain count unavailable"));
+  if (ip?.state === "ready" && (ip.networks || showZero)) {
+    out.push(T("IPv4: {v1}", { v1: count(ip.networks, "network") }));
+  } else if (ip?.state === "pending") out.push(T("Counting IPv4 networks…"));
+  else if (ip?.state === "failed") out.push(T("IPv4 network count unavailable"));
+  return out;
+}
+
+export function BlockCoverageSummary({ sources, coverage, hosts }) {
+  const draft = useCoverage("blockCoverage", sources?.length ? { sources } : null);
+  const parts = coverageParts(sources ? draft : coverage, { hosts, showZero: true });
+  return parts.length ? html`<span class="bk-count" title=${T("Coverage after merging the category sources and applying exceptions.")}>${parts.join(" · ")}</span>` : null;
 }
 
 function ListBadgeSize({ cat, onRetry }) {
@@ -1091,7 +1112,11 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
   const badges = row.badges || [];
   const modeLabel = (MODE_META[mode] || {}).label || mode;
   useListSizes(badges.filter(b => b.t === "list").map(b => b.id), () => bump(x => x + 1), tries);
-  const coverage = useIpCoverage(node, badges);
+  const hosts = !mode || routeCapsUsable(mode, { host: true });
+  const lists = badges.filter(b => b.t === "list" && (hosts || _listCaps(b).ip || !_listCaps(b).host)).map(b => b.id).sort();
+  const targets = badges.filter(b => b.t === "target" && (hosts || _ipKind(b.kind))).map(b => b.raw).sort();
+  const coverage = useCoverage("routingCoverage", lists.length || targets.length
+    ? { node: node || "", lists, targets, hosts } : null);
 
   const lq = (holdQ != null && !q) ? holdQ : q;
   const ql = lq.trim().toLowerCase();
@@ -1349,21 +1374,7 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
 
   const leftovers = /[\s,]/.test((q || "").trim());
 
-  const meter = (() => {
-    let names = 0;
-    for (const b of badges) {
-      if (b.t === "list") { const s = listSizeNow(b.id); if (s && !s.err) names += s.host || 0; continue; }
-      if (b.kind !== "ip" && b.kind !== "asn") names += 1;
-    }
-    const bits = [plural(badges.length, "entry")];
-    if (names) bits.push(plural(names, "name").replace(String(names), fmtCount(names)));
-    if (coverage?.state === "ready" && coverage.networks) {
-      const n = coverage.networks;
-      bits.push(T("IPv4: {v1}", { v1: plural(n, "network").replace(String(n), fmtNum(n)) }));
-    } else if (coverage?.state === "pending") bits.push(T("Counting IPv4 networks…"));
-    else if (coverage?.state === "failed") bits.push(T("IPv4 network count unavailable"));
-    return bits.join(" · ");
-  })();
+  const meter = [plural(badges.length, "entry"), ...coverageParts(coverage)].join(" · ");
 
   const shown = expand ? badges : badges.slice(0, BADGE_CAP);
   const hidden = badges.length - shown.length;
@@ -1426,7 +1437,7 @@ export function TargetField({ row, mode, node, tier2All, onChange, onSwitchMode,
     </div>
     <div class="tf-foot">
       <span class="tf-lstart">${leading ? html`<span class="tf-lead">${leading}</span>` : null}
-        ${badges.length ? html`<span class="tf-meter" title=${T("IPv4 networks are counted after merging the inputs resolved by the panel. The number of names is an estimate.")}>${meter}</span>` : null}</span>
+        ${badges.length ? html`<span class="tf-meter" title=${T("Domain and IPv4 coverage after merging the sources resolved by the panel.")}>${meter}</span>` : null}</span>
       ${leftovers ? (pending.text && pending.forQ === q
             ? html`<span class="tf-lint err">${pending.text}</span>` : null)
         : (listEditor && listTok) ? html`<span class="tf-lint err">${T("A list can't contain another list — add its addresses here instead")}</span>`

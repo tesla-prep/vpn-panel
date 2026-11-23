@@ -9641,14 +9641,14 @@ def _hash_count_file(path):
             h.update(line); n += 1
     return h.hexdigest()[:12], n
 
-def _list_commit(cat, tier, ver, n, install, tmp=None, extra=None):
+def _list_commit(cat, tier, ver, n, install, tmp=None, extra=None, protect_count=True):
     key = cat + "|" + tier
     prev = list_meta(cat, tier); prev_n = int((prev or {}).get("n") or 0)
     def _drop():
         if tmp:
             with contextlib.suppress(Exception):
                 os.remove(tmp)
-    if prev_n >= 20 and n < prev_n * 0.5:
+    if protect_count and prev_n >= 20 and n < prev_n * 0.5:
         _drop()
         _LIST_SUSPECT[key] = "resolved to %d, was %d — kept the previous list" % (n, prev_n)
         return prev, "collapsed"
@@ -9664,10 +9664,11 @@ def _list_commit(cat, tier, ver, n, install, tmp=None, extra=None):
     _LIST_SUSPECT.pop(key, None)
     return meta, "ok"
 
-def _list_commit_items(cat, tier, items, extra=None):
+def _list_commit_items(cat, tier, items, extra=None, protect_count=True):
     body = "\n".join(items) + ("\n" if items else "")
     ver = hashlib.sha1(body.encode()).hexdigest()[:12]
-    return _list_commit(cat, tier, ver, len(items), lambda: atomic_write(_list_path(cat, tier), body), extra=extra)
+    return _list_commit(cat, tier, ver, len(items), lambda: atomic_write(_list_path(cat, tier), body),
+                        extra=extra, protect_count=protect_count)
 
 _HAVE_SORT = None
 def _have_sort():
@@ -9793,7 +9794,7 @@ def list_ensure(cat, tier, force=False):
     m = list_meta(cat, tier)
     k = cat + "|" + tier
     _union = cat.startswith("blku:")
-    if m and not force and _meta_n(m):
+    if m and not force and (_union or _meta_n(m)):
         return m
     if list_failed(cat, tier) and (not _union or _meta_n(m) or (m and (m.get("mv") or {}) == _blku_member_vers(cat, tier))):
         return m
@@ -9811,7 +9812,7 @@ def list_ensure(cat, tier, force=False):
                 _LIST_INFLIGHT.discard(k)
                 if status == "ok":
                     _LIST_ERR.pop(k, None)
-                if status == "ok" and _meta_n(list_meta(cat, tier)):
+                if status == "ok" and (_union or _meta_n(list_meta(cat, tier))):
                     _LIST_FAILED.pop(k, None); _LIST_FAILN.pop(k, None)
                 else:
                     _LIST_FAILED[k] = time.time(); _LIST_FAILN[k] = _LIST_FAILN.get(k, 0) + 1
@@ -9903,64 +9904,116 @@ def _asn_expand(asns, cidrs):
     return out
 
 
+def _coverage_lines(files):
+    for path, *_ in files:
+        with open(path, encoding="utf-8") as f:
+            yield from f
+
+
 @lru_cache(maxsize=128)
 def _routing_ip_count(files, cidrs):
-    def inputs():
-        yield from cidrs
-        for path, _, _, _ in files:
-            with open(path, encoding="utf-8") as f:
-                yield from f
-    return len(_collapse_ip4(inputs()))
+    return len(_collapse_ip4(itertools.chain(cidrs, _coverage_lines(files))))
 
 
-def routing_ip_coverage(ps, nid, categories, targets):
-    providers = ps.get("providers") or {}
-    custom = {cl.get("id"): cl for cl in (ps.get("custom_lists") or [])}
-    cix, have = catalog_cached()
-    files, state = [], "ready"
-    _, cidrs, asns = _clean_targets(targets, keep_asns=True)
-    for cat in sorted(set(categories)):
-        cl = custom.get(cat)
-        if cl is not None:
-            if cl.get("enabled", True) and nid not in (cl.get("disabled_nodes") or []):
-                cidrs.extend(cl.get("cidrs") or ())
-                asns.extend(cl.get("asns") or ())
-            continue
-        if not _is_routed_list_cat(cat) or not providers.get(cat.split(":", 1)[0]):
-            continue
-        meta = list_meta(cat, "ip")
-        if not (cix.get(cat) or {}).get("ip"):
-            if have:
-                continue
-            if not meta:
-                if state != "failed":
-                    state = "pending"
-                continue
-        path = _list_path(cat, "ip")
+def _domain_covered(name, candidates):
+    while name:
+        if name in candidates:
+            return True
+        name = name.partition(".")[2]
+    return False
+
+
+@lru_cache(maxsize=128)
+def _domain_coverage_count(files, names=(), allow=()):
+    domains = set(names)
+    for raw in _coverage_lines(files):
+        name = raw.strip()
+        if _PDOM_RE.fullmatch(name) or _zone_label_ok(name):
+            domains.add(name)
+    if allow:
+        excluded = set(allow)
+        domains = {d for d in domains if not _domain_covered(d, excluded)}
+    return sum(not _domain_covered(d.partition(".")[2], domains) for d in domains)
+
+
+def _coverage_files(cats, tier, unknown=False):
+    files, state = [], "pending" if unknown else "ready"
+    for cat in sorted(cats):
+        meta = list_meta(cat, tier)
+        path = _list_path(cat, tier)
         try:
             if not meta:
                 raise FileNotFoundError(path)
             st = os.stat(path)
             files.append((path, st.st_ino, st.st_mtime_ns, st.st_size))
         except FileNotFoundError:
-            list_ensure(cat, "ip", force=bool(meta))
-            if list_failed(cat, "ip"):
+            list_ensure(cat, tier, force=bool(meta))
+            failed = list_failed(cat, tier)
+            unsupported = tier == "host" and _LIST_ERR.get(cat + "|host") == _LIST_NO_DOMAIN_SUFFIXES
+            if failed and not unsupported:
                 state = "failed"
-            elif state != "failed":
+            elif not failed and state != "failed":
                 state = "pending"
-    if state != "ready":
-        return {"state": state}
-    for asn in set(asns):
-        parsed = classify_target(asn)
-        if parsed["kind"] == "asn":
-            prefixes = _asn_cidrs(int(parsed["value"][2:]))
-            if not prefixes:
-                return {"state": "failed"}
-            cidrs.extend(prefixes)
-    try:
-        return {"state": state, "networks": _routing_ip_count(tuple(files), tuple(sorted(set(cidrs))))}
-    except OSError:
-        return {"state": "pending"}
+        except OSError:
+            state = "failed"
+    return tuple(files), state
+
+
+def routing_coverage(ps, nid, categories, targets, tiers=("ip", "host")):
+    providers = ps.get("providers") or {}
+    custom = {cl.get("id"): cl for cl in (ps.get("custom_lists") or []) if isinstance(cl, dict)}
+    cix, have = catalog_cached()
+    cats = {tier: set() for tier in tiers}
+    unknown = set()
+    names, cidrs, asns, patterns = _clean_targets(targets, keep_asns=True, keep_patterns=True)
+    for cat in sorted(set(categories)):
+        cl = custom.get(cat)
+        if cl is not None:
+            if cl.get("enabled", True) and nid not in (cl.get("disabled_nodes") or []):
+                names.extend(cl.get("domains") or ())
+                cidrs.extend(cl.get("cidrs") or ())
+                asns.extend(cl.get("asns") or ())
+                patterns.extend(cl.get("patterns") or ())
+            continue
+        if not _is_routed_list_cat(cat) or not providers.get(cat.split(":", 1)[0]):
+            continue
+        for tier in tiers:
+            if (cix.get(cat) or {}).get(tier) or (not have and list_meta(cat, tier)):
+                cats[tier].add(cat)
+            elif not have:
+                unknown.add(tier)
+    out = {}
+    for tier in tiers:
+        files, state = _coverage_files(cats[tier], tier, tier in unknown)
+        out[tier] = {"state": state}
+        if state != "ready":
+            continue
+        try:
+            if tier == "ip":
+                for asn in sorted(set(asns)):
+                    parsed = classify_target(asn)
+                    if parsed["kind"] != "asn":
+                        continue
+                    prefixes = _asn_cidrs(int(parsed["value"][2:]))
+                    if not prefixes:
+                        out[tier]["state"] = "failed"
+                        break
+                    cidrs.extend(prefixes)
+                else:
+                    out[tier]["networks"] = _routing_ip_count(files, tuple(sorted(set(cidrs))))
+            else:
+                ops = {(p.get("kind"), p.get("value")) for p in map(classify_target, patterns)
+                       if p.get("kind") in _PATTERN_KINDS}
+                names.extend(value for kind, value in ops if kind == "zone")
+                out[tier]["names"] = _domain_coverage_count(files, tuple(sorted(set(names))))
+                out[tier]["patterns"] = sum(kind != "zone" for kind, _ in ops)
+        except (OSError, UnicodeError):
+            out[tier]["state"] = "pending"
+    return out
+
+
+def routing_ip_coverage(ps, nid, categories, targets):
+    return routing_coverage(ps, nid, categories, targets, ("ip",))["ip"]
 
 
 _TLD_RE = re.compile(r"^(?:[a-z]{2,63}|xn--[a-z0-9-]{1,59})$")
@@ -11645,30 +11698,16 @@ def _blku_store(cat, tier):
         if list_meta(sid, tier) is None:
             list_ensure(sid, tier)
     mv = _blku_member_vers(cat, tier)
-    paths = [_list_path(sid, tier) for sid in mv]
-    if not paths:
+    if not mv or len(mv) != len(srcs):
         return list_meta(cat, tier), "fetch-failed"
+    paths = [_list_path(sid, tier) for sid in mv]
     extra = {"mv": mv}
     if tier == "ip":
-        nets = []
-        for p in paths:
-            try:
-                with open(p, "r", encoding="utf-8", errors="replace") as f:
-                    for ln in f:
-                        s = ln.strip()
-                        if not s:
-                            continue
-                        try:
-                            n = ipaddress.ip_network(s, strict=False)
-                            if n.version == 4:
-                                nets.append(n)
-                        except Exception:
-                            continue
-            except Exception:
-                continue
-        _al = [ipaddress.ip_network(n) for n in (_BLKU_ALLOW.get(cat) or ())]
-        items = [str(n) for n in ipaddress.collapse_addresses(_blku_public(nets, _al))]
-        return _list_commit_items(cat, tier, items, extra=extra)
+        try:
+            items = _block_ip_items(((p,) for p in paths), _BLKU_ALLOW.get(cat) or ())
+        except (OSError, UnicodeError):
+            return list_meta(cat, tier), "fetch-failed"
+        return _list_commit_items(cat, tier, items, extra=extra, protect_count=False)
     return _blku_merge_write(cat, tier, paths, extra=extra)
 
 _BLKU_NEVER = tuple(ipaddress.ip_network(n) for n in ("0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16",
@@ -11705,6 +11744,43 @@ def _blku_public(nets, allow=()):
             parts = nxt
         out.extend(parts)
     return out
+
+
+def _block_ip_items(files, allow):
+    nets = [ipaddress.IPv4Network(n) for n in _collapse_ip4(_coverage_lines(files))]
+    cut = tuple(map(ipaddress.IPv4Network, allow))
+    return [str(n) for n in ipaddress.collapse_addresses(_blku_public(nets, cut))]
+
+
+@lru_cache(maxsize=128)
+def _block_ip_count(files, allow):
+    return len(_block_ip_items(files, allow))
+
+
+def block_coverage(ps, sources):
+    providers = block_providers_enabled(ps)
+    cats = {"host": set(), "ip": set()}
+    for src in _block_sources(sources):
+        prov = src["provider"]
+        if providers[prov]:
+            cats[BLOCK_PROVIDERS[prov]["tier"]].add("blk:" + prov + ":" + src["list"])
+    names, nets = block_allow_split(ps)
+    out = {}
+    for tier, ids in cats.items():
+        if not ids:
+            continue
+        files, state = _coverage_files(ids, tier)
+        out[tier] = {"state": state}
+        if state == "ready":
+            try:
+                if tier == "host":
+                    out[tier]["names"] = _domain_coverage_count(files, allow=names)
+                else:
+                    out[tier]["networks"] = _block_ip_count(files, nets)
+            except (OSError, UnicodeError):
+                out[tier]["state"] = "pending"
+    return out
+
 
 def _blku_ready(sid, tier):
     mm = list_meta(sid, tier)
@@ -11749,7 +11825,8 @@ def _blku_merge_write(cat, tier, paths, extra=None):
         for f in files:
             with contextlib.suppress(Exception):
                 f.close()
-    return _list_commit(cat, tier, h.hexdigest()[:12], n, lambda: os.replace(tmp, _list_path(cat, tier)), tmp=tmp, extra=extra)
+    return _list_commit(cat, tier, h.hexdigest()[:12], n, lambda: os.replace(tmp, _list_path(cat, tier)),
+                        tmp=tmp, extra=extra, protect_count=False)
 
 
 def _blk_file_has(path, target):
@@ -15601,12 +15678,17 @@ def api(method, path, qs, body, deps):
         _pfx = _asn_cidrs(_asn)
         return 200, {"ok": True, "data": {"asn": _asn, "count": len(_pfx), "sample": _pfx[:4]}}
 
-    if method == "POST" and path == "/api/routing/ip-coverage":
+    if method == "POST" and path in ("/api/routing/ip-coverage", "/api/routing/coverage"):
         nid, cats, targets = body.get("node"), body.get("lists"), body.get("targets")
         if not isinstance(nid, str) or not isinstance(cats, list) or not isinstance(targets, list) or not all(
                 isinstance(x, str) for x in cats + targets):
             return 400, {"ok": False, "error": "invalid routing preview", "code": "bad_request"}
-        return 200, {"ok": True, "data": routing_ip_coverage(panel_settings, nid, cats, targets)}
+        if path == "/api/routing/ip-coverage":
+            data = routing_ip_coverage(panel_settings, nid, cats, targets)
+        else:
+            tiers = ("ip", "host") if body.get("hosts") else ("ip",)
+            data = routing_coverage(panel_settings, nid, cats, targets, tiers)
+        return 200, {"ok": True, "data": data}
 
     if method == "GET" and path == "/api/catalog":
         try:    _pg = max(0, int((qs.get("page") or ["0"])[0] or 0))
@@ -15620,12 +15702,14 @@ def api(method, path, qs, body, deps):
         return 200, {"ok": True, "data": {"total": len(idx), "providers": CATALOG_PROVIDER_ORDER,
                                           "perr": _CATALOG.get("perr") or {}, "error": _CATALOG.get("err") or ""}}
 
+    if method == "POST" and path == "/api/block-catalog/coverage":
+        return 200, {"ok": True, "data": block_coverage(panel_settings, body.get("sources"))}
+
     if method == "GET" and path == "/api/block-catalog":
-        ps = deps.get("panel_settings")
+        ps = panel_settings
         en = block_providers_enabled(ps)
         _bcats = block_catalog(ps)
         for _c in _bcats.values():
-            th = ti = 0; known = False
             for _s in _c.get("sources", []):
                 if en.get(_s.get("provider"), True):
                     _tier, _n = block_source_size(_s.get("provider"), _s.get("list", ""))
@@ -15642,11 +15726,11 @@ def api(method, path, qs, body, deps):
                     if _n is None:
                         with _LIST_LOCK:
                             _s["busy"] = _k in _LIST_INFLIGHT
-                if _n is not None:
-                    known = True
-                    if _tier == "ip": ti += _n
-                    else: th += _n
-            _c["size"] = ({"host": th, "ip": ti} if known else None)
+            _coverage = block_coverage(ps, _c.get("sources"))
+            _c["coverage"] = _coverage
+            sizes = {tier: data.get("names" if tier == "host" else "networks", 0)
+                     for tier, data in _coverage.items() if data["state"] == "ready"}
+            _c["size"] = {"host": sizes.get("host", 0), "ip": sizes.get("ip", 0)} if sizes else None
         return 200, {"ok": True, "data": {
             "categories": _bcats,
             "providers": [{"id": p, "label": BLOCK_PROVIDERS[p]["label"], "tier": BLOCK_PROVIDERS[p].get("tier", "host"),
@@ -20394,7 +20478,7 @@ class Handler(BaseHTTPRequestHandler):
                         _mm = list_meta(_sid, _tier)
                         list_ensure(_sid, _tier, force=bool(_mm) and int(time.time()) - int(_mm.get("at") or 0) > _cadence)
                     _cur, _mv = _blku_member_vers(_c, _tier), (_mt or {}).get("mv")
-                    if _mt and _cur != _mv and int(time.time()) - int(_mt.get("at") or 0) > 3600:
+                    if _mt and _cur != _mv:
                         _due = True
                 _mt = list_ensure(_c, _tier, force=_due) or _mt
                 if _mt:

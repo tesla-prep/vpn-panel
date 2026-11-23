@@ -30,8 +30,8 @@ import {
   subVaultCreate, urlPortOf, withUrlPort,
 } from "./crypto.js";
 import {
-  AsnHint, BlockListPicker, CAT_PROVIDER_DEFAULTS, FleetAssign, HostHealth, ListInfo,
-  MODE_META, ModeTabs, NewBlockCatSheet, ProvTag, blockCatDisabled, blockSrcOk, capBadges, catCap,
+  AsnHint, BlockCoverageSummary, BlockListPicker, CAT_PROVIDER_DEFAULTS, FleetAssign, HostHealth, ListInfo,
+  MODE_META, ModeTabs, NewBlockCatSheet, ProvTag, blockCatDisabled, blockSrcOk, blockTierOk, capBadges, catCap,
   blistText, catLabelOf, catListUrl, catRawId, catUsableInMode, loadBlockCatalog, newRid,
   TargetField, candAddr, cardAddrs, cardGateway, isCardName, candOf, exitHealth, exitIsDialin, exitOptionGroups, exitProv, fleetRuleCats, provLabelOf, provName, providerColor, providerUsage, reportDropped,
   resetRouting, sizeSummary,
@@ -636,14 +636,15 @@ export function PanelSettingsScreen() {
   }, [section]);
   const _bkCountTries = useRef(0);
   useEffect(() => {
-    if (routeTab !== "blocking") return;
+    if (section !== "routing" || routeTab !== "blocking") return;
     const bc = Store.blockCatalog; if (!bc) return;
     const on = new Set((bc.providers || []).filter(p => p.enabled !== false).map(p => p.id));
     const pending = Object.values(bc.categories || {}).some(c => (c.sources || []).some(s => s.n == null && on.has(s.provider)));
-    if (!pending) { _bkCountTries.current = 0; return; }
-    const t = setTimeout(() => { _bkCountTries.current++; loadBlockCatalog(true); }, Math.min(30000, 4000 * 2 ** Math.floor(_bkCountTries.current / 3)));
+    if (!pending) _bkCountTries.current = 0;
+    const delay = pending ? Math.min(30000, 4000 * 2 ** Math.floor(_bkCountTries.current / 3)) : 15000;
+    const t = setTimeout(() => { _bkCountTries.current++; loadBlockCatalog(true); }, delay);
     return () => clearTimeout(t);
-  }, [routeTab, Store.blockCatalog]);
+  }, [section, routeTab, Store.blockCatalog]);
   const [blockProvEdits, setBlockProvEdits] = useState({});
   const blockCatalogStatus = loading => Store.blockCatalogError ? html`<div class="hint warnish">
     ${T("Could not load the block-list catalog.")}
@@ -1131,7 +1132,6 @@ const sectionLabel = k => ({
             const cats = allIds.map(bcat).filter(c => c.kind !== "mechanism" && !blockRemoved.includes(c.id));
             const caps = c => { const s = c.sources || []; return { host: s.some(x => provTier(x.provider) === "host"), ip: s.some(x => provTier(x.provider) === "ip") }; };
             const fmtN = n => n == null ? null : n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M" : n >= 1e3 ? (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "k" : String(n);
-            const catTotal = c => { const sz = c.size; if (!sz) return null; const t = (sz.host || 0) + (sz.ip || 0); return t ? fmtN(t) : null; };
             const createCat = ({ id, label }) => { setBlockEdits(e => ({ ...e, [id]: { label, sources: [], enabled_nodes: [] } })); setBkOpen(o => ({ ...o, [id]: true })); setBkAutoAdd(id);
               requestAnimationFrame(() => requestAnimationFrame(() => {
                 const items = document.querySelectorAll(".bkitem"); const el = items[items.length - 1]; if (!el) return;
@@ -1169,7 +1169,8 @@ const sectionLabel = k => ({
                     <div class="bk-catline"><span class="lg-title" title=${catNm}>${catNm}</span><span class="bk-chev">▾</span></div>
                     <div class="bk-lists">${nL ? src.map(srcLabel).join(", ") : html`<span class="faint">${T("no lists yet — add one →")}</span>`}</div>
                   </div>
-                  <div class="bk-size">${(() => { const t = catTotal(c); return t ? html`<span class="bk-count" title=${T("Total entries across this category’s lists")}>${t}</span>` : null; })()}</div>
+                  <div class="bk-size"><${BlockCoverageSummary} coverage=${c.coverage} sources=${blockEdits[c.id]?.sources}
+                    hosts=${!nodeRec || blockTierOk(nodeMode, "host")}/></div>
                   <div class="bk-fleet" onClick=${e => e.stopPropagation()}><${FleetAssign} nodes=${fleetNodes} isOn=${nid => (c.enabled_nodes || []).includes(nid)} onToggle=${(nid, on) => setAvailNode(c, nid, on)}/></div>
                   <div class="bk-cap">${(() => { const cp = caps(c); return cp.host || cp.ip
                     ? html`<${Fragment}>${cp.host ? html`<span class="capb host" title=${T("Matched by domain — needs Hybrid SNI mode")}>${T("Host")}</span>` : null}${cp.ip ? html`<span class="capb ip" title=${T("Matched by IP — works in every mode")}>IP</span>` : null}<//>`
