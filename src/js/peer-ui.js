@@ -684,8 +684,10 @@ export function UserEditCard({ user, done }) {
     .map(u => [u.socks_profile.id, u.name]));
   const options = (Store.socksPool || []).map(option => {
     const owner = occupied.get(option.id);
-    const state = owner !== undefined ? T("Assigned to {v1}", { v1: owner }) : option.enabled === false ? T("Disabled") : "";
-    return { value: option.id, disabled: !!state,
+    const assigned = owner !== undefined;
+    const disabled = option.enabled === false;
+    const state = assigned ? T("Assigned to {v1}", { v1: owner }) : disabled ? T("Disabled") : "";
+    return { value: option.id, disabled: assigned || (disabled && option.id !== initial),
              label: [option.label, state].filter(Boolean).join(" · ") };
   });
   const save = async () => {
@@ -707,11 +709,12 @@ export function UserEditCard({ user, done }) {
     <div class="field"><label>${T("Name")}</label><input value=${name} onInput=${e => setName(e.target.value)} maxlength="64"/></div>
     <div class="field">
       <label>${T("SOCKS5 profile")}</label>
-      <${Dropdown} value=${profile} onChange=${setProfile} ariaLabel=${T("SOCKS5 profile")} options=${[
+      <${Dropdown} value=${profile} onChange=${setProfile} ariaLabel=${T("SOCKS5 profile")} disabled=${busy} options=${[
         { value: "", label: T("No personal SOCKS5") }, ...options,
-        ...(pooled && !options.some(o => o.value === profile) ? [{ value: profile, label: T("SOCKS5 exit unavailable"), disabled: true }] : []),
+        ...(initial && !options.some(o => o.value === initial) ? [{ value: initial, label: T("SOCKS5 exit unavailable") }] : []),
       ]}/>
-      ${pooled ? html`<div class="hint">${T("Applies to all this user's devices when a rule sends traffic through the new cascade.")}</div>` : null}
+      ${pooled ? html`<div class="hint">${T("Applies to all this user's devices when a rule sends traffic through the new cascade.")}</div>
+        <button type="button" class="btn btn-mini" style="margin-top:7px" disabled=${busy} onClick=${() => setProfile("")}>${T("Remove assignment")}</button>` : null}
     </div>
     ${pooled ? html`<div class="field"><label>${T("If SOCKS5 is unavailable")}</label>
       <${Dropdown} value=${failure} onChange=${setFailure} ariaLabel=${T("If SOCKS5 is unavailable")} options=${[

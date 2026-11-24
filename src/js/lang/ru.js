@@ -2414,6 +2414,7 @@ export const STR = {
   "Delete SOCKS5 profile": "Удалить профиль SOCKS5",
   "Remove this profile from the shared SOCKS5 pool?": "Удалить профиль из общего пула SOCKS5?",
   "No personal SOCKS5": "Без личного SOCKS5",
+  "Remove assignment": "Снять назначение",
   "Applies to all this user's devices when a rule sends traffic through the new cascade.": "Действует для всех устройств пользователя, когда правило отправляет трафик по цепочке с общим пулом.",
   "If SOCKS5 is unavailable": "Если SOCKS5 недоступен",
   "Block traffic (Kill switch)": "Блокировать трафик (Kill switch)",
