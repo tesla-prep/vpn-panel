@@ -1814,16 +1814,26 @@ def _dev_seen(dev, state=None):
 
 
 _ROUTED = {"judged": {}, "pending": {}}
+CASCADE_SELECTOR_DEV = "s5-selector"
 
 
 def _routed_devs_moved():
     return any(_dev_seen(d) != v for d, v in _ROUTED["judged"].items())
 
 
+def _cascade_selector_guard(entry):
+    return entry.get("scope") == "cascade" and entry.get("dev") == CASCADE_SELECTOR_DEV
+
+
+def _cascade_device_exits(cascade):
+    entries = cascade.get("devexit") if isinstance(cascade, dict) else None
+    return [e for e in (entries or ()) if isinstance(e, dict) and not _cascade_selector_guard(e)]
+
+
 def _devexit_sig(cascade):
     return sorted((str((e or {}).get("dev") or ""), _devexit_state(str((e or {}).get("dev") or "")),
                    _dev_gateway(str((e or {}).get("dev") or "")))
-                  for e in ((cascade or {}).get("devexit") or [])) + sorted((_EXITS.get("socks") or {}).items())
+                  for e in _cascade_device_exits(cascade)) + sorted((_EXITS.get("socks") or {}).items())
 
 
 def _dev_is_ether(dev):
@@ -8676,10 +8686,13 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     plan = plan or {}
     fwd = plan.get("forward") or []
     exit_ = plan.get("exit") or []
-    devexit = plan.get("devexit") or []
+    devexit = _cascade_device_exits(plan)
+    guards = [e for e in plan.get("devexit") or () if isinstance(e, dict) and e.get("killswitch")]
     wire = plan.get("cascade_paths") or {}
     origins, incoming = _cascade_path_entries(wire)
     choices = _cascade_path_choices(wire)
+    selector_tables = {mark for mark, _, _ in choices}
+    selector_tables.update(e["table"] for e in guards if _cascade_selector_guard(e))
     wan = _detect_wan()
     _CASCADE_PATHS["ready"] = []
     paths_ok = _ensure_cascade_path_rules(origins, incoming, _relay_links(node_cfg), wan, res, choices)
@@ -8722,7 +8735,6 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     _dxgw = {e["dev"]: e["gw"] for e in _dxs}
     _dxnogw = {e["dev"] for e in _dxs if e["needs_gw"] and not e["gw"]}
     _fwd_rules = {(e["subnet"], str(e["table"])) for e in fwd}
-    _dxguard = [e for e in _dxs if e.get("killswitch")]
     smart_e = (smart or {}).get("entries") or []
     smart_exit = [e for e in smart_e if e.get("action", "exit") == "exit"]
     _lst = {e["dev"]: _dev_seen(e["dev"], e["state"]) for e in _dxs if e.get("dev")}
@@ -8732,11 +8744,18 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
         return dev in _dxnogw or _lst[dev][0] != "up"
     fwd = [dict(e, _noroute=_withheld(e["via_iface"])) for e in fwd]
     exit_ = [dict(e, _noroute=_withheld(e["via_iface"])) for e in exit_]
-    smart_exit = [dict(e, gw=_dxgw.get(e.get("via_iface"), ""),
-                       _noroute=_withheld(e.get("via_iface"))) for e in smart_exit]
+    # The selector mark is rewritten by nftables. Its table keeps only the
+    # policy-route backstop and does not have a device to check or route via.
+    def selector_route(e):
+        return e.get("via_iface") == CASCADE_SELECTOR_DEV and e["table"] in selector_tables
+
+    def marked_exit(e):
+        dev = e["via_iface"]
+        return dict(e, gw=_dxgw.get(dev, ""), _noroute=selector_route(e) or _withheld(dev))
+
+    smart_exit = [marked_exit(e) for e in smart_exit]
     arr_subs, arr_e = _arrivals_parse((smart or {}).get("arrivals"))
-    arr_exit = [dict(e, gw=_dxgw.get(e["via_iface"], ""), _noroute=_withheld(e["via_iface"]))
-                for e in arr_e if e["action"] == "exit"]
+    arr_exit = [marked_exit(e) for e in arr_e if e["action"] == "exit"]
     arr_exit.extend({"via_iface": e["dev"], "table": e["table"], "_noroute": _withheld(e["dev"])}
                     for e in origins if e.get("probe"))
     static = [dict(e, via_iface=e["dev"], _noroute=_withheld(e["dev"])) for e in static_entries if e.get("dev")]
@@ -8767,20 +8786,21 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                         panel_conn, res)
     band = _live_band_prios()
     want_tables = ({str(e["table"]) for e in (fwd + smart_exit + arr_exit + exit_)}
-                   | {str(e["table"]) for e in _dxguard})
+                   | {str(e["table"]) for e in guards})
+    route_devs = {e["via_iface"] for e in (fwd + smart_exit + arr_exit + exit_) if not selector_route(e)}
     _RPF["needed"] = bool(fwd or smart_e or exit_ or arr_exit)
     if _RPF["needed"]:
         _rall = _rp_filter_val("all")
-        _RPF["bad"] = sorted(d for d in {_detect_wan()} | {e["via_iface"] for e in (fwd + smart_exit + arr_exit + exit_)}
+        _RPF["bad"] = sorted(d for d in {wan} | route_devs
                              if _rp_effective(d, _rall) not in (None, 2))
     else:
         _RPF["bad"] = []
-    _tbls = sorted({str(e["table"]) for e in fwd + smart_exit} | {str(e["table"]) for e in _dxguard})
+    _tbls = sorted({str(e["table"]) for e in fwd + smart_exit} | {str(e["table"]) for e in guards})
     _taken = {e["subnet"] for e in exit_}
     _troutes = [(p, dev) for p, dev in _cascade_local_routes(node_cfg) if p not in _taken] if _tbls else []
     _net_tables = _tbls if _troutes else []
     _cut = _dialin_cut(fwd + smart_exit + arr_exit, exit_, _troutes if _net_tables else (), set(_net_tables))
-    want_sig = _cascade_want_sig(fwd, exit_, smart_exit, guard=_dxguard,
+    want_sig = _cascade_want_sig(fwd, exit_, smart_exit, guard=guards,
                                  nets=_troutes, net_tables=_net_tables, arr=arr_exit, cut=_cut, static=static)
     local_nets = ([p for p, _ in _cascade_local_routes(node_cfg)] +
                   [e["subnet"] for e in exit_]) if static_entries else []
@@ -8796,7 +8816,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
             _all = _sysctl_ensure("net.ipv4.conf.all.rp_filter", 2)
             _eff = lambda v: v if _all is None else max(v, _all)
             _bad = []
-            for dev in sorted({"all", wan} | {e["via_iface"] for e in (fwd + smart_exit + arr_exit + exit_)}):
+            for dev in sorted({"all", wan} | route_devs):
                 v = _all if dev == "all" else _sysctl_ensure("net.ipv4.conf.%s.rp_filter" % dev, 2,
                                                              ok=lambda cur: _eff(cur) == 2)
                 if v is not None and _eff(v) != 2:
@@ -8823,7 +8843,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                     + ["dev", dev, "table", T])
             run(["ip", "rule", "add", "from", S, "lookup", T, "priority", T])
             res["changed"] += 1
-        for e in _dxguard:
+        for e in guards:
             T = str(e["table"])
             run(["ip", "route", "replace", "prohibit", "default", "metric", str(DEVEXIT_GUARD_METRIC),
                  "table", T])
@@ -15942,9 +15962,9 @@ def main():
                 with contextlib.suppress(Exception):
                     exit_test_take(reply.get("exit_test"))
                 xr = {"changed": 0, "errors": []}
-                _dxl = reply.get("cascade").get("devexit") if isinstance(reply.get("cascade"), dict) else None
+                _dxl = _cascade_device_exits(reply.get("cascade"))
                 with contextlib.suppress(Exception):
-                    reconcile_exits(reply.get("exits"), xr, devexit=_dxl if isinstance(_dxl, list) else None,
+                    reconcile_exits(reply.get("exits"), xr, devexit=_dxl,
                                     managed=set(node_cfg.get("interfaces") or {}))
                 with contextlib.suppress(Exception):
                     write_inventory(node_cfg)
@@ -15990,8 +16010,7 @@ def main():
                     cas = reconcile_cascade(node_cfg, reply.get("cascade"), reply.get("smart"), _def_egress,
                                             panel_conn=panel, panel_cfg=reply.get("panel"))
                     with contextlib.suppress(Exception):
-                        reconcile_inet_chain(node_cfg, {e.get("dev") for e in
-                                                        ((reply.get("cascade") or {}).get("devexit") or [])})
+                        reconcile_inet_chain(node_cfg, {e.get("dev") for e in _dxl})
                     last_route_sig = _route_sig if not cas["errors"] else None
                     last_route_t = time.time(); last_desired_sig = _route_sig
                     _ROUTED["judged"] = _ROUTED["pending"]

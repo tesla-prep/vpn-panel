@@ -5045,6 +5045,9 @@ def _node_issues(c, snap, ivk_pub="", capped=(), unplaced=None, reach=None, clas
     for _e in (snap.get("devexit") or []):
         if not isinstance(_e, dict) or _e.get("state") == "up" or str(_e.get("dev") or "") in _lkd:
             continue
+        # Older nodes can report the mark selector as an absent exit device.
+        if _e.get("scope") == "cascade" and _e.get("dev") == CASCADE_SELECTOR_DEV:
+            continue
         _g = _dx_by_dev.setdefault((str(_e.get("dev") or ""), str(_e.get("state") or "")), {"ks": False, "subs": []})
         _g["ks"] = _g["ks"] or bool(_e.get("killswitch"))
         _g["arr"] = _g.get("arr") or bool(_e.get("arr"))
@@ -11436,6 +11439,7 @@ def static_exit_state(uid, ref, nodes, snaps, origins):
 
 
 CASCADE_PATH_NET = ipaddress.IPv4Network("198.18.128.0/17")
+CASCADE_SELECTOR_DEV = "s5-selector"
 
 
 def _cascade_identity(origin, path):
@@ -11961,8 +11965,8 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None, pool=None):
                         status["personal_direct"] = True
                 selection["sources"][dev, addr] = selected[2] if selected else 0
             for subnet in subnets:
-                _dx_add(sn, {"subnet": subnet, "dev": "s5-selector", "table": table, "scope": "cascade", "killswitch": True})
-            return {"action": "exit", "via_iface": "s5-selector", "table": table}
+                _dx_add(sn, {"subnet": subnet, "dev": CASCADE_SELECTOR_DEV, "table": table, "scope": "cascade", "killswitch": True})
+            return {"action": "exit", "via_iface": CASCADE_SELECTOR_DEV, "table": table}
         if key not in ready_paths:
             return {"action": "block"}
         alias, dev, table = ready_paths[key]
