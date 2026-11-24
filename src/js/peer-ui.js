@@ -368,7 +368,9 @@ export function QRUserFoot({ uid }) {
   return html`<${Fragment}><span class="qrfoot-count">${count}</span><${UserCounts} user=${u} className="qrfoot-ucounts"/><span class="grow"></span><button class="btn btn-warn" onClick=${() => rotateAllUserKeys(u)} title=${T("Rotate the keys of every peer this user holds — all configs/links must be re-imported")}><${Ic} i="key"/> ${T("Rotate all keys")}</button>${userBlockBtn(u)}<//>`;
 }
 export function openUserEdit(user) {
-  openModal(html`<${Sheet} title=${T("Edit · {v1}", { v1: user.name })} width=${780} subject=${{ kind: "user", id: user.id }}><${UserEditCard} user=${user} done=${closeModal}/><//>`);
+  const saved = Store.roster.users[user.id];
+  const editable = { ...user, socks_profile: saved?.socks_profile };
+  openModal(html`<${Sheet} title=${T("Edit · {v1}", { v1: user.name })} width=${780} subject=${{ kind: "user", id: user.id }}><${UserEditCard} user=${editable} done=${closeModal}/><//>`);
 }
 
 function keyOnlyCopy() {
@@ -692,11 +694,13 @@ export function UserEditCard({ user, done }) {
   });
   const save = async () => {
     if (!name.trim()) { toast(T("Name can't be empty."), "err"); return; }
-    const r = await sheetSend(() => api.userUpdate({ id: user.id, name: name.trim(),
-      ...(profileDirty ? { socks_profile: pooled ? { id: profile, failure } : null } : {}) }),
-    setSaveErr, setBusy);
-    if (!r.ok) return;
-    done(); Store.poll().catch(() => {});
+    const r = await sheetSend(async () => {
+      const result = await api.userUpdate({ id: user.id, name: name.trim(),
+        ...(profileDirty ? { socks_profile: pooled ? { id: profile, failure } : null } : {}) });
+      if (result?.ok) await Store.poll().catch(() => {});
+      return result;
+    }, setSaveErr, setBusy);
+    if (r.ok) done();
   };
   const del = () => openConfirm({ title: T("Delete user · {name}", { name: user.name }), confirmLabel: T("Delete user"), danger: true, back: done,
     body: T("Their peers are revoked and become unassigned.") + " " + T("This can't be undone."),
