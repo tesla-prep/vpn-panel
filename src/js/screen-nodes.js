@@ -26,7 +26,7 @@ import { TurnProxiesBlock, turnEnabled, WdttCard, WDTT_COLOR, ForkTag, ifaceTurn
 import { PeerGrid, NodeRail, NodesRailPanel } from "./grids.js";
 import { openCreateIface, openEditIface, openConnectionEdit, OrphanRow } from "./iface.js";
 import { ifTrafficBadge } from "./routing.js";
-import { openNodeCreate, openNodeEdit, openNodeRemove, openNodeRotate, unflagNode } from "./sheets-crud.js";
+import { openNodeCreate, openNodeEdit, openNodeRemove, openNodeRotate, openNodeUpdate, unflagNode } from "./sheets-crud.js";
 import { confirmRestoreInterface, confirmRestoreAllInterfaces, openRecreateRekey } from "./peer-actions.js";
 import { h, Fragment } from "preact";
 import { useState, useEffect, useRef, useMemo } from "preact/hooks";
@@ -149,8 +149,8 @@ export function NodeDetail({ node: rawName }) {
         <span class="dh-sep"></span>
         <button class="iconbtn" disabled=${blocked} data-lbl=${T("Settings")} title=${blocked ? T("Unavailable while the node is down / converting") : T("Node settings")} onClick=${() => openNodeEdit(nrec)}><${Ic} i="gear"/></button>
         <button class="iconbtn" data-lbl=${T("Logs")} title=${T("This node's live logs")} onClick=${() => openLogs({ nodes: [nrec.id], src: NODE_SOURCES })}><${Ic} i="doc"/></button>
-        ${
- null}
+        ${nrec.kind === "docker" && !nrec.uninstalled ? html`<button type="button" class="iconbtn" data-lbl=${T("Node update command")}
+          title=${T("Node update command")} aria-label=${T("Node update command")} onClick=${() => openNodeUpdate(nrec)}><${Ic} i="refresh"/></button>` : null}
         ${isMobile() ? html`<button class="iconbtn" data-lbl=${T("More")} title=${T("More")} onClick=${() => openModal(html`<${NodeMoreSheet} id=${nrec.id}/>`)}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>` : html`<${Fragment}>
         <button class="iconbtn" title=${nrec.status === "dangling" ? T("Rotate token and get a new install command") : T("Rotate token")} onClick=${() => openNodeRotate(nrec)}><${Ic} i="key"/></button>

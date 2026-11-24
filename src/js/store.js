@@ -220,6 +220,7 @@ export const Store = {
     this.stats = d.snapshots || {};
     if (Number.isFinite(d.panel_now) && d.panel_now > 0) clock.skewMs = Date.now() - d.panel_now * 1000;
     trackInstance(d.instance, d.panel_now, d.nodes || []);
+    this.sourceRevision = d.instance?.source_revision || "";
     this.storeMode = (d.store_configs === "off" || d.store_configs === false) ? "off" : "encrypted";
     this.exitKeyKeep = d.exit_key_keep || "";
     this.exitPskKeep = d.exit_psk_keep || "";

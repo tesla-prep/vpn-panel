@@ -258,10 +258,15 @@ def _invalidate_state_cache():
     _STATE_CACHE["at"] = 0.0
 
 
+def _source_revision():
+    revision = os.environ.get("SWG_SOURCE_REVISION", "")
+    return revision if re.fullmatch(r"[a-f0-9]{40}", revision) else ""
+
+
 def _instance_view(deps):
     if "version" not in _INSTANCE:
         _INSTANCE.update(version=_read_version(),
-                         method="docker",
+                         method="docker", source_revision=_source_revision(),
                          state_dir=os.path.dirname(os.path.abspath(deps.get("nodes_path") or "")))
     return _INSTANCE
 
@@ -2603,10 +2608,9 @@ _NODE_ENDPOINT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9.-]*")
 
 
 def _node_enrollment_data(node, token):
-    revision = os.environ.get("SWG_SOURCE_REVISION", "")
     return {"id": node["id"], "name": node.get("name"), "token": token,
             "endpoint_host": node.get("endpoint_host") or "", "panel_url": PANEL_PUBLIC_URL,
-            "install_revision": revision if re.fullmatch(r"[a-f0-9]{40}", revision) else ""}
+            "install_revision": _source_revision()}
 
 
 def _is_ip(host):

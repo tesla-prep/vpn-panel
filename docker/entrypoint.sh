@@ -2,7 +2,7 @@
 set -eu
 umask 077
 [ -s "$SWG_PANEL_AUTH" ] || { echo 'Panel credentials missing. Run swg-passwd before starting the panel.' >&2; exit 1; }
-mkdir -p /var/lib/swg-panel/configs /var/lib/swg-panel/subs /var/www/wgstats
+mkdir -p /var/lib/swg-panel/configs /var/lib/swg-panel/private /var/lib/swg-panel/subs /var/www/wgstats
 for masked in /var/lib/swg-panel/panel-settings.json /var/lib/swg-panel/subs/vault.json /var/lib/swg-panel/subs/escrow.json; do
     if [ ! -e "$masked" ]; then
         (set -C; printf '{}\n' > "$masked")

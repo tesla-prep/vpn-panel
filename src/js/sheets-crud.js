@@ -866,7 +866,7 @@ function nodeInstallEndpointField(value, onChange) {
 }
 
 const quoteShell = value => "'" + String(value).replaceAll("'", "'\"'\"'") + "'";
-const nodeInstallBootstrap = "https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh";
+const nodeBootstrap = "swg_bootstrap=$(curl -q -fsSL --proto '=https' https://raw.githubusercontent.com/tesla-prep/vpn-panel/main/bootstrap.sh)";
 
 function installNodeCmd(enrollment, endpoint) {
   const revision = /^[a-f0-9]{40}$/.test(enrollment.install_revision) ? enrollment.install_revision : "";
@@ -874,24 +874,39 @@ function installNodeCmd(enrollment, endpoint) {
   let args = `-host ${quoteShell(host)}`;
   if (endpoint.trim()) args += ` -endpoint ${quoteShell(endpoint.trim())}`;
   if (revision) args += ` -revision ${revision}`;
-  return `swg_bootstrap=$(curl -q -fsSL --proto '=https' ${nodeInstallBootstrap}) && printf '%s\\n' ${quoteShell(enrollment.token)} | sudo bash -c "$swg_bootstrap" -- node ${args}`;
+  return `${nodeBootstrap} && printf '%s\\n' ${quoteShell(enrollment.token)} | sudo bash -c "$swg_bootstrap" -- node ${args}`;
+}
+
+function CopyCommandField({ label, value }) {
+  return html`<div class="field"><label>${label}</label>
+    <div class="cmdrow"><div class="tokenbox">${value}</div>
+      <button type="button" class="copyaction" onClick=${() => copy(value, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>`;
 }
 
 export function NodeTokenSheet({ enrollment, isNew, canInstall }) {
   const [endpoint, setEndpoint] = useState(enrollment.endpoint_host || "");
   const install = canInstall && validNodeInstallEndpoint(endpoint) ? installNodeCmd(enrollment, endpoint) : "";
-  const copyField = (label, value) => html`<div class="field"><label>${label}</label>
-    <div class="cmdrow"><div class="tokenbox">${value}</div>
-      <button class="copyaction" onClick=${() => copy(value, T("Copied"))}><${Ic} i="copy"/> ${T("Copy")}</button></div></div>`;
   return html`<${Sheet} title=${(isNew ? T("Node created") : T("New token")) + " · " + enrollment.name}
     foot=${html`<button class="btn btn-primary" onClick=${closeModal}>${T("Done")}</button>`}>
     ${canInstall && !isNew && (!enrollment.endpoint_host || !validNodeInstallEndpoint(enrollment.endpoint_host)) ? nodeInstallEndpointField(endpoint, setEndpoint) : null}
-    ${install ? copyField(T("Node install command"), install) : null}
+    ${install ? html`<${CopyCommandField} label=${T("Node install command")} value=${install}/>` : null}
     ${canInstall ? html`<p class="hint">${T("Run the command on the Ubuntu node with curl and sudo. It contains the node token.")}</p>`
-      : html`${copyField("NODE_TOKEN", enrollment.token)}
+      : html`<${CopyCommandField} label="NODE_TOKEN" value=${enrollment.token}/>
         <p class="hint">${T("Set NODE_TOKEN in /opt/swg-node/.env, then run sudo docker compose up -d in that directory.")}</p>`}
   <//>`;
 }
+
+export function openNodeUpdate(node) {
+  const revision = /^[a-f0-9]{40}$/.test(Store.sourceRevision) ? Store.sourceRevision : "";
+  const command = `${nodeBootstrap} && sudo bash -c "$swg_bootstrap" -- update node${revision ? " -revision " + revision : ""}`;
+  openModal(html`<${Sheet} title=${T("Node update command") + " · " + node.name}
+    foot=${html`<button type="button" class="btn btn-primary" onClick=${closeModal}>${T("Done")}</button>`}>
+    <${CopyCommandField} label=${T("Run on the node host")} value=${command}/>
+    <p class="hint">${revision ? T("Updates the existing installation to panel revision {v1}.", { v1: revision.slice(0, 7) })
+      : T("Updates the existing installation to the current revision of the main branch.")}</p>
+  <//>`);
+}
+
 export function openNodeEdit(node) { openModal(html`<${NodeEditSheet} node=${node}/>`); }
 
 export function NodeEditSheet({ node }) {
