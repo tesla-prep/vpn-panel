@@ -2053,6 +2053,12 @@ export const STR = {
   "unit|ms": "мс",
   "(set at creation — delete & recreate to change)": "(задаётся при создании — меняется пересозданием)",
 
+  "The interface is *down*. Its saved *.conf* is shown below. The AmneziaWG kernel module is unavailable on the node host.":
+    "Интерфейс *не поднят*. Ниже показан сохранённый *.conf*. На хосте ноды недоступен модуль ядра AmneziaWG.",
+  "On the node host, run *sudo modprobe amneziawg*. If it fails, use *swg.sh update node*. Then click *Start interface*.":
+    "На хосте ноды выполните *sudo modprobe amneziawg*. Если команда завершится ошибкой, выполните *swg.sh update node*. После этого нажмите *Запустить интерфейс*.",
+  "Check the module for the running kernel on the node host, then click *Start interface*.":
+    "Проверьте модуль для запущенного ядра на хосте ноды и нажмите *Запустить интерфейс*.",
   "This interface is *down* on the node — its config below is read from the *.conf* (not live). The node reported: {reason}. Use *Start interface* — if the bring-up fails, the exact reason (port clash, a left-over kernel interface of the same name, an unsupported AmneziaWG parameter, …) shows here.":
     "Этот интерфейс *не поднят* на ноде — конфиг ниже прочитан из *.conf* (не живой). Нода сообщила: {reason}. Нажмите *Запустить интерфейс* — если поднять не удастся, точная причина (конфликт порта, оставшийся интерфейс ядра с тем же именем, неподдерживаемый параметр AmneziaWG, …) появится здесь.",
   "This interface is *down* on the node. Change the *Listen port* to a free one and *Save* — the panel will write the new port and restart the interface to bring it up.":

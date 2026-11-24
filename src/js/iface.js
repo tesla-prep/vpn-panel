@@ -28,7 +28,12 @@ import htm from "htm";
 
 const html = htm.bind(h);
 
-function ifaceDownNote(reason) {
+function ifaceDownNote(reason, type, docker) {
+  if (type === "awg" && /unknown device type|protocol not supported|amneziawg kernel module is unavailable/i.test(reason)) {
+    return html`<${Fragment}>${Trich("The interface is *down*. Its saved *.conf* is shown below. The AmneziaWG kernel module is unavailable on the node host.")}
+      ${" "}${docker ? Trich("On the node host, run *sudo modprobe amneziawg*. If it fails, use *swg.sh update node*. Then click *Start interface*.") : Trich("Check the module for the running kernel on the node host, then click *Start interface*.")}
+      ${" "}<code>${reason}</code><//>`;
+  }
   const [a, b] = Tsplit("This interface is *down* on the node — its config below is read from the *.conf* (not live). The node reported: {reason}. Use *Start interface* — if the bring-up fails, the exact reason (port clash, a left-over kernel interface of the same name, an unsupported AmneziaWG parameter, …) shows here.", "reason");
   const rich = t => t.split("*").map((p, i) => (i % 2 ? html`<b>${p}</b>` : p));
   return html`<${Fragment}>${rich(a)}<code>${T(reason)}</code>${rich(b)}<//>`;
@@ -117,7 +122,7 @@ export function IfaceDetail({ node: rawNode, iface: rawIface }) {
       <div class="title"><h1>${iface}</h1><span class=${"iftype " + type + (type === "awg" && awgDict3(ap) ? " awg3" : "")} ...${tip3(type === "awg" && awgDict3(ap))}>${type}</span>${meta ? awgSwitchTag(node, iface) : null}${missIf ? html`<span class="nstat down"><${Ic} i="warn"/> ${T("tag|missing")}</span>` : ghostIf ? html`<span class="nstat down"><${Ic} i="warn"/> ${T("tag|ghost")}</span>` : istopped ? html`<span class="nstat stopped" title=${T("Stopped by you — Start it whenever you're ready")}><${Ic} i="stop"/> ${T("tag|stopped")}</span>` : idown ? html`<span class="nstat down" style="cursor:pointer" title=${(nrec.cmd_errors || {})[iface] || (T("down on the node — {v1}", { v1: idown }))} onClick=${() => openConfirm({ title: T("Interface down on the node"), log: (nrec.cmd_errors || {})[iface] || (T("down on the node — {v1}", { v1: idown })), confirmLabel: T("Close") })}><${Ic} i="warn"/> ${T("tag|down")}</span>` : live ? html`<span class="reporting">${T("reporting")}</span>` : html`<span class="nstat stale"><${Ic} i="info"/> ${T("stale")}</span>`}<span class="when"><${OnlinePeersTag} nodeId=${node} iface=${iface} total=${peers.length} orphans=${orphCount(node, iface)}/></span></div>
       <div class="grow"></div>
     </div>
-    ${idown ? html`<div class="notice warn"><${Ic} i="warn"/><span>${ifaceDownNote((nrec.cmd_errors || {})[iface] || idown)}</span>
+    ${idown ? html`<div class="notice warn"><${Ic} i="warn"/><span>${ifaceDownNote((nrec.cmd_errors || {})[iface] || idown, type, nrec.kind === "docker")}</span>
       ${
         (() => { const bi = brokenIface(node, iface); return bi ? html`<button class="btn btn-mini restore" style="margin-left:auto;flex:none" disabled=${!bi.ripe}
           title=${bi.ripe ? T("The device is gone from the node — rebuild it from the saved config with its original server key") : T("Confirming it's really down (a couple of minutes) before Rebuild is offered")}

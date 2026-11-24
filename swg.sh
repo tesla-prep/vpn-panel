@@ -195,6 +195,27 @@ install_awg_module() (
     printf 'net.ipv4.ip_forward = 1\n' > /etc/sysctl.d/90-swg-node.conf
 )
 
+ensure_awg_module() {
+    if [[ ! -d /sys/module/amneziawg ]] && ! modprobe amneziawg; then
+        printf 'Preparing AmneziaWG for running kernel %s.\n' "$(uname -r)" >&2
+        install_awg_module
+    fi
+}
+
+check_node_datapath() {
+    docker run --rm --network none --cap-add NET_ADMIN --entrypoint /bin/sh \
+        "ghcr.io/tesla-prep/swg-node:$1" -eu -c '
+            trap "ip link del swg-awg-check 2>/dev/null || true" EXIT
+            ip link add swg-awg-check type amneziawg
+            umask 077
+            { printf "[Interface]\nPrivateKey = %s\n" "$(awg genkey)"; /opt/swg-agent/swg-agent --awg-params 3.1; } > /tmp/awg-check.conf
+            awg setconf swg-awg-check /tmp/awg-check.conf
+            ip link del swg-awg-check
+            ip link add swg-awg-check type wireguard
+            wg show swg-awg-check
+        ' || die "VPN datapath check failed for kernel $(uname -r). Check the error above on the node host."
+}
+
 if [[ ${1:-} == --help || ${1:-} == -h ]]; then
     echo "$usage"
     exit 0
@@ -271,6 +292,9 @@ if $dry_run; then
     if [[ $action == update ]]; then
         current=$(installed_revision)
         echo "Would update SWG $role: $current -> $revision ($image_tag)."
+        if [[ $role == node ]]; then
+            echo 'Would prepare the AmneziaWG module if needed and verify the VPN datapath.'
+        fi
     else
         echo "Would install SWG $role in $install_dir using images tagged $image_tag."
         if $token_stdin; then
@@ -317,6 +341,10 @@ if [[ $action == install ]]; then
         configure_installation "$role"
     fi
 elif [[ $(installed_revision) == "$revision" ]]; then
+    if [[ $role == node ]]; then
+        ensure_awg_module
+        check_node_datapath "$image_tag"
+    fi
     echo "SWG $role is already at $revision."
     exit 0
 fi
@@ -350,18 +378,10 @@ done
 if [[ $role == node ]]; then
     if [[ $action == install ]]; then
         install_awg_module
+    else
+        ensure_awg_module
     fi
-    docker run --rm --network none --cap-add NET_ADMIN --entrypoint /bin/sh \
-        "ghcr.io/tesla-prep/swg-node:$image_tag" -eu -c '
-            trap "ip link del swg-awg-check 2>/dev/null || true" EXIT
-            ip link add swg-awg-check type amneziawg
-            umask 077
-            { printf "[Interface]\nPrivateKey = %s\n" "$(awg genkey)"; /opt/swg-agent/swg-agent --awg-params 3.1; } > /tmp/awg-check.conf
-            awg setconf swg-awg-check /tmp/awg-check.conf
-            ip link del swg-awg-check
-            ip link add swg-awg-check type wireguard
-            wg show swg-awg-check
-        '
+    check_node_datapath "$image_tag"
 elif [[ ! -s data/etc/auth ]]; then
     [[ $action == install ]] || die 'Panel credentials are missing.'
     install -d -m 0700 data/etc data/lib data/lib/subs data/stats

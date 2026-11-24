@@ -1003,6 +1003,26 @@ def _denied_error(msg):
     return None
 
 
+def _kernel_module_error(tool, msg):
+    if "Unknown device type" not in msg and "Protocol not supported" not in msg:
+        return None
+    kernel = os.uname().release
+    module = "amneziawg" if tool == "awg" else "wireguard"
+    detail = f"the {module} kernel module is unavailable on the node host (kernel {kernel})."
+    if _declarative():
+        hint = (f" Add it to the system configuration for the running kernel "
+                f"(on NixOS: boot.extraModulePackages = [ config.boot.kernelPackages.{module} ];), then rebuild.")
+    elif _IN_CONTAINER and tool == "awg":
+        hint = (" On the host, run sudo modprobe amneziawg. If that fails, run swg.sh update node "
+                "to prepare the module for the running kernel, then start the interface.")
+    elif tool == "awg":
+        hint = (f" Check dkms status and install the headers for {kernel}, then load the module "
+                "with sudo modprobe amneziawg.")
+    else:
+        hint = " On the host, check WireGuard support and run sudo modprobe wireguard."
+    return AgentError("no_module", detail + hint)
+
+
 def op_create_iface(cfg, req):
     iface = (req.get("iface") or "").strip()
     req_tool = (req.get("cmd") or ["awg"])[0]
@@ -1079,28 +1099,9 @@ def op_create_iface(cfg, req):
         _denied = _denied_error(msg)
         if _denied:
             raise _denied
-        if "Unknown device type" in msg or "Protocol not supported" in msg:
-            kr = os.uname().release
-            mod = "amneziawg" if tool == "awg" else "wireguard"
-            if _declarative():
-                raise AgentError("no_module",
-                                 f"the {mod} kernel module isn't built or loaded on this node (kernel {kr}), "
-                                 f"and this node's installation is managed declaratively. Add the module to the "
-                                 f"system configuration that declares this node — it must come from the same "
-                                 f"kernel package set as the running kernel (on NixOS: "
-                                 f"boot.extraModulePackages = [ config.boot.kernelPackages.{mod} ];) — and "
-                                 f"rebuild. The userspace datapath is the fallback if the module lags your "
-                                 f"kernel. Then the interface creates automatically on the next sync.")
-            if tool == "awg":
-                how = (f"sudo apt-get install -y dkms linux-headers-{kr} && "
-                       f"sudo apt-get install -y amneziawg && sudo modprobe amneziawg")
-            else:
-                how = "sudo apt-get install -y wireguard && sudo modprobe wireguard"
-            raise AgentError("no_module",
-                             f"the {mod} kernel module isn't built/loaded "
-                             f"on this node (kernel {kr}) — its DKMS module needs matching linux-headers. Run on the "
-                             f"node:  {how}  — then the interface creates automatically on the next sync. "
-                             f"(Re-running the node installer, or swg-update, does this for you.)")
+        module_error = _kernel_module_error(tool, msg)
+        if module_error:
+            raise module_error from e
         if "already exists" in msg.lower():
             raise AgentError("name_taken", f"an interface named {iface} already exists on this node - choose a free name")
         raise AgentError("up_failed", f"{tool}-quick up {iface} failed (port/subnet may be in use): {e}")
@@ -1244,10 +1245,10 @@ def op_restart_iface(cfg, req):
     try:
         _quick_up(tool, iface, target)
     except Exception as e:
-        _denied = _denied_error(str(e))
-        if _denied:
-            raise _denied
-        raise AgentError("up_failed", f"{tool}-quick up {iface} failed: {e}")
+        err = _denied_error(str(e)) or _kernel_module_error(tool, str(e))
+        if err:
+            raise err from e
+        raise AgentError("up_failed", f"{tool}-quick up {iface} failed: {e}") from e
     return {"iface": iface, "restarted": True}
 
 
@@ -1268,10 +1269,10 @@ def op_start_iface(cfg, req):
     try:
         _quick_up(tool, iface, _quick_target(ic, iface))
     except Exception as e:
-        _denied = _denied_error(str(e))
-        if _denied:
-            raise _denied
-        raise AgentError("up_failed", f"{tool}-quick up {iface} failed: {e}")
+        err = _denied_error(str(e)) or _kernel_module_error(tool, str(e))
+        if err:
+            raise err from e
+        raise AgentError("up_failed", f"{tool}-quick up {iface} failed: {e}") from e
     _unit = _iface_unit("enable", tool, iface)
     return {"iface": iface, "started": True, "unit_enabled": _unit}
 
