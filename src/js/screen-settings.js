@@ -904,7 +904,7 @@ export function PanelSettingsScreen() {
   const confirmDeleteList = l => openConfirm({ title: T("Delete custom list"), confirmLabel: T("Delete"), danger: true,
     body: Trich("Delete *{v1}*? It's removed from *every node* it's enabled on, and its interface rules stop matching on the next sync. This can't be undone.", { v1: l.title || T("Untitled list") }),
     onConfirm: () => persistLists(lists.filter(x => x._rid !== l._rid)) });
-    const SECTIONS = [["display", "Display"], ["security", "Authentication"], ["configs", "Client configs"], ["subs", "Subscriptions"], ["mesh", "Network"], ["links", "Mesh"], ["socks_pool", "SOCKS5 pool"], ["exits", "SOCKS5 exits"], ["defaults", "Interfaces"], ["turn", "Turn proxies"], ["routing", "Routing & Blocking"], ["geo", "Geo data providers"], ["integrations", "Integrations"], ["logs", "Logs"]]
+    const SECTIONS = [["display", "Display"], ["security", "Authentication"], ["configs", "Client configs"], ["subs", "Subscriptions"], ["mesh", "Network"], ["links", "Mesh"], ["exits", "SOCKS5 exits"], ["defaults", "Interfaces"], ["turn", "Turn proxies"], ["routing", "Routing & Blocking"], ["geo", "Geo data providers"], ["integrations", "Integrations"], ["logs", "Logs"]]
 const VK_LINK_PLACEHOLDER = "<PASTE VK CALL LINK>";
 
 const LOG_LEVEL_IDS = ["off", "error", "warning", "info", "debug"];
@@ -922,12 +922,12 @@ const logLeftLabel = s => s >= 3600
 
 const sectionLabel = k => ({
   display: T("Display"), security: T("Authentication"), access: T("Panel access"), configs: T("Client configs"),
-  subs: T("Subscriptions"), mesh: T("Network"), links: T("Mesh"), socks_pool: T("SOCKS5 pool"), exits: T("SOCKS5 exits"), defaults: T("Interfaces"),
+  subs: T("Subscriptions"), mesh: T("Network"), links: T("Mesh"), exits: T("SOCKS5 exits"), defaults: T("Interfaces"),
   turn: T("Turn proxies"), routing: T("Routing & Blocking"), geo: T("Geo data providers"),
   integrations: T("Integrations"), logs: T("Logs"),
 }[k] || k);
   const [selectedNode, setSelNode] = useState("");
-  const perNodeSection = section === "routing" || section === "mesh" || section === "links" || section === "exits";
+  const perNodeSection = section === "routing" || section === "mesh" || section === "links";
   const nodeRec = (Store.nodes || []).find(n => n.id === selectedNode) || (Store.nodes || [])[0];
   const selNode = nodeRec ? nodeRec.id : "";
   const nodeMode = nv(selNode, "routing_mode") || "kernel";
@@ -947,6 +947,7 @@ const sectionLabel = k => ({
       : html`<span class="lg-unused" title=${T("Held on this node, but no rule on it names this list.")}>${T("not used here")}</span>`; };
   const catInUseFleet = id => (Store.nodes || []).some(n => catInUse(id, n.id));
   const fleetNodes = Store.nodes || [];
+  const legacyExitNodes = section === "exits" ? fleetNodes.filter(n => (n.exits || []).some(x => x.provider === "socks5")) : [];
   const catOnNode = (id, nid) => ccOf(nid).includes(id);
   const setCatOnNode = (id, nid, on) => setNV(nid, { catalog_cats: on ? [...new Set([...ccOf(nid), id])] : ccOf(nid).filter(c => c !== id) });
   const removeCatFleet = id => { fleetNodes.forEach(n => { if (ccOf(n.id).includes(id)) setCatOnNode(id, n.id, false); }); setGridKeep(g => g.filter(x => x !== id)); };
@@ -1539,29 +1540,31 @@ const sectionLabel = k => ({
           <div class="row2"><div class="field"><label>${T("Top talkers")}</label><input type="text" inputmode="numeric" value=${topTalk} onDblClick=${e => e.target.select()} onInput=${e => { let v = e.target.value.replace(/[^0-9]/g, ""); if (+v > 50) v = "50"; setTopTalk(v); }} placeholder="10"/><div class="hint">${T("Number of peers in the Top talkers list (max 50).")}</div></div>
             <div class="field"><label>${T("Top destinations")}</label><input type="text" inputmode="numeric" value=${topDest} onDblClick=${e => e.target.select()} onInput=${e => { let v = e.target.value.replace(/[^0-9]/g, ""); if (+v > 50) v = "50"; setTopDest(v); }} placeholder="10"/><div class="hint">${T("Number of categories in the Top destinations list (max 50).")}</div></div></div>
         </div>` : null}
-        ${section === "socks_pool" ? html`<${SocksPoolForm}/>` : null}
-        ${section === "exits" ? html`<div class="card">
-          ${nodeRec ? html`<${Fragment}>
-            <div class="seclabel" style="margin-top:0">${T("{v1} — SOCKS5 exits", { v1: nodeRec.name })}</div>
-            <${NodeExitsForm} key=${selNode} node=${nodeRec} vals=${nodeEdits[selNode]} set=${p => setNV(selNode, p)}
+        ${section === "exits" ? html`<${Fragment}>
+          <${SocksPoolForm}/>
+          ${legacyExitNodes.length ? html`<details class="card">
+            <summary>${T("Previously configured node exits")}</summary>
+            ${legacyExitNodes.map(n => html`<div key=${n.id}>
+            <div class="seclabel">${T("{v1} — SOCKS5 exits", { v1: n.name })}</div>
+            <${NodeExitsForm} node=${n} vals=${nodeEdits[n.id]} set=${p => setNV(n.id, p)}
               goSection=${setSection} escrowOn=${ivkEscrowInit}
               saveExits=${async xs => {
-                const rr = await api.nodeUpdate({ id: selNode, exits: xs });
+                const rr = await api.nodeUpdate({ id: n.id, exits: xs });
                 if (!rr || !rr.ok) {
                   toast(exitRefusalText(rr && rr.refusal, rr && rr.device) || srvText(rr) || T("Couldn't save"), "err");
                   return false;
                 }
                 await Store.poll();
-                const fresh = nFields((Store.nodes || []).find(n => n.id === selNode) || {});
-                setNV(selNode, { exits: fresh.exits });
-                setOrig(o => ({ ...o, [selNode]: { ...(o[selNode] || {}), exits: fresh.exits.map(x => ({ ...x })) } }));
-                rebaseDefault(selNode, fresh);
+                const fresh = nFields((Store.nodes || []).find(x => x.id === n.id) || {});
+                setNV(n.id, { exits: fresh.exits });
+                setOrig(o => ({ ...o, [n.id]: { ...(o[n.id] || {}), exits: fresh.exits.map(x => ({ ...x })) } }));
+                rebaseDefault(n.id, fresh);
                 return true;
               }}
-              onBlock=${m => setExitWhy(w => (w[selNode] === m ? w : { ...w, [selNode]: m }))}/>
-          <//>`
-            : html`<p class="hint" style="margin:0">${T("No nodes yet — enroll a node to give it a way out that isn't its own address.")}</p>`}
-        </div>` : null}
+              onBlock=${m => setExitWhy(w => (w[n.id] === m ? w : { ...w, [n.id]: m }))}/>
+            </div>`)}
+          </details>` : null}
+        <//>` : null}
         ${section === "links" ? html`<${Fragment}><div class="card">
           <div class="seclabel" style="margin-top:0">${T("Mesh links")}</div>
           <p class="hint" style="margin:0 0 8px">${T("A full mesh links every pair of nodes: every leg is measured and a new forward target works at once, but each node carries one link per other node. On demand links only the pairs a forward or a smart rule routes over, and removes a link nothing has used for an hour.")}</p>
@@ -2283,32 +2286,67 @@ export const socksText = ex => { const s = (ex || {}).socks || {};
 function SocksPoolForm() {
   const profiles = Store.socksPool || [];
   const edit = profile => pushModal(html`<${SocksPoolEdit} profile=${profile}/>`);
+  const owners = new Map(Object.values(Store.roster.users || {}).filter(u => u.socks_profile).map(u => [u.socks_profile.id, u.name]));
+  const toggle = async (profile, enabled) => {
+    try {
+      const r = await api.socksPool({ id: profile.id, label: profile.label, enabled });
+      if (!r?.ok) return toast(srvText(r) || T("Couldn't save"), "err");
+      await Store.poll();
+    } catch (_) { toast(T("Couldn't save"), "err"); }
+  };
   return html`<div class="card">
-    <div class="seclabel" style="margin-top:0">${T("SOCKS5 pool")}</div>
-    <div class="hint">${T("Assign a profile to a user to use the same SOCKS5 account on any final node of their route.")}</div>
-    ${profiles.map(profile => {
-      const owner = Object.values(Store.roster.users || {}).find(u => u.socks_profile?.id === profile.id);
-      return html`<div class="row2" key=${profile.id} style="margin-top:10px">
-        <div><b>${profile.label}</b><div class="hint">${[socksText(profile), owner?.name, profile.enabled === false ? T("Disabled") : ""].filter(Boolean).join(" · ")}</div></div>
-        <div><button type="button" class="btn btn-ghost" onClick=${() => edit(profile)}>${T("Edit")}</button></div>
-      </div>`;
-    })}
-    <button type="button" class="btn btn-primary" style="margin-top:12px" onClick=${() => edit(null)}>${T("Add a SOCKS5 proxy")}</button>
+    <div class="seclabel" style="margin-top:0">${T("SOCKS5 exits")}</div>
+    <p class="hint" style="margin:0 0 14px">${T("Assign a profile to a user to use the same SOCKS5 account on any final node of their route.")}</p>
+    ${profiles.length ? html`<div class="exgrid g8 exgrid-pool">
+      <div class="exg-r"><div class="exg-h">${T("Title")}</div><div class="exg-h">${T("Proxy address")}</div>
+        <div class="exg-h">${T("val|Type")}</div><div class="exg-h">${T("Exit IP")}</div><div class="exg-h c">${T("Latency")}</div>
+        <div class="exg-h c">UDP</div><div class="exg-h c">${T("Active")}</div><div class="exg-h"></div></div>
+      ${profiles.map(profile => {
+        const result = profile.check?.result || {};
+        const addr = profile.socks?.host ? profile.socks.host + ":" + profile.socks.port : "—";
+        const origin = profile.check?.node ? Store.nodeName(profile.check.node) : "";
+        const testedNode = (Store.nodes || []).find(n => n.id === profile.check?.node);
+        const checkError = result.why && socksWhy(result.why, testedNode);
+        const owner = owners.get(profile.id);
+        return html`<div class="exg-r" key=${profile.id}>
+          <div class="exg-c clk" onClick=${() => edit(profile)}>${profile.label}${owner ? html`<span class="faint exg-dev" title=${owner}>${owner}</span>` : null}</div>
+          <div class="exg-c clk" onClick=${() => edit(profile)} title=${addr}>
+            ${profile.check ? html`<span class=${"exg-dot " + (result.why ? "down" : "up")} title=${checkError || T("Checked from {v1}", { v1: origin })}></span>` : null}
+            <span class="mono exg-dev">${addr}</span></div>
+          <div class="exg-c"><span class="exg-t exsocks">SOCKS5</span></div>
+          <div class="exg-c mono" title=${origin ? T("Checked from {v1}", { v1: origin }) : ""}>
+            <span class="exg-dev">${result.egress_ip || "—"}</span>${result.loc ? html`<span class="faint">${result.loc}</span>` : null}</div>
+          <div class="exg-c c mono">${Number.isFinite(result.rtt_ms) ? T("{v1} ms", { v1: result.rtt_ms }) : "—"}</div>
+          <${SocksUdpCell} value=${result.udp}/>
+          <div class="exg-c c" data-lbl=${T("Active")}><${Switch} on=${profile.enabled !== false} onChange=${v => toggle(profile, v)}/></div>
+          <div class="exg-c exg-act"><button type="button" class="exg-ed" title=${T("val|Edit")} onClick=${() => edit(profile)}><${Ic} i="pencil"/></button></div>
+        </div>`;
+      })}
+    </div>` : null}
+    <div class="exadd" style="margin-top:14px"><button type="button" class="btn btn-ghost btn-mini" onClick=${() => edit(null)}><${Ic} i="plus"/> ${T("Add a SOCKS5 proxy")}</button></div>
   </div>`;
 }
 
 function SocksPoolEdit({ profile }) {
+  useStore();
   const [label, setLabel] = useState(profile?.label || "");
   const [address, setAddress] = useState(socksText(profile));
   const [password, setPassword] = useState("");
   const [enabled, setEnabled] = useState(profile?.enabled !== false);
   const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const testNodes = (Store.nodes || []).filter(n => Store.stats[n.id]?.exit_kinds?.includes("socks5"));
+  const [testNode, setTestNode] = useState(profile?.check?.node || "");
+  const node = testNodes.find(n => n.id === testNode) || testNodes.find(n => Store.recon.nodeStatus[n.id] === "live");
+  const dirtyRef = useRef(false);
+  dirtyRef.current = label !== (profile?.label || "") || address !== socksText(profile) || !!password
+    || enabled !== (profile?.enabled !== false);
   const send = async body => {
     if (busy) return;
     setBusy(true);
     try {
       const result = await api.socksPool(body);
       if (!result?.ok) return setError(srvText(result) || T("Couldn't save"));
+      dirtyRef.current = false;
       closeModal();
       await Store.poll();
     } catch (_) { setError(T("Couldn't save")); }
@@ -2317,17 +2355,18 @@ function SocksPoolEdit({ profile }) {
   const remove = () => openConfirm({ title: T("Delete SOCKS5 profile"),
     body: T("Remove this profile from the shared SOCKS5 pool?"), confirmLabel: T("Delete"), danger: true,
     onConfirm: () => send({ id: profile.id, delete: true }) });
-  return html`<${Sheet} title=${profile?.label || T("Add a SOCKS5 proxy")} width=${600} foot=${footRow({
+  return html`<${Sheet} title=${profile?.label || T("Add a SOCKS5 proxy")} width=${600} dirtyRef=${dirtyRef} foot=${footRow({
     left: profile ? html`<button type="button" class="btn btn-danger" disabled=${busy} onClick=${remove}>${T("Delete")}</button>` : null,
     onCancel: closeModal, onAction: () => send({ id: profile?.id, label: label.trim(), enabled,
       socks_text: address.trim(), socks_pass: password || (profile?.socks?.has_pass ? Store.exitPassKeep : "") }),
     action: T("Save"), disabled: busy || !label.trim() || !address.trim()
   })}>
     <div class="field"><label>${T("Name")}</label><input value=${label} maxlength="40" onInput=${e => setLabel(e.target.value)}/></div>
-    <div class="field"><label>${T("Proxy address")}</label><input class="mono" ...${NOT_A_LOGIN} value=${address}
-      placeholder="host:port:user:password" spellcheck="false" onInput=${e => setAddress(e.target.value)}/></div>
-    <div class="field"><label>${T("Password")}</label><input type="password" ...${NOT_A_LOGIN} autocomplete="new-password"
-      value=${password} placeholder=${profile?.socks?.has_pass ? T("unchanged") : ""} onInput=${e => setPassword(e.target.value)}/></div>
+    <div class="field"><label>${T("Node for the test")}</label>
+      <${Dropdown} value=${node?.id || ""} onChange=${setTestNode} ariaLabel=${T("Node for the test")}
+        placeholder=${T("Choose a node")} options=${testNodes.map(n => ({ value: n.id, label: n.name }))}/></div>
+    <${SocksExitFields} key=${node?.id || ""} node=${node} ex=${profile || {}} isNew=${!profile} pool
+      sTxt=${address} setSTxt=${setAddress} sPass=${password} setSPass=${setPassword} dirtyRef=${dirtyRef}/>
     <label class="toggle-row"><${Switch} on=${enabled} onChange=${setEnabled}/><span>${T("Enabled")}</span></label>
     ${error ? html`<div class="formmsg err" role="alert">${error}</div>` : null}
   <//>`;
@@ -2363,9 +2402,19 @@ const NOT_A_LOGIN = { autocomplete: "off", "data-1p-ignore": "", "data-lpignore"
                       "data-protonpass-ignore": "", "data-form-type": "other" };
 const S5X_VIEW = { notes: false };
 
-function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirtyRef }) {
+function SocksUdpCell({ value }) {
+  const known = typeof value === "boolean";
+  const title = known ? (value ? T("UDP works") : T("UDP does not work")) : T("UDP: not checked yet");
+  return html`<div class="exg-c c" data-lbl="UDP" title=${title}>
+    ${known ? html`<span class=${"condot " + (value ? "on" : "note")}></span>` : null}
+    <span class=${known ? "" : "faint"}>${known ? (value ? T("udp|Yes") : T("udp|No")) : "—"}</span>
+  </div>`;
+}
+
+function SocksExitFields({ node, ex, isNew, pool = false, sTxt, setSTxt, sPass, setSPass, dirtyRef }) {
   const st = (ex && ex.socks) || {};
-  const live = (((node.exits || []).find(x => String(x.id) === String(ex.id)) || {}).live) || {};
+  const check = pool ? (ex.check?.node === node?.id ? ex.check?.result : null)
+    : (node.exits || []).find(x => String(x.id) === String(ex.id))?.live?.check;
   const [test, setTest] = useState(null);
   const [tmsg, setTmsg] = useState("");
   const [, bump] = useState(0);
@@ -2388,7 +2437,9 @@ function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirt
   const run = async () => {
     setTmsg(""); setTest(null);
     try {
-      const r = await api.exitTest({ node: node.id, exit_id: isNew ? "" : ex.id, socks_text: sTxt.trim(),
+      const r = await api.exitTest({ node: node.id,
+                                     ...(isNew ? {} : pool ? { profile_id: ex.id } : { exit_id: ex.id }),
+                                     socks_text: sTxt.trim(),
                                      socks_pass: sPass || (st.has_pass ? Store.exitPassKeep : "") });
       if (r && r.ok) return setTest(r.data);
       setTmsg(r && r.code === "busy" ? T("A test is already running on this node — try again in a moment.")
@@ -2396,10 +2447,10 @@ function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirt
             : srvText(r) || T("Couldn't start the test."));
     } catch (e) { setTmsg(T("Couldn't start the test.")); }
   };
-  const canTest = !pending && (sTxt.trim() || !isNew);
+  const canTest = !!node && !pending && (sTxt.trim() || !isNew);
   const key = e => { if (e.key === "Enter") { e.preventDefault(); if (canTest) run(); } };
   const says = test && !pending ? socksSays(test.result, node) : [];
-  const last = !test && !isNew ? socksSays(live.check, node) : [];
+  const last = !test && !isNew ? socksSays(check, node) : [];
   const line = ([tone, t]) => { const d = tone === "ok" ? "on" : tone === "warn" ? "note" : "blocked";
     return html`<div class=${"netgw t-" + d}><span class=${"condot " + d}></span><span>${t}</span></div>`; };
   return html`<div class="s5x">
@@ -2425,10 +2476,10 @@ function SocksExitFields({ node, ex, isNew, sTxt, setSTxt, sPass, setSPass, dirt
     </div>
     <${Disclosure} title=${T("How names and UDP work through this exit")} open=${S5X_VIEW.notes}
       onToggle=${() => { S5X_VIEW.notes = !S5X_VIEW.notes; bump(x => x + 1); }}>
-      <p class="hint">${T("Names are looked up by the proxy, not here: clients on this exit get stand-in addresses (198.19.x.x) that the proxy turns back into the name — so sites see a location that matches the exit. An app that keeps a stand-in address longer than a second can fail to connect once, after the exit restarts.")}</p>
-      <p class="hint">${T("A DNS server set for an interface that leaves by this exit is not used — the proxy resolves.")}</p>
+      ${!pool ? html`<p class="hint">${T("Names are looked up by the proxy, not here: clients on this exit get stand-in addresses (198.19.x.x) that the proxy turns back into the name — so sites see a location that matches the exit. An app that keeps a stand-in address longer than a second can fail to connect once, after the exit restarts.")}</p>
+      <p class="hint">${T("A DNS server set for an interface that leaves by this exit is not used — the proxy resolves.")}</p>` : null}
       <p class="hint">${T("A residential proxy may change its exit IP between checks — that is the provider, not a fault.")}</p>
-      ${node.kind === "docker" ? html`<p class="hint">${T("This is a Docker node: the SOCKS5 tunnel has no CPU cap of its own — the container's limit is its cap.")}</p>` : null}
+      ${node?.kind === "docker" ? html`<p class="hint">${T("This is a Docker node: the SOCKS5 tunnel has no CPU cap of its own — the container's limit is its cap.")}</p>` : null}
     <//>
   </div>`;
 }
@@ -2630,20 +2681,6 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
       }
       return r === true ? true : T("Couldn't save");
     }}/>`);
-  const openDialin = rec => openModal(html`<${DialinGenSheet} node=${node}
-    onCreate=${async (label, proto, typed) => { const r = await generate({ ...rec, label }, proto, typed);
-      if (r && r.info) { closeModal(); toast(r.info); return true; }
-      return r; }}
-    onPaste=${label => { closeModal(); openEdit({ ...rec, label }, true); }}/>`);
-  const add = p2 => {
-    const rec = { id: newExitId(), label: "", enabled: true, killswitch: false, device: "", ...p2 };
-    if (p2.dialin) return openDialin(rec);
-    if (p2.provider === "profile" || p2.provider === "socks5") return openEdit(rec, true);
-    write([...exits, rec]);
-  };
-  const exitKinds = [
-    [T("Add a SOCKS5 proxy"), { producer: "imported", provider: "socks5", socks_text: "", socks_pass: "" }, T("A SOCKS5 proxy's address and login")],
-  ];
   const del = ex => openConfirm({
     title: T("Remove this exit?"), confirmLabel: T("Remove"), danger: true,
     body: exitProv(ex) === "profile"
@@ -2660,14 +2697,13 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
     return html`<span class="exg-h8"><span class=${"exg-dot " + h.dot} title=${h.why}></span>
       ${exitHealthMark(h)}</span>`; };
   return html`<div>
-    ${isMobile() ? html`<button class="btn btn-primary m-addtop" onClick=${() => openModal(html`<${ExitKindSheet} kinds=${exitKinds} onPick=${add}/>`)}><${Ic} i="plus"/> ${T("Add an exit")}</button>` : null}
-    <p class="hint" style="margin:0 0 14px">${T("Configure SOCKS5 proxies here and assign an exit from the user card.")}</p>
-    ${exits.length ? html`<div class="exgrid g8">
+    ${exits.length ? html`<div class="exgrid g8 exgrid-udp">
       <div class="exg-r"><div class="exg-h">${T("Title")}</div>
       <div class="exg-h">${T("Device")}</div>
       <div class="exg-h">${T("val|Type")}</div>
       <div class="exg-h">${T("Exit IP")}</div>
       <div class="exg-h c">${T("Latency")}</div>
+      <div class="exg-h c">UDP</div>
       <div class="exg-h c">${T("Kill-switch")}</div>
       <div class="exg-h c">${T("Active")}</div>
       <div class="exg-h"></div></div>
@@ -2682,10 +2718,7 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
             ${dot(ex)}<span class="mono exg-dev">${ex.device || "—"}</span></div>
           <div class="exg-c clk" onClick=${() => openEdit(ex)}>
             ${(() => { const [bc, bl, bk] = exitBadge(ex, l); return html`<span class=${"exg-t " + bc} title=${bk || ""}>${bl}</span>`; })()}</div>
-          <div class="exg-c clk mono" onClick=${() => openEdit(ex)}
-            title=${exitProv(ex) === "socks5" ? (l.udp_ok === true ? T("UDP is carried — calls and games work through this exit.")
-              : l.udp_ok === false ? T("UDP is not carried — calls and games won't work through this exit. Other traffic is fine: QUIC falls back to TCP at once.")
-              : T("UDP: not checked yet")) : ""}>
+          <div class="exg-c clk mono" onClick=${() => openEdit(ex)}>
             ${(l.trace || {}).ip || html`<span class="faint">—</span>`}${exitProv(ex) === "socks5" && (l.trace || {}).loc
               ? html` <span class="faint">${l.trace.loc}</span>` : null}</div>
           <div class="exg-c c clk mono" onClick=${() => openEdit(ex)}>
@@ -2709,6 +2742,7 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
               ? T("~{v1} ms", { v1: Math.round(l.trace.tcp_ms * 10) / 10 })
               : html`<span class="faint">—</span>`;
               return html`<${Popover} hoverOnly cls="exlat-pop" popCls="netroute-bub exlat-bub" trigger=${html`<span class="exlat">${v}</span>`}>${why}<//>`; })()}</div>
+          <${SocksUdpCell} value=${l.udp_ok}/>
           <div class="exg-c c" data-lbl=${T("Kill-switch")} onClick=${stop}><${Switch} on=${!!ex.killswitch} title=${KS_TITLE()}
             onChange=${x => write(exits.map(y => (y.id === ex.id ? { ...y, killswitch: x } : y)))}/></div>
           <div class="exg-c c" data-lbl=${T("Active")} onClick=${stop}><${Switch} on=${!off} title=${ACTIVE_TITLE()}
@@ -2724,10 +2758,6 @@ export function NodeExitsForm({ node, vals, set, onBlock, goSection, escrowOn, s
       : null}
     ${exits.length ? null
       : html`<p class="hint" style="margin:0 0 12px">${T("No SOCKS5 exits on this node yet.")}</p>`}
-    ${isMobile() ? null : html`<div class="exadd" style="margin-top:14px">
-      ${exitKinds.map(([label, rec]) => html`<button class="btn btn-ghost btn-mini" onClick=${() => add(rec)}>
-        <${Ic} i="plus"/> ${label}</button>`)}
-    </div>`}
   </div>`;
 }
 function AddExitDeviceSheet({ onAdd, fields }) {

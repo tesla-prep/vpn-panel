@@ -10300,13 +10300,25 @@ def socks_pool_path(deps):
 
 
 def socks_pool_public(pool):
-    return [{"id": k, "label": e["label"], "enabled": e.get("enabled", True),
-             "socks": socks_public(e["socks"])} for k, e in sorted(pool.items(), key=lambda item: (item[1]["label"].casefold(), item[0]))]
+    profiles = []
+    with _EXIT_TESTS_LOCK:
+        for pid in _POOL_TESTS.keys() - pool.keys():
+            _POOL_TESTS.pop(pid)
+        for pid, entry in sorted(pool.items(), key=lambda item: (item[1]["label"].casefold(), item[0])):
+            item = {"id": pid, "label": entry["label"], "enabled": entry.get("enabled", True),
+                    "socks": socks_public(entry["socks"])}
+            test = _POOL_TESTS.get(pid)
+            if test and test["sig"] == _pool_exit(pid, entry)["cfg_sig"]:
+                item["check"] = {"node": test["node"], "result": test["result"]}
+            profiles.append(item)
+    return profiles
 
 
 EXIT_TEST_TTL = 90
 EXIT_TEST_KEEP = 600
 _EXIT_TESTS = {}
+_POOL_TESTS = {}
+_EXIT_TEST_SEQ = itertools.count()
 _EXIT_TESTS_LOCK = threading.Lock()
 _EXIT_TEST_WHY = ("unreachable", "refused", "timeout", "not_socks5", "auth_required", "auth_failed", "not_allowed",
                   "connect_failed")
@@ -10324,7 +10336,7 @@ def exit_test_view(rec, now):
             "age": int(now - rec["at"]), "result": rec["result"]}
 
 
-def exit_test_request(nid, exit_id, socks, snap, seen_age, stale_s, now=None):
+def exit_test_request(nid, exit_id, socks, snap, seen_age, stale_s, now=None, profile=None):
     now = time.time() if now is None else now
     if not isinstance(snap, dict) or not snap or seen_age is None or seen_age > stale_s:
         return 409, {"ok": False, "error": "the node is not reporting — a test would never be collected", "code": "offline"}
@@ -10338,7 +10350,7 @@ def exit_test_request(nid, exit_id, socks, snap, seen_age, stale_s, now=None):
             if cur["result"] is None:
                 return 409, {"ok": False, "error": "a test is already running on this node", "code": "busy"}
         rec = {"id": secrets.token_hex(8), "node": nid, "exit_id": str(exit_id or ""), "socks": dict(socks),
-               "at": now, "sent_at": 0, "result": None, "done_at": 0}
+               "at": now, "sent_at": 0, "result": None, "done_at": 0, "profile": profile, "seq": next(_EXIT_TEST_SEQ)}
         _EXIT_TESTS[nid] = rec
         return 200, {"ok": True, "data": exit_test_view(rec, now)}
 
@@ -10376,6 +10388,11 @@ def exit_test_absorb(nid, snap, now=None):
                          "udp": u if isinstance(u, bool) else None,
                          "rtt_ms": got.get("rtt_ms") if isinstance(got.get("rtt_ms"), int) and not isinstance(got.get("rtt_ms"), bool) else None}
         rec["done_at"], rec["socks"] = now, {}
+        if rec["profile"]:
+            pid, sig = rec["profile"]
+            previous = _POOL_TESTS.get(pid)
+            if not previous or rec["seq"] > previous["seq"]:
+                _POOL_TESTS[pid] = {"node": nid, "sig": sig, "seq": rec["seq"], "result": rec["result"]}
         return True
 
 
@@ -14648,6 +14665,8 @@ def api(method, path, qs, body, deps):
                    for u in roster_load(roster_path)["users"].values()):
                 return 409, {"ok": False, **perr("Remove the user assignment before deleting this SOCKS5 profile"), "code": "conflict"}
             del pool[profile_id]
+            with _EXIT_TESTS_LOCK:
+                _POOL_TESTS.pop(profile_id, None)
         else:
             label = str(body.get("label") or "").strip()[:40]
             if not label:
@@ -16581,14 +16600,22 @@ def api(method, path, qs, body, deps):
             return (200, {"ok": True, "data": _tv}) if _tv else (404, {"ok": False, "error": "no such test", "code": "not_found"})
         _was = next((x for x in (nodes[nid].get("exits") or []) if isinstance(x, dict)
                      and str(x.get("id")) == str(body.get("exit_id") or "") and isinstance(x.get("socks"), dict)), None)
-        _sk, _serr = socks_resolve(body.get("socks_text"), body.get("socks_pass"), (_was or {}).get("socks"))
+        profile_id = str(body.get("profile_id") or "")
+        if profile_id:
+            _was = socks_pool(deps).get(profile_id)
+            if not _was:
+                return 404, {"ok": False, **perr("SOCKS5 profile not found"), "code": "not_found"}
+        kept = (_was or {}).get("socks") or {}
+        _sk, _serr = socks_resolve(body.get("socks_text"), body.get("socks_pass"), kept)
         if _serr:
             return 400, {"ok": False, "error": _serr, "code": "bad_request"}
         _adv = ((deps.get("panel_settings") or {}).get("advanced") or {})
         _seen = (deps.get("node_seen") or {}).get(nid)
+        profile = ((profile_id, _pool_exit(profile_id, _was)["cfg_sig"])
+                   if profile_id and all(_sk.get(k) == kept.get(k) for k in ("host", "port", "user", "pass")) else None)
         return exit_test_request(nid, body.get("exit_id"), _sk, (deps.get("node_snaps") or {}).get(nid),
                                  (time.time() - _seen) if _seen else None,
-                                 max(5, int((_adv.get("node_stale_ms") or 30000) / 1000)))
+                                 max(5, int((_adv.get("node_stale_ms") or 30000) / 1000)), profile=profile)
 
     if method == "POST" and path == "/api/peers/update-target":
         pid = body.get("peer_id") or ""

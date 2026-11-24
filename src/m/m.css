@@ -793,6 +793,9 @@ html[data-ui="m"] {
   & .exgrid.g8 > .exg-r > :nth-child(6), & .exgrid.g8 > .exg-r > :nth-child(7) { text-align: left; gap: 10px; }
   & .exgrid.g8 > .exg-r > :nth-child(6)::before, & .exgrid.g8 > .exg-r > :nth-child(7)::before { content: attr(data-lbl); min-width: 96px; font-size: 13px; color: var(--dim); text-align: left; }
   & .exgrid.g8 > .exg-r > :nth-child(8) { grid-column: 2; grid-row: 4 / span 2; justify-self: end; align-self: center; }
+  & .exgrid.g8.exgrid-udp > .exg-r > :nth-child(8) { grid-column: 1; grid-row: 6; justify-self: stretch; justify-content: flex-start; gap: 10px; }
+  & .exgrid.g8.exgrid-udp > .exg-r > :nth-child(8)::before { content: attr(data-lbl); min-width: 96px; font-size: 13px; color: var(--dim); text-align: left; }
+  & .exgrid.g8.exgrid-udp > .exg-r > :nth-child(9) { grid-column: 2; grid-row: 4 / span 3; justify-self: end; align-self: center; }
   & .exgrid.g8 .exg-ed, & .exgrid.g8 .exg-qr, & .exgrid.g8 .exg-rm { width: 40px; height: 40px; }
   & .exgrid.g8x { display: flex; flex-direction: column; gap: 8px; margin: 0; }
   & .exgrid.g8x > .exg-r:first-child { display: none; }
