@@ -304,11 +304,21 @@ export function rulesTitle(nodeId) {
   return html`${T("Routing rules")}${w ? html` <span class="disc-wins">${w}</span>` : null}`;
 }
 
+function cascadeLabel(origin, path) {
+  const last = (Store.nodes || []).find(n => n.id === path.nodes.at(-1));
+  const proxy = (last?.exits || []).find(e => e.id === path.socks5 && e.enabled !== false);
+  const egress = path.socks5
+    ? ["SOCKS5 · " + (proxy ? exitLabel(proxy, last) : T("Unavailable proxy")), T("Internet")]
+    : T("Direct internet access");
+  return [origin, ...path.nodes].map(n => Store.nodeName(n)).concat(egress).join(" → ");
+}
+
 export function rulesSummary(nodeId, rows, catchAll) {
   const list = rows || [];
   const n = list.length;
   if (!n && catchAll?.action === "exit" && catchAll.enabled !== false)
-    return T("Everything else → {v1}", { v1: T("Forward to {node}", { node: Store.nodeName(catchAll.node) }) });
+    return T("Everything else → {v1}", { v1: catchAll.cascade ? cascadeLabel(nodeId, catchAll.cascade)
+      : T("Forward to {node}", { node: Store.nodeName(catchAll.node) }) });
   if (!n) return T("no rules yet");
   const a = { v1: n, v2: pluralWord(n, "rule") };
   const head = Trich("*{v1}* {v2}", a);
@@ -1530,16 +1540,19 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
   const rs = useReorder(dispRows.map(r => r._gid), ids => emit(ids.map(id => dispRows.find(r => r._gid === id)).filter(Boolean)), "y", { container: ".rrlist", card: ".rrrow" });
   const setRow = (gid, patch) => emit(dispRows.map(r => r._gid === gid ? { ...r, ...patch } : r));
   const addRow = () => emit([...dispRows, { _gid: newGid(), enabled: true, badges: [], action: others[0] ? "exit" : "direct", node: (others[0] || {}).id || "" }]);
-  const destLabelOf = r => r.action === "exit" ? T("Forward to {node}", { node: Store.nodeName(r.node) })
+  const destLabelOf = r => r.cascade ? cascadeLabel(node, r.cascade)
+    : r.action === "exit" ? T("Forward to {node}", { node: Store.nodeName(r.node) })
     : r.action === "dev" ? ((exits.find(x => String(x.id) === String(r.exit_id)) || {}).label || (exits.find(x => String(x.id) === String(r.exit_id)) || {}).device || T("an exit"))
     : r.action === "block" ? T("Block") : T("Direct (this node)");
-  const destVal = r => r.action === "exit" ? "exit|" + (r.node || "")
+  const destVal = r => r.cascade ? "cascade" : r.action === "exit" ? "exit|" + (r.node || "")
     : r.action === "dev" ? "dev|" + (r.exit_id || "") : r.action;
-  const onDest = (gid, v) => setRow(gid, destPatch(v));
-  const destPatch = v => { const [a, x] = v.split("|");
-    return a === "exit" ? { action: "exit", node: x, exit_id: "" }
-      : a === "dev" ? { action: "dev", exit_id: x, node: "" }
-      : { action: a, node: "", exit_id: "" }; };
+  const destIdentity = r => r.cascade ? JSON.stringify(r.cascade) : destVal(r);
+  const onDest = (row, v) => v === "cascade" ? openRule(row, true) : setRow(row._gid, destPatch(v));
+  const destPatch = (v, cascade) => {
+    const [a, x] = v.split("|");
+    if (a === "cascade") return { action: "exit", node: cascade.nodes[0], exit_id: "", cascade };
+    return { action: a, node: a === "exit" ? x : "", exit_id: a === "dev" ? x : "", cascade: undefined };
+  };
   const goneDest = v => {
     const [a, x] = String(v || "").split("|");
     if (a === "exit" && x && !others.some(n => n.id === x))
@@ -1556,6 +1569,7 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
     return [
       ...(withDefault && !nodeScope ? [{ value: "__dflt__", label: T("Node rules") }] : []),
       { value: "direct", label: T("Direct (this node)") },
+      ...(others.length || held === "cascade" ? [{ value: "cascade", label: T("Choose cascade and exit") }] : []),
       ...(others.length ? [{ group: T("Forward to node (cascade)"),
                              items: others.map(n => ({ value: "exit|" + n.id, label: T("Forward to {node}", { node: n.name }) })) }] : []),
       { value: "block", label: T("Block") },
@@ -1567,13 +1581,13 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
     aria-label=${T("Rule settings")} onClick=${open}><${Ic} i="sliders"/></button>`;
   const dipOn = !nodeScope && directIp !== undefined;
   const whoOf = useWhoReport(node, iface, dispRows.filter(r => r.who).map(r => r.who));
-  const openRule = row => row && pushModal(html`<${RuleSettingsSheet} node=${node} iface=${iface} row=${row} exitIps=${ips}
-    directIp=${dipOn ? directIp || "" : undefined} dests=${destOpts(false, destVal(row))} dest=${destVal(row)} mode=${_mode} nodeScope=${nodeScope}
-    onApply=${(v, who, xs, aud, dip, ports) => emit(dispRows.map(r => r._gid === row._gid
-      ? { ...r, ...destPatch(v), who: who || undefined, aud: nodeScope ? (aud || undefined) : r.aud, ports: nodeScope ? r.ports : (ports || undefined) } : r), undefined, xs, dip)}/>`);
-  const openCatch = () => pushModal(html`<${RuleSettingsSheet} node=${node} iface=${iface} everyone exitIps=${ips} nodeScope=${nodeScope}
-    directIp=${dipOn ? directIp || "" : undefined} row=${catchAll || { action: "direct" }} dests=${destOpts(true, catchVal)} dest=${catchVal} mode=${_mode}
-    onApply=${(v, _who, xs, _aud, dip) => setCatch(v, xs, dip)}/>`);
+  const openRule = (row, configure = false) => row && pushModal(html`<${RuleSettingsSheet} node=${node} iface=${iface} row=${row} exitIps=${ips}
+    directIp=${dipOn ? directIp || "" : undefined} dests=${destOpts(false, destVal(row))} dest=${configure ? "cascade" : destVal(row)} mode=${_mode} nodeScope=${nodeScope}
+    onApply=${(v, who, xs, aud, dip, ports, cascade) => emit(dispRows.map(r => r._gid === row._gid
+      ? { ...r, ...destPatch(v, cascade), who: who || undefined, aud: nodeScope ? (aud || undefined) : r.aud, ports: nodeScope ? r.ports : (ports || undefined) } : r), undefined, xs, dip)}/>`);
+  const openCatch = (configure = false) => pushModal(html`<${RuleSettingsSheet} node=${node} iface=${iface} everyone exitIps=${ips} nodeScope=${nodeScope}
+    directIp=${dipOn ? directIp || "" : undefined} row=${catchAll || { action: "direct" }} dests=${destOpts(true, catchVal)} dest=${configure ? "cascade" : catchVal} mode=${_mode}
+    onApply=${(v, _who, xs, _aud, dip, _ports, cascade) => setCatch(v, xs, dip, cascade)}/>`);
   const switchMode = target => { const mm = MODE_META[target] || {};
     openConfirm({ title: T("Switch {v1} to {v2}?", { v1: _nrec ? _nrec.name : T("this node"), v2: mm.label || target }), warn: true,
       confirmLabel: T("Switch mode"),
@@ -1585,20 +1599,18 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
         toast(T("Switched to {v1} — save to apply your rules.", { v1: mm.label || target }), "ok");
       } });
   };
-  const catchVal = !catchAll ? (nodeScope ? "direct" : "__dflt__")
-    : catchAll.action === "exit" ? "exit|" + (catchAll.node || "")
-    : catchAll.action === "dev" ? "dev|" + (catchAll.exit_id || "") : catchAll.action;
-  const setCatch = (v, xs, dip) => {
+  const catchVal = catchAll ? destVal(catchAll) : (nodeScope ? "direct" : "__dflt__");
+  const setCatch = (v, xs, dip, cascade) => {
     if (v === "__dflt__") return emit(dispRows, null, xs, dip);
-    const p = destPatch(v);
+    const p = destPatch(v, cascade);
     emit(dispRows, (p.action === "exit" && p.node) || (p.action === "dev" && p.exit_id)
       || p.action === "block" || p.action === "direct"
       ? { enabled: true, category: "all", ...p } : null, xs, dip); };
-  const onCatch = v => setCatch(v);
-  const lints = rowLints(dispRows, destVal, { mode: _mode, isName: _nameBadge });
+  const onCatch = v => v === "cascade" ? openCatch(true) : setCatch(v);
+  const lints = rowLints(dispRows, destIdentity, { mode: _mode, isName: _nameBadge });
   const nodeRows = _nlist && !catchAll ? rulesToRows(_nfall).rows : [];
   const nodeTaken = dispRows.map(r => (_mode === "sni" || _mode === "forcedns") && nodeRows.length
-    ? [...new Map(nodeRows.filter(nr => destVal(nr) !== destVal(r)).flatMap(nr => (nr.badges || [])
+    ? [...new Map(nodeRows.filter(nr => destIdentity(nr) !== destIdentity(r)).flatMap(nr => (nr.badges || [])
         .filter(nb => (r.badges || []).some(b => badgeCovers(b, nb)))).map(nb => [badgeIdentity(nb), nb])).values()] : []);
   const tier2All = tier2Count(dispRows, customListOf);
   return html`<div class="field">
@@ -1612,14 +1624,14 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
       const it = rs.item(row._gid);
       return html`<div key=${row._gid} class=${"rrrow rrrow-b" + it.cls + ((dupes.length || self || inert.length || takenBy.length || takenFew.length || row.locked) ? " warn" : "")} data-rid=${it.rid}>
         <span class="drag-grip" title=${T("Drag to reorder")} ...${rs.grip(row._gid)} dangerouslySetInnerHTML=${{ __html: GRIP_SVG }}></span>
-        ${(() => { const _xip = row.action === "exit" ? shownIps[row.node] : "", _dip = row.action === "direct" && dipOn ? directIp : "";
+        ${(() => { const _xip = row.action === "exit" && !row.cascade ? shownIps[row.node] : "", _dip = row.action === "direct" && dipOn ? directIp : "";
           const dest = html`${row.who ? html`<${WhoChip} who=${row.who} rep=${whoOf(row.who)} node=${node}/>` : null}
               ${row.ports ? html`<${PortChip} row=${row} mode=${_mode} blk=${blk}/>` : null}
               ${row.aud ? html`<span class="whochip" title=${row.aud === "local" ? T("This node's own clients") : T("Traffic cascaded in from other nodes")}><${Ic} i="users"/>${row.aud === "local" ? T("chip|own clients") : T("chip|cascaded in")}</span>` : null}
               ${_xip ? html`<${AsChip} ip=${_xip} node=${row.node}/>` : _dip ? html`<${AsChip} ip=${_dip} node=${node} direct/>` : null}
-              ${row.locked ? null : tuneBtn(row.who || row.aud || row.ports || _xip || _dip, () => openRule(row))}<span class="rrdest" title=${row.locked ? T("Stored as written — this rule is kept exactly as it is.") : ""}>
+              ${row.locked ? null : tuneBtn(row.cascade || row.who || row.aud || row.ports || _xip || _dip, () => openRule(row))}<span class="rrdest" title=${row.locked ? T("Stored as written — this rule is kept exactly as it is.") : ""}>
             <${Dropdown} disabled=${!!row.locked} value=${destVal(row)}
-              onChange=${v => onDest(row._gid, v)} options=${destOpts(false, destVal(row))}/>
+              onChange=${v => onDest(row, v)} options=${destOpts(false, destVal(row))}/>
           </span>`;
           const removeBtn = html`<button class="xbtn" title=${T("Remove rule")} onClick=${() => {
             const n = (row.badges || []).length;
@@ -1646,21 +1658,23 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
               : T("a more specific rule below wins these hosts for the people it names: {toks}", { toks: takenFew.slice(0, 3).map(b => targetLabel(b.kind, b.value)).join(", ") + (takenFew.length > 3 ? "…" : "") })}</span>`
           : nodeTaken[ri].length ? html`<span class="rrlint">${T("a more specific rule in this node's default wins these hosts: {toks}", { toks: nodeTaken[ri].slice(0, 3).map(b => targetLabel(b.kind, b.value)).join(", ") + (nodeTaken[ri].length > 3 ? "…" : "") })}</span>` : null}
         ${asns ? html`<${AsnHint} targets=${asns}/>` : null}
-        ${nodeScope && row.action === "exit" && row.node && row.aud !== "local" && others.some(n => n.id === row.node)
+        ${row.cascade ? html`<div class="hint rrnote">${cascadeLabel(node, row.cascade)}</div>` : null}
+        ${nodeScope && row.action === "exit" && !row.cascade && row.node && row.aud !== "local" && others.some(n => n.id === row.node)
           ? html`<div class="hint rrnote">${T("Traffic that came from {node} skips this rule — it would go back where it came from.", { node: Store.nodeName(row.node) })}</div>` : null}
       </div>`;
     })}</div>
     <div class="rrfoot">
       <span class="rrfoot-lead"><button class="btn btn-mini" onClick=${addRow}><${Ic} i="plus"/> ${T("Add rule")}</button><b class="rrfoot-label">${T("Everything else")}</b></span>
       <span class="tf-trail">
-        ${catchAll && catchAll.action === "exit" && ips[catchAll.node] ? html`<${AsChip} ip=${ips[catchAll.node]} node=${catchAll.node}/>`
+        ${catchAll && catchAll.action === "exit" && !catchAll.cascade && ips[catchAll.node] ? html`<${AsChip} ip=${ips[catchAll.node]} node=${catchAll.node}/>`
           : catchAll && catchAll.action === "direct" && dipOn && directIp ? html`<${AsChip} ip=${directIp} node=${node} direct/>` : null}
-        ${tuneBtn((catchAll && catchAll.action === "exit" && ips[catchAll.node]) || (catchAll && catchAll.action === "direct" && dipOn && directIp), openCatch)}
+        ${tuneBtn(catchAll?.cascade || (catchAll && catchAll.action === "exit" && ips[catchAll.node]) || (catchAll && catchAll.action === "direct" && dipOn && directIp), () => openCatch())}
         <span class="rrarrow">→</span>
         <span class="rrdest rrcatch"><${Dropdown} value=${catchVal}
           onChange=${onCatch} options=${destOpts(true, catchVal)}/></span>
       </span>
     </div>
+    ${catchAll?.cascade ? html`<div class="hint rrnote">${cascadeLabel(node, catchAll.cascade)}</div>` : null}
     ${!nodeScope && _nlist && !catchAll ? html`<div class="hint rrnote">${T("Node rules (Settings → Network)")} · ${nodeRows.slice(0, 10).map(r => html`<span>${(r.badges || []).slice(0, 3).map(b => b.t === "list" ? catLabelOf(b.id) : targetLabel(b.kind, b.value)).join(", ")}${(r.badges || []).length > 3 ? "…" : ""} → ${destLabelOf(r)}</span> · `)}${nodeRows.length > 10 ? T("…and {v1} more", { v1: nodeRows.length - 10 }) + " · " : ""}<span>${T("everything else")} → ${_ncatch ? (goneDest(destVal(_ncatch)) || {}).label || destLabelOf(_ncatch) : T("Direct (this node)")}</span></div>` : null}
     ${nodeScope && _mode === "sni_kernel" && ((((Store.stats || {})[node] || {}).smartroute || {}).src || 0) < 2 && dispRows.some(r => r.aud !== "local")
       ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Kernel SNI on this node can't match hostnames for traffic cascaded in — only IP addresses and networks apply to it.")}</span></div>` : null}
@@ -1785,6 +1799,20 @@ export function WhoPicker({ sel, setSel, here, cell, onTyped, empty }) {
 function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyone, exitIps, directIp, onApply, nodeScope }) {
   useStore();
   const [dest, setDest] = useState(dest0);
+  const [hops, setHops] = useState(() => row.cascade?.nodes || (row.node ? [row.node] : []));
+  const [proxy, setProxy] = useState(row.cascade?.socks5 || "");
+  const isCascade = dest === "cascade";
+  const last = (Store.nodes || []).find(n => n.id === hops.at(-1));
+  const proxies = (last?.exits || []).filter(e => exitProv(e) === "socks5" && e.enabled !== false);
+  const updateHops = nodes => {
+    if (hops.at(-1) !== nodes.at(-1) && proxy) setProxy(null);
+    setHops(nodes);
+  };
+  const hopOptions = (current = "") => (Store.nodes || [])
+    .filter(n => n.id !== node && (n.id === current || !hops.includes(n.id)))
+    .map(n => ({ value: n.id, label: n.name }));
+  const cascade = isCascade ? { nodes: hops, ...(proxy ? { socks5: proxy } : {}) } : null;
+  const pathBad = isCascade && (!hops.length || proxy === null);
   const [aud, setAud] = useState(nodeScope && !everyone ? (row.aud || "") : "");
   const [chosen, setChosen] = useState(!nodeScope && !everyone && !!row.who);
   const [sel, setSel] = useState(() => canonWho(row.who || {}));
@@ -1805,7 +1833,7 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
   const dIps = (dRec || {}).ips || [];
   const addr = asRec ? { node: asNode, ips: asIps, value: ip, set: setIp } : dRec ? { node, ips: dIps, value: dip, set: setDip } : null;
   const addrStale = !!(addr && addr.value && addr.ips.length && !addr.ips.includes(addr.value));
-  const key = JSON.stringify([dest, chosen, chosen ? sel : null, ips, aud, dip, withPorts ? [proto, plist] : null]);
+  const key = JSON.stringify([dest, cascade, chosen, chosen ? sel : null, ips, aud, dip, withPorts ? [proto, plist] : null]);
   if (base.current === null) base.current = key;
   dirtyRef.current = key !== base.current;
   const typedOnly = () => { if (cleanRef.current) cleanRef.current(); };
@@ -1814,8 +1842,8 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
   const here = peersOn(node, iface);
   const empty = chosen && !whoCount(sel);
   const c = whoTally(rep);
-  const apply = () => { if (empty || pBad) return; onApply(dest, chosen ? sel : null, ips, aud, directIp !== undefined ? dip : undefined,
-    withPorts && pc ? { proto: pc.proto, list: pc.list } : null);
+  const apply = () => { if (empty || pBad || pathBad) return; onApply(dest, chosen ? sel : null, ips, aud, directIp !== undefined ? dip : undefined,
+    withPorts && pc ? { proto: pc.proto, list: pc.list } : null, cascade);
     dirtyRef.current = false; if (cleanRef.current) cleanRef.current(); closeModal(); };
   const count = [sel.users.length ? plural(sel.users.length, "user") : "",
                  sel.peers.length ? plural(sel.peers.length, "device") : ""].filter(Boolean).join(", ");
@@ -1823,7 +1851,7 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
   return html`<${Sheet} title=${T("Rule settings")} width=${680} dirtyRef=${dirtyRef} closeRef=${closeRef} cleanRef=${cleanRef}
     foot=${html`<${Fragment}><span class="faint">${chosen && count ? T("{v1} chosen", { v1: count }) : ""}</span><span class="grow"></span>
       <button class="btn btn-ghost btn-dismiss" onClick=${() => (closeRef.current ? closeRef.current() : closeModal())}>${T("Cancel")}</button>
-      <button class="btn btn-primary" disabled=${empty || pBad} title=${empty ? T("Choose at least one person or device, or pick “Everyone on this interface”.") : ""} onClick=${apply}>${T("Apply")}</button><//>`}>
+      <button class="btn btn-primary" disabled=${empty || pBad || pathBad} title=${empty ? T("Choose at least one person or device, or pick “Everyone on this interface”.") : ""} onClick=${apply}>${T("Apply")}</button><//>`}>
     ${(() => {
       const b = (txt, color) => html`<b style=${color ? "color:" + color : ""}>${txt}</b>`;
       const k = kindOf(node, iface);
@@ -1846,6 +1874,31 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
       </div>
       ${note ? html`<div class="hint rs-where-note">${note}</div>` : null}
       ${addrStale ? html`<div class="hint err rs-where-note">${T("{v1} isn't reporting this address. Traffic on this rule leaves it with a source it can't receive replies on, so it goes nowhere until the address is back or you choose another.", { v1: Store.nodeName(addr.node) })}</div>` : null}`; })()}
+    ${isCascade ? html`<div class="field">
+      <label>${T("Cascade nodes in order")}</label>
+      ${hops.map((id, i) => {
+        const options = hopOptions(id);
+        if (!options.some(n => n.value === id)) options.unshift({ value: id, label: T("A node that is no longer here") });
+        return html`<div class="rs-cascade-hop" key=${id}>
+          <${Dropdown} value=${id} options=${options} ariaLabel=${T("Cascade node {v1}", { v1: i + 1 })}
+            onChange=${next => updateHops(hops.map((n, j) => j === i ? next : n))}/>
+          <button type="button" class="xbtn" title=${T("Remove cascade node")} aria-label=${T("Remove cascade node")}
+            onClick=${() => updateHops(hops.filter((_, j) => j !== i))}><${Ic} i="x"/></button>
+        </div>`;
+      })}
+      ${hopOptions().length ? html`<${Dropdown} value="" placeholder=${T("Add cascade node")} ariaLabel=${T("Add cascade node")}
+        options=${hopOptions()} onChange=${id => updateHops([...hops, id])}/>` : null}
+    </div>
+    ${hops.length ? html`<div class="field">
+      <label>${T("Internet access")}</label>
+      <${Dropdown} value=${proxy} ariaLabel=${T("Internet access")} placeholder=${T("Choose internet access")} onChange=${setProxy}
+        options=${[{ value: "", label: T("Direct internet access") },
+          ...(proxies.length ? [{ group: T("Via SOCKS5"), items: proxies.map(e => ({ value: e.id, label: exitLabel(e, last) })) }] : []),
+          ...(proxy && !proxies.some(e => e.id === proxy) ? [{ value: proxy, label: T("Unavailable proxy") }] : [])]}/>
+      ${proxy === null ? null : html`<div class="hint">${cascadeLabel(node, cascade)}</div>`}
+      ${(Store.nodes || []).some(n => (n.id === node || hops.includes(n.id)) && !n.cascade_paths_supported)
+        ? html`<div class="hint err">${T("All nodes in the cascade need an update before this route can carry traffic.")}</div>` : null}
+    </div>` : null}` : null}
     ${withPorts ? html`<div class="row2 rs-ports">
         <div class="field"><label>${T("Protocol")}</label>
           <div class="dpsw netsw-share netsw-aud" role="radiogroup" aria-label=${T("Protocol")}>${[["both", T("proto|Any")], ["tcp", "TCP"], ["udp", "UDP"]].map(([v, l]) => html`<button type="button" role="radio"
@@ -2239,7 +2292,7 @@ export const egressBody = eg => {
     const { legacy, catchAll } = eg;
     const rules = rowsToRules(eg.rows, catchAll);
     // Keep the original cascade until its rule is edited.
-    if (legacy && rules.length === 1 && catchAll?.enabled !== false && catchAll?.action === legacy.action
+    if (legacy && rules.length === 1 && !catchAll?.cascade && catchAll?.enabled !== false && catchAll?.action === legacy.action
         && (catchAll.node || "") === (legacy.node || "") && (catchAll.exit_id || "") === (legacy.exit_id || "")) {
       body = legacy.action === "exit"
         ? { egress_mode: "forward", egress_node: legacy.node, egress_ip: eg.exitIps?.[legacy.node] || "" }

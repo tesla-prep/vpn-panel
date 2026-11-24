@@ -12,6 +12,7 @@ const rowKey = r => [r.action || "exit",
                      r.action === "exit" ? (r.node || "") : r.action === "dev" ? (r.exit_id || "") : "",
                      ruleOn(r) ? 1 : 0].join("|") + (r.who ? "|" + JSON.stringify(canonWho(r.who)) : "")
                      + (r.aud ? "|aud:" + r.aud : "")
+                     + (r.cascade ? "|cascade:" + JSON.stringify(r.cascade) : "")
                      + ptKey(r);
 
 const ruleOn = r => r && r.ports && typeof r.ports === "object" ? r.ports.on === true
@@ -128,6 +129,7 @@ export function rulesToRows(rules) {
     rows.push({ _gid: newGid(), _key: key, _rowId: rowId, enabled: ruleOn(rule), action: rule.action || "exit",
                 node: rule.action === "exit" ? (rule.node || "") : "",
                 exit_id: rule.action === "dev" ? (rule.exit_id || "") : "", badges: badgesOf(rule),
+                ...(rule.action === "exit" && rule.cascade ? { cascade: rule.cascade } : {}),
                 ...(rule.who && typeof rule.who === "object" ? { who: canonWho(rule.who) } : {}),
                 ...(portsOf(rule) ? { ports: portsOf(rule) } : {}),
                 ...(rule.aud === "local" || rule.aud === "cascaded" ? { aud: rule.aud } : {}) });
@@ -144,7 +146,10 @@ export function rowsToRules(rows, catchAll) {
     if (!badges.length) continue;
     const base = { enabled: row.enabled !== false, action: row.action || "exit" };
     if (row._rowId) base.row_id = row._rowId;
-    if (base.action === "exit") base.node = row.node || "";
+    if (base.action === "exit") {
+      base.node = row.node || "";
+      if (row.cascade) base.cascade = row.cascade;
+    }
     if (base.action === "dev") base.exit_id = row.exit_id || "";
     if (row.who) { base.who = { on: base.enabled, ...canonWho(row.who) }; base.enabled = false; }
     if (row.aud === "local" || row.aud === "cascaded") base.aud = row.aud;

@@ -2746,7 +2746,7 @@ def _cascade_want_sig(fwd, exit_, smart=None, guard=(), nets=(), net_tables=(), 
     sig = set()
     for e in (guard or []):
         T = str(e["table"]); sig.add(f"T|{T}|prohibit||")
-        if e.get("scope") != "rule":
+        if e.get("scope") not in ("rule", "cascade"):
             sig.add(f"R|from|{e['subnet']}|{T}")
     for e in fwd:
         T = str(e["table"]); sig.add(f"R|from|{e['subnet']}|{T}")
@@ -2855,7 +2855,7 @@ def _ensure_fwd_iptables(fwd, exit_, default_wan, res, default_egress_ip="", dev
         res["errors"].append("cascade nat list: " + str(e)); nat = []
     want_dx = set()
     for e in _dx:
-        if e.get("scope") == "static-mesh":
+        if e.get("scope") in ("static-mesh", "cascade"):
             continue
         S, dev = e["subnet"], e["dev"]
         if not _WANIF_RE.match(str(dev or "")):
@@ -4579,7 +4579,7 @@ S5X_ARR_DNS_PRI = 6870
 def _s5x_rules(devexit, res):
     socks = _EXITS.get("socks") or {}
     _ifc = [e for e in devexit if e.get("dev") in socks and e.get("subnet")
-            and (e.get("scope") or "iface") != "rule"
+            and (e.get("scope") or "iface") not in ("rule", "cascade")
             and (e.get("scope") != "static" or not e.get("part"))]
     _full = {str(e["subnet"]) for e in _ifc if not e.get("part")}
     _fell = _s5x_arr_dns(sorted({str(e["subnet"]) for e in _ifc if e.get("part")} - _full), res, bool(socks))
@@ -8523,12 +8523,84 @@ def _prepare_static_guard(plan, node_cfg):
     _STATIC_EGRESS.update(active=[], blocked=sorted({e["key"] for e in guard}), ready=[])
 
 
+CASCADE_PATH_NET = ipaddress.IPv4Network("198.18.128.0/17")
+CASCADE_PATH_NFT = "swg_cascade_paths"
+_CASCADE_PATHS = {"rules": None, "ready": []}
+
+
+def _cascade_path_entries(plan):
+    origins, incoming = [], []
+    for group, entries in (("origin", origins), ("incoming", incoming)):
+        for e in (plan or {}).get(group) or ():
+            if not isinstance(e, dict) or not isinstance(e.get("table"), int) or not SWG_RT_BASE <= e["table"] <= SWG_RT_MAX:
+                continue
+            dev = e.get("dev")
+            if not isinstance(dev, str) or (dev and not _SRC_DEV_RE.fullmatch(dev)):
+                continue
+            try:
+                address = ipaddress.IPv4Address(e["address"])
+            except (KeyError, ValueError, TypeError):
+                continue
+            if address not in CASCADE_PATH_NET:
+                continue
+            if group == "incoming":
+                if not (_SRC_DEV_RE.fullmatch(str(e.get("iif") or "")) and re.fullmatch(r"[a-f0-9]{24}", str(e.get("key") or ""))):
+                    continue
+            elif not dev:
+                continue
+            entries.append({**e, "address": str(address)})
+    return origins, incoming
+
+
+def _ensure_cascade_path_rules(origins, incoming, links, wan, res):
+    links = sorted(set(links) | {e["iif"] for e in incoming})
+    table = CASCADE_PATH_NFT
+    lines = [f"table inet {table} {{}}", f"delete table inet {table}", f"table inet {table} {{"]
+    lines.append("  chain guard { type filter hook forward priority filter + 1; policy accept;")
+    for e in origins:
+        lines.append(f'    ct direction original meta mark {e["table"]} oifname != "{e["dev"]}" drop')
+    for e in incoming:
+        out = e["dev"] or wan
+        if out:
+            lines.append(f'    iifname "{e["iif"]}" ip saddr {e["address"]} oifname "{out}" accept')
+    if links:
+        iifs = ", ".join(f'"{dev}"' for dev in links)
+        lines.append(f"    iifname {{ {iifs} }} ip saddr {CASCADE_PATH_NET} drop")
+    lines += ["  }", "  chain source { type nat hook postrouting priority srcnat - 5; policy accept;"]
+    for e in origins:
+        lines.append(f'    meta mark {e["table"]} oifname "{e["dev"]}" ip saddr 0.0.0.0/0 snat ip to {e["address"]}')
+    lines += ["  }", "}"]
+    body = "\n".join(lines) + "\n"
+    if body == _CASCADE_PATHS["rules"] and run(["nft", "list", "table", "inet", table]).returncode == 0:
+        return True
+    result = run(["nft", "-f", "-"], input_text=body)
+    if result.returncode == 0:
+        _CASCADE_PATHS["rules"] = body
+        res["changed"] += 1
+        return True
+    res["errors"].append("cascade path rules: " + ((result.stderr or "").strip() or "nft failed")[:160])
+    return False
+
+
 def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_conn=None, panel_cfg=None):
     res = {"changed": 0, "errors": []}
     plan = plan or {}
     fwd = plan.get("forward") or []
     exit_ = plan.get("exit") or []
     devexit = plan.get("devexit") or []
+    origins, incoming = _cascade_path_entries(plan.get("cascade_paths"))
+    wan = _detect_wan()
+    _CASCADE_PATHS["ready"] = []
+    paths_ok = _ensure_cascade_path_rules(origins, incoming, _relay_links(node_cfg), wan, res)
+    if origins and not paths_ok:
+        origin_marks = {e["table"] for e in origins}
+        def block_path(e):
+            return ({k: v for k, v in e.items() if k not in ("table", "via_iface")} | {"action": "block"}
+                    if e.get("action") == "exit" and e.get("table") in origin_marks else e)
+        smart = dict(smart or {}, entries=[block_path(e) for e in (smart or {}).get("entries") or []])
+        if smart.get("arrivals"):
+            arr = smart["arrivals"]
+            smart["arrivals"] = dict(arr, entries=[block_path(e) for e in arr["entries"]])
     static_entries = _static_egress_entries(plan.get("static_egress"), devexit)
     _dxs = [dict(e, state=_devexit_state(e.get("dev") or "")) for e in devexit]
     for e in _dxs:
@@ -8552,7 +8624,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                          "egress_ip": str(e.get("egress_ip") or "").strip(),
                          **({"arr": True} if (e.get("subnet") or "") in _arr_raw else {})} for e in _dx_rep]
     _devfwd = [{"subnet": e["subnet"], "via_iface": e["dev"], "table": e["table"], "gw": e["gw"]}
-               for e in _dxs if e["state"] == "up" and e.get("scope") not in _STATIC_SCOPES | {"rule"}
+               for e in _dxs if e["state"] == "up" and e.get("scope") not in _STATIC_SCOPES | {"rule", "cascade"}
                and not (e["needs_gw"] and not e["gw"])]
     fwd = fwd + _devfwd
     _dxgw = {e["dev"]: e["gw"] for e in _dxs}
@@ -8661,7 +8733,7 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
             T = str(e["table"])
             run(["ip", "route", "replace", "prohibit", "default", "metric", str(DEVEXIT_GUARD_METRIC),
                  "table", T])
-            if (e["subnet"], T) not in _fwd_rules and e.get("scope") != "rule":
+            if (e["subnet"], T) not in _fwd_rules and e.get("scope") not in ("rule", "cascade"):
                 run(["ip", "rule", "add", "from", e["subnet"], "lookup", T, "priority", T])
             res["changed"] += 1
         for T, dev, _sg in sorted({(str(e["table"]), e["via_iface"], str(e.get("gw") or ""))
@@ -8780,6 +8852,13 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                 portok=(smart or {}).get("p2p_portok"),
                 fwd=(smart or {}).get("p2p_fwd"))
     _ensure_p2pfwd(_P2P["fwd"], node_cfg, res)
+    if paths_ok and incoming and not res["errors"]:
+        path_live = _cascade_live_sig({str(e["table"]) for e in incoming})
+        _CASCADE_PATHS["ready"] = sorted(e["key"] for e in incoming
+                                        if f'R|to|{e["address"]}|{e["table"]}' in path_live
+                                        and f'T|{e["table"]}|{e["address"]}|{e["iif"]}|' in path_live
+                                        and (f'R|from|{e["address"]}|{e["table"]}' in path_live
+                                             and f'T|{e["table"]}|default|{e["dev"]}|' in path_live if e["dev"] else wan))
     return res
 
 
@@ -11665,6 +11744,7 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
     snap["exits"] = list(_EXITS["list"])
     snap["exit_kinds"] = list(EXIT_KINDS)
     snap["static_egress"] = {"v": 1, **{k: _STATIC_EGRESS[k] for k in ("active", "blocked", "ready")}}
+    snap["cascade_paths"] = {"v": 1, "ready": _CASCADE_PATHS["ready"]}
     if hcfg.get("enabled", True):
         snap["health"] = collect_health(mounts=hcfg.get("mounts"))
     snap["inet"] = sample_inet(node_cfg, now)

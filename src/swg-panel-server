@@ -6689,6 +6689,11 @@ def mesh_need(nodes, deps):
     def want(a, b):
         if a and b and a != b and a in nodes and b in nodes:
             need.add(frozenset((a, b)))
+    def want_rule(origin, rule):
+        path = rule.get("cascade")
+        hops = [origin, *path["nodes"]] if path else [origin, rule.get("node")]
+        for a, b in zip(hops, hops[1:]):
+            want(a, b)
     for nid, n in nodes.items():
         if not isinstance(n, dict):
             continue
@@ -6705,11 +6710,11 @@ def mesh_need(nodes, deps):
             elif mode == "smart":
                 for r in (ov.get("routing") or []):
                     if rule_on(r) and r.get("action") == "exit":
-                        want(nid, str(r.get("node") or ""))
+                        want_rule(nid, r)
         if isinstance(n.get("default_routing"), list):
             for r in n["default_routing"]:
                 if isinstance(r, dict) and rule_on(r) and r.get("action") == "exit":
-                    want(nid, str(r.get("node") or ""))
+                    want_rule(nid, r)
         _pp = n.get("p2p") if isinstance(n.get("p2p"), dict) else {}
         if _pp.get("action") == "exit":
             want(nid, str(_pp.get("node") or ""))
@@ -9636,7 +9641,7 @@ _SNAP_SHAPE = {
     **dict.fromkeys(("iface_drops", "mesh_health"), (dict, dict)),
     "endpoint_host": (str, None),
     "udp_listen": (list, int),
-    **dict.fromkeys(("iface_key_sealed", "ip_forward", "relay", "rp_filter", "static_egress", "wdtt_key_sealed"), (dict, None)),
+    **dict.fromkeys(("cascade_paths", "iface_key_sealed", "ip_forward", "relay", "rp_filter", "static_egress", "wdtt_key_sealed"), (dict, None)),
 }
 _SNAP_SAID = set()
 
@@ -9870,6 +9875,7 @@ def _validate_routing(routing, nodes, nid, custom_list_ids=(), prev=(), snap=Non
     dropped = []
     _cat_idx, _cat_have = catalog_cached()
     clean = []
+    paths = None
     for r in routing:
         if not isinstance(r, dict):
             return None, "each routing rule must be an object", _dropped_report(dropped)
@@ -9919,8 +9925,16 @@ def _validate_routing(routing, nodes, nid, custom_list_ids=(), prev=(), snap=Non
             if tgt[3]:
                 out["patterns"] = tgt[3]
         if act == "exit":
-            en = (r.get("node") or "").strip()
-            if en not in nodes or en == nid:
+            path = r.get("cascade")
+            if path is not None:
+                if paths is None:
+                    paths = {_cascade_identity(n, p): p["address"] for n, _, p in _configured_cascades(nodes)}
+                path, error = _validate_cascade_path(path, nodes, nid, prev, paths)
+                if error:
+                    return None, error, _dropped_report(dropped)
+                out["cascade"] = path
+            en = path["nodes"][0] if path else str(r.get("node") or "").strip()
+            if not path and (en not in nodes or en == nid):
                 return None, f"rule for '{cat}': exit node must be another known node", _dropped_report(dropped)
             out["node"] = en
         if act == "dev":
@@ -9992,6 +10006,37 @@ def _validate_routing(routing, nodes, nid, custom_list_ids=(), prev=(), snap=Non
             out["ports"] = {"on": _on, "proto": pp, "list": pl}
         clean.append(out)
     return clean, None, _dropped_report(dropped)
+
+
+def _validate_cascade_path(path, nodes, origin, prev, paths):
+    hops = path.get("nodes") if isinstance(path, dict) else None
+    proxy = path.get("socks5", "") if isinstance(path, dict) else None
+    if (not isinstance(hops, list) or not hops or not all(isinstance(n, str) and n for n in hops)
+            or origin in hops or len(set(hops)) != len(hops) or not isinstance(proxy, str)):
+        return None, "Choose an ordered cascade of distinct nodes."
+    clean = {"nodes": hops, **({"socks5": proxy} if proxy else {})}
+    identity = _cascade_identity(origin, clean)
+    saved = any(isinstance(rule, dict) and rule.get("cascade")
+                and _cascade_identity(origin, rule["cascade"]) == identity for rule in prev or ())
+    if not saved:
+        if not all(n in nodes for n in hops):
+            return None, "A cascade node no longer exists."
+        exit_ = static_socks_exit(nodes, hops[-1], proxy) if proxy else None
+        if proxy and (not exit_ or exit_.get("enabled") is False):
+            return None, "Choose an enabled SOCKS5 proxy on the last node."
+    if identity not in paths:
+        used = set(paths.values())
+        size = CASCADE_PATH_NET.num_addresses
+        start = int(hashlib.sha256(json.dumps(identity).encode()).hexdigest(), 16) % size
+        for offset in range(size):
+            address = str(CASCADE_PATH_NET[(start + offset) % size])
+            if address not in used:
+                paths[identity] = address
+                break
+        else:
+            return None, "No addresses are available for another cascade."
+    clean["address"] = paths[identity]
+    return clean, None
 
 
 EXIT_ID_RE = re.compile(r"^[a-f0-9]{8}$")
@@ -11318,6 +11363,30 @@ def static_exit_state(uid, ref, nodes, snaps, origins):
     return "pending"
 
 
+CASCADE_PATH_NET = ipaddress.IPv4Network("198.18.128.0/17")
+
+
+def _cascade_identity(origin, path):
+    return origin, tuple(path["nodes"]), path.get("socks5", "")
+
+
+def cascade_path_key(origin, path):
+    return hashlib.sha256(json.dumps([_cascade_identity(origin, path), path["address"]]).encode()).hexdigest()[:24]
+
+
+def _configured_cascades(nodes, active=False):
+    for nid, node in nodes.items():
+        rules = list(node.get("default_routing") or [])
+        for group in ("ifaces", "wdtt", "csqtt"):
+            for ov in (node.get(group) or {}).values():
+                if (isinstance(ov, dict) and not ov.get("system")
+                        and (not active or iface_egress_mode(ov) == "smart")):
+                    rules.extend(ov.get("routing") or [])
+        for rule in rules:
+            if isinstance(rule, dict) and rule.get("action") == "exit" and rule.get("cascade"):
+                yield nid, rule, rule["cascade"]
+
+
 def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
     plans = {}
     clients = static_exit_clients(roster or {})
@@ -11325,6 +11394,8 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
     for _, (nid, xid), _, _, _ in clients:
         static_exits.setdefault(nid, set()).add(xid)
     static_routes = {}
+    paths = {cascade_path_key(nid, path): (nid, path)
+             for nid, rule, path in _configured_cascades(nodes, active=True) if rule_on(rule)}
 
     def _nlist(nid):
         v = (nodes.get(nid) or {}).get("default_routing")
@@ -11339,7 +11410,7 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
         for r in nl:
             if not isinstance(r, dict) or not rule_on(r) or r.get("aud") == "cascaded":
                 continue
-            if r.get("category") != "all" or r.get("action") == "block":
+            if r.get("category") != "all" or r.get("action") == "block" or r.get("cascade"):
                 return True
             if r.get("action") == "exit" and r.get("node") in nodes and r.get("node") != nid and all(_link_devs(nodes, nid, r["node"])):
                 return True
@@ -11395,12 +11466,13 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
             _into.setdefault(P, []).append((ipaddress.ip_network(S, strict=False), nid, name or S))
         return False
 
-    def add_exit(P, S, dev_p, T, X, W, base_p, personal=False):
+    def add_exit(P, S, dev_p, T, X, W, base_p, personal=False, explicit=False):
         sp = slot(P)
         if (S, dev_p, T) not in sp["_exit_seen"]:
             sp["_exit_seen"].add((S, dev_p, T))
             sp["exit"].append({"subnet": S, "via_iface": dev_p, "table": T, "egress_ip": X, "wan_iface": W,
-                               **({"personal": True} if personal else {})})
+                               **({"personal": True} if personal else {}),
+                               **({"explicit": True} if explicit else {})})
         if sp["allowed"].get(dev_p) != "0.0.0.0/0":
             cur = set(filter(None, (sp["allowed"].get(dev_p) or (base_p + "/32")).split(",")))
             cur |= {base_p + "/32", S if "/" in S else S + "/32"}
@@ -11489,6 +11561,10 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
                 cat, extra = _rc
                 if action != "exit":
                     smart_items.append((nid, None, S, cat, action, None, None, None, extra, r.get("who"), _pt, r.get("row_id")))
+                    return cat == "all"
+                if r.get("cascade"):
+                    key = cascade_path_key(nid, r["cascade"])
+                    smart_items.append((nid, key, S, cat, "cascade", None, None, None, extra, r.get("who"), _pt, r.get("row_id")))
                     return cat == "all"
                 P = r.get("node")
                 if not P or P not in nodes:
@@ -11582,7 +11658,7 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
                 p2p_items.append((nid, _kd, _k, _dn, _dp, _bp, _ns, _ks, _eg, _gw))
         if _nlist(nid) is not None and _arr_ok(nid):
             for _r in _nlist(nid):
-                if (isinstance(_r, dict) and rule_on(_r) and _r.get("action") == "exit" and _r.get("aud") != "local"
+                if (isinstance(_r, dict) and rule_on(_r) and _r.get("action") == "exit" and not _r.get("cascade") and _r.get("aud") != "local"
                       and _r.get("node") in nodes and _r.get("node") != nid and all(_link_devs(nodes, nid, _r["node"]))
                       and _r["node"] not in targets):
                     targets.append(_r["node"])
@@ -11609,6 +11685,61 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
             seen.add(k)
             sp_["devexit"].append(ent)
 
+    def _path_origin(nid, key, subnets):
+        sn = slot(nid)
+        if key not in ready_paths:
+            return {"action": "block"}
+        alias, dev, table = ready_paths[key]
+        origin = {"table": table, "dev": dev, "address": alias}
+        wire = sn.setdefault("cascade_paths", {}).setdefault("origin", [])
+        if origin not in wire:
+            wire.append(origin)
+        for subnet in subnets:
+            _dx_add(sn, {"subnet": subnet, "dev": dev, "table": table, "scope": "cascade", "killswitch": True})
+        return {"action": "exit", "via_iface": dev, "table": table}
+
+    # Give each route its own source on the mesh. Rules sharing the same first
+    # link can then select different next hops and different last-node exits.
+    counts = collections.Counter(path["address"] for _, path in paths.values())
+    ready_paths = {}
+    for key, (nid, path) in sorted(paths.items()):
+        hops = [nid, *path["nodes"]]
+        alias = path["address"]
+        if counts[alias] != 1 or any(n not in nodes for n in hops):
+            continue
+        reports = [((snaps or {}).get(n) or {}).get("cascade_paths") or {} for n in hops]
+        if not all(isinstance(r, dict) and r.get("v") == 1 for r in reports):
+            continue
+        proxy = path.get("socks5")
+        dev = ""
+        if proxy:
+            exit_cfg = static_socks_exit(nodes, hops[-1], proxy) or {}
+            dev = str(exit_cfg.get("device") or "")
+            if exit_cfg.get("enabled") is False or not (dev.startswith("s5x-") and _WANIF_RE.fullmatch(dev)):
+                continue
+        links = [_link_devs(nodes, a, b) for a, b in zip(hops, hops[1:])]
+        if any(not all(link) for link in links):
+            continue
+        tables = [SWG_RT_BASE + len(slot(n)["_targets"]) for n in hops]
+        if any(t > SWG_RT_MAX for t in tables):
+            continue
+        for n, t in zip(hops, tables):
+            slot(n)["_targets"]["cascade:" + key] = t
+        for i, (a, b, (outgoing, incoming, peer_ip)) in enumerate(zip(hops, hops[1:], links)):
+            slot(a)["allowed"][outgoing] = "0.0.0.0/0"
+            sn = slot(b)
+            table = tables[i + 1]
+            next_dev = links[i + 1][0] if i + 1 < len(links) else dev
+            add_exit(b, alias, incoming, table, "", "", peer_ip, personal=bool(next_dev), explicit=True)
+            sn.setdefault("cascade_paths", {}).setdefault("incoming", []).append(
+                {"key": key, "address": alias, "iif": incoming, "dev": next_dev, "table": table})
+            if next_dev:
+                sn["forward"].append({"subnet": alias, "via_iface": next_dev, "table": table})
+            if next_dev and i + 1 == len(links):
+                _dx_add(sn, {"subnet": alias, "dev": next_dev, "table": table, "scope": "rule", "killswitch": True})
+        if all(isinstance(r.get("ready"), list) and key in r["ready"] for r in reports[1:]):
+            ready_paths[key] = (alias, links[0][0], tables[0])
+
     for (nid, P, S, dev_n, dev_p, base_p, X, W) in fwd_items:
         T = slot(nid)["_targets"].get(P)
         if T is None or T > SWG_RT_MAX:
@@ -11626,7 +11757,9 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
 
     for (nid, P, S, cat, action, dev_n, dev_p, base_p, extra, who, ports, row_id) in smart_items:
         sn = slot(nid)
-        if action == "exit":
+        if action == "cascade":
+            entry = {**_path_origin(nid, P, [S]), "subnet": S, "category": cat}
+        elif action == "exit":
             T = sn["_targets"].get(P)
             if T is None or T > SWG_RT_MAX:
                 continue
@@ -11745,7 +11878,7 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
         sp = slot(P)
         _via = {}
         for e in sp["exit"]:
-            if e.get("personal") or (sp.get("_hop2") or {}).get(e["subnet"]):
+            if e.get("personal") or e.get("explicit") or (sp.get("_hop2") or {}).get(e["subnet"]):
                 continue
             _via.setdefault(e["subnet"], set()).add(e["via_iface"])
         _pinned = {e["subnet"] for e in sp["exit"] if str(e.get("egress_ip") or "") or str(e.get("wan_iface") or "")}
@@ -11766,7 +11899,10 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
             if not _rc:
                 continue
             cat, extra = _rc
-            if action == "exit":
+            if action == "exit" and r.get("cascade"):
+                key = cascade_path_key(P, r["cascade"])
+                ent = {"category": cat, **_path_origin(P, key, subs)}
+            elif action == "exit":
                 Q = r.get("node")
                 if not Q or Q not in nodes or Q == P:
                     continue
@@ -14145,6 +14281,7 @@ def api(method, path, qs, body, deps):
                                   for e in (c.get("exits") or []) if isinstance(e, dict)],
                         "exits_unsupported": _x_unsup,
                         **({"static_exit_supported": True} if static_exit_supported(snap) else {}),
+                        **({"cascade_paths_supported": True} if (snap.get("cascade_paths") or {}).get("v") == 1 else {}),
                         "exit_candidates": [dict(x, offerable=(w is None), why_not=(w or ""))
                                             for x, w in ((x, _exr(x.get("name")))
                                                          for x in (snap.get("exit_candidates") or []))],
@@ -19315,6 +19452,7 @@ class Handler(BaseHTTPRequestHandler):
                                 "turn": node.get("turn") or {},
                                 "iface_key": node.get("iface_key") or {},
                                 "cascade": {"forward": my_plan.get("forward") or [], "exit": my_plan.get("exit") or [],
+                                            **({"cascade_paths": my_plan["cascade_paths"]} if my_plan.get("cascade_paths") else {}),
                                             **({"static_egress": my_plan["static_egress"]} if my_plan.get("static_egress") else {}),
                                             "devexit": my_plan.get("devexit") or []},
                                 "exits": [{"id": x.get("id"), "device": x.get("device"),

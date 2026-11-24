@@ -1544,6 +1544,8 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
 .rs-where .field{margin-bottom:6px}
 .rs-where .rsdest{max-width:none}
 .rs-where-note{margin:0 0 14px}
+.rs-cascade-hop{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.rs-cascade-hop .dropdown{flex:1;min-width:0}
 .rs-ports{margin-bottom:0;align-items:flex-start}
 .rs-ports .field{margin-bottom:6px}
 @media (max-width:640px){.rs-ports{flex-direction:column;align-items:stretch;gap:0}}
