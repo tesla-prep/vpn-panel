@@ -10177,15 +10177,19 @@ _SOCKS_NOT = ("this is not a SOCKS5 proxy address — the panel speaks SOCKS5 on
 _SOCKS_HOST_RE = re.compile(r"(?=.{1,253}$)[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*\.?")
 
 
-def parse_socks_text(text):
+PROXY_KINDS = ("socks5", "http")
+
+
+def parse_socks_text(text, provider="socks5"):
     t = str(text or "").strip()
     if not t:
         return None, "paste the proxy's address"
     m = re.match(r"([A-Za-z][A-Za-z0-9+.-]*)://", t)
     url = bool(m)
     if m:
-        if m.group(1).lower() not in ("socks5", "socks5h"):
-            return None, _SOCKS_NOT
+        schemes = ("http",) if provider == "http" else ("socks5", "socks5h")
+        if m.group(1).lower() not in schemes:
+            return None, "Use an http:// address for HTTP CONNECT." if provider == "http" else _SOCKS_NOT
         t = t[m.end():].rstrip("/")
     if any(c.isspace() for c in t):
         return None, "the proxy address has a space in it"
@@ -10215,7 +10219,8 @@ def parse_socks_text(text):
         if len(parts) == 4 and not _at and len(_real) == 1:
             reads = set(_real)
     if len(reads) > 1:
-        return None, "this proxy address can be read more than one way — paste it as socks5://user:password@host:port"
+        return None, ("this proxy address can be read more than one way — paste it as http://user:password@host:port"
+                      if provider == "http" else "this proxy address can be read more than one way — paste it as socks5://user:password@host:port")
     if url:
         cred, _, hp = t.rpartition("@") if "@" in t else ("", "", t)
         user, _, pw = cred.partition(":")
@@ -10250,20 +10255,22 @@ def parse_socks_text(text):
         return None, "the proxy login has a control character in it"
     if pw and not user:
         return None, "the proxy has a password but no user name"
+    if provider == "http" and ":" in user:
+        return None, "HTTP Basic authentication does not allow a colon in the user name."
     return {"host": host.rstrip(".").lower(), "port": int(port), "user": user, "pass": pw}, ""
 
 
-def socks_resolve(text, pw, kept):
+def socks_resolve(text, pw, kept, provider="socks5"):
     kept = kept if isinstance(kept, dict) else {}
     t = str(text or "").strip()
     if t:
-        sk, err = parse_socks_text(t)
+        sk, err = parse_socks_text(t, provider)
         if err:
             return None, err
     elif kept.get("host"):
         sk = {k: kept.get(k) or ("" if k != "port" else 0) for k in ("host", "port", "user", "pass")}
     else:
-        return None, "paste the SOCKS5 proxy's address"
+        return None, "paste the proxy's address"
     new = pw[:255] if isinstance(pw, str) and pw and pw != EXIT_PASS_KEEP else ""
     pasted = bool(t and sk["pass"])
     if new and not pasted:
@@ -10278,17 +10285,21 @@ def socks_resolve(text, pw, kept):
             sk["pass"] = ""
     if sk["pass"] and not sk["user"]:
         return None, "the proxy has a password but no user name"
+    if provider == "http" and ":" in sk["user"]:
+        return None, "HTTP Basic authentication does not allow a colon in the user name."
     if any(ord(ch) < 32 for ch in sk["pass"]):
         return None, "the proxy login has a control character in it"
     return sk, ""
 
 
 def exit_kind_refusal(snap, kind, name="this node"):
-    if kind != "socks5":
+    if kind not in PROXY_KINDS:
         return None
     _k = (snap or {}).get("exit_kinds")
     if isinstance(_k, list) and kind in _k:
         return None
+    if kind == "http":
+        return perr("{v1}: update the node to use HTTP CONNECT proxies", v1=name)
     return perr("{v1}: this node cannot run a SOCKS5 exit yet — update the node to 1.8.11", v1=name)
 
 
@@ -10326,7 +10337,7 @@ def socks_pool_public(pool):
     profiles = []
     for pid, entry in sorted(pool.items(), key=lambda item: (item[1]["label"].casefold(), item[0])):
         item = {"id": pid, "label": entry["label"], "enabled": entry.get("enabled", True),
-                "socks": socks_public(entry["socks"])}
+                "provider": entry.get("provider", "socks5"), "socks": socks_public(entry["socks"])}
         test = entry.get("check")
         if test and test["sig"] == _pool_exit(pid, entry)["cfg_sig"]:
             item["check"] = {"node": test["node"], "result": test["result"]}
@@ -10338,8 +10349,8 @@ EXIT_TEST_TTL = 90
 EXIT_TEST_KEEP = 600
 _EXIT_TESTS = {}
 _EXIT_TESTS_LOCK = threading.Lock()
-_EXIT_TEST_WHY = ("unreachable", "refused", "timeout", "not_socks5", "auth_required", "auth_failed", "not_allowed",
-                  "connect_failed")
+_EXIT_TEST_WHY = ("unreachable", "refused", "timeout", "not_socks5", "not_http", "auth_required", "auth_failed", "not_allowed",
+                  "connect_failed", "dns_failed")
 
 
 def _exit_test_expire(rec, now):
@@ -10354,11 +10365,11 @@ def exit_test_view(rec, now):
             "age": int(now - rec["at"]), "result": rec["result"]}
 
 
-def exit_test_request(nid, exit_id, socks, snap, seen_age, stale_s, now=None, profile=None):
+def exit_test_request(nid, exit_id, socks, snap, seen_age, stale_s, now=None, profile=None, provider="socks5"):
     now = time.time() if now is None else now
     if not isinstance(snap, dict) or not snap or seen_age is None or seen_age > stale_s:
         return 409, {"ok": False, "error": "the node is not reporting — a test would never be collected", "code": "offline"}
-    _no = exit_kind_refusal(snap, "socks5")
+    _no = exit_kind_refusal(snap, provider)
     if _no:
         return 400, {"ok": False, **_no, "code": "unsupported"}
     with _EXIT_TESTS_LOCK:
@@ -10368,7 +10379,7 @@ def exit_test_request(nid, exit_id, socks, snap, seen_age, stale_s, now=None, pr
             if cur["result"] is None:
                 return 409, {"ok": False, "error": "a test is already running on this node", "code": "busy"}
         rec = {"id": secrets.token_hex(8), "node": nid, "exit_id": str(exit_id or ""), "socks": dict(socks),
-               "at": now, "sent_at": 0, "result": None, "done_at": 0, "profile": profile}
+               "at": now, "sent_at": 0, "result": None, "done_at": 0, "profile": profile, "provider": provider}
         _EXIT_TESTS[nid] = rec
         return 200, {"ok": True, "data": exit_test_view(rec, now)}
 
@@ -10386,7 +10397,7 @@ def exit_test_reply(nid, now=None):
             return None
         rec["sent_at"] = rec["sent_at"] or now
         sk = rec["socks"]
-        return {"id": rec["id"], "host": sk.get("host") or "", "port": sk.get("port") or 0, "user": sk.get("user") or "",
+        return {"id": rec["id"], "provider": rec["provider"], "host": sk.get("host") or "", "port": sk.get("port") or 0, "user": sk.get("user") or "",
                 "pass": sk.get("pass") or ""}
 
 
@@ -11623,7 +11634,7 @@ def _pool_sources(roster):
 
 def _pool_exit(profile_id, profile):
     xid = "p" + profile_id
-    out = {"id": xid, "device": "s5x-" + xid, "provider": "socks5",
+    out = {"id": xid, "device": "s5x-" + xid, "provider": profile.get("provider", "socks5"),
            "socks": profile["socks"], "enabled": True}
     out["cfg_sig"] = exit_cfg_sig(out)
     return out
@@ -12042,9 +12053,13 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None, pool=None):
         proxy = path.get("socks5")
         profile_id = path.get("profile")
         dev = ""
+        http_proxy = False
         if profile_id:
             profile = pool.get(profile_id)
             if not profile or profile.get("enabled") is False or reports[-1].get("v") != 2:
+                continue
+            http_proxy = profile.get("provider") == "http"
+            if http_proxy and any(exit_kind_refusal((snaps or {}).get(node), "http") for node in (nid, hops[-1])):
                 continue
             dev = _pool_exit(profile_id, profile)["device"]
         elif proxy:
@@ -12075,6 +12090,7 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None, pool=None):
             add_exit(b, alias, incoming, table, x, w, peer_ip, personal=bool(next_dev), explicit=True)
             sn.setdefault("cascade_paths", {}).setdefault("incoming", []).append(
                 {"key": key, "address": alias, "iif": incoming, "dev": next_dev, "table": table,
+                 **({"http_dns": True} if http_proxy and i + 1 == len(links) else {}),
                  **({"wan_iface": w} if w else {})})
             if next_dev:
                 sn["forward"].append({"subnet": alias, "via_iface": next_dev, "table": table})
@@ -12091,7 +12107,8 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None, pool=None):
                     healthy[key] = (alias, first, tables[0])
             sn = slot(nid)
             sn.setdefault("cascade_paths", {}).setdefault("origin", []).append(
-                {"table": tables[0], "dev": first, "address": alias, "probe": key})
+                {"table": tables[0], "dev": first, "address": alias, "probe": key,
+                 **({"http_dns": True} if http_proxy else {})})
             _dx_add(sn, {"subnet": alias, "dev": first, "table": tables[0], "scope": "cascade", "killswitch": True})
         elif installed:
             ready_paths[key] = (alias, first, tables[0])
@@ -14819,27 +14836,30 @@ def api(method, path, qs, body, deps):
         profile_id = body.get("id") or ""
         kept = pool.get(profile_id) if isinstance(profile_id, str) else None
         if profile_id and not kept:
-            return 404, {"ok": False, **perr("SOCKS5 profile not found"), "code": "not_found"}
+            return 404, {"ok": False, **perr("Proxy profile not found"), "code": "not_found"}
         if body.get("delete") is True:
             if not kept:
-                return 400, {"ok": False, **perr("Choose a SOCKS5 profile"), "code": "bad_request"}
+                return 400, {"ok": False, **perr("Choose a proxy profile"), "code": "bad_request"}
             owner = next((u.get("name") or uid for uid, u in roster_load(roster_path)["users"].items()
                           if (u.get("socks_profile") or {}).get("id") == profile_id), None)
             if owner is not None:
-                return 409, {"ok": False, **perr("Remove the SOCKS5 assignment in {v1}'s user card first",
+                return 409, {"ok": False, **perr("Remove the proxy assignment in {v1}'s user card first",
                                                  v1=owner), "code": "conflict"}
             fixed = next((nid for nid, _, rule_path in _configured_cascades(nodes)
                           if rule_path.get("profile") == profile_id), None)
             if fixed is not None:
-                return 409, {"ok": False, **perr("A routing rule on {v1} still uses this SOCKS5 profile",
+                return 409, {"ok": False, **perr("A routing rule on {v1} still uses this proxy profile",
                                                  v1=nodes[fixed].get("name") or fixed), "code": "conflict"}
             del pool[profile_id]
         else:
             label = str(body.get("label") or "").strip()[:40]
             if not label:
-                return 400, {"ok": False, **perr("Choose a name for the SOCKS5 profile"), "code": "bad_request"}
+                return 400, {"ok": False, **perr("Choose a name for the proxy profile"), "code": "bad_request"}
+            provider = body.get("provider", (kept or {}).get("provider", "socks5"))
+            if provider not in PROXY_KINDS:
+                return 400, {"ok": False, **perr("Choose SOCKS5 or HTTP CONNECT"), "code": "bad_request"}
             old = (kept or {}).get("socks") or {}
-            sk, err = socks_resolve(body.get("socks_text"), body.get("socks_pass"), old)
+            sk, err = socks_resolve(body.get("socks_text"), body.get("socks_pass"), old, provider)
             if err:
                 return 400, {"ok": False, **perr(err), "code": "bad_request"}
             same_proxy = all(sk.get(k) == old.get(k) for k in ("host", "port", "user", "pass"))
@@ -14847,7 +14867,8 @@ def api(method, path, qs, body, deps):
             if not profile_id:
                 while not profile_id or profile_id in pool:
                     profile_id = uuid.uuid4().hex[:8]
-            entry = {**(kept or {}), "label": label, "socks": sk, "enabled": body.get("enabled", True) is not False}
+            entry = {**(kept or {}), "label": label, "provider": provider,
+                     "socks": sk, "enabled": body.get("enabled", True) is not False}
             if entry.get("check") and entry["check"]["sig"] != _pool_exit(profile_id, entry)["cfg_sig"]:
                 entry.pop("check")
             pool[profile_id] = entry
@@ -16483,7 +16504,7 @@ def api(method, path, qs, body, deps):
             fields["vk_links"] = links
         if "static_exit" in body:
             if body["static_exit"] is not None:
-                return 400, {"ok": False, **perr("Choose a SOCKS5 profile from the shared pool"), "code": "bad_request"}
+                return 400, {"ok": False, **perr("Choose a proxy profile from the shared pool"), "code": "bad_request"}
             fields["static_exit"] = None
         if "socks_profile" in body:
             value = body["socks_profile"]
@@ -16492,13 +16513,13 @@ def api(method, path, qs, body, deps):
                 profile_id = value.get("id") if isinstance(value, dict) else None
                 policy = value.get("failure", "block") if isinstance(value, dict) else None
                 if not isinstance(profile_id, str) or policy not in ("block", "direct"):
-                    return 400, {"ok": False, **perr("Choose a SOCKS5 profile and failure policy"), "code": "bad_request"}
+                    return 400, {"ok": False, **perr("Choose a proxy profile and failure policy"), "code": "bad_request"}
                 profile = socks_pool(deps).get(profile_id)
                 existing = (roster["users"][uid].get("socks_profile") or {}).get("id")
                 if profile_id != existing and (not profile or profile.get("enabled") is False):
-                    return 400, {"ok": False, **perr("Choose an enabled SOCKS5 profile"), "code": "bad_request"}
+                    return 400, {"ok": False, **perr("Choose an enabled proxy profile"), "code": "bad_request"}
                 if any(k != uid and (u.get("socks_profile") or {}).get("id") == profile_id for k, u in roster["users"].items()):
-                    return 409, {"ok": False, **perr("This SOCKS5 exit is already assigned to another user"), "code": "conflict"}
+                    return 409, {"ok": False, **perr("This proxy profile is already assigned to another user"), "code": "conflict"}
                 fields["socks_profile"] = {"id": profile_id, "failure": policy}
                 fields["static_exit"] = None
         renamed = "name" in fields
@@ -16758,18 +16779,23 @@ def api(method, path, qs, body, deps):
         if profile_id:
             _was = socks_pool(deps).get(profile_id)
             if not _was:
-                return 404, {"ok": False, **perr("SOCKS5 profile not found"), "code": "not_found"}
+                return 404, {"ok": False, **perr("Proxy profile not found"), "code": "not_found"}
         kept = (_was or {}).get("socks") or {}
-        _sk, _serr = socks_resolve(body.get("socks_text"), body.get("socks_pass"), kept)
+        saved_provider = (_was or {}).get("provider", "socks5")
+        provider = body.get("provider", saved_provider)
+        if provider not in PROXY_KINDS or (body.get("exit_id") and provider != "socks5"):
+            return 400, {"ok": False, **perr("Choose SOCKS5 or HTTP CONNECT"), "code": "bad_request"}
+        _sk, _serr = socks_resolve(body.get("socks_text"), body.get("socks_pass"), kept, provider)
         if _serr:
             return 400, {"ok": False, "error": _serr, "code": "bad_request"}
         _adv = ((deps.get("panel_settings") or {}).get("advanced") or {})
         _seen = (deps.get("node_seen") or {}).get(nid)
         profile = ((profile_id, _pool_exit(profile_id, _was)["cfg_sig"])
-                   if profile_id and all(_sk.get(k) == kept.get(k) for k in ("host", "port", "user", "pass")) else None)
+                   if profile_id and provider == saved_provider
+                   and all(_sk.get(k) == kept.get(k) for k in ("host", "port", "user", "pass")) else None)
         return exit_test_request(nid, body.get("exit_id"), _sk, (deps.get("node_snaps") or {}).get(nid),
                                  (time.time() - _seen) if _seen else None,
-                                 max(5, int((_adv.get("node_stale_ms") or 30000) / 1000)), profile=profile)
+                                 max(5, int((_adv.get("node_stale_ms") or 30000) / 1000)), profile=profile, provider=provider)
 
     if method == "POST" and path == "/api/peers/update-target":
         pid = body.get("peer_id") or ""
@@ -17101,7 +17127,7 @@ def api(method, path, qs, body, deps):
             else:
                 nodes[nid]["log_mb"] = _lmb
         if body.get("exits"):
-            return 400, {"ok": False, **perr("Choose a SOCKS5 profile from the shared pool"), "code": "bad_request"}
+            return 400, {"ok": False, **perr("Choose a proxy profile from the shared pool"), "code": "bad_request"}
         if "default_routing" in body:
             _dr = body.get("default_routing")
             if _dr is None:
@@ -19843,15 +19869,15 @@ class Handler(BaseHTTPRequestHandler):
                                             "devexit": my_plan.get("devexit") or []},
                                 "exits": [{"id": x.get("id"), "device": x.get("device"),
                                            "cfg_sig": x.get("cfg_sig") or "",
-                                           "provider": "socks5",
+                                           "provider": x.get("provider", "socks5"),
                                            "down": x.get("enabled", True) is False,
                                            "dial_src": x.get("dial_src") or "",
                                            **({"socks": {k: x["socks"].get(k) for k in ("host", "port", "user", "pass")}}
                                               if isinstance(x.get("socks"), dict) else {})}
                                           for x in [*(node.get("exits") or []),
                                                     *(_pool_exit(pid, accounts[pid]) for pid in sorted(my_plan.get("pool_profiles") or ()))]
-                                          if isinstance(x, dict) and x.get("provider") == "socks5"
-                                          and not exit_kind_refusal(snap, "socks5")],
+                                          if isinstance(x, dict) and x.get("provider") in PROXY_KINDS
+                                          and not exit_kind_refusal(snap, x["provider"])],
                                 **({"exit_test": _xtest} if _xtest else {}),
                                 "relay": relay_plan(nodes, cas_plans, nid, Handler.deps.get("node_snaps") or {}),
                                 "smart": {"entries": my_plan.get("smart") or [],

@@ -690,7 +690,7 @@ export function UserEditCard({ user, done }) {
     const disabled = option.enabled === false;
     const state = assigned ? T("Assigned to {v1}", { v1: owner }) : disabled ? T("Disabled") : "";
     return { value: option.id, disabled: assigned || (disabled && option.id !== initial),
-             label: [option.label, state].filter(Boolean).join(" · ") };
+             label: [option.label, option.provider === "http" ? "HTTP" : "SOCKS5", state].filter(Boolean).join(" · ") };
   });
   const save = async () => {
     if (!name.trim()) { toast(T("Name can't be empty."), "err"); return; }
@@ -712,16 +712,16 @@ export function UserEditCard({ user, done }) {
     <${SubStatusLine} user=${user} pos="center"/>
     <div class="field"><label>${T("Name")}</label><input value=${name} onInput=${e => setName(e.target.value)} maxlength="64"/></div>
     <div class="field">
-      <label>${T("SOCKS5 profile")}</label>
-      <${Dropdown} value=${profile} onChange=${setProfile} ariaLabel=${T("SOCKS5 profile")} disabled=${busy} options=${[
-        { value: "", label: T("No personal SOCKS5") }, ...options,
-        ...(initial && !options.some(o => o.value === initial) ? [{ value: initial, label: T("SOCKS5 exit unavailable") }] : []),
+      <label>${T("Proxy profile")}</label>
+      <${Dropdown} value=${profile} onChange=${setProfile} ariaLabel=${T("Proxy profile")} disabled=${busy} options=${[
+        { value: "", label: T("No personal proxy") }, ...options,
+        ...(initial && !options.some(o => o.value === initial) ? [{ value: initial, label: T("Proxy profile unavailable") }] : []),
       ]}/>
       ${pooled ? html`<div class="hint">${T("Applies to all this user's devices when a rule sends traffic through the new cascade.")}</div>
         <button type="button" class="btn btn-mini" style="margin-top:7px" disabled=${busy} onClick=${() => setProfile("")}>${T("Remove assignment")}</button>` : null}
     </div>
-    ${pooled ? html`<div class="field"><label>${T("If SOCKS5 is unavailable")}</label>
-      <${Dropdown} value=${failure} onChange=${setFailure} ariaLabel=${T("If SOCKS5 is unavailable")} options=${[
+    ${pooled ? html`<div class="field"><label>${T("If the proxy is unavailable")}</label>
+      <${Dropdown} value=${failure} onChange=${setFailure} ariaLabel=${T("If the proxy is unavailable")} options=${[
         { value: "block", label: T("Block traffic (Kill switch)") },
         { value: "direct", label: T("Direct internet access") },
       ]}/>

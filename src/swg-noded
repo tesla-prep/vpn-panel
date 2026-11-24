@@ -4588,6 +4588,7 @@ S5X_ARR_DNS_PRI = 6870
 
 def _s5x_rules(devexit, res):
     socks = _EXITS.get("socks") or {}
+    http = sorted(d for d in (_EXITS.get("http") or ()) if _WANIF_RE.fullmatch(d))
     _ifc = [e for e in devexit if e.get("dev") in socks and e.get("subnet")
             and (e.get("scope") or "iface") not in ("rule", "cascade")
             and (e.get("scope") != "static" or not e.get("part"))]
@@ -4598,20 +4599,23 @@ def _s5x_rules(devexit, res):
     if whole or _S5X_NFT["dns"] is not False:
         _p, _had = _dns_dnat(whole, res, (), S5X_DNS_TAG, S5X_DNS_NET_TAG, S5X_DNS + ":53", ("udp",))
         _S5X_NFT["dns"] = bool(whole) or _had
-    rej = sorted(d for d, ok in socks.items() if not ok and _WANIF_RE.match(str(d or "")))
+    rej = sorted(d for d, ok in socks.items() if not ok and d not in http and _WANIF_RE.match(str(d or "")))
     unm = sorted({int(e["table"]) for e in devexit if e.get("dev") in socks and not socks[e["dev"]]
-                  and e.get("scope") == "rule" and str(e.get("table") or "").isdigit()})
+                  and e["dev"] not in http and e.get("scope") == "rule" and str(e.get("table") or "").isdigit()})
     watch = sorted({e["dev"] for e in devexit if socks.get(e.get("dev")) is True and e.get("scope") == "rule" and str(e.get("table") or "").isdigit()})
-    sig = (tuple(rej), tuple(unm), tuple(watch))
+    sig = (tuple(rej), tuple(unm), tuple(watch), tuple(http))
     if sig == _S5X_NFT["sig"]:
-        if not (rej or unm or watch) or run(["nft", "list", "table", "inet", S5X_NFT_TABLE]).returncode == 0:
+        if not any(sig) or run(["nft", "list", "table", "inet", S5X_NFT_TABLE]).returncode == 0:
             return
-    if not rej and not unm and not watch:
+    if not any(sig):
         r = run(["nft", "delete", "table", "inet", S5X_NFT_TABLE])
         ok, gone = r.returncode == 0 or _nft_absent(r) or r.returncode == 127, r.returncode == 0
     else:
         L = ["table inet %s {}" % S5X_NFT_TABLE, "delete table inet %s" % S5X_NFT_TABLE, "table inet %s {" % S5X_NFT_TABLE,
              "  chain udp_refuse { type filter hook forward priority filter - 1; policy accept;"]
+        for d in http:
+            L += [f'    oifname "{d}" ip daddr {S5X_DNS} udp dport 53 accept',
+                  f'    oifname "{d}" meta l4proto udp reject with icmpx type port-unreachable']
         L += ['    oifname "%s" ip daddr != %s meta l4proto udp reject with icmpx type port-unreachable' % (d, S5X_DNS)
               for d in rej]
         L += ['    oifname "%s" ip daddr != %s udp dport 53 counter comment "q %s"' % (d, S5X_DNS, d) for d in watch]
@@ -7189,7 +7193,7 @@ def _exit_tool(rec):
 
 
 def _exit_down(dev, rec):
-    if (rec or {}).get("provider") == "socks5":
+    if (rec or {}).get("provider") in EXIT_KINDS:
         _s5x_down(str(rec.get("id") or dev[len("s5x-"):]), dev)
         return True
     kind = _link_kind(dev)
@@ -7231,7 +7235,7 @@ def _dialin_cut(entries, exit_, troutes, net_tables):
     return out
 
 
-EXIT_KINDS = ("socks5",)
+EXIT_KINDS = ("socks5", "http")
 HEV_TAG = "2.18.0"
 HEV_OWNER = "heiher/hev-socks5-tunnel"
 HEV_SHA256 = {"amd64": "1903b23869cbd12b7b57045ca161c0f90314d9c4ef2835e7a9e4a3179bf7d925",
@@ -7327,13 +7331,14 @@ def _yq(s):
     return "'" + str(s).replace("'", "''") + "'"
 
 
-def _s5x_yml(dev, sk):
+def _s5x_yml(dev, sk, mapdns=True):
     cred = ("  username: %s\n  password: %s\n" % (_yq(sk["user"]), _yq(sk["pass"]))) if sk.get("user") else ""
+    dns = ("mapdns:\n  address: %s\n  port: 53\n  network: %s\n  netmask: %s\n  cache-size: %d\n"
+           % (S5X_DNS, S5X_NET, S5X_MASK, S5X_CACHE)) if mapdns else ""
     return ("tunnel:\n  name: %s\n  mtu: %d\n  ipv4: %s\n"
-            "socks5:\n  address: %s\n  port: %d\n  udp: 'udp'\n%s"
-            "mapdns:\n  address: %s\n  port: 53\n  network: %s\n  netmask: %s\n  cache-size: %d\n"
+            "socks5:\n  address: %s\n  port: %d\n  udp: 'udp'\n%s%s"
             "misc:\n  log-file: stderr\n  log-level: warn\n  limit-nofile: 65535\n  connect-timeout: 10000\n"
-            % (dev, S5X_MTU, S5X_ADDR, _yq(sk["host"]), int(sk["port"]), cred, S5X_DNS, S5X_NET, S5X_MASK, S5X_CACHE))
+            % (dev, S5X_MTU, S5X_ADDR, _yq(sk["host"]), int(sk["port"]), cred, dns))
 
 
 def _s5x_socks(d):
@@ -7369,7 +7374,7 @@ def _s5x_argv(xid, sig, binp, yml):
                "-p", "CapabilityBoundingSet=CAP_NET_ADMIN", "-p", "DeviceAllow=/dev/net/tun rw",
                "-p", "ProtectSystem=strict", "-p", "ProtectHome=yes", "-p", "PrivateTmp=yes",
                "-p", "RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK",
-               "-p", "SystemCallFilter=@system-service", "-p", "SystemCallErrorNumber=EPERM", binp, yml])
+               "-p", "SystemCallFilter=@system-service", "-p", "SystemCallErrorNumber=EPERM", *binp, yml])
 
 
 def _s5x_show(xid):
@@ -7435,7 +7440,7 @@ def _s5x_ensure_child(xid, dev, sig, binp, yml):
     _rotate_serverlog(lp, _log_docker_caps(_LOG_BUDGET["mb"]) // 2 or SERVERLOG_MAX)
     try:
         lf = open(lp, "ab", buffering=0)
-        pr = subprocess.Popen(["nice", "-n", "10", binp, yml], stdout=lf, stderr=lf, stdin=subprocess.DEVNULL, close_fds=True)
+        pr = subprocess.Popen(["nice", "-n", "10", *binp, yml], stdout=lf, stderr=lf, stdin=subprocess.DEVNULL, close_fds=True)
     except Exception as e:
         return ("could not start the SOCKS5 tunnel: " + str(e))[:160]
     p.update(proc=pr, at=time.time())
@@ -7490,7 +7495,7 @@ def _s5x_sweep(want):
     for ln in (getattr(r, "stdout", "") or "").splitlines():
         u = (ln.split() or [""])[0]
         xid = u[len("swg-s5x-"):-len(".service")] if u.startswith("swg-s5x-") and u.endswith(".service") else ""
-        if re.fullmatch(r"[0-9a-f]{8}", xid) and xid not in want:
+        if re.fullmatch(r"p?[0-9a-f]{8}", xid) and xid not in want:
             _s5x_down(xid, "s5x-" + xid)
 
 
@@ -7499,6 +7504,8 @@ S5X_WHY = {
     "refused": "the proxy refused the connection — is the port right?",
     "timeout": "the proxy did not answer in time",
     "not_socks5": "that address does not speak SOCKS5",
+    "not_http": "that address does not speak HTTP CONNECT",
+    "dns_failed": "the HTTP proxy works, but DNS over HTTPS did not answer",
     "auth_required": "the proxy wants a login, and none is set",
     "auth_failed": "the proxy refused the login — check the user and password",
     "not_allowed": "the proxy refused this node's address — some providers make you allow-list the server's IP",
@@ -7514,6 +7521,252 @@ def _s5x_recv(s, n):
             raise ConnectionError("closed")
         b += c
     return b
+
+
+def _http_connect_request(host, port, user, password):
+    if ":" in host:
+        host = "[" + str(ipaddress.IPv6Address(host)) + "]"
+    elif not re.fullmatch(r"[A-Za-z0-9_.-]{1,253}", host):
+        raise ValueError("connect_failed")
+    if not 1 <= port <= 65535:
+        raise ValueError("connect_failed")
+    authority = f"{host}:{port}"
+    headers = [f"CONNECT {authority} HTTP/1.1", f"Host: {authority}"]
+    if user:
+        token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
+        headers.append(f"Proxy-Authorization: Basic {token}")
+    return ("\r\n".join(headers) + "\r\n\r\n").encode("ascii")
+
+
+def _http_connect_error(status, user):
+    match = re.fullmatch(rb"HTTP/1\.[01] ([0-9]{3})(?: [^\r\n]*)?", status)
+    if not match:
+        return "not_http"
+    code = int(match[1])
+    if 200 <= code < 300:
+        return ""
+    if code == 407:
+        return "auth_failed" if user else "auth_required"
+    return "not_allowed" if code == 403 else "connect_failed"
+
+
+HTTP_PROXY_DOH = ("cloudflare-dns.com", 443)
+
+
+def _http_proxy_dns(proxy, query):
+    s, _ = _http_proxy_open(proxy["host"], proxy["port"], proxy["user"], proxy["pass"], 4, HTTP_PROXY_DOH)
+    if s is None:
+        return b""
+    with s:
+        with _exit_tls().wrap_socket(s, server_hostname=HTTP_PROXY_DOH[0]) as tls:
+            headers = (f"POST /dns-query HTTP/1.1\r\nHost: {HTTP_PROXY_DOH[0]}\r\n"
+                       "Content-Type: application/dns-message\r\nAccept: application/dns-message\r\n"
+                       f"Content-Length: {len(query)}\r\nConnection: close\r\n\r\n")
+            tls.sendall(headers.encode("ascii") + query)
+            with contextlib.closing(http.client.HTTPResponse(tls)) as response:
+                response.begin()
+                if response.status == 200:
+                    answer = response.read(4097)
+                    if 12 <= len(answer) <= 4096 and answer[:2] == query[:2]:
+                        return answer
+    return b""
+
+
+async def _http_bridge_dns(reader, writer, proxy, jobs):
+    import asyncio
+
+    dns_header = b"\0\0\0\x01" + socket.inet_aton(S5X_DNS) + b"\0\x35"
+
+    class DnsRelay(asyncio.DatagramProtocol):
+        peer = None
+
+        async def resolve(self, query, addr):
+            try:
+                answer = await asyncio.to_thread(_http_proxy_dns, proxy, query)
+                if answer:
+                    relay.sendto(dns_header + answer, addr)
+            except (OSError, ValueError, http.client.HTTPException):
+                pass
+
+        def datagram_received(self, data, addr):
+            if self.peer not in (None, addr) or addr[0] != "127.0.0.1":
+                return
+            if len(jobs) >= 64 or not 22 <= len(data) <= 4106 or not data.startswith(dns_header):
+                return
+            self.peer = addr
+            task = asyncio.create_task(self.resolve(data[len(dns_header):], addr))
+            jobs.add(task)
+            task.add_done_callback(jobs.discard)
+
+    relay, _ = await asyncio.get_running_loop().create_datagram_endpoint(DnsRelay, local_addr=("127.0.0.1", 0))
+    try:
+        port = relay.get_extra_info("sockname")[1]
+        writer.write(b"\x05\x00\x00\x01\x7f\x00\x00\x01" + port.to_bytes(2, "big"))
+        await writer.drain()
+        await reader.read(1)
+    finally:
+        relay.close()
+
+
+async def _http_bridge_client(reader, writer, proxy, local_auth, dns_jobs):
+    import asyncio
+
+    async def handshake():
+        ver, size = await reader.readexactly(2)
+        if ver != 5 or 2 not in await reader.readexactly(size):
+            writer.write(b"\x05\xff")
+            return None
+        writer.write(b"\x05\x02")
+        await writer.drain()
+        ver, size = await reader.readexactly(2)
+        user = await reader.readexactly(size)
+        size = (await reader.readexactly(1))[0]
+        password = await reader.readexactly(size)
+        if ver != 1 or not hmac.compare_digest(user + b"\0" + password, local_auth):
+            writer.write(b"\x01\x01")
+            return None
+        writer.write(b"\x01\x00")
+        await writer.drain()
+        ver, cmd, reserved, atyp = await reader.readexactly(4)
+        if ver != 5 or reserved or cmd not in (1, 3):
+            writer.write(b"\x05\x07\x00\x01" + b"\0" * 6)
+            return None
+        if atyp == 1:
+            host = socket.inet_ntoa(await reader.readexactly(4))
+        elif atyp == 4:
+            host = socket.inet_ntop(socket.AF_INET6, await reader.readexactly(16))
+        elif atyp == 3:
+            size = (await reader.readexactly(1))[0]
+            host = (await reader.readexactly(size)).decode("ascii")
+        else:
+            writer.write(b"\x05\x08\x00\x01" + b"\0" * 6)
+            return None
+        port = int.from_bytes(await reader.readexactly(2), "big")
+        return cmd, host, port
+
+    async def relay(src, dst):
+        while chunk := await src.read(65536):
+            dst.write(chunk)
+            await dst.drain()
+        with contextlib.suppress(OSError):
+            dst.write_eof()
+
+    upstream = None
+    try:
+        target = await asyncio.wait_for(handshake(), timeout=10)
+        if target is None:
+            await writer.drain()
+            return
+        cmd, host, port = target
+        if cmd == 3:
+            await _http_bridge_dns(reader, writer, proxy, dns_jobs)
+            return
+        request = _http_connect_request(host, port, proxy["user"], proxy["pass"])
+        try:
+            async with asyncio.timeout(10):
+                remote, upstream = await asyncio.open_connection(proxy["host"], proxy["port"], limit=16384)
+                upstream.write(request)
+                await upstream.drain()
+                headers = await remote.readuntil(b"\r\n\r\n")
+                error = _http_connect_error(headers.split(b"\r\n", 1)[0], proxy["user"])
+        except (OSError, EOFError, asyncio.LimitOverrunError):
+            error = "connect_failed"
+        reply = 0 if not error else 2 if error == "not_allowed" else 1
+        writer.write(bytes((5, reply, 0, 1)) + b"\0" * 6)
+        await writer.drain()
+        if not error:
+            async with asyncio.TaskGroup() as streams:
+                streams.create_task(relay(reader, upstream))
+                streams.create_task(relay(remote, writer))
+    except (OSError, ValueError, EOFError, ExceptionGroup):
+        pass
+    finally:
+        for stream in (upstream, writer):
+            if stream is not None:
+                stream.close()
+                with contextlib.suppress(OSError):
+                    await stream.wait_closed()
+
+
+async def _http_proxy_exit(path):
+    import asyncio
+
+    with open(path) as f:
+        cfg = json.load(f)
+    user, password = "hev", secrets.token_hex(16)
+    auth = (user + "\0" + password).encode()
+    proxy = cfg["proxy"]
+    loop = asyncio.get_running_loop()
+    active = set()
+    dns_jobs = set()
+
+    def client(reader, writer):
+        task = asyncio.create_task(_http_bridge_client(reader, writer, proxy, auth, dns_jobs))
+        active.add(task)
+        task.add_done_callback(active.discard)
+
+    server = await asyncio.start_server(client, "127.0.0.1", 0, limit=16384)
+    async with server:
+        sk = {"host": "127.0.0.1", "port": server.sockets[0].getsockname()[1], "user": user, "pass": password}
+        with tempfile.TemporaryDirectory(prefix="swg-http-exit-") as d:
+            yml = os.path.join(d, "hev.yml")
+            with open(yml, "w") as f:
+                f.write(_s5x_yml(cfg["device"], sk, mapdns=False))
+            child = await asyncio.create_subprocess_exec(cfg["hev"], yml)
+            stopped = asyncio.create_task(child.wait())
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                loop.add_signal_handler(sig, stopped.cancel)
+            try:
+                return await stopped or 1
+            except asyncio.CancelledError:
+                return 0
+            finally:
+                server.close()
+                tasks = active | dns_jobs
+                for task in tasks:
+                    task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+                if child.returncode is None:
+                    with contextlib.suppress(ProcessLookupError):
+                        child.terminate()
+                    try:
+                        await asyncio.wait_for(child.wait(), timeout=1)
+                    except TimeoutError:
+                        with contextlib.suppress(ProcessLookupError):
+                            child.kill()
+                        await child.wait()
+
+
+def _http_proxy_open(host, port, user, pw, timeout, target):
+    try:
+        s = socket.create_connection((host, port), timeout=timeout)
+    except TimeoutError:
+        return None, "timeout"
+    except ConnectionRefusedError:
+        return None, "refused"
+    except OSError:
+        return None, "unreachable"
+    try:
+        s.sendall(_http_connect_request(*target, user, pw))
+        # The HTTP server has no tunnel payload to send until TLS ClientHello.
+        with s.makefile("rb") as response:
+            status = response.readline(16385)
+            why = _http_connect_error(status.removesuffix(b"\r\n"), user)
+            remaining = 16384 - len(status)
+            while not why and remaining > 0:
+                line = response.readline(remaining + 1)
+                if line == b"\r\n":
+                    return s, ""
+                if not line:
+                    break
+                remaining -= len(line)
+            why = why or "not_http"
+    except TimeoutError:
+        why = "timeout"
+    except (OSError, ValueError):
+        why = "connect_failed"
+    s.close()
+    return None, why
 
 
 def _s5x_open(host, port, user, pw, timeout):
@@ -7566,24 +7819,29 @@ def _s5x_cmd(s, cmd, atyp_addr, port):
 
 
 def _socks_check(host, port, user="", pw="", timeout=10.0, udp_wait=3.0, _trace=("www.cloudflare.com", 443),
-                 _dns=("1.1.1.1", 53)):
+                 _dns=("1.1.1.1", 53), provider="socks5"):
     out = {"login": False, "egress_ip": "", "loc": "", "udp": None, "rtt_ms": None, "why": ""}
     t0 = time.monotonic()
-    s, why = _s5x_open(host, port, user, pw, timeout)
+    if provider == "http":
+        s, why = _http_proxy_open(host, port, user, pw, timeout, _trace)
+        out["udp"] = False
+    else:
+        s, why = _s5x_open(host, port, user, pw, timeout)
     if not s:
         out["why"] = why
         return out
     out["login"] = True
     try:
-        out["udp"] = _s5x_udp(host, port, user, pw, timeout, udp_wait, _dns)
-    except Exception:
-        out["udp"] = False
-    try:
         name = _trace[0].encode()
-        rep, _b = _s5x_cmd(s, 1, b"\x03" + bytes([len(name)]) + name, _trace[1])
-        if rep != 0:
-            out["why"] = "not_allowed" if rep == 2 else "connect_failed"
-            return out
+        if provider == "socks5":
+            try:
+                out["udp"] = _s5x_udp(host, port, user, pw, timeout, udp_wait, _dns)
+            except Exception:
+                out["udp"] = False
+            rep, _b = _s5x_cmd(s, 1, b"\x03" + bytes([len(name)]) + name, _trace[1])
+            if rep != 0:
+                out["why"] = "not_allowed" if rep == 2 else "connect_failed"
+                return out
         t = _exit_tls().wrap_socket(s, server_hostname=_trace[0])
         s = t
         t.sendall(b"GET /cdn-cgi/trace HTTP/1.1\r\nHost: %s\r\nUser-Agent: swg-noded\r\nConnection: close\r\n\r\n" % name)
@@ -7598,6 +7856,13 @@ def _socks_check(host, port, user="", pw="", timeout=10.0, udp_wait=3.0, _trace=
                    rtt_ms=int((time.monotonic() - t0) * 1000))
         if not out["egress_ip"]:
             out["why"] = "connect_failed"
+        elif provider == "http":
+            answer = b""
+            with contextlib.suppress(OSError, ValueError, http.client.HTTPException):
+                answer = _http_proxy_dns({"host": host, "port": port, "user": user, "pass": pw},
+                                         _dns_a_query("www.cloudflare.com"))
+            if not answer or answer[3] & 0x0F or not int.from_bytes(answer[6:8], "big"):
+                out["why"] = "dns_failed"
     except Exception as e:
         out["why"] = str(e) if str(e) in S5X_WHY else "connect_failed"
         return out
@@ -7645,13 +7910,13 @@ def _s5x_udp(host, port, user, pw, timeout, wait, dns):
                 x and x.close()
 
 
-def _s5x_dispatch(dev, sk, sig):
+def _s5x_dispatch(dev, sk, sig, provider):
     if dev in _S5X_INFLIGHT or not sk:
         return
     _S5X_INFLIGHT.add(dev)
     def go():
         try:
-            r = _socks_check(sk["host"], sk["port"], sk["user"], sk["pass"])
+            r = _socks_check(sk["host"], sk["port"], sk["user"], sk["pass"], provider=provider)
         except Exception:
             r = {"login": False, "egress_ip": "", "loc": "", "udp": None, "rtt_ms": None, "why": "timeout"}
         _S5X_CHECKS[dev] = (time.time(), sig, r)
@@ -7759,9 +8024,10 @@ def exit_test_take(req):
             return
         _EXIT_TEST.update(id=rid, result=None, at=time.time())
     sk = _s5x_socks({"socks": req})
+    provider = req.get("provider") or "socks5"
     def go():
         try:
-            r = _socks_check(sk["host"], sk["port"], sk["user"], sk["pass"], timeout=4.0) if sk else \
+            r = _socks_check(sk["host"], sk["port"], sk["user"], sk["pass"], timeout=4.0, provider=provider) if sk and provider in EXIT_KINDS else \
                 {"login": False, "egress_ip": "", "loc": "", "udp": None, "rtt_ms": None, "why": "unreachable"}
         except Exception:
             r = {"login": False, "egress_ip": "", "loc": "", "udp": None, "rtt_ms": None, "why": "timeout"}
@@ -7974,13 +8240,18 @@ def _exit_tls():
     return _EXIT_TLS["ctx"]
 
 
-def _mapdns_a(dev, server, name, timeout=3.0):
-    qid = secrets.randbelow(0xFFFF)
-    q = qid.to_bytes(2, "big") + b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00" + \
-        b"".join(bytes([len(p)]) + p.encode() for p in name.split(".")) + b"\x00\x00\x01\x00\x01"
+def _dns_a_query(name):
+    return (secrets.token_bytes(2) + b"\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00"
+            + b"".join(bytes([len(part)]) + part.encode() for part in name.split(".")) + b"\x00\x00\x01\x00\x01")
+
+
+def _mapdns_a(dev, server, name, timeout=3.0, mark=None):
+    q = _dns_a_query(name)
     u = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         u.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, dev.encode())
+        if mark is not None:
+            u.setsockopt(socket.SOL_SOCKET, socket.SO_MARK, mark)
         u.settimeout(timeout)
         u.sendto(q, (server, 53))
         d, _ = u.recvfrom(4096)
@@ -8001,26 +8272,32 @@ def _mapdns_a(dev, server, name, timeout=3.0):
     raise OSError("mapdns: no A record for %s" % name)
 
 
-def _exit_trace(dev, mapdns=None):
+def _exit_trace(dev, mapdns=None, mark=None, timeout=10):
     import http.client, ssl
     class _Bound(http.client.HTTPSConnection):
         def connect(s2):
             so = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            so.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, dev.encode())
-            so.settimeout(s2.timeout)
-            _a = ((_mapdns_a(dev, mapdns, s2.host), s2.port) if mapdns
-                  else socket.getaddrinfo(s2.host, s2.port, socket.AF_INET, socket.SOCK_STREAM)[0][4])
-            _t = time.monotonic()
-            so.connect(_a)
-            s2.tcp_ms = round((time.monotonic() - _t) * 1000, 1)
-            s2.sock = s2._context.wrap_socket(so, server_hostname=s2.host)
+            try:
+                so.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, dev.encode())
+                if mark is not None:
+                    so.setsockopt(socket.SOL_SOCKET, socket.SO_MARK, mark)
+                so.settimeout(s2.timeout)
+                _a = ((_mapdns_a(dev, mapdns, s2.host, mark=mark), s2.port) if mapdns
+                      else socket.getaddrinfo(s2.host, s2.port, socket.AF_INET, socket.SOCK_STREAM)[0][4])
+                _t = time.monotonic()
+                so.connect(_a)
+                s2.tcp_ms = round((time.monotonic() - _t) * 1000, 1)
+                s2.sock = s2._context.wrap_socket(so, server_hostname=s2.host)
+            except BaseException:
+                so.close()
+                raise
     try:
         _t0 = time.monotonic()
-        c = _Bound("www.cloudflare.com", 443, timeout=10, context=_exit_tls())
-        c.request("GET", "/cdn-cgi/trace", headers={"Host": "www.cloudflare.com", "User-Agent": "swg-noded"})
-        kv = dict(l.split("=", 1) for l in c.getresponse().read().decode().strip().splitlines() if "=" in l)
-        return {"ip": kv.get("ip", ""), "warp": kv.get("warp", ""), "loc": kv.get("loc", ""),
-                "rtt_ms": int((time.monotonic() - _t0) * 1000), "tcp_ms": getattr(c, "tcp_ms", None)}
+        with contextlib.closing(_Bound("www.cloudflare.com", 443, timeout=timeout, context=_exit_tls())) as c:
+            c.request("GET", "/cdn-cgi/trace", headers={"Host": "www.cloudflare.com", "User-Agent": "swg-noded"})
+            kv = dict(l.split("=", 1) for l in c.getresponse().read(65536).decode().strip().splitlines() if "=" in l)
+            return {"ip": kv.get("ip", ""), "warp": kv.get("warp", ""), "loc": kv.get("loc", ""),
+                    "rtt_ms": int((time.monotonic() - _t0) * 1000), "tcp_ms": getattr(c, "tcp_ms", None)}
     except Exception as e:
         _why = (str(e) or e.__class__.__name__).strip()[:200]
         return {"err": "%s: %s" % (e.__class__.__name__, _why) if _why != e.__class__.__name__ else _why}
@@ -8219,7 +8496,7 @@ def _devexit_state(dev):
 
 
 def reconcile_exits(desired, res, devexit=None, managed=()):
-    want = {str((e or {}).get("id") or ""): e for e in (desired or []) if isinstance(e, dict) and e.get("provider") == "socks5"}
+    want = {str(e.get("id") or ""): e for e in (desired or []) if isinstance(e, dict) and e.get("provider") in EXIT_KINDS}
     out = []
     _slots = []
     def _exit_row(xid, dev, prov, rec, err, _blob_err, _live, tr, _hl, ping):
@@ -8234,7 +8511,7 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
                     "handshake": (_exit_handshake(rec, dev) if _live and prov != "socks5" else None),
                     "ping_ms": (ping if _live else None),
                     "awg": bool(_exit_awg(rec)),
-                    **(dict(_s5x_view(dev), **({"setup": rec["setup"]} if rec.get("setup") else {})) if prov == "socks5" else {})}
+                    **dict(_s5x_view(dev), **({"setup": rec["setup"]} if rec.get("setup") else {}))}
     with contextlib.suppress(Exception):
         os.makedirs(EXIT_DIR, mode=0o700, exist_ok=True)
 
@@ -8252,11 +8529,11 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
             with contextlib.suppress(Exception):
                 with open(sp) as f:
                     rec = json.load(f)
-            prov = "socks5"
+            prov = d["provider"]
             err = ""
             _blob_err = ""
             if d.get("down"):
-                if rec.get("provider") == "socks5" and rec.get("started"):
+                if rec.get("provider") in EXIT_KINDS and rec.get("started"):
                     _exit_down(dev, dict(rec, id=xid))
                     rec["started"] = ""
                     with contextlib.suppress(Exception):
@@ -8270,8 +8547,8 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
                             "account_type": rec.get("account_type", ""), "trace": {}, "error": ""})
                 continue
             _sk = _s5x_socks(d)
-            _sig = "%s hev-%s" % (str(d.get("cfg_sig") or "-"), HEV_TAG)
-            rec = {"provider": "socks5", "device": dev, "started": rec.get("started", ""), "setup": "",
+            _sig = "%s hev-%s%s" % (str(d.get("cfg_sig") or "-"), HEV_TAG, " http-1" if prov == "http" else "")
+            rec = {"provider": prov, "device": dev, "started": rec.get("started", ""), "setup": "",
                    "endpoint": ("[%s]:%d" if ":" in _sk["host"] else "%s:%d") % (_sk["host"], _sk["port"]) if _sk else ""}
             err, _state = "", _dev_link_state(dev)
             if not _sk:
@@ -8284,13 +8561,18 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
                     rec["setup"], err = err, ""
                 if binp:
                     _yml = os.path.join(EXIT_DIR, dev + ".yml")
+                    argv = [binp]
+                    config = _s5x_yml(dev, _sk)
+                    if prov == "http":
+                        argv = [sys.executable, os.path.abspath(__file__), "--http-proxy-exit"]
+                        config = json.dumps({"device": dev, "hev": binp, "proxy": _sk})
                     try:
-                        _replace_if_changed(_yml, _s5x_yml(dev, _sk), 0o600)
+                        _replace_if_changed(_yml, config, 0o600)
                     except OSError as e:
                         err = ("could not write the tunnel config: " + str(e))[:160]
                     if not err:
-                        err = (_s5x_ensure_child(xid, dev, _sig, binp, _yml) if NODE_KIND == "docker"
-                               else _s5x_ensure_unit(xid, _sig, binp, _yml, _state, rec["started"]))
+                        err = (_s5x_ensure_child(xid, dev, _sig, argv, _yml) if NODE_KIND == "docker"
+                               else _s5x_ensure_unit(xid, _sig, argv, _yml, _state, rec["started"]))
                     if not err:
                         if rec["started"] != _sig:
                             _EXIT_HEALTH.pop(dev, None); _EXIT_PROBED_AT.pop(dev, None)
@@ -8314,7 +8596,7 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
     finally:
         _mine = {str((d or {}).get("device") or "") for d in want.values() if isinstance(d, dict)}
         _ad = _exit_adopted(devexit, _mine, managed)
-        _sx = {dev: _exit_probe_due(dev) for _s, _x, dev, _p, _r, _e, _b in _slots if _p == "socks5"}
+        _sx = {dev: _exit_probe_due(dev) for _s, _x, dev, _p, _r, _e, _b in _slots}
         _pr = _exit_probe_all([(dev, rec if dev not in _sx else {"endpoint": rec.get("endpoint"), "mapdns": S5X_DNS})
                                for _s, _x, dev, _p, rec, _e, _b in _slots if dev not in _sx or _sx[dev]]
                               + [(d, {}) for d, due in _ad if due])
@@ -8335,7 +8617,7 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
             else:
                 tr, _png, _hl = _sv.get("trace") or {}, _sv.get("ping"), _EXIT_HEALTH.get(dev)
             if _due == "now":
-                _s5x_dispatch(dev, rec.get("socks"), rec.get("started"))
+                _s5x_dispatch(dev, rec.get("socks"), rec.get("started"), prov)
             _c = _sv.get("check") or {}
             if _hl and _hl["dead"] and _c.get("why") and _c.get("at", 0) >= (_hl.get("fail_since") or 0) - EXIT_PROBE_BOUND_S:
                 _hl["why"] = S5X_WHY.get(_c["why"], _c["why"])
@@ -8360,15 +8642,14 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
     with contextlib.suppress(Exception):
         for fn in sorted(os.listdir(EXIT_DIR)):
             _stem = fn[:-5] if fn.endswith(".json") else ""
-            if not _stem or len(_stem) != 8 or any(ch not in "0123456789abcdef" for ch in _stem) \
-                    or _stem in want:
+            if not re.fullmatch(r"p?[0-9a-f]{8}", _stem) or _stem in want:
                 continue
             old = {}
             with contextlib.suppress(Exception):
                 with open(os.path.join(EXIT_DIR, fn)) as f:
                     old = json.load(f)
             od = str(old.get("device") or "")
-            if od and (_dev_link_state(od) != "absent" or old.get("provider") == "socks5"):
+            if od and (_dev_link_state(od) != "absent" or old.get("provider") in EXIT_KINDS):
                 _exit_down(od, dict(old, id=_stem))
             if od and od not in _held:
                 for _m in (_EXIT_HEALTH, _EXIT_REDIAL_AT, _EXIT_RESOLVED, _EXIT_PROBED_AT):
@@ -8382,8 +8663,9 @@ def reconcile_exits(desired, res, devexit=None, managed=()):
     with contextlib.suppress(Exception):
         _s5x_sweep(want)
     _EXITS["list"] = out
-    _EXITS["socks"] = {x["device"]: x.get("udp_ok") is True for x in out
-                       if isinstance(x, dict) and x.get("provider") == "socks5" and not x.get("paused")}
+    _EXITS["socks"] = {x["device"]: x["provider"] == "socks5" and x.get("udp_ok") is True for x in out
+                       if isinstance(x, dict) and x.get("provider") in EXIT_KINDS and not x.get("paused")}
+    _EXITS["http"] = {x["device"] for x in out if isinstance(x, dict) and x.get("provider") == "http" and not x.get("paused")}
 
 
 def _cascade_local_routes(node_cfg, _proc="/proc/net/route"):
@@ -8620,7 +8902,14 @@ def _ensure_cascade_path_rules(origins, incoming, links, wan, res, choices=()):
     for e in origins:
         if e.get("probe"):
             lines.append(f'    meta mark {e["table"]} oifname != "{e["dev"]}" drop')
-    lines += ["  }", "  chain source { type nat hook postrouting priority srcnat - 5; policy accept;"]
+    lines += ["  }"]
+    http_dns = [e for e in incoming if e.get("http_dns") is True and e["dev"]]
+    if http_dns:
+        lines.append("  chain http_dns { type nat hook prerouting priority dstnat - 5; policy accept;")
+        for e in http_dns:
+            lines.append(f'    iifname "{e["iif"]}" ip saddr {e["address"]} udp dport 53 dnat ip to {S5X_DNS}')
+        lines.append("  }")
+    lines.append("  chain source { type nat hook postrouting priority srcnat - 5; policy accept;")
     for e in origins:
         lines.append(f'    meta mark {e["table"]} oifname "{e["dev"]}" ip saddr 0.0.0.0/0 snat ip to {e["address"]}')
     lines += ["  }", "}"]
@@ -8638,7 +8927,7 @@ def _ensure_cascade_path_rules(origins, incoming, links, wan, res, choices=()):
 
 def _cascade_probe_config(origins):
     state = _CASCADE_PATHS
-    wanted = {e["probe"]: (e["dev"], e["table"], e["address"]) for e in origins
+    wanted = {e["probe"]: (e["dev"], e["table"], e["address"], e.get("http_dns") is True) for e in origins
               if isinstance(e.get("probe"), str) and re.fullmatch(r"[a-f0-9]{24}", e["probe"])}
     if wanted != state["probes"]:
         for name in ("health", "seen"):
@@ -8668,8 +8957,10 @@ def _cascade_probe_tick():
     wanted = list(state["probes"].items())
     def probe(item):
         key, config = item
+        dev, table, _, http_proxy = config
         try:
-            ok = _exit_reach(config[0], mark=config[1]) is True
+            ok = (bool(_exit_trace(dev, S5X_DNS, mark=table, timeout=4).get("ip")) if http_proxy
+                  else _exit_reach(dev, mark=table) is True)
         except OSError:
             ok = False
         return key, config, ok
@@ -15846,6 +16137,9 @@ def _pid1_signals():
 
 
 def main():
+    if len(sys.argv) == 3 and sys.argv[1] == "--http-proxy-exit":
+        import asyncio
+        sys.exit(asyncio.run(_http_proxy_exit(sys.argv[2])))
     if sys.argv[1:] == ["--restore-static-egress"]:
         _restore_static_guard()
         return

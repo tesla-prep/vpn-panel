@@ -312,7 +312,7 @@ function cascadeLabel(origin, path) {
   }
   const proxy = (Store.socksPool || []).find(e => e.id === path.profile && e.enabled !== false);
   const egress = path.profile
-    ? ["SOCKS5 · " + (proxy?.label || T("Unavailable proxy")), T("Internet")]
+    ? [(proxy?.provider === "http" ? "HTTP" : "SOCKS5") + " · " + (proxy?.label || T("Unavailable proxy")), T("Internet")]
     : T("Direct internet access");
   return [origin, ...path.nodes].map(n => Store.nodeName(n)).concat(egress).join(" → ");
 }
@@ -321,8 +321,8 @@ function CascadeSummary({ origin, path }) {
   const status = (Store.nodes || []).find(n => n.id === origin)?.cascade_status?.[path.address];
   const direct = { primary: T("Primary active"), backup: T("Reserve active"),
     pending: T("Checking routes"), unavailable: T("No available direct chain") }[status?.direct];
-  const detail = [direct, status?.personal_reserve ? T("Some SOCKS5 users are on reserve") : "",
-    status?.personal_direct ? T("Some SOCKS5 users are using direct internet access") : ""].filter(Boolean).join(" · ");
+  const detail = [direct, status?.personal_reserve ? T("Some proxy users are on reserve") : "",
+    status?.personal_direct ? T("Some proxy users are using direct internet access") : ""].filter(Boolean).join(" · ");
   return html`<div class="hint rrnote">${cascadeLabel(origin, path)}${detail ? html`<div role="status">${detail}</div>` : null}</div>`;
 }
 
@@ -1910,8 +1910,8 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
         ? html`<div class="hint err">${T("All nodes in the cascade need an update before this route can carry traffic.")}</div>` : null}
     ` : isCascade ? html`<div class="field">
       <div class="hint">${cascadeLabel(node, cascade)}</div>
-      <div class="hint">${T("Switch this route to use each user's SOCKS5 profile and a reserve chain.")}</div>
-      <button type="button" class="btn btn-ghost" onClick=${() => setPool(true)}>${T("Use the shared SOCKS5 pool")}</button>
+      <div class="hint">${T("Switch this route to use each user's proxy profile and a reserve chain.")}</div>
+      <button type="button" class="btn btn-ghost" onClick=${() => setPool(true)}>${T("Use the shared proxy pool")}</button>
     </div>` : null}
     ${withPorts ? html`<div class="row2 rs-ports">
         <div class="field"><label>${T("Protocol")}</label>
