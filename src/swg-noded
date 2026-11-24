@@ -8031,7 +8031,7 @@ def _exit_reach_tls():
     return c
 
 
-def _exit_reach(dev, targets=EXIT_REACH_TARGETS, timeout=EXIT_REACH_TIMEOUT_S):
+def _exit_reach(dev, targets=EXIT_REACH_TARGETS, timeout=EXIT_REACH_TIMEOUT_S, mark=None):
     import errno
     socks, pending, asked = [], {}, False
     def _hs(t):
@@ -8054,6 +8054,8 @@ def _exit_reach(dev, targets=EXIT_REACH_TARGETS, timeout=EXIT_REACH_TIMEOUT_S):
             socks.append(s)
             try:
                 s.setsockopt(socket.SOL_SOCKET, socket.SO_BINDTODEVICE, str(dev).encode())
+                if mark is not None:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_MARK, mark)
             except OSError as e:
                 if e.errno in (errno.EPERM, errno.EACCES):
                     continue
@@ -8525,7 +8527,8 @@ def _prepare_static_guard(plan, node_cfg):
 
 CASCADE_PATH_NET = ipaddress.IPv4Network("198.18.128.0/17")
 CASCADE_PATH_NFT = "swg_cascade_paths"
-_CASCADE_PATHS = {"rules": None, "ready": []}
+_CASCADE_PATHS = {"rules": None, "ready": [], "probes": {}, "health": {}, "seen": {},
+                  "next": 0, "thread": None, "results": None}
 
 
 def _cascade_path_entries(plan):
@@ -8552,10 +8555,45 @@ def _cascade_path_entries(plan):
     return origins, incoming
 
 
-def _ensure_cascade_path_rules(origins, incoming, links, wan, res):
+def _cascade_path_choices(wire):
+    def mark(value, allow_zero=False):
+        return isinstance(value, int) and (SWG_RT_BASE <= value <= SWG_RT_MAX or (allow_zero and value == 0))
+    choices = []
+    for rule in (wire or {}).get("choices") or ():
+        if not isinstance(rule, dict) or not mark(rule.get("table")) or not mark(rule.get("default"), True):
+            continue
+        sources = []
+        for item in rule.get("sources") or ():
+            if not isinstance(item, (list, tuple)) or len(item) != 3 or not mark(item[2], True):
+                continue
+            dev, addr, table = item
+            if not isinstance(dev, str) or not _SRC_DEV_RE.fullmatch(dev):
+                continue
+            try:
+                addr = str(ipaddress.IPv4Address(addr))
+            except (ValueError, TypeError):
+                continue
+            sources.append((dev, addr, table))
+        choices.append((rule["table"], rule["default"], sources))
+    return choices
+
+
+def _ensure_cascade_path_rules(origins, incoming, links, wan, res, choices=()):
     links = sorted(set(links) | {e["iif"] for e in incoming})
     table = CASCADE_PATH_NFT
     lines = [f"table inet {table} {{}}", f"delete table inet {table}", f"table inet {table} {{"]
+    if choices:
+        lines.append("  chain choose { type filter hook prerouting priority mangle + 7; policy accept;")
+        for mark, _, _ in choices:
+            lines.append(f"    ct direction original meta mark {mark} jump c{mark}")
+        lines.append("  }")
+        for mark, default, sources in choices:
+            lines.append(f"  chain c{mark} {{")
+            for dev, addr, target in sources:
+                action = f"meta mark set {target} accept" if target else "drop"
+                lines.append(f'    iifname "{dev}" ip saddr {addr} {action}')
+            lines.append(f"    meta mark set {default} accept" if default else "    drop")
+            lines.append("  }")
     lines.append("  chain guard { type filter hook forward priority filter + 1; policy accept;")
     for e in origins:
         lines.append(f'    ct direction original meta mark {e["table"]} oifname != "{e["dev"]}" drop')
@@ -8566,6 +8604,10 @@ def _ensure_cascade_path_rules(origins, incoming, links, wan, res):
     if links:
         iifs = ", ".join(f'"{dev}"' for dev in links)
         lines.append(f"    iifname {{ {iifs} }} ip saddr {CASCADE_PATH_NET} drop")
+    lines += ["  }", "  chain probe_guard { type filter hook output priority filter; policy accept;"]
+    for e in origins:
+        if e.get("probe"):
+            lines.append(f'    meta mark {e["table"]} oifname != "{e["dev"]}" drop')
     lines += ["  }", "  chain source { type nat hook postrouting priority srcnat - 5; policy accept;"]
     for e in origins:
         lines.append(f'    meta mark {e["table"]} oifname "{e["dev"]}" ip saddr 0.0.0.0/0 snat ip to {e["address"]}')
@@ -8582,18 +8624,66 @@ def _ensure_cascade_path_rules(origins, incoming, links, wan, res):
     return False
 
 
+def _cascade_probe_config(origins):
+    state = _CASCADE_PATHS
+    wanted = {e["probe"]: (e["dev"], e["table"], e["address"]) for e in origins
+              if isinstance(e.get("probe"), str) and re.fullmatch(r"[a-f0-9]{24}", e["probe"])}
+    if wanted != state["probes"]:
+        for name in ("health", "seen"):
+            state[name] = {key: value for key, value in state[name].items()
+                           if key in wanted and state["probes"].get(key) == wanted[key]}
+        state["probes"] = wanted
+        state["next"] = 0
+
+
+def _cascade_probe_tick():
+    from concurrent.futures import ThreadPoolExecutor
+    state = _CASCADE_PATHS
+    thread = state["thread"]
+    if thread and thread.is_alive():
+        return
+    results, state["results"] = state["results"], None
+    for key, config, ok in results or ():
+        if state["probes"].get(key) != config:
+            continue
+        previous, count = state["seen"].get(key, (None, 0))
+        count = min(2, count + 1) if previous == ok else 1
+        state["seen"][key] = ok, count
+        if count == 2:
+            state["health"][key] = ok
+    if not state["probes"] or time.monotonic() < state["next"]:
+        return
+    wanted = list(state["probes"].items())
+    def probe(item):
+        key, config = item
+        try:
+            ok = _exit_reach(config[0], mark=config[1]) is True
+        except OSError:
+            ok = False
+        return key, config, ok
+    def worker():
+        with ThreadPoolExecutor(max_workers=8) as workers:
+            state["results"] = list(workers.map(probe, wanted))
+    state["next"] = time.monotonic() + 8
+    state["thread"] = threading.Thread(target=worker, daemon=True)
+    state["thread"].start()
+
+
 def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_conn=None, panel_cfg=None):
     res = {"changed": 0, "errors": []}
     plan = plan or {}
     fwd = plan.get("forward") or []
     exit_ = plan.get("exit") or []
     devexit = plan.get("devexit") or []
-    origins, incoming = _cascade_path_entries(plan.get("cascade_paths"))
+    wire = plan.get("cascade_paths") or {}
+    origins, incoming = _cascade_path_entries(wire)
+    choices = _cascade_path_choices(wire)
     wan = _detect_wan()
     _CASCADE_PATHS["ready"] = []
-    paths_ok = _ensure_cascade_path_rules(origins, incoming, _relay_links(node_cfg), wan, res)
-    if origins and not paths_ok:
-        origin_marks = {e["table"] for e in origins}
+    paths_ok = _ensure_cascade_path_rules(origins, incoming, _relay_links(node_cfg), wan, res, choices)
+    _cascade_probe_config(origins if paths_ok else ())
+    if (origins or choices) and not paths_ok:
+        origin_marks = {e["table"] for e in origins} | {mark for mark, _, _ in choices}
         def block_path(e):
             return ({k: v for k, v in e.items() if k not in ("table", "via_iface")} | {"action": "block"}
                     if e.get("action") == "exit" and e.get("table") in origin_marks else e)
@@ -8645,6 +8735,8 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
     arr_subs, arr_e = _arrivals_parse((smart or {}).get("arrivals"))
     arr_exit = [dict(e, gw=_dxgw.get(e["via_iface"], ""), _noroute=_withheld(e["via_iface"]))
                 for e in arr_e if e["action"] == "exit"]
+    arr_exit.extend({"via_iface": e["dev"], "table": e["table"], "_noroute": _withheld(e["dev"])}
+                    for e in origins if e.get("probe"))
     static = [dict(e, via_iface=e["dev"], _noroute=_withheld(e["dev"])) for e in static_entries if e.get("dev")]
     arr_exit += static
     _pe = _p2p_entry((smart or {}).get("p2p")) if ((smart or {}).get("p2p") or {}).get("action") == "route" else None
@@ -11744,7 +11836,7 @@ def build_snapshot(node_cfg, online_max, last_samples, now=None):
     snap["exits"] = list(_EXITS["list"])
     snap["exit_kinds"] = list(EXIT_KINDS)
     snap["static_egress"] = {"v": 1, **{k: _STATIC_EGRESS[k] for k in ("active", "blocked", "ready")}}
-    snap["cascade_paths"] = {"v": 1, "ready": _CASCADE_PATHS["ready"]}
+    snap["cascade_paths"] = {"v": 2, "ready": _CASCADE_PATHS["ready"], "health": dict(_CASCADE_PATHS["health"])}
     if hcfg.get("enabled", True):
         snap["health"] = collect_health(mounts=hcfg.get("mounts"))
     snap["inet"] = sample_inet(node_cfg, now)
@@ -15903,6 +15995,7 @@ def main():
                 else:
                     eg = {"changed": 0, "errors": []}; cas = {"changed": 0, "errors": []}
                     nr = {"changed": 0, "errors": []}
+                _cascade_probe_tick()
                 for blk in (cr, dl, rs, sp, sa, ik):
                     for e in blk["errors"]:
                         k, _, m = e.partition(": ")

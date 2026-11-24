@@ -57,3 +57,4 @@ services:
       - /dev/null:/var/lib/swg-panel/subs/escrow.json:ro
     tmpfs:
       - /var/lib/swg-panel/configs
+      - /var/lib/swg-panel/private

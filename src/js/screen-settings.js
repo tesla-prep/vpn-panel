@@ -904,7 +904,7 @@ export function PanelSettingsScreen() {
   const confirmDeleteList = l => openConfirm({ title: T("Delete custom list"), confirmLabel: T("Delete"), danger: true,
     body: Trich("Delete *{v1}*? It's removed from *every node* it's enabled on, and its interface rules stop matching on the next sync. This can't be undone.", { v1: l.title || T("Untitled list") }),
     onConfirm: () => persistLists(lists.filter(x => x._rid !== l._rid)) });
-    const SECTIONS = [["display", "Display"], ["security", "Authentication"], ["configs", "Client configs"], ["subs", "Subscriptions"], ["mesh", "Network"], ["links", "Mesh"], ["exits", "SOCKS5 exits"], ["defaults", "Interfaces"], ["turn", "Turn proxies"], ["routing", "Routing & Blocking"], ["geo", "Geo data providers"], ["integrations", "Integrations"], ["logs", "Logs"]]
+    const SECTIONS = [["display", "Display"], ["security", "Authentication"], ["configs", "Client configs"], ["subs", "Subscriptions"], ["mesh", "Network"], ["links", "Mesh"], ["socks_pool", "SOCKS5 pool"], ["exits", "SOCKS5 exits"], ["defaults", "Interfaces"], ["turn", "Turn proxies"], ["routing", "Routing & Blocking"], ["geo", "Geo data providers"], ["integrations", "Integrations"], ["logs", "Logs"]]
 const VK_LINK_PLACEHOLDER = "<PASTE VK CALL LINK>";
 
 const LOG_LEVEL_IDS = ["off", "error", "warning", "info", "debug"];
@@ -922,7 +922,7 @@ const logLeftLabel = s => s >= 3600
 
 const sectionLabel = k => ({
   display: T("Display"), security: T("Authentication"), access: T("Panel access"), configs: T("Client configs"),
-  subs: T("Subscriptions"), mesh: T("Network"), links: T("Mesh"), exits: T("SOCKS5 exits"), defaults: T("Interfaces"),
+  subs: T("Subscriptions"), mesh: T("Network"), links: T("Mesh"), socks_pool: T("SOCKS5 pool"), exits: T("SOCKS5 exits"), defaults: T("Interfaces"),
   turn: T("Turn proxies"), routing: T("Routing & Blocking"), geo: T("Geo data providers"),
   integrations: T("Integrations"), logs: T("Logs"),
 }[k] || k);
@@ -1539,6 +1539,7 @@ const sectionLabel = k => ({
           <div class="row2"><div class="field"><label>${T("Top talkers")}</label><input type="text" inputmode="numeric" value=${topTalk} onDblClick=${e => e.target.select()} onInput=${e => { let v = e.target.value.replace(/[^0-9]/g, ""); if (+v > 50) v = "50"; setTopTalk(v); }} placeholder="10"/><div class="hint">${T("Number of peers in the Top talkers list (max 50).")}</div></div>
             <div class="field"><label>${T("Top destinations")}</label><input type="text" inputmode="numeric" value=${topDest} onDblClick=${e => e.target.select()} onInput=${e => { let v = e.target.value.replace(/[^0-9]/g, ""); if (+v > 50) v = "50"; setTopDest(v); }} placeholder="10"/><div class="hint">${T("Number of categories in the Top destinations list (max 50).")}</div></div></div>
         </div>` : null}
+        ${section === "socks_pool" ? html`<${SocksPoolForm}/>` : null}
         ${section === "exits" ? html`<div class="card">
           ${nodeRec ? html`<${Fragment}>
             <div class="seclabel" style="margin-top:0">${T("{v1} — SOCKS5 exits", { v1: nodeRec.name })}</div>
@@ -2278,6 +2279,59 @@ export const socksText = ex => { const s = (ex || {}).socks || {};
   if (!s.host) return "";
   return s.user && /[:@%]/.test(s.user) ? "socks5://" + encodeURIComponent(s.user) + "@" + s.host + ":" + s.port
     : (s.user ? s.user + "@" : "") + s.host + ":" + s.port; };
+
+function SocksPoolForm() {
+  const profiles = Store.socksPool || [];
+  const edit = profile => pushModal(html`<${SocksPoolEdit} profile=${profile}/>`);
+  return html`<div class="card">
+    <div class="seclabel" style="margin-top:0">${T("SOCKS5 pool")}</div>
+    <div class="hint">${T("Assign a profile to a user to use the same SOCKS5 account on any final node of their route.")}</div>
+    ${profiles.map(profile => {
+      const owner = Object.values(Store.roster.users || {}).find(u => u.socks_profile?.id === profile.id);
+      return html`<div class="row2" key=${profile.id} style="margin-top:10px">
+        <div><b>${profile.label}</b><div class="hint">${[socksText(profile), owner?.name, profile.enabled === false ? T("Disabled") : ""].filter(Boolean).join(" · ")}</div></div>
+        <div><button type="button" class="btn btn-ghost" onClick=${() => edit(profile)}>${T("Edit")}</button></div>
+      </div>`;
+    })}
+    <button type="button" class="btn btn-primary" style="margin-top:12px" onClick=${() => edit(null)}>${T("Add a SOCKS5 proxy")}</button>
+  </div>`;
+}
+
+function SocksPoolEdit({ profile }) {
+  const [label, setLabel] = useState(profile?.label || "");
+  const [address, setAddress] = useState(socksText(profile));
+  const [password, setPassword] = useState("");
+  const [enabled, setEnabled] = useState(profile?.enabled !== false);
+  const [busy, setBusy] = useState(false), [error, setError] = useState("");
+  const send = async body => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const result = await api.socksPool(body);
+      if (!result?.ok) return setError(srvText(result) || T("Couldn't save"));
+      closeModal();
+      await Store.poll();
+    } catch (_) { setError(T("Couldn't save")); }
+    finally { setBusy(false); }
+  };
+  const remove = () => openConfirm({ title: T("Delete SOCKS5 profile"),
+    body: T("Remove this profile from the shared SOCKS5 pool?"), confirmLabel: T("Delete"), danger: true,
+    onConfirm: () => send({ id: profile.id, delete: true }) });
+  return html`<${Sheet} title=${profile?.label || T("Add a SOCKS5 proxy")} width=${600} foot=${footRow({
+    left: profile ? html`<button type="button" class="btn btn-danger" disabled=${busy} onClick=${remove}>${T("Delete")}</button>` : null,
+    onCancel: closeModal, onAction: () => send({ id: profile?.id, label: label.trim(), enabled,
+      socks_text: address.trim(), socks_pass: password || (profile?.socks?.has_pass ? Store.exitPassKeep : "") }),
+    action: T("Save"), disabled: busy || !label.trim() || !address.trim()
+  })}>
+    <div class="field"><label>${T("Name")}</label><input value=${label} maxlength="40" onInput=${e => setLabel(e.target.value)}/></div>
+    <div class="field"><label>${T("Proxy address")}</label><input class="mono" ...${NOT_A_LOGIN} value=${address}
+      placeholder="host:port:user:password" spellcheck="false" onInput=${e => setAddress(e.target.value)}/></div>
+    <div class="field"><label>${T("Password")}</label><input type="password" ...${NOT_A_LOGIN} autocomplete="new-password"
+      value=${password} placeholder=${profile?.socks?.has_pass ? T("unchanged") : ""} onInput=${e => setPassword(e.target.value)}/></div>
+    <label class="toggle-row"><${Switch} on=${enabled} onChange=${setEnabled}/><span>${T("Enabled")}</span></label>
+    ${error ? html`<div class="formmsg err" role="alert">${error}</div>` : null}
+  <//>`;
+}
 export const nodePublicIp = node => ((node || {}).ips || []).find(ip => /^\d+\.\d+\.\d+\.\d+$/.test(ip)
   && !/^(10\.|127\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.)/.test(ip)) || "";
 

@@ -2,7 +2,7 @@ import { T, Trich, Tsplit, plural, srvText } from "./i18n.js";
 import { esc, tkey, dur, ago, seen, fmtBytes, ipOf, portOf, orderedTargets, isPrimaryTarget, targetRole,
          useStableOrder, isSelfContainedKind, isMobile } from "./util.js";
 import { Store, api, bus, useStore } from "./store.js";
-import { targetType, iTypeOf, kindOf, nodeStale, ghostIface, turnProxiesFor, tgtXfer, isSelfContainedTgt, peerUncategorised } from "./model.js";
+import { targetType, iTypeOf, kindOf, ghostIface, turnProxiesFor, tgtXfer, isSelfContainedTgt, peerUncategorised } from "./model.js";
 import { go } from "./router.js";
 import { turnFork, turnColor, turnClientColor, turnClientAuthor, turnForkList, forkLabel } from "./turn-catalog.js";
 import {
@@ -673,35 +673,31 @@ const userExitValue = ref => ref ? ref.node_id + "/" + ref.exit_id : "";
 export function UserEditCard({ user, done }) {
   useStore();
   const [name, setName] = useState(user.name || "");
-  const [staticExit, setStaticExit] = useState(userExitValue(user.static_exit));
+  const legacy = userExitValue(user.static_exit);
+  const initial = user.socks_profile?.id || (legacy ? "legacy" : "");
+  const initialFailure = user.socks_profile?.failure || "block";
+  const [profile, setProfile] = useState(initial);
+  const [failure, setFailure] = useState(initialFailure);
   const [busy, setBusy] = useState(false), [saveErr, setSaveErr] = useState("");
   const showVk = Store.peersOfUser(user.id).some(p => targetsWantVk(p.targets));
-  const staticDirty = staticExit !== userExitValue(user.static_exit);
-  const dirty = name !== (user.name || "") || staticDirty;
-  const occupied = new Map(Object.values(Store.roster.users || {}).filter(u => u.id !== user.id && u.static_exit)
-    .map(u => [userExitValue(u.static_exit), u.name]));
-  const exitOptions = (Store.nodes || []).flatMap(node => (node.exits || []).filter(ex => ex.provider === "socks5").map(ex => {
-    const ref = { node_id: node.id, exit_id: ex.id };
-    const value = userExitValue(ref);
-    const owner = occupied.get(value);
-    const ip = ex.live?.trace?.ip;
-    const title = owner !== undefined ? T("Assigned to {v1}", { v1: owner })
-      : !node.static_exit_supported ? T("Update the exit server before assigning a static exit")
-      : ex.enabled === false ? T("Disabled") : "";
-    return { ref, value, disabled: !!title, title,
-      label: [node.name || node.id, ex.label || ex.id, ip, title].filter(Boolean).join(" · ") };
-  }));
-  const choice = exitOptions.find(o => o.value === staticExit);
-  const exitUser = Store.roster.users[user.id] || user;
-  const exitState = exitUser.static_exit && nodeStale(exitUser.static_exit.node_id) ? "unavailable" : exitUser.static_exit_state;
+  const pooled = !!profile && profile !== "legacy";
+  const profileDirty = profile !== initial || (pooled && failure !== initialFailure);
+  const dirty = name !== (user.name || "") || profileDirty;
+  const occupied = new Map(Object.values(Store.roster.users || {}).filter(u => u.id !== user.id && u.socks_profile)
+    .map(u => [u.socks_profile.id, u.name]));
+  const options = (Store.socksPool || []).map(option => {
+    const owner = occupied.get(option.id);
+    const state = owner !== undefined ? T("Assigned to {v1}", { v1: owner }) : option.enabled === false ? T("Disabled") : "";
+    return { value: option.id, disabled: !!state,
+             label: [option.label, state].filter(Boolean).join(" · ") };
+  });
+  const legacyNode = (Store.nodes || []).find(n => n.id === user.static_exit?.node_id);
+  const legacyExit = (legacyNode?.exits || []).find(e => e.id === user.static_exit?.exit_id);
   const save = async () => {
     if (!name.trim()) { toast(T("Name can't be empty."), "err"); return; }
-    if (staticDirty && staticExit && (!choice || choice.disabled)) {
-      setSaveErr(T("Choose an enabled SOCKS5 exit"));
-      return;
-    }
     const r = await sheetSend(() => api.userUpdate({ id: user.id, name: name.trim(),
-      ...(staticDirty ? { static_exit: choice?.ref || null } : {}) }), setSaveErr, setBusy);
+      ...(profileDirty && profile !== "legacy" ? { socks_profile: pooled ? { id: profile, failure } : null, static_exit: null } : {}) }),
+    setSaveErr, setBusy);
     if (!r.ok) return;
     done(); Store.poll().catch(() => {});
   };
@@ -715,17 +711,22 @@ export function UserEditCard({ user, done }) {
     <${SubStatusLine} user=${user} pos="center"/>
     <div class="field"><label>${T("Name")}</label><input value=${name} onInput=${e => setName(e.target.value)} maxlength="64"/></div>
     <div class="field">
-      <label>${T("Static exit")}</label>
-      <${Dropdown} value=${staticExit} onChange=${setStaticExit} ariaLabel=${T("Static exit")} options=${[
-        { value: "", label: T("Ordinary routing") }, ...exitOptions,
-        ...(staticExit && !choice ? [{ value: staticExit, label: T("SOCKS5 exit unavailable"), disabled: true }] : []),
+      <label>${T("SOCKS5 profile")}</label>
+      <${Dropdown} value=${profile} onChange=${setProfile} ariaLabel=${T("SOCKS5 profile")} options=${[
+        { value: "", label: T("No personal SOCKS5") }, ...options,
+        ...(legacy ? [{ value: "legacy", label: T("Legacy SOCKS5 on {v1}", { v1: [legacyNode?.name, legacyExit?.label].filter(Boolean).join(" · ") || user.static_exit.node_id }) }] : []),
+        ...(pooled && !options.some(o => o.value === profile) ? [{ value: profile, label: T("SOCKS5 exit unavailable"), disabled: true }] : []),
       ]}/>
-      <div class="hint">${T("Applies to all this user's devices for traffic forwarded to the exit server.")}</div>
-      ${!staticDirty && staticExit ? html`<div class="hint" role="status">${exitState === "active" ? T("Static exit active")
-        : exitState === "unavailable" ? T("SOCKS5 exit unavailable")
-        : exitState === "unsupported" ? T("Update the exit server before assigning a static exit")
-        : T("Waiting for the exit server to apply the assignment")}</div>` : null}
+      <div class="hint">${pooled ? T("Applies to all this user's devices when a rule sends traffic through the new cascade.")
+        : profile === "legacy" ? T("This assignment is tied to its node. Choose a profile from the shared pool to follow routing rules.") : ""}</div>
     </div>
+    ${pooled ? html`<div class="field"><label>${T("If SOCKS5 is unavailable")}</label>
+      <${Dropdown} value=${failure} onChange=${setFailure} ariaLabel=${T("If SOCKS5 is unavailable")} options=${[
+        { value: "block", label: T("Block traffic (Kill switch)") },
+        { value: "direct", label: T("Direct internet access") },
+      ]}/>
+      <div class="hint">${T("Applies after trying the same account through all chains of the matching rule.")}</div>
+    </div>` : null}
     <${VaultUnlockPanel}/>
     <${SubLinkActions} user=${user}/>
     ${showVk ? html`<${VkLinkField} user=${user}/>` : null}

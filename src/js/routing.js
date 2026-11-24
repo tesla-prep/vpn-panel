@@ -305,12 +305,26 @@ export function rulesTitle(nodeId) {
 }
 
 function cascadeLabel(origin, path) {
+  if (path.pool) {
+    const describe = hops => [origin, ...hops].map(n => Store.nodeName(n)).join(" → ");
+    const primary = describe(path.nodes);
+    return path.backup?.length ? primary + " · " + T("Reserve: {v1}", { v1: describe(path.backup) }) : primary;
+  }
   const last = (Store.nodes || []).find(n => n.id === path.nodes.at(-1));
   const proxy = (last?.exits || []).find(e => e.id === path.socks5 && e.enabled !== false);
   const egress = path.socks5
     ? ["SOCKS5 · " + (proxy ? exitLabel(proxy, last) : T("Unavailable proxy")), T("Internet")]
     : T("Direct internet access");
   return [origin, ...path.nodes].map(n => Store.nodeName(n)).concat(egress).join(" → ");
+}
+
+function CascadeSummary({ origin, path }) {
+  const status = (Store.nodes || []).find(n => n.id === origin)?.cascade_status?.[path.address];
+  const direct = { primary: T("Primary active"), backup: T("Reserve active"),
+    pending: T("Checking routes"), unavailable: T("No available direct chain") }[status?.direct];
+  const detail = [direct, status?.personal_reserve ? T("Some SOCKS5 users are on reserve") : "",
+    status?.personal_direct ? T("Some SOCKS5 users are using direct internet access") : ""].filter(Boolean).join(" · ");
+  return html`<div class="hint rrnote">${cascadeLabel(origin, path)}${detail ? html`<div role="status">${detail}</div>` : null}</div>`;
 }
 
 export function rulesSummary(nodeId, rows, catchAll) {
@@ -1569,9 +1583,8 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
     return [
       ...(withDefault && !nodeScope ? [{ value: "__dflt__", label: T("Node rules") }] : []),
       { value: "direct", label: T("Direct (this node)") },
-      ...(others.length || held === "cascade" ? [{ value: "cascade", label: T("Choose cascade and exit") }] : []),
-      ...(others.length ? [{ group: T("Forward to node (cascade)"),
-                             items: others.map(n => ({ value: "exit|" + n.id, label: T("Forward to {node}", { node: n.name }) })) }] : []),
+      ...(others.length || held === "cascade" ? [{ value: "cascade", label: T("Through nodes") }] : []),
+      ...(!_gone && action === "exit" && id ? [{ value: held, label: T("Forward to {node}", { node: Store.nodeName(id) }) }] : []),
       { value: "block", label: T("Block") },
       ...(_gone ? [{ value: _gone.value, label: _gone.label, className: "bad", refuse: _gone.why }] : []),
       ...(!_gone && action === "dev" && id ? [{ value: held, label: destLabelOf({ action, exit_id: id }) }] : []),
@@ -1658,7 +1671,7 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
               : T("a more specific rule below wins these hosts for the people it names: {toks}", { toks: takenFew.slice(0, 3).map(b => targetLabel(b.kind, b.value)).join(", ") + (takenFew.length > 3 ? "…" : "") })}</span>`
           : nodeTaken[ri].length ? html`<span class="rrlint">${T("a more specific rule in this node's default wins these hosts: {toks}", { toks: nodeTaken[ri].slice(0, 3).map(b => targetLabel(b.kind, b.value)).join(", ") + (nodeTaken[ri].length > 3 ? "…" : "") })}</span>` : null}
         ${asns ? html`<${AsnHint} targets=${asns}/>` : null}
-        ${row.cascade ? html`<div class="hint rrnote">${cascadeLabel(node, row.cascade)}</div>` : null}
+        ${row.cascade ? html`<${CascadeSummary} origin=${node} path=${row.cascade}/>` : null}
         ${nodeScope && row.action === "exit" && !row.cascade && row.node && row.aud !== "local" && others.some(n => n.id === row.node)
           ? html`<div class="hint rrnote">${T("Traffic that came from {node} skips this rule — it would go back where it came from.", { node: Store.nodeName(row.node) })}</div>` : null}
       </div>`;
@@ -1674,7 +1687,7 @@ export function RoutingRules({ node, iface, rows, catchAll, exitIps, directIp, o
           onChange=${onCatch} options=${destOpts(true, catchVal)}/></span>
       </span>
     </div>
-    ${catchAll?.cascade ? html`<div class="hint rrnote">${cascadeLabel(node, catchAll.cascade)}</div>` : null}
+    ${catchAll?.cascade ? html`<${CascadeSummary} origin=${node} path=${catchAll.cascade}/>` : null}
     ${!nodeScope && _nlist && !catchAll ? html`<div class="hint rrnote">${T("Node rules (Settings → Network)")} · ${nodeRows.slice(0, 10).map(r => html`<span>${(r.badges || []).slice(0, 3).map(b => b.t === "list" ? catLabelOf(b.id) : targetLabel(b.kind, b.value)).join(", ")}${(r.badges || []).length > 3 ? "…" : ""} → ${destLabelOf(r)}</span> · `)}${nodeRows.length > 10 ? T("…and {v1} more", { v1: nodeRows.length - 10 }) + " · " : ""}<span>${T("everything else")} → ${_ncatch ? (goneDest(destVal(_ncatch)) || {}).label || destLabelOf(_ncatch) : T("Direct (this node)")}</span></div>` : null}
     ${nodeScope && _mode === "sni_kernel" && ((((Store.stats || {})[node] || {}).smartroute || {}).src || 0) < 2 && dispRows.some(r => r.aud !== "local")
       ? html`<div class="notice warn"><${Ic} i="warn"/><span>${T("Kernel SNI on this node can't match hostnames for traffic cascaded in — only IP addresses and networks apply to it.")}</span></div>` : null}
@@ -1796,23 +1809,37 @@ export function WhoPicker({ sel, setSel, here, cell, onTyped, empty }) {
   <//>`;
 }
 
+function CascadeNodeList({ node, hops, setHops, label }) {
+  const options = (current = "") => (Store.nodes || [])
+    .filter(n => n.id !== node && (n.id === current || !hops.includes(n.id)))
+    .map(n => ({ value: n.id, label: n.name }));
+  return html`<div class="field">
+    <label>${label}</label>
+    ${hops.map((id, i) => {
+      const available = options(id);
+      if (!available.some(n => n.value === id)) available.unshift({ value: id, label: T("A node that is no longer here") });
+      return html`<div class="rs-cascade-hop" key=${id}>
+        <${Dropdown} value=${id} options=${available} ariaLabel=${T("Cascade node {v1}", { v1: i + 1 })}
+          onChange=${next => setHops(hops.map((n, j) => j === i ? next : n))}/>
+        <button type="button" class="xbtn" title=${T("Remove cascade node")} aria-label=${T("Remove cascade node")}
+          onClick=${() => setHops(hops.filter((_, j) => j !== i))}><${Ic} i="x"/></button>
+      </div>`;
+    })}
+    ${options().length ? html`<${Dropdown} value="" placeholder=${T("Add cascade node")} ariaLabel=${T("Add cascade node")}
+      options=${options()} onChange=${id => setHops([...hops, id])}/>` : null}
+  </div>`;
+}
+
 function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyone, exitIps, directIp, onApply, nodeScope }) {
   useStore();
   const [dest, setDest] = useState(dest0);
   const [hops, setHops] = useState(() => row.cascade?.nodes || (row.node ? [row.node] : []));
-  const [proxy, setProxy] = useState(row.cascade?.socks5 || "");
+  const [backup, setBackup] = useState(() => row.cascade?.backup || []);
+  const [pool, setPool] = useState(!row.cascade || row.cascade.pool === true);
   const isCascade = dest === "cascade";
-  const last = (Store.nodes || []).find(n => n.id === hops.at(-1));
-  const proxies = (last?.exits || []).filter(e => exitProv(e) === "socks5" && e.enabled !== false);
-  const updateHops = nodes => {
-    if (hops.at(-1) !== nodes.at(-1) && proxy) setProxy(null);
-    setHops(nodes);
-  };
-  const hopOptions = (current = "") => (Store.nodes || [])
-    .filter(n => n.id !== node && (n.id === current || !hops.includes(n.id)))
-    .map(n => ({ value: n.id, label: n.name }));
-  const cascade = isCascade ? { nodes: hops, ...(proxy ? { socks5: proxy } : {}) } : null;
-  const pathBad = isCascade && (!hops.length || proxy === null);
+  const cascade = isCascade ? (pool ? { nodes: hops, pool: true, ...(backup.length ? { backup } : {}) } : row.cascade) : null;
+  const sameChain = backup.length === hops.length && backup.every((id, i) => id === hops[i]);
+  const pathBad = isCascade && (!hops.length || (backup.length && sameChain));
   const [aud, setAud] = useState(nodeScope && !everyone ? (row.aud || "") : "");
   const [chosen, setChosen] = useState(!nodeScope && !everyone && !!row.who);
   const [sel, setSel] = useState(() => canonWho(row.who || {}));
@@ -1874,31 +1901,18 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
       </div>
       ${note ? html`<div class="hint rs-where-note">${note}</div>` : null}
       ${addrStale ? html`<div class="hint err rs-where-note">${T("{v1} isn't reporting this address. Traffic on this rule leaves it with a source it can't receive replies on, so it goes nowhere until the address is back or you choose another.", { v1: Store.nodeName(addr.node) })}</div>` : null}`; })()}
-    ${isCascade ? html`<div class="field">
-      <label>${T("Cascade nodes in order")}</label>
-      ${hops.map((id, i) => {
-        const options = hopOptions(id);
-        if (!options.some(n => n.value === id)) options.unshift({ value: id, label: T("A node that is no longer here") });
-        return html`<div class="rs-cascade-hop" key=${id}>
-          <${Dropdown} value=${id} options=${options} ariaLabel=${T("Cascade node {v1}", { v1: i + 1 })}
-            onChange=${next => updateHops(hops.map((n, j) => j === i ? next : n))}/>
-          <button type="button" class="xbtn" title=${T("Remove cascade node")} aria-label=${T("Remove cascade node")}
-            onClick=${() => updateHops(hops.filter((_, j) => j !== i))}><${Ic} i="x"/></button>
-        </div>`;
-      })}
-      ${hopOptions().length ? html`<${Dropdown} value="" placeholder=${T("Add cascade node")} ariaLabel=${T("Add cascade node")}
-        options=${hopOptions()} onChange=${id => updateHops([...hops, id])}/>` : null}
-    </div>
-    ${hops.length ? html`<div class="field">
-      <label>${T("Internet access")}</label>
-      <${Dropdown} value=${proxy} ariaLabel=${T("Internet access")} placeholder=${T("Choose internet access")} onChange=${setProxy}
-        options=${[{ value: "", label: T("Direct internet access") },
-          ...(proxies.length ? [{ group: T("Via SOCKS5"), items: proxies.map(e => ({ value: e.id, label: exitLabel(e, last) })) }] : []),
-          ...(proxy && !proxies.some(e => e.id === proxy) ? [{ value: proxy, label: T("Unavailable proxy") }] : [])]}/>
-      ${proxy === null ? null : html`<div class="hint">${cascadeLabel(node, cascade)}</div>`}
-      ${(Store.nodes || []).some(n => (n.id === node || hops.includes(n.id)) && !n.cascade_paths_supported)
+    ${isCascade && pool ? html`
+      <${CascadeNodeList} node=${node} hops=${hops} setHops=${setHops} label=${T("Primary chain")}/>
+      <${CascadeNodeList} node=${node} hops=${backup} setHops=${setBackup} label=${T("Reserve chain (optional)")}/>
+      ${backup.length && sameChain ? html`<div class="hint err">${T("Choose a distinct backup chain without repeated nodes.")}</div>` : null}
+      ${hops.length ? html`<div class="hint">${cascadeLabel(node, cascade)}</div>` : null}
+      ${(Store.nodes || []).some(n => (n.id === node || hops.includes(n.id) || backup.includes(n.id)) && !n.cascade_failover_supported)
         ? html`<div class="hint err">${T("All nodes in the cascade need an update before this route can carry traffic.")}</div>` : null}
-    </div>` : null}` : null}
+    ` : isCascade ? html`<div class="field">
+      <div class="hint">${cascadeLabel(node, cascade)}</div>
+      <div class="hint">${T("Switch this route to use each user's SOCKS5 profile and a reserve chain.")}</div>
+      <button type="button" class="btn btn-ghost" onClick=${() => setPool(true)}>${T("Use the shared SOCKS5 pool")}</button>
+    </div>` : null}
     ${withPorts ? html`<div class="row2 rs-ports">
         <div class="field"><label>${T("Protocol")}</label>
           <div class="dpsw netsw-share netsw-aud" role="radiogroup" aria-label=${T("Protocol")}>${[["both", T("proto|Any")], ["tcp", "TCP"], ["udp", "UDP"]].map(([v, l]) => html`<button type="button" role="radio"

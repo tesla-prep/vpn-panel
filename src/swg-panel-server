@@ -2401,6 +2401,9 @@ def user_set(roster, uid, fields, now):
     static_exit = static_exit_ref(fields.get("static_exit", u.get("static_exit")))
     if static_exit:
         roster["users"][uid]["static_exit"] = {"node_id": static_exit[0], "exit_id": static_exit[1]}
+    profile = fields.get("socks_profile", u.get("socks_profile"))
+    if isinstance(profile, dict) and profile.get("id"):
+        roster["users"][uid]["socks_profile"] = profile
     return roster["users"][uid]
 
 
@@ -6694,6 +6697,10 @@ def mesh_need(nodes, deps):
         hops = [origin, *path["nodes"]] if path else [origin, rule.get("node")]
         for a, b in zip(hops, hops[1:]):
             want(a, b)
+        if path and path.get("backup"):
+            backup = [origin, *path["backup"]]
+            for a, b in zip(backup, backup[1:]):
+                want(a, b)
     for nid, n in nodes.items():
         if not isinstance(n, dict):
             continue
@@ -10014,12 +10021,23 @@ def _validate_cascade_path(path, nodes, origin, prev, paths):
     if (not isinstance(hops, list) or not hops or not all(isinstance(n, str) and n for n in hops)
             or origin in hops or len(set(hops)) != len(hops) or not isinstance(proxy, str)):
         return None, "Choose an ordered cascade of distinct nodes."
+    pooled = path.get("pool") is True
+    backup = path.get("backup", [])
+    if (not isinstance(path.get("pool", False), bool)
+            or not isinstance(backup, list) or not all(isinstance(n, str) and n for n in backup)
+            or origin in backup or len(set(backup)) != len(backup)
+            or (backup and (not pooled or backup == hops)) or (pooled and proxy)):
+        return None, "Choose a distinct backup chain without repeated nodes."
     clean = {"nodes": hops, **({"socks5": proxy} if proxy else {})}
+    if pooled:
+        clean["pool"] = True
+        if backup:
+            clean["backup"] = backup
     identity = _cascade_identity(origin, clean)
     saved = any(isinstance(rule, dict) and rule.get("cascade")
                 and _cascade_identity(origin, rule["cascade"]) == identity for rule in prev or ())
     if not saved:
-        if not all(n in nodes for n in hops):
+        if not all(n in nodes for n in hops + backup):
             return None, "A cascade node no longer exists."
         exit_ = static_socks_exit(nodes, hops[-1], proxy) if proxy else None
         if proxy and (not exit_ or exit_.get("enabled") is False):
@@ -10264,6 +10282,22 @@ def socks_public(sk):
     sk = sk if isinstance(sk, dict) else {}
     return {"host": sk.get("host") or "", "port": sk.get("port") or 0, "user": sk.get("user") or "",
             "has_pass": bool(sk.get("pass"))}
+
+
+def socks_pool(deps):
+    if "socks_pool" not in deps:
+        data = load_critical(socks_pool_path(deps), {})
+        deps["socks_pool"] = data if isinstance(data, dict) else {}
+    return deps["socks_pool"]
+
+
+def socks_pool_path(deps):
+    return os.path.join(os.path.dirname(deps["nodes_path"]), "private", "socks-pool.json")
+
+
+def socks_pool_public(pool):
+    return [{"id": k, "label": e["label"], "enabled": e.get("enabled", True),
+             "socks": socks_public(e["socks"])} for k, e in sorted(pool.items(), key=lambda item: (item[1]["label"].casefold(), item[0]))]
 
 
 EXIT_TEST_TTL = 90
@@ -11367,6 +11401,10 @@ CASCADE_PATH_NET = ipaddress.IPv4Network("198.18.128.0/17")
 
 
 def _cascade_identity(origin, path):
+    if path.get("pool"):
+        return origin, tuple(path["nodes"]), tuple(path.get("backup") or ()), "pool"
+    if path.get("probe"):
+        return origin, tuple(path["nodes"]), path.get("profile", ""), path.get("cfg_sig", ""), "probe"
     return origin, tuple(path["nodes"]), path.get("socks5", "")
 
 
@@ -11387,7 +11425,40 @@ def _configured_cascades(nodes, active=False):
                 yield nid, rule, rule["cascade"]
 
 
-def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
+def _pool_sources(roster):
+    users = roster.get("users") or {}
+    sources = {}
+    for peer in (roster.get("peers") or {}).values():
+        if not isinstance(peer, dict):
+            continue
+        user = users.get(peer.get("user_id")) or {}
+        profile = user.get("socks_profile") or {}
+        if not profile.get("id") or access_cut(peer, user):
+            continue
+        for target in peer.get("targets") or []:
+            if not isinstance(target, dict) or _is_self_contained_target(target):
+                continue
+            address = _ip4(str(target.get("ip") or "").split("/")[0])
+            if address and target.get("node") and target.get("iface"):
+                key = (target["iface"], address)
+                sources.setdefault(target["node"], {})[key] = (profile["id"], profile.get("failure") == "direct")
+    return sources
+
+
+def _pool_exit(profile_id, profile):
+    xid = "p" + profile_id
+    out = {"id": xid, "device": "s5x-" + xid, "provider": "socks5",
+           "socks": profile["socks"], "enabled": True}
+    out["cfg_sig"] = exit_cfg_sig(out)
+    return out
+
+
+def _cascade_report(snap):
+    report = (snap or {}).get("cascade_paths")
+    return report if isinstance(report, dict) else {}
+
+
+def cascade_plan(nodes, snaps, custom_lists=None, roster=None, pool=None):
     plans = {}
     clients = static_exit_clients(roster or {})
     static_exits = {}
@@ -11396,6 +11467,9 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
     static_routes = {}
     paths = {cascade_path_key(nid, path): (nid, path)
              for nid, rule, path in _configured_cascades(nodes, active=True) if rule_on(rule)}
+    managed = {key: paths.pop(key) for key, (_, path) in list(paths.items()) if path.get("pool")}
+    all_sources = _pool_sources(roster or {})
+    pool = pool or {}
 
     def _nlist(nid):
         v = (nodes.get(nid) or {}).get("default_routing")
@@ -11685,8 +11759,42 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
             seen.add(k)
             sp_["devexit"].append(ent)
 
-    def _path_origin(nid, key, subnets):
+    def _path_origin(nid, key, subnets, arrivals=None):
         sn = slot(nid)
+        if key in managed:
+            group = groups.get(key)
+            if not group:
+                return {"action": "block"}
+            table, choices = group
+            wire = sn.setdefault("cascade_paths", {}).setdefault("choices", {})
+            direct_paths = choices.get("", ())
+            direct = next((healthy[c] for c in direct_paths if c in healthy), None)
+            direct_state = "unavailable"
+            if direct:
+                direct_state = "primary" if direct_paths[0] in healthy else "backup"
+            elif any(c in probes and c not in probed for c in direct_paths):
+                direct_state = "pending"
+            status = sn.setdefault("pool_route_status", {}).setdefault(managed[key][1]["address"], {
+                "direct": direct_state, "personal_reserve": False, "personal_direct": False,
+            })
+            selection = wire.setdefault(table, {"table": table, "default": direct[2] if direct else 0, "sources": {}})
+            nets = [ipaddress.IPv4Network(s, strict=False) for s in subnets]
+            sources = all_sources.get(nid, {}) if arrivals is None else arrivals
+            for (dev, addr), (pid, allow_direct) in sources.items():
+                if not any(ipaddress.IPv4Address(addr) in net for net in nets):
+                    continue
+                variants = choices.get(pid, [])
+                selected = next((picked for candidate in variants if (picked := healthy.get(candidate))), None)
+                if selected and any(healthy.get(c) == selected for c in variants[1:2]):
+                    status["personal_reserve"] = True
+                if not selected and allow_direct and not any(candidate in probes and candidate not in probed for candidate in variants):
+                    selected = direct
+                    if selected:
+                        status["personal_direct"] = True
+                selection["sources"][dev, addr] = selected[2] if selected else 0
+            for subnet in subnets:
+                _dx_add(sn, {"subnet": subnet, "dev": "s5-selector", "table": table, "scope": "cascade", "killswitch": True})
+            return {"action": "exit", "via_iface": "s5-selector", "table": table}
         if key not in ready_paths:
             return {"action": "block"}
         alias, dev, table = ready_paths[key]
@@ -11698,21 +11806,67 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
             _dx_add(sn, {"subnet": subnet, "dev": dev, "table": table, "scope": "cascade", "killswitch": True})
         return {"action": "exit", "via_iface": dev, "table": table}
 
-    # Give each route its own source on the mesh. Rules sharing the same first
-    # link can then select different next hops and different last-node exits.
+    # One mark selects the rule. The actual path mark is chosen after matching
+    # the originating device, while each probe follows its own complete path.
+    relevant = {n: {profile for profile, _ in src.values()} for n, src in all_sources.items()}
+    for src, dest, *_ in fwd_items:
+        relevant.setdefault(dest, set()).update(profile for profile, _ in all_sources.get(src, {}).values())
+    for src, dest, _, _, action, *_ in smart_items:
+        if action == "exit":
+            relevant.setdefault(dest, set()).update(profile for profile, _ in all_sources.get(src, {}).values())
+    groups, variant_ids = {}, {}
+    used = {path["address"] for _, path in paths.values()}
+    for key, (origin, path) in sorted(managed.items()):
+        local = slot(origin)["_targets"]
+        table = SWG_RT_BASE + len(local)
+        if table > SWG_RT_MAX or _cascade_report((snaps or {}).get(origin)).get("v") != 2:
+            continue
+        local["selector:" + key] = table
+        choices = {}
+        groups[key] = table, choices
+        for pid in ["", *sorted(relevant.get(origin, ()))]:
+            account = pool.get(pid) if pid else None
+            if pid and (not account or account.get("enabled") is False):
+                continue
+            exit_ = _pool_exit(pid, account) if account else {}
+            choices[pid] = []
+            for hops in (path["nodes"], path.get("backup")):
+                if not hops:
+                    continue
+                variant = {"nodes": hops, "profile": pid, "probe": True, "cfg_sig": exit_.get("cfg_sig", "")}
+                identity = _cascade_identity(origin, variant)
+                if identity not in variant_ids:
+                    size = CASCADE_PATH_NET.num_addresses
+                    start = int(hashlib.sha256(json.dumps(identity).encode()).hexdigest(), 16) % size
+                    for off in range(size):
+                        addr = str(CASCADE_PATH_NET[(start + off) % size])
+                        if addr not in used:
+                            break
+                    else:
+                        continue
+                    used.add(addr)
+                    variant["address"] = addr
+                    path_id = cascade_path_key(origin, variant)
+                    variant_ids[identity] = path_id
+                    paths[path_id] = origin, variant
+                choices[pid].append(variant_ids[identity])
+
     counts = collections.Counter(path["address"] for _, path in paths.values())
-    ready_paths = {}
+    ready_paths, probes, probed, healthy = {}, set(), set(), {}
     for key, (nid, path) in sorted(paths.items()):
         hops = [nid, *path["nodes"]]
         alias = path["address"]
         if counts[alias] != 1 or any(n not in nodes for n in hops):
             continue
         reports = [((snaps or {}).get(n) or {}).get("cascade_paths") or {} for n in hops]
-        if not all(isinstance(r, dict) and r.get("v") == 1 for r in reports):
+        if not all(isinstance(r, dict) and r.get("v") in ((2,) if path.get("probe") else (1, 2)) for r in reports):
             continue
         proxy = path.get("socks5")
+        profile_id = path.get("profile")
         dev = ""
-        if proxy:
+        if profile_id:
+            dev = _pool_exit(profile_id, pool[profile_id])["device"]
+        elif proxy:
             exit_cfg = static_socks_exit(nodes, hops[-1], proxy) or {}
             dev = str(exit_cfg.get("device") or "")
             if exit_cfg.get("enabled") is False or not (dev.startswith("s5x-") and _WANIF_RE.fullmatch(dev)):
@@ -11720,11 +11874,17 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
         links = [_link_devs(nodes, a, b) for a, b in zip(hops, hops[1:])]
         if any(not all(link) for link in links):
             continue
-        tables = [SWG_RT_BASE + len(slot(n)["_targets"]) for n in hops]
+        targets = ["cascade:" + key, *["cascade-device:" + (links[i + 1][0] if i + 1 < len(links) else dev)
+                                      for i in range(len(links))]]
+        if not path.get("probe"):
+            targets = ["cascade:" + key] * len(hops)
+        tables = [slot(n)["_targets"].get(t, SWG_RT_BASE + len(slot(n)["_targets"])) for n, t in zip(hops, targets)]
         if any(t > SWG_RT_MAX for t in tables):
             continue
-        for n, t in zip(hops, tables):
-            slot(n)["_targets"]["cascade:" + key] = t
+        for n, target, t in zip(hops, targets, tables):
+            slot(n)["_targets"][target] = t
+        if profile_id:
+            slot(hops[-1]).setdefault("pool_profiles", set()).add(profile_id)
         for i, (a, b, (outgoing, incoming, peer_ip)) in enumerate(zip(hops, hops[1:], links)):
             slot(a)["allowed"][outgoing] = "0.0.0.0/0"
             sn = slot(b)
@@ -11737,8 +11897,21 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
                 sn["forward"].append({"subnet": alias, "via_iface": next_dev, "table": table})
             if next_dev and i + 1 == len(links):
                 _dx_add(sn, {"subnet": alias, "dev": next_dev, "table": table, "scope": "rule", "killswitch": True})
-        if all(isinstance(r.get("ready"), list) and key in r["ready"] for r in reports[1:]):
-            ready_paths[key] = (alias, links[0][0], tables[0])
+        installed = all(isinstance(r.get("ready"), list) and key in r["ready"] for r in reports[1:])
+        first = links[0][0]
+        if path.get("probe"):
+            probes.add(key)
+            report = reports[0].get("health")
+            if isinstance(report, dict) and isinstance(report.get(key), bool):
+                probed.add(key)
+                if installed and report[key]:
+                    healthy[key] = (alias, first, tables[0])
+            sn = slot(nid)
+            sn.setdefault("cascade_paths", {}).setdefault("origin", []).append(
+                {"table": tables[0], "dev": first, "address": alias, "probe": key})
+            _dx_add(sn, {"subnet": alias, "dev": first, "table": tables[0], "scope": "cascade", "killswitch": True})
+        elif installed:
+            ready_paths[key] = (alias, first, tables[0])
 
     for (nid, P, S, dev_n, dev_p, base_p, X, W) in fwd_items:
         T = slot(nid)["_targets"].get(P)
@@ -11901,7 +12074,15 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
             cat, extra = _rc
             if action == "exit" and r.get("cascade"):
                 key = cascade_path_key(P, r["cascade"])
-                ent = {"category": cat, **_path_origin(P, key, subs)}
+                carried = {}
+                for S in subs:
+                    from_node = (sp.get("_from") or {}).get(S)
+                    via = next(iter(_via[S]))
+                    net = ipaddress.IPv4Network(S, strict=False)
+                    for (_, address), profile in all_sources.get(from_node, {}).items():
+                        if ipaddress.IPv4Address(address) in net:
+                            carried[via, address] = profile
+                ent = {"category": cat, **_path_origin(P, key, subs, arrivals=carried)}
             elif action == "exit":
                 Q = r.get("node")
                 if not Q or Q not in nodes or Q == P:
@@ -11947,6 +12128,11 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None):
             sp["arrivals"] = {"subnets": subs, "entries": ents}
 
     for sn in plans.values():
+        wire = sn.get("cascade_paths") or {}
+        if "choices" in wire:
+            wire["choices"] = [{"table": e["table"], "default": e["default"],
+                                "sources": [[dev, addr, table] for (dev, addr), table in sorted(e["sources"].items())]}
+                               for e in wire["choices"].values()]
         for k in ("_fwd_seen", "_smart_seen", "_exit_seen", "_leg_seen", "_targets", "_from", "_auto", "_hop2", "_dx_seen"):
             sn.pop(k, None)
         if sn.get("_clash"):
@@ -14281,7 +14467,9 @@ def api(method, path, qs, body, deps):
                                   for e in (c.get("exits") or []) if isinstance(e, dict)],
                         "exits_unsupported": _x_unsup,
                         **({"static_exit_supported": True} if static_exit_supported(snap) else {}),
-                        **({"cascade_paths_supported": True} if (snap.get("cascade_paths") or {}).get("v") == 1 else {}),
+                        **({"cascade_paths_supported": True} if _cascade_report(snap).get("v") in (1, 2) else {}),
+                        **({"cascade_failover_supported": True} if _cascade_report(snap).get("v") == 2 else {}),
+                        "cascade_status": (deps.get("cascade_status") or {}).get(nid) or {},
                         "exit_candidates": [dict(x, offerable=(w is None), why_not=(w or ""))
                                             for x, w in ((x, _exr(x.get("name")))
                                                          for x in (snap.get("exit_candidates") or []))],
@@ -14402,6 +14590,7 @@ def api(method, path, qs, body, deps):
             "host_proc": _proc_view(_hp, _hp_at),
             "host_proc_err": _hp_err,
             "roster": _roster,
+            "socks_pool": socks_pool_public(socks_pool(deps)),
             "nodes": nodes_view(_roster),
             "describe": describe_view(),
             "snapshots": snaps,
@@ -14441,6 +14630,38 @@ def api(method, path, qs, body, deps):
             "session_ephemeral": SESSION_KEY_EPHEMERAL,
             "datapath": host_datapath_health(),
         }}
+
+    if method == "POST" and path == "/api/socks/pool":
+        pool = dict(socks_pool(deps))
+        profile_id = body.get("id") or ""
+        kept = pool.get(profile_id) if isinstance(profile_id, str) else None
+        if profile_id and not kept:
+            return 404, {"ok": False, **perr("SOCKS5 profile not found"), "code": "not_found"}
+        if body.get("delete") is True:
+            if not kept:
+                return 400, {"ok": False, **perr("Choose a SOCKS5 profile"), "code": "bad_request"}
+            if any((u.get("socks_profile") or {}).get("id") == profile_id
+                   for u in roster_load(roster_path)["users"].values()):
+                return 409, {"ok": False, **perr("Remove the user assignment before deleting this SOCKS5 profile"), "code": "conflict"}
+            del pool[profile_id]
+        else:
+            label = str(body.get("label") or "").strip()[:40]
+            if not label:
+                return 400, {"ok": False, **perr("Choose a name for the SOCKS5 profile"), "code": "bad_request"}
+            old = (kept or {}).get("socks") or {}
+            sk, err = socks_resolve(body.get("socks_text"), body.get("socks_pass"), old)
+            if err:
+                return 400, {"ok": False, **perr(err), "code": "bad_request"}
+            sk["salt"] = old.get("salt") if old.get("pass") == sk["pass"] and old.get("salt") else secrets.token_hex(8)
+            if not profile_id:
+                while not profile_id or profile_id in pool:
+                    profile_id = uuid.uuid4().hex[:8]
+            pool[profile_id] = {"label": label, "socks": sk, "enabled": body.get("enabled", True) is not False}
+        pool_file = socks_pool_path(deps)
+        os.makedirs(os.path.dirname(pool_file), mode=0o700, exist_ok=True)
+        save_critical(pool_file, json.dumps(pool, indent=2) + "\n")
+        deps["socks_pool"] = pool
+        return 200, {"ok": True, "data": socks_pool_public(pool)}
 
     if method == "POST" and path == "/api/panel/settings":
         cur = dict(deps.get("panel_settings") or {})
@@ -16086,6 +16307,23 @@ def api(method, path, qs, body, deps):
                        for k, u in roster["users"].items() if isinstance(u, dict)):
                     return 409, {"ok": False, **perr("This SOCKS5 exit is already assigned to another user"), "code": "conflict"}
                 fields["static_exit"] = {"node_id": nid, "exit_id": xid}
+                fields["socks_profile"] = None
+        if "socks_profile" in body:
+            value = body["socks_profile"]
+            fields["socks_profile"] = None
+            if value is not None:
+                profile_id = value.get("id") if isinstance(value, dict) else None
+                policy = value.get("failure", "block") if isinstance(value, dict) else None
+                if not isinstance(profile_id, str) or policy not in ("block", "direct"):
+                    return 400, {"ok": False, **perr("Choose a SOCKS5 profile and failure policy"), "code": "bad_request"}
+                profile = socks_pool(deps).get(profile_id)
+                existing = (roster["users"][uid].get("socks_profile") or {}).get("id")
+                if profile_id != existing and (not profile or profile.get("enabled") is False):
+                    return 400, {"ok": False, **perr("Choose an enabled SOCKS5 profile"), "code": "bad_request"}
+                if any(k != uid and (u.get("socks_profile") or {}).get("id") == profile_id for k, u in roster["users"].items()):
+                    return 409, {"ok": False, **perr("This SOCKS5 exit is already assigned to another user"), "code": "conflict"}
+                fields["socks_profile"] = {"id": profile_id, "failure": policy}
+                fields["static_exit"] = None
         renamed = "name" in fields
         u = user_set(roster, uid, fields, now())
         roster_save(roster_path, roster)
@@ -18981,7 +19219,9 @@ class Handler(BaseHTTPRequestHandler):
         roster = roster_load(Handler.deps["roster_path"])
         desired = desired_for_node(roster, nid)
         _clists = {cl["id"]: cl for cl in ((Handler.deps.get("panel_settings") or {}).get("custom_lists") or []) if cl.get("id")}
-        cas_plans = cascade_plan(nodes, Handler.deps.get("node_snaps") or {}, _clists, roster=roster)
+        accounts = socks_pool(Handler.deps)
+        cas_plans = cascade_plan(nodes, Handler.deps.get("node_snaps") or {}, _clists, roster=roster, pool=accounts)
+        Handler.deps["cascade_status"] = {n: p["pool_route_status"] for n, p in cas_plans.items() if p.get("pool_route_status")}
         Handler.deps["cas_capped"] = {_n: _p["_capped"] for _n, _p in cas_plans.items() if _p.get("_capped")}
         Handler.deps["cas_legs"] = {_n: _p["_legs"] for _n, _p in cas_plans.items() if _p.get("_legs")}
         Handler.deps["cas_reach"] = {_n: _p["_reach"] for _n, _p in cas_plans.items() if _p.get("_reach")}
@@ -19462,7 +19702,8 @@ class Handler(BaseHTTPRequestHandler):
                                            "dial_src": x.get("dial_src") or "",
                                            **({"socks": {k: x["socks"].get(k) for k in ("host", "port", "user", "pass")}}
                                               if isinstance(x.get("socks"), dict) else {})}
-                                          for x in (node.get("exits") or [])
+                                          for x in [*(node.get("exits") or []),
+                                                    *(_pool_exit(pid, accounts[pid]) for pid in sorted(my_plan.get("pool_profiles") or ()))]
                                           if isinstance(x, dict) and x.get("provider") == "socks5"
                                           and not exit_kind_refusal(snap, "socks5")],
                                 **({"exit_test": _xtest} if _xtest else {}),

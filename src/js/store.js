@@ -131,6 +131,7 @@ export const api = {
   userNetworks(b) { return this.post("/api/users/networks", b); },
   peerAddTarget(b) { return this.post("/api/peers/add-target", b); },
   exitTest(b) { return this.post("/api/exit/test", b); },
+  socksPool(b) { return this.post("/api/socks/pool", b); },
   peerUpdateTarget(b) { return this.post("/api/peers/update-target", b); },
   peerRemoveTarget(b) { return this.post("/api/peers/remove-target", b); },
   peerSetRole(b) { return this.post("/api/peers/set-role", b); },
@@ -223,6 +224,7 @@ export const Store = {
     this.exitKeyKeep = d.exit_key_keep || "";
     this.exitPskKeep = d.exit_psk_keep || "";
     this.exitPassKeep = d.exit_pass_keep || "";
+    this.socksPool = d.socks_pool || [];
     this.storeConfigs = this.storeMode !== "off";
     this.configsPlaintext = d.configs_plaintext || 0;
     this.panelSettings = d.panel_settings || this.panelSettings || {};
