@@ -10319,28 +10319,24 @@ def save_socks_pool(deps, pool):
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     save_critical(path, json.dumps(pool, indent=2) + "\n")
     deps["socks_pool"] = pool
+    _invalidate_state_cache()
 
 
 def socks_pool_public(pool):
     profiles = []
-    with _EXIT_TESTS_LOCK:
-        for pid in _POOL_TESTS.keys() - pool.keys():
-            _POOL_TESTS.pop(pid)
-        for pid, entry in sorted(pool.items(), key=lambda item: (item[1]["label"].casefold(), item[0])):
-            item = {"id": pid, "label": entry["label"], "enabled": entry.get("enabled", True),
-                    "socks": socks_public(entry["socks"])}
-            test = _POOL_TESTS.get(pid)
-            if test and test["sig"] == _pool_exit(pid, entry)["cfg_sig"]:
-                item["check"] = {"node": test["node"], "result": test["result"]}
-            profiles.append(item)
+    for pid, entry in sorted(pool.items(), key=lambda item: (item[1]["label"].casefold(), item[0])):
+        item = {"id": pid, "label": entry["label"], "enabled": entry.get("enabled", True),
+                "socks": socks_public(entry["socks"])}
+        test = entry.get("check")
+        if test and test["sig"] == _pool_exit(pid, entry)["cfg_sig"]:
+            item["check"] = {"node": test["node"], "result": test["result"]}
+        profiles.append(item)
     return profiles
 
 
 EXIT_TEST_TTL = 90
 EXIT_TEST_KEEP = 600
 _EXIT_TESTS = {}
-_POOL_TESTS = {}
-_EXIT_TEST_SEQ = itertools.count()
 _EXIT_TESTS_LOCK = threading.Lock()
 _EXIT_TEST_WHY = ("unreachable", "refused", "timeout", "not_socks5", "auth_required", "auth_failed", "not_allowed",
                   "connect_failed")
@@ -10372,7 +10368,7 @@ def exit_test_request(nid, exit_id, socks, snap, seen_age, stale_s, now=None, pr
             if cur["result"] is None:
                 return 409, {"ok": False, "error": "a test is already running on this node", "code": "busy"}
         rec = {"id": secrets.token_hex(8), "node": nid, "exit_id": str(exit_id or ""), "socks": dict(socks),
-               "at": now, "sent_at": 0, "result": None, "done_at": 0, "profile": profile, "seq": next(_EXIT_TEST_SEQ)}
+               "at": now, "sent_at": 0, "result": None, "done_at": 0, "profile": profile}
         _EXIT_TESTS[nid] = rec
         return 200, {"ok": True, "data": exit_test_view(rec, now)}
 
@@ -10394,7 +10390,7 @@ def exit_test_reply(nid, now=None):
                 "pass": sk.get("pass") or ""}
 
 
-def exit_test_absorb(nid, snap, now=None):
+def exit_test_absorb(nid, snap, deps, now=None):
     got = snap.get("exit_test") if isinstance(snap, dict) else None
     if not isinstance(got, dict):
         return False
@@ -10405,16 +10401,24 @@ def exit_test_absorb(nid, snap, now=None):
             return False
         why = got.get("why") if got.get("why") in _EXIT_TEST_WHY else ""
         u = got.get("udp")
-        rec["result"] = {"why": why, "login": got.get("login") is True,
-                         "egress_ip": str(got.get("egress_ip") or "")[:45], "loc": str(got.get("loc") or "")[:8],
-                         "udp": u if isinstance(u, bool) else None,
-                         "rtt_ms": got.get("rtt_ms") if isinstance(got.get("rtt_ms"), int) and not isinstance(got.get("rtt_ms"), bool) else None}
-        rec["done_at"], rec["socks"] = now, {}
+        result = {"why": why, "login": got.get("login") is True,
+                  "egress_ip": str(got.get("egress_ip") or "")[:45], "loc": str(got.get("loc") or "")[:8],
+                  "udp": u if isinstance(u, bool) else None,
+                  "rtt_ms": got.get("rtt_ms") if isinstance(got.get("rtt_ms"), int) and not isinstance(got.get("rtt_ms"), bool) else None}
         if rec["profile"]:
             pid, sig = rec["profile"]
-            previous = _POOL_TESTS.get(pid)
-            if not previous or rec["seq"] > previous["seq"]:
-                _POOL_TESTS[pid] = {"node": nid, "sig": sig, "seq": rec["seq"], "result": rec["result"]}
+            pool = socks_pool(deps)
+            entry = pool.get(pid)
+            if entry and sig == _pool_exit(pid, entry)["cfg_sig"]:
+                previous = entry.get("check") or {}
+                if rec["at"] >= previous.get("started_at", 0):
+                    check = {"node": nid, "sig": sig, "started_at": rec["at"], "result": result}
+                    try:
+                        save_socks_pool(deps, {**pool, pid: dict(entry, check=check)})
+                    except OSError as error:
+                        log(LOG_WARNING, "SOCKS5 check result could not be saved: %s" % error)
+                        return False  # The node will send the result again on the next sync.
+        rec["result"], rec["done_at"], rec["socks"] = result, now, {}
         return True
 
 
@@ -14830,8 +14834,6 @@ def api(method, path, qs, body, deps):
                 return 409, {"ok": False, **perr("A routing rule on {v1} still uses this SOCKS5 profile",
                                                  v1=nodes[fixed].get("name") or fixed), "code": "conflict"}
             del pool[profile_id]
-            with _EXIT_TESTS_LOCK:
-                _POOL_TESTS.pop(profile_id, None)
         else:
             label = str(body.get("label") or "").strip()[:40]
             if not label:
@@ -14840,11 +14842,15 @@ def api(method, path, qs, body, deps):
             sk, err = socks_resolve(body.get("socks_text"), body.get("socks_pass"), old)
             if err:
                 return 400, {"ok": False, **perr(err), "code": "bad_request"}
-            sk["salt"] = old.get("salt") if old.get("pass") == sk["pass"] and old.get("salt") else secrets.token_hex(8)
+            same_proxy = all(sk.get(k) == old.get(k) for k in ("host", "port", "user", "pass"))
+            sk["salt"] = (old.get("salt") if same_proxy else "") or secrets.token_hex(8)
             if not profile_id:
                 while not profile_id or profile_id in pool:
                     profile_id = uuid.uuid4().hex[:8]
-            pool[profile_id] = {"label": label, "socks": sk, "enabled": body.get("enabled", True) is not False}
+            entry = {**(kept or {}), "label": label, "socks": sk, "enabled": body.get("enabled", True) is not False}
+            if entry.get("check") and entry["check"]["sig"] != _pool_exit(profile_id, entry)["cfg_sig"]:
+                entry.pop("check")
+            pool[profile_id] = entry
         save_socks_pool(deps, pool)
         return 200, {"ok": True, "data": socks_pool_public(pool)}
 
@@ -19295,7 +19301,7 @@ class Handler(BaseHTTPRequestHandler):
             node.pop("snap_err", None)
             with contextlib.suppress(Exception):
                 nodes_save(Handler.deps["nodes_path"], nodes)
-        exit_test_absorb(nid, snap)
+        exit_test_absorb(nid, snap, Handler.deps)
         if not (node.get("endpoint_host") or "").strip():
             reported = snap.get("endpoint_host") or ""
             _pub = reported if _NODE_ENDPOINT_RE.fullmatch(reported) else node_public_ip(snap)
