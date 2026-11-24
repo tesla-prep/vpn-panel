@@ -10039,6 +10039,11 @@ def _validate_cascade_path(path, nodes, origin, prev, paths):
             or (backup and (not pooled or backup == hops)) or (pooled and proxy)):
         return None, "Choose a distinct backup chain without repeated nodes."
     clean = {"nodes": hops, **({"socks5": proxy} if proxy else {})}
+    proxy_mode = path.get("proxy_mode", "user")
+    if proxy_mode not in ("user", "direct") or ("proxy_mode" in path and not pooled):
+        return None, "Choose direct access or the user's proxy for this cascade."
+    if proxy_mode == "direct":
+        clean["proxy_mode"] = "direct"
     profile = path.get("profile")
     if profile:
         if pooled or proxy or not isinstance(profile, str):
@@ -11461,7 +11466,8 @@ def _cascade_identity(origin, path):
     pin = tuple(path.get(k, "") for k in ("egress_ip", "wan_iface"))
     suffix = pin if any(pin) else ()
     if path.get("pool"):
-        return (origin, tuple(path["nodes"]), tuple(path.get("backup") or ()), "pool") + suffix
+        mode = ("direct",) if path.get("proxy_mode") == "direct" else ()
+        return (origin, tuple(path["nodes"]), tuple(path.get("backup") or ()), "pool") + suffix + mode
     if path.get("probe"):
         return (origin, tuple(path["nodes"]), path.get("profile", ""), path.get("cfg_sig", ""), "probe") + suffix
     if path.get("profile"):
@@ -11961,12 +11967,15 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None, pool=None):
                 direct_state = "primary" if direct_paths[0] in healthy else "backup"
             elif any(c in probes and c not in probed for c in direct_paths):
                 direct_state = "pending"
-            status = sn.setdefault("pool_route_status", {}).setdefault(managed[key][1]["address"], {
+            path = managed[key][1]
+            status = sn.setdefault("pool_route_status", {}).setdefault(path["address"], {
                 "direct": direct_state, "personal_reserve": False, "personal_direct": False,
             })
             selection = wire.setdefault(table, {"table": table, "default": direct[2] if direct else 0, "sources": {}})
-            nets = [ipaddress.IPv4Network(s, strict=False) for s in subnets]
             sources = all_sources.get(nid, {}) if arrivals is None else arrivals
+            if path.get("proxy_mode") == "direct":
+                sources = {}
+            nets = [ipaddress.IPv4Network(s, strict=False) for s in subnets] if sources else []
             for (dev, addr), (pid, allow_direct) in sources.items():
                 if not any(ipaddress.IPv4Address(addr) in net for net in nets):
                     continue
@@ -12011,7 +12020,8 @@ def cascade_plan(nodes, snaps, custom_lists=None, roster=None, pool=None):
         local["selector:" + key] = table
         choices = {}
         groups[key] = table, choices
-        for pid in ["", *sorted(relevant.get(origin, ()))]:
+        profile_ids = relevant.get(origin, ()) if path.get("proxy_mode") != "direct" else ()
+        for pid in ["", *sorted(profile_ids)]:
             account = pool.get(pid) if pid else None
             if pid and (not account or account.get("enabled") is False):
                 continue

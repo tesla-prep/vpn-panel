@@ -304,11 +304,16 @@ export function rulesTitle(nodeId) {
   return html`${T("Routing rules")}${w ? html` <span class="disc-wins">${w}</span>` : null}`;
 }
 
+function cascadeExitLabel(mode) {
+  return mode === "direct" ? T("Direct from the final node") : T("Via the user's proxy");
+}
+
 function cascadeLabel(origin, path) {
   if (path.pool) {
     const describe = hops => [origin, ...hops].map(n => Store.nodeName(n)).join(" → ");
     const primary = describe(path.nodes);
-    return path.backup?.length ? primary + " · " + T("Reserve: {v1}", { v1: describe(path.backup) }) : primary;
+    return [primary, path.backup?.length ? T("Reserve: {v1}", { v1: describe(path.backup) }) : "",
+      cascadeExitLabel(path.proxy_mode)].filter(Boolean).join(" · ");
   }
   const proxy = (Store.socksPool || []).find(e => e.id === path.profile && e.enabled !== false);
   const egress = path.profile
@@ -1834,6 +1839,7 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
   const [hops, setHops] = useState(() => row.cascade?.nodes || (row.node ? [row.node] : []));
   const [backup, setBackup] = useState(() => row.cascade?.backup || []);
   const [pool, setPool] = useState(!row.cascade || row.cascade.pool === true);
+  const [proxyMode, setProxyMode] = useState(row.cascade?.proxy_mode === "direct" ? "direct" : "user");
   const isCascade = dest === "cascade";
   const finalNode = hops.at(-1);
   const savedTerminal = row.cascade?.nodes.at(-1) || row.node;
@@ -1841,6 +1847,7 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
   const pathIp = pathPin[finalNode] || "";
   const pathWan = finalNode === savedTerminal ? row.cascade?.wan_iface : "";
   const cascade = isCascade ? (pool ? { nodes: hops, pool: true, ...(backup.length ? { backup } : {}),
+    ...(proxyMode === "direct" ? { proxy_mode: "direct" } : {}),
     ...(pathIp ? { egress_ip: pathIp } : {}), ...(pathWan ? { wan_iface: pathWan } : {}) } : row.cascade) : null;
   const sameChain = backup.length === hops.length && backup.every((id, i) => id === hops[i]);
   const pathBad = isCascade && (!hops.length || (backup.length && sameChain));
@@ -1905,13 +1912,16 @@ function RuleSettingsSheet({ node, iface, row, dests, dest: dest0, mode, everyon
       <${CascadeNodeList} node=${node} hops=${hops} setHops=${setHops} label=${T("Primary chain")}/>
       <${CascadeNodeList} node=${node} hops=${backup} setHops=${setBackup} label=${T("Reserve chain (optional)")}/>
       ${backup.length && sameChain ? html`<div class="hint err">${T("Choose a distinct backup chain without repeated nodes.")}</div>` : null}
+      <div class="field"><label>${T("Internet access")}</label>
+        <${Dropdown} value=${proxyMode} onChange=${setProxyMode} ariaLabel=${T("Internet access")}
+          options=${["user", "direct"].map(value => ({ value, label: cascadeExitLabel(value) }))}/></div>
       ${hops.length ? html`<div class="hint">${cascadeLabel(node, cascade)}</div>` : null}
       ${(Store.nodes || []).some(n => (n.id === node || hops.includes(n.id) || backup.includes(n.id)) && !n.cascade_failover_supported)
         ? html`<div class="hint err">${T("All nodes in the cascade need an update before this route can carry traffic.")}</div>` : null}
     ` : isCascade ? html`<div class="field">
       <div class="hint">${cascadeLabel(node, cascade)}</div>
-      <div class="hint">${T("Switch this route to use each user's proxy profile and a reserve chain.")}</div>
-      <button type="button" class="btn btn-ghost" onClick=${() => setPool(true)}>${T("Use the shared proxy pool")}</button>
+      <div class="hint">${T("Edit this chain to choose internet access and configure a reserve.")}</div>
+      <button type="button" class="btn btn-ghost" onClick=${() => setPool(true)}>${T("Edit chain and internet access")}</button>
     </div>` : null}
     ${withPorts ? html`<div class="row2 rs-ports">
         <div class="field"><label>${T("Protocol")}</label>
