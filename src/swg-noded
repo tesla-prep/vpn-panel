@@ -8549,6 +8549,8 @@ def _cascade_path_entries(plan):
             if group == "incoming":
                 if not (_SRC_DEV_RE.fullmatch(str(e.get("iif") or "")) and re.fullmatch(r"[a-f0-9]{24}", str(e.get("key") or ""))):
                     continue
+                if "wan_iface" in e and (not isinstance(e["wan_iface"], str) or not _SRC_DEV_RE.fullmatch(e["wan_iface"])):
+                    continue
             elif not dev:
                 continue
             entries.append({**e, "address": str(address)})
@@ -8598,7 +8600,7 @@ def _ensure_cascade_path_rules(origins, incoming, links, wan, res, choices=()):
     for e in origins:
         lines.append(f'    ct direction original meta mark {e["table"]} oifname != "{e["dev"]}" drop')
     for e in incoming:
-        out = e["dev"] or wan
+        out = e["dev"] or _safe_wan(e.get("wan_iface"), wan)
         if out:
             lines.append(f'    iifname "{e["iif"]}" ip saddr {e["address"]} oifname "{out}" accept')
     if links:
@@ -8950,7 +8952,8 @@ def reconcile_cascade(node_cfg, plan, smart=None, default_egress_ip="", panel_co
                                         if f'R|to|{e["address"]}|{e["table"]}' in path_live
                                         and f'T|{e["table"]}|{e["address"]}|{e["iif"]}|' in path_live
                                         and (f'R|from|{e["address"]}|{e["table"]}' in path_live
-                                             and f'T|{e["table"]}|default|{e["dev"]}|' in path_live if e["dev"] else wan))
+                                             and f'T|{e["table"]}|default|{e["dev"]}|' in path_live if e["dev"]
+                                             else _safe_wan(e.get("wan_iface"), wan)))
     return res
 
 

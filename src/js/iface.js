@@ -944,8 +944,7 @@ export function ConnectionEditSheet({ node, iface }) {
           : smartCarried.length
             ? Trich("The panel hasn't worked out this link's routes yet, so there is nothing to accelerate here. The choice appears after *{node}*'s next sync.",
                     { node: Store.nodeName(node) })
-            : Trich("Nothing sends its whole traffic through this link yet. Set an interface's egress to *Forward to {peer}* and the datapath choice appears here.",
-                    { peer: Store.nodeName(peer) });
+            : T("TCP Relay has no compatible route on this link.");
         return html`<div class="dp-sec">
           <div class="dp-row"><span class="dp-l">${T("Datapath")}</span>
             <span class="faint">${T("Forward")}</span></div>
@@ -1015,7 +1014,7 @@ export function ConnectionEditSheet({ node, iface }) {
     <div class="hint" style="margin-top:14px">${(Store.panelSettings || {}).mesh_effective === "demand"
       ? Trich("This is a panel-managed mesh link to *{node}*. On demand, a link exists while a forward, a smart rule or its own settings use it, and is removed an hour after nothing does.", { node: Store.nodeName(peer) })
       : Trich("This is a panel-managed mesh link to *{node}*. It's created and torn down automatically as nodes are added or removed.", { node: Store.nodeName(peer) })}
-      ${" "}${Trich("To send all traffic from an interface through this node, set *Interface rules → Everything else → Forward to {node}* and leave the rule list empty.", { node: Store.nodeName(peer) })}</div>
+      ${" "}${Trich("To send all traffic from an interface through this node, choose *Everything else → Through nodes* in the interface rules and add *{node}* to the primary chain.", { node: Store.nodeName(peer) })}</div>
   <//>`;
 }
 export function EditIfaceSheet({ node, iface }) {

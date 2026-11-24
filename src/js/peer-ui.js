@@ -668,19 +668,16 @@ export function UserCounts({ user, className }) {
   </span>`;
 }
 
-const userExitValue = ref => ref ? ref.node_id + "/" + ref.exit_id : "";
-
 export function UserEditCard({ user, done }) {
   useStore();
   const [name, setName] = useState(user.name || "");
-  const legacy = userExitValue(user.static_exit);
-  const initial = user.socks_profile?.id || (legacy ? "legacy" : "");
+  const initial = user.socks_profile?.id || "";
   const initialFailure = user.socks_profile?.failure || "block";
   const [profile, setProfile] = useState(initial);
   const [failure, setFailure] = useState(initialFailure);
   const [busy, setBusy] = useState(false), [saveErr, setSaveErr] = useState("");
   const showVk = Store.peersOfUser(user.id).some(p => targetsWantVk(p.targets));
-  const pooled = !!profile && profile !== "legacy";
+  const pooled = !!profile;
   const profileDirty = profile !== initial || (pooled && failure !== initialFailure);
   const dirty = name !== (user.name || "") || profileDirty;
   const occupied = new Map(Object.values(Store.roster.users || {}).filter(u => u.id !== user.id && u.socks_profile)
@@ -691,12 +688,10 @@ export function UserEditCard({ user, done }) {
     return { value: option.id, disabled: !!state,
              label: [option.label, state].filter(Boolean).join(" · ") };
   });
-  const legacyNode = (Store.nodes || []).find(n => n.id === user.static_exit?.node_id);
-  const legacyExit = (legacyNode?.exits || []).find(e => e.id === user.static_exit?.exit_id);
   const save = async () => {
     if (!name.trim()) { toast(T("Name can't be empty."), "err"); return; }
     const r = await sheetSend(() => api.userUpdate({ id: user.id, name: name.trim(),
-      ...(profileDirty && profile !== "legacy" ? { socks_profile: pooled ? { id: profile, failure } : null, static_exit: null } : {}) }),
+      ...(profileDirty ? { socks_profile: pooled ? { id: profile, failure } : null } : {}) }),
     setSaveErr, setBusy);
     if (!r.ok) return;
     done(); Store.poll().catch(() => {});
@@ -714,11 +709,9 @@ export function UserEditCard({ user, done }) {
       <label>${T("SOCKS5 profile")}</label>
       <${Dropdown} value=${profile} onChange=${setProfile} ariaLabel=${T("SOCKS5 profile")} options=${[
         { value: "", label: T("No personal SOCKS5") }, ...options,
-        ...(legacy ? [{ value: "legacy", label: T("Legacy SOCKS5 on {v1}", { v1: [legacyNode?.name, legacyExit?.label].filter(Boolean).join(" · ") || user.static_exit.node_id }) }] : []),
         ...(pooled && !options.some(o => o.value === profile) ? [{ value: profile, label: T("SOCKS5 exit unavailable"), disabled: true }] : []),
       ]}/>
-      <div class="hint">${pooled ? T("Applies to all this user's devices when a rule sends traffic through the new cascade.")
-        : profile === "legacy" ? T("This assignment is tied to its node. Choose a profile from the shared pool to follow routing rules.") : ""}</div>
+      ${pooled ? html`<div class="hint">${T("Applies to all this user's devices when a rule sends traffic through the new cascade.")}</div>` : null}
     </div>
     ${pooled ? html`<div class="field"><label>${T("If SOCKS5 is unavailable")}</label>
       <${Dropdown} value=${failure} onChange=${setFailure} ariaLabel=${T("If SOCKS5 is unavailable")} options=${[

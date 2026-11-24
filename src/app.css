@@ -1923,9 +1923,7 @@ button.tf-updbtn:hover{background:color-mix(in srgb,var(--amber) 15%,transparent
   minmax(110px,max-content) minmax(64px,max-content) minmax(76px,max-content) minmax(62px,max-content) max-content}
 .exgrid.g8.exgrid-pool{grid-template-columns:minmax(110px,1.2fr) minmax(105px,1fr) minmax(65px,max-content)
   minmax(110px,1.2fr) minmax(64px,max-content) minmax(56px,max-content) minmax(62px,max-content) max-content}
-.exgrid.g8.exgrid-udp{grid-template-columns:minmax(100px,1.2fr) minmax(110px,1fr) minmax(65px,max-content)
-  minmax(110px,1.2fr) minmax(64px,max-content) minmax(56px,max-content) minmax(76px,max-content) minmax(62px,max-content) max-content}
-.exgrid.exgrid-pool,.exgrid.exgrid-udp{overflow-x:auto}
+.exgrid.exgrid-pool{overflow-x:auto}
 .exgrid.g8x{grid-template-columns:minmax(95px,1fr) minmax(100px,0.9fr) minmax(70px,max-content)
   minmax(178px,1.4fr) minmax(84px,max-content) minmax(76px,max-content) minmax(62px,max-content) 62px}
 .exg-inw.risky .ddbtn{border-color:color-mix(in srgb,var(--fault) 60%,transparent)}

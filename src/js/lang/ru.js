@@ -1909,8 +1909,6 @@ export const STR = {
     "Панель ещё не рассчитала маршруты этой связи, так что ускорять здесь пока нечего. Выбор появится после следующей синхронизации *{node}*.",
   "Only the destinations *{ifaces}* routes over this link are relayed — the rest of that traffic is untouched. And the relay terminates TCP, so UDP keeps forwarding either way.":
     "В релей уходят только те назначения, которые *{ifaces}* маршрутизирует через эту связь, — остальной трафик не затрагивается. И релей терминирует TCP, поэтому UDP в любом случае остаётся на пересылке.",
-  "Nothing sends its whole traffic through this link yet. Set an interface's egress to *Forward to {peer}* and the datapath choice appears here.":
-    "Пока ни один интерфейс не отправляет через эту связь весь свой трафик. Задайте в выходе интерфейса *Переслать на {peer}* — и выбор пути данных появится здесь.",
   "Existing peers": "Существующие пиры",
   "Config file": "Файл конфигурации",
   "Config directory": "Каталог конфигурации",
@@ -2137,8 +2135,6 @@ export const STR = {
     "Панель автоматически создаёт и удаляет меш-линк до *{node}* при добавлении или удалении нод.",
   "This is a panel-managed mesh link to *{node}*. On demand, a link exists while a forward, a smart rule or its own settings use it, and is removed an hour after nothing does.":
     "Панель поддерживает меш-линк до *{node}*, пока он нужен пересылке, правилу маршрутизации или задан в настройках. В режиме «по требованию» панель удаляет линк через час после того, как он перестаёт использоваться.",
-  "To send all traffic from an interface through this node, set *Interface rules → Everything else → Forward to {node}* and leave the rule list empty.":
-    "Чтобы отправить весь трафик интерфейса через эту ноду, выберите *Свои правила → Всё остальное → Переслать на {node}* и оставьте список правил пустым.",
   "Changing the *endpoint* or *port* will break the existing clients' connections; you will need to re-distribute the configs / QR codes.":
     "Смена *эндпоинта* или *порта* разорвёт соединения существующих клиентов; конфиги и QR придётся раздать заново.",
 
@@ -2398,7 +2394,6 @@ export const STR = {
   "Switch this route to use each user's SOCKS5 profile and a reserve chain.": "Переведите маршрут на общий пул, чтобы применять учётку пользователя и добавить резервную цепочку.",
   "Use the shared SOCKS5 pool": "Использовать общий пул SOCKS5",
   "SOCKS5 pool": "Пул SOCKS5",
-  "Previously configured node exits": "Ранее настроенные выходы на нодах",
   "Node for the test": "Нода для проверки",
   "Choose a node": "Выберите ноду",
   "Checked from {v1}": "Проверено с ноды {v1}",
@@ -2412,14 +2407,14 @@ export const STR = {
   "Choose an enabled SOCKS5 profile": "Выберите включённый профиль SOCKS5",
   "Choose a SOCKS5 profile and failure policy": "Выберите профиль SOCKS5 и действие при отказе",
   "Choose a name for the SOCKS5 profile": "Введите название профиля SOCKS5",
-  "Remove the user assignment before deleting this SOCKS5 profile": "Снимите назначение у пользователя перед удалением профиля SOCKS5",
+  "Remove the SOCKS5 assignment in {v1}'s user card first": "Сначала снимите назначение SOCKS5 в карточке пользователя «{v1}»",
+  "A routing rule on {v1} still uses this SOCKS5 profile": "Профиль SOCKS5 используется в правиле маршрутизации на ноде «{v1}»",
+  "Choose a SOCKS5 profile from the shared pool": "Выберите профиль в общем пуле SOCKS5",
   "Assign a profile to a user to use the same SOCKS5 account on any final node of their route.": "Назначьте профиль пользователю, чтобы его устройства использовали одну учётку на любой конечной ноде маршрута.",
   "Delete SOCKS5 profile": "Удалить профиль SOCKS5",
   "Remove this profile from the shared SOCKS5 pool?": "Удалить профиль из общего пула SOCKS5?",
   "No personal SOCKS5": "Без личного SOCKS5",
-  "Legacy SOCKS5 on {v1}": "Привязка к ноде · {v1}",
   "Applies to all this user's devices when a rule sends traffic through the new cascade.": "Действует для всех устройств пользователя, когда правило отправляет трафик по цепочке с общим пулом.",
-  "This assignment is tied to its node. Choose a profile from the shared pool to follow routing rules.": "Эта учётка привязана к ноде. Выберите профиль из общего пула, чтобы применять SOCKS5 по правилам маршрутизации.",
   "If SOCKS5 is unavailable": "Если SOCKS5 недоступен",
   "Block traffic (Kill switch)": "Блокировать трафик (Kill switch)",
   "Applies after trying the same account through all chains of the matching rule.": "Срабатывает, если та же учётка недоступна через обе настроенные цепочки правила.",
@@ -2435,10 +2430,17 @@ export const STR = {
   "Unavailable proxy": "Прокси недоступен",
   "All nodes in the cascade need an update before this route can carry traffic.": "Для работы маршрута обновите все ноды цепочки.",
   "Choose an ordered cascade of distinct nodes.": "Укажите ноды в порядке перехода. Каждая нода может встретиться только один раз.",
+  "Choose Through nodes and set the primary chain.": "Выберите «Через ноды» и задайте основную цепочку.",
+  "A fixed SOCKS5 profile can only be kept on its saved cascade.": "Закреплённый профиль SOCKS5 можно оставить в сохранённой цепочке.",
+  "Choose a valid IPv4 address on the final node.": "Укажите корректный IPv4-адрес конечной ноды.",
+  "The saved WAN interface belongs to a different exit node.": "Сохранённый интерфейс WAN относится к другой выходной ноде.",
+  "The address applies to direct internet access on the last node of the primary chain.": "Адрес используется для прямого выхода с последней ноды основной цепочки.",
+  "TCP Relay has no compatible route on this link.": "На этом линке нет маршрута для TCP Relay.",
+  "To send all traffic from an interface through this node, choose *Everything else → Through nodes* in the interface rules and add *{node}* to the primary chain.":
+    "Чтобы направить весь трафик интерфейса через эту ноду, выберите в правилах интерфейса *Всё остальное → Через ноды* и добавьте *{node}* в основную цепочку.",
   "A cascade node no longer exists.": "Одна из нод цепочки больше не существует.",
   "Choose an enabled SOCKS5 proxy on the last node.": "Выберите включённый SOCKS5-прокси на последней ноде.",
   "No addresses are available for another cascade.": "Свободные служебные адреса для каскада закончились.",
-  "Forward to {node}": "Переслать на {node}",
   "Per-destination smart routing": "Умная маршрутизация по назначению",
   "Exit via WARP": "Выход через WARP",
   "Exit via a custom config": "Выход через свой конфиг",
